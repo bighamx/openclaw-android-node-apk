@@ -40,6 +40,14 @@ describe("resolveRequiredHomeDir", () => {
       }),
     ).toBe(process.cwd());
   });
+
+  it("returns cwd when OPENCLAW_HOME is tilde-only and no fallback home exists", () => {
+    expect(
+      resolveRequiredHomeDir({ OPENCLAW_HOME: "~" } as NodeJS.ProcessEnv, () => {
+        throw new Error("no home");
+      }),
+    ).toBe(process.cwd());
+  });
 });
 
 describe("expandHomePrefix", () => {

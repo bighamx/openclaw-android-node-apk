@@ -17,6 +17,7 @@ export function resolveEffectiveHomeDir(
       if (fallbackHome) {
         return explicitHome.replace(/^~(?=$|[\\/])/, fallbackHome);
       }
+      return undefined;
     }
     return explicitHome;
   }
