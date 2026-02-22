@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import type { OpenClawConfig } from "openclaw/plugin-sdk";
+import type { OpenClawConfig, SsrFPolicy } from "openclaw/plugin-sdk";
 import { resolveBlueBubblesServerAccount } from "./account-resolve.js";
 import { postMultipartFormData } from "./multipart.js";
 import {
@@ -14,6 +14,7 @@ import { resolveChatGuidForTarget } from "./send.js";
 import {
   blueBubblesFetchWithTimeout,
   buildBlueBubblesApiUrl,
+  normalizeBlueBubblesServerUrl,
   type BlueBubblesAttachment,
   type BlueBubblesSendTarget,
 } from "./types.js";
@@ -62,6 +63,21 @@ function resolveAccount(params: BlueBubblesAttachmentOpts) {
   return resolveBlueBubblesServerAccount(params);
 }
 
+function buildBlueBubblesAttachmentSsrFPolicy(baseUrl: string): SsrFPolicy | undefined {
+  try {
+    const parsed = new URL(normalizeBlueBubblesServerUrl(baseUrl));
+    return {
+      // Treat the configured BlueBubbles server as trusted even when it is
+      // deployed on a private/internal LAN address.
+      allowedHostnames: [parsed.hostname],
+      // Keep redirects pinned to the same trusted host.
+      hostnameAllowlist: [parsed.hostname],
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 type MediaFetchErrorCode = "max_bytes" | "http_error" | "fetch_failed";
 
 function readMediaFetchErrorCode(error: unknown): MediaFetchErrorCode | undefined {
@@ -94,7 +110,9 @@ export async function downloadBlueBubblesAttachment(
       url,
       filePathHint: attachment.transferName ?? attachment.guid ?? "attachment",
       maxBytes,
-      ssrfPolicy: allowPrivateNetwork ? { allowPrivateNetwork: true } : undefined,
+      ssrfPolicy: allowPrivateNetwork
+        ? { allowPrivateNetwork: true }
+        : buildBlueBubblesAttachmentSsrFPolicy(baseUrl),
       fetchImpl: async (input, init) =>
         await blueBubblesFetchWithTimeout(
           resolveRequestUrl(input),
