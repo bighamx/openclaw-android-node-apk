@@ -7,6 +7,7 @@ import {
   restoreMatrixRoomKeyBackup,
   verifyMatrixRecoveryKey,
 } from "./matrix/actions/verification.js";
+import { setMatrixSdkLogMode } from "./matrix/client/logging.js";
 
 let matrixJsCliExitScheduled = false;
 
@@ -41,6 +42,10 @@ function printTimestamp(label: string, value: string | null | undefined): void {
   if (formatted) {
     console.log(`${label}: ${formatted}`);
   }
+}
+
+function configureCliLogMode(verbose: boolean): void {
+  setMatrixSdkLogMode(verbose ? "default" : "quiet");
 }
 
 type MatrixCliBackupStatus = {
@@ -155,23 +160,18 @@ function printGuidance(lines: string[]): void {
 
 function printVerificationStatus(status: MatrixCliVerificationStatus, verbose = false): void {
   const backup = resolveBackupStatus(status);
-  if (status.verified) {
-    console.log("Verified: yes");
-    console.log(`User: ${status.userId ?? "unknown"}`);
-    console.log(`Device: ${status.deviceId ?? "unknown"}`);
-  } else {
-    console.log("Verified: no");
-    console.log(`User: ${status.userId ?? "unknown"}`);
-    console.log(`Device: ${status.deviceId ?? "unknown"}`);
-  }
+  console.log(`Verified: ${status.verified ? "yes" : "no"}`);
   printBackupSummary(backup);
   if (verbose) {
+    console.log("Diagnostics:");
+    console.log(`User: ${status.userId ?? "unknown"}`);
+    console.log(`Device: ${status.deviceId ?? "unknown"}`);
     printBackupStatus(backup);
-  }
-  console.log(`Recovery key stored: ${status.recoveryKeyStored ? "yes" : "no"}`);
-  if (verbose) {
+    console.log(`Recovery key stored: ${status.recoveryKeyStored ? "yes" : "no"}`);
     printTimestamp("Recovery key created at", status.recoveryKeyCreatedAt);
     console.log(`Pending verifications: ${status.pendingVerifications}`);
+  } else {
+    console.log(`Recovery key stored: ${status.recoveryKeyStored ? "yes" : "no"}`);
   }
   printGuidance(buildVerificationGuidance(status));
 }
@@ -198,6 +198,7 @@ export function registerMatrixJsCli(params: { program: Command }): void {
         includeRecoveryKey?: boolean;
         json?: boolean;
       }) => {
+        configureCliLogMode(options.verbose === true);
         try {
           const status = await getMatrixVerificationStatus({
             accountId: options.account,
@@ -231,6 +232,7 @@ export function registerMatrixJsCli(params: { program: Command }): void {
     .option("--verbose", "Show detailed diagnostics")
     .option("--json", "Output as JSON")
     .action(async (options: { account?: string; verbose?: boolean; json?: boolean }) => {
+      configureCliLogMode(options.verbose === true);
       try {
         const status = await getMatrixRoomKeyBackupStatus({ accountId: options.account });
         if (options.json) {
@@ -268,6 +270,7 @@ export function registerMatrixJsCli(params: { program: Command }): void {
         verbose?: boolean;
         json?: boolean;
       }) => {
+        configureCliLogMode(options.verbose === true);
         try {
           const result = await restoreMatrixRoomKeyBackup({
             accountId: options.account,
@@ -327,6 +330,7 @@ export function registerMatrixJsCli(params: { program: Command }): void {
         verbose?: boolean;
         json?: boolean;
       }) => {
+        configureCliLogMode(options.verbose === true);
         try {
           const result = await bootstrapMatrixVerification({
             accountId: options.account,
@@ -389,6 +393,7 @@ export function registerMatrixJsCli(params: { program: Command }): void {
     .option("--json", "Output as JSON")
     .action(
       async (key: string, options: { account?: string; verbose?: boolean; json?: boolean }) => {
+        configureCliLogMode(options.verbose === true);
         try {
           const result = await verifyMatrixRecoveryKey(key, { accountId: options.account });
           if (options.json) {

@@ -6,6 +6,7 @@ const bootstrapMatrixVerificationMock = vi.fn();
 const getMatrixRoomKeyBackupStatusMock = vi.fn();
 const getMatrixVerificationStatusMock = vi.fn();
 const restoreMatrixRoomKeyBackupMock = vi.fn();
+const setMatrixSdkLogModeMock = vi.fn();
 const verifyMatrixRecoveryKeyMock = vi.fn();
 
 vi.mock("./matrix/actions/verification.js", () => ({
@@ -14,6 +15,10 @@ vi.mock("./matrix/actions/verification.js", () => ({
   getMatrixVerificationStatus: (...args: unknown[]) => getMatrixVerificationStatusMock(...args),
   restoreMatrixRoomKeyBackup: (...args: unknown[]) => restoreMatrixRoomKeyBackupMock(...args),
   verifyMatrixRecoveryKey: (...args: unknown[]) => verifyMatrixRecoveryKeyMock(...args),
+}));
+
+vi.mock("./matrix/client/logging.js", () => ({
+  setMatrixSdkLogMode: (...args: unknown[]) => setMatrixSdkLogModeMock(...args),
 }));
 
 let registerMatrixJsCli: typeof import("./cli.js").registerMatrixJsCli;
@@ -140,6 +145,8 @@ describe("matrix-js CLI verification commands", () => {
     expect(console.log).toHaveBeenCalledWith(
       `Recovery key created at: ${formatExpectedLocalTimestamp(recoveryCreatedAt)}`,
     );
+    expect(console.log).toHaveBeenCalledWith("Diagnostics:");
+    expect(setMatrixSdkLogModeMock).toHaveBeenCalledWith("default");
   });
 
   it("prints local timezone timestamps for verify bootstrap and device output in verbose mode", async () => {
@@ -242,7 +249,9 @@ describe("matrix-js CLI verification commands", () => {
       `Recovery key created at: ${formatExpectedLocalTimestamp(recoveryCreatedAt)}`,
     );
     expect(console.log).not.toHaveBeenCalledWith("Pending verifications: 0");
+    expect(console.log).not.toHaveBeenCalledWith("Diagnostics:");
     expect(console.log).toHaveBeenCalledWith("Backup: active and trusted on this device");
+    expect(setMatrixSdkLogModeMock).toHaveBeenCalledWith("quiet");
   });
 
   it("prints backup health lines for verify backup status in verbose mode", async () => {

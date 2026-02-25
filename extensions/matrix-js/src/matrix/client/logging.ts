@@ -1,6 +1,7 @@
 import { ConsoleLogger, LogService } from "../sdk/logger.js";
 
 let matrixSdkLoggingConfigured = false;
+let matrixSdkLogMode: "default" | "quiet" = "default";
 const matrixSdkBaseLogger = new ConsoleLogger();
 
 function shouldSuppressMatrixHttpNotFound(module: string, messageOrObject: unknown[]): boolean {
@@ -16,10 +17,31 @@ function shouldSuppressMatrixHttpNotFound(module: string, messageOrObject: unkno
 }
 
 export function ensureMatrixSdkLoggingConfigured(): void {
-  if (matrixSdkLoggingConfigured) {
+  if (!matrixSdkLoggingConfigured) {
+    matrixSdkLoggingConfigured = true;
+  }
+  applyMatrixSdkLogger();
+}
+
+export function setMatrixSdkLogMode(mode: "default" | "quiet"): void {
+  matrixSdkLogMode = mode;
+  if (!matrixSdkLoggingConfigured) {
     return;
   }
-  matrixSdkLoggingConfigured = true;
+  applyMatrixSdkLogger();
+}
+
+function applyMatrixSdkLogger(): void {
+  if (matrixSdkLogMode === "quiet") {
+    LogService.setLogger({
+      trace: () => {},
+      debug: () => {},
+      info: () => {},
+      warn: () => {},
+      error: () => {},
+    });
+    return;
+  }
 
   LogService.setLogger({
     trace: (module, ...messageOrObject) => matrixSdkBaseLogger.trace(module, ...messageOrObject),

@@ -195,7 +195,7 @@ Verbose restore diagnostics:
 openclaw matrix-js verify backup restore --verbose
 ```
 
-All `verify` commands are concise by default and show detailed diagnostics only with `--verbose`.
+All `verify` commands are concise by default (including quiet internal SDK logging) and show detailed diagnostics only with `--verbose`.
 Use `--json` for full machine-readable output when scripting.
 
 ## Automatic verification routing
