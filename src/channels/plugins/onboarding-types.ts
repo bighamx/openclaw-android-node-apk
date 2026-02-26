@@ -91,7 +91,7 @@ export type ChannelOnboardingAdapter = {
     ctx: ChannelOnboardingInteractiveContext,
   ) => Promise<ChannelOnboardingConfiguredResult>;
   configureWhenConfigured?: (
-    ctx: ChannelOnboardingConfigureContext,
+    ctx: ChannelOnboardingInteractiveContext,
   ) => Promise<ChannelOnboardingConfiguredResult>;
   dmPolicy?: ChannelOnboardingDmPolicy;
   onAccountRecorded?: (accountId: string, options?: SetupChannelsOptions) => void;

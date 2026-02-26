@@ -27,7 +27,9 @@ import {
   listChannelOnboardingAdapters,
 } from "./onboarding/registry.js";
 import type {
+  ChannelOnboardingConfiguredResult,
   ChannelOnboardingDmPolicy,
+  ChannelOnboardingResult,
   ChannelOnboardingStatus,
   SetupChannelsOptions,
 } from "./onboarding/types.js";
@@ -488,6 +490,26 @@ export async function setupChannels(
     return true;
   };
 
+  const applyOnboardingResult = async (channel: ChannelChoice, result: ChannelOnboardingResult) => {
+    next = result.cfg;
+    if (result.accountId) {
+      recordAccount(channel, result.accountId);
+    }
+    addSelection(channel);
+    await refreshStatus(channel);
+  };
+
+  const applyCustomOnboardingResult = async (
+    channel: ChannelChoice,
+    result: ChannelOnboardingConfiguredResult,
+  ) => {
+    if (result === "skip") {
+      return false;
+    }
+    await applyOnboardingResult(channel, result);
+    return true;
+  };
+
   const configureChannel = async (channel: ChannelChoice) => {
     const adapter = getChannelOnboardingAdapter(channel);
     if (!adapter) {
@@ -503,12 +525,7 @@ export async function setupChannels(
       shouldPromptAccountIds,
       forceAllowFrom: forceAllowFromChannels.has(channel),
     });
-    next = result.cfg;
-    if (result.accountId) {
-      recordAccount(channel, result.accountId);
-    }
-    addSelection(channel);
-    await refreshStatus(channel);
+    await applyOnboardingResult(channel, result);
   };
 
   const handleConfiguredChannel = async (channel: ChannelChoice, label: string) => {
@@ -523,16 +540,12 @@ export async function setupChannels(
         accountOverrides,
         shouldPromptAccountIds,
         forceAllowFrom: forceAllowFromChannels.has(channel),
+        configured: true,
+        label,
       });
-      if (custom === "skip") {
+      if (!(await applyCustomOnboardingResult(channel, custom))) {
         return;
       }
-      next = custom.cfg;
-      if (custom.accountId) {
-        recordAccount(channel, custom.accountId);
-      }
-      addSelection(channel);
-      await refreshStatus(channel);
       return;
     }
     const supportsDisable = Boolean(
@@ -652,15 +665,9 @@ export async function setupChannels(
         configured,
         label,
       });
-      if (custom === "skip") {
+      if (!(await applyCustomOnboardingResult(channel, custom))) {
         return;
       }
-      next = custom.cfg;
-      if (custom.accountId) {
-        recordAccount(channel, custom.accountId);
-      }
-      addSelection(channel);
-      await refreshStatus(channel);
       return;
     }
     if (configured) {
