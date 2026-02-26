@@ -200,11 +200,17 @@ describe("matrix directory", () => {
     const cfg = {
       channels: {
         "matrix-js": {
+          name: "pinguini",
           homeserver: "https://legacy.example.org",
           userId: "@legacy:example.org",
           accessToken: "legacy-token",
           deviceName: "Legacy Device",
           encryption: true,
+          groupPolicy: "allowlist",
+          groups: {
+            "!legacy-room:example.org": { allow: true },
+          },
+          register: false,
         },
       },
     } as unknown as CoreConfig;
@@ -213,12 +219,46 @@ describe("matrix directory", () => {
     expect(updated.channels?.["matrix-js"]?.homeserver).toBeUndefined();
     expect(updated.channels?.["matrix-js"]?.accessToken).toBeUndefined();
     expect(updated.channels?.["matrix-js"]?.deviceName).toBeUndefined();
-    expect(updated.channels?.["matrix-js"]?.encryption).toBe(true);
+    expect(updated.channels?.["matrix-js"]?.encryption).toBeUndefined();
+    expect((updated.channels?.["matrix-js"] as Record<string, unknown>)?.register).toBeUndefined();
     expect(updated.channels?.["matrix-js"]?.accounts?.default).toMatchObject({
+      name: "pinguini",
       homeserver: "https://legacy.example.org",
       userId: "@legacy:example.org",
       accessToken: "legacy-token",
       deviceName: "Legacy Device",
+      encryption: true,
+      groupPolicy: "allowlist",
+      groups: {
+        "!legacy-room:example.org": { allow: true },
+      },
+    });
+  });
+
+  it("merges top-level object defaults into accounts.default during migration", () => {
+    const cfg = {
+      channels: {
+        "matrix-js": {
+          dm: {
+            policy: "allowlist",
+            allowFrom: ["@legacy:example.org"],
+          },
+          accounts: {
+            default: {
+              dm: {
+                policy: "pairing",
+              },
+            },
+          },
+        },
+      },
+    } as unknown as CoreConfig;
+
+    const updated = migrateMatrixLegacyCredentialsToDefaultAccount(cfg);
+    expect(updated.channels?.["matrix-js"]?.dm).toBeUndefined();
+    expect(updated.channels?.["matrix-js"]?.accounts?.default?.dm).toMatchObject({
+      policy: "pairing",
+      allowFrom: ["@legacy:example.org"],
     });
   });
 
