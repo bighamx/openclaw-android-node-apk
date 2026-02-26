@@ -43,6 +43,7 @@ export type MatrixMonitorHandlerParams = {
   client: MatrixClient;
   core: PluginRuntime;
   cfg: CoreConfig;
+  accountId?: string;
   runtime: RuntimeEnv;
   logger: RuntimeLogger;
   logVerboseMessage: (message: string) => void;
@@ -76,6 +77,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
     client,
     core,
     cfg,
+    accountId,
     runtime,
     logger,
     logVerboseMessage,
@@ -229,7 +231,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
 
       const senderName = await getMemberDisplayName(roomId, senderId);
       const storeAllowFrom = await core.channel.pairing
-        .readAllowFromStore("matrix-js")
+        .readAllowFromStore("matrix-js", process.env, accountId)
         .catch(() => []);
       const effectiveAllowFrom = normalizeMatrixAllowList([...allowFrom, ...storeAllowFrom]);
       const groupAllowFrom = cfg.channels?.["matrix-js"]?.groupAllowFrom ?? [];
@@ -251,6 +253,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
               const { code, created } = await core.channel.pairing.upsertPairingRequest({
                 channel: "matrix-js",
                 id: senderId,
+                accountId,
                 meta: { name: senderName },
               });
               if (created) {
@@ -260,14 +263,11 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
                 try {
                   await sendMessageMatrix(
                     `room:${roomId}`,
-                    [
-                      "OpenClaw: access not configured.",
-                      "",
-                      `Pairing code: ${code}`,
-                      "",
-                      "Ask the bot owner to approve with:",
-                      "openclaw pairing approve matrix-js <code>",
-                    ].join("\n"),
+                    core.channel.pairing.buildPairingReply({
+                      channel: "matrix-js",
+                      idLine: `Your Matrix user id: ${senderId}`,
+                      code,
+                    }),
                     { client },
                   );
                 } catch (err) {
@@ -447,6 +447,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
       const route = core.channel.routing.resolveAgentRoute({
         cfg,
         channel: "matrix-js",
+        accountId,
         peer: {
           kind: isDirectMessage ? "direct" : "channel",
           id: isDirectMessage ? senderId : roomId,

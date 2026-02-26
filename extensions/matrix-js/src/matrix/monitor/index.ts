@@ -245,7 +245,7 @@ export async function monitorMatrixProvider(opts: MonitorMatrixOpts = {}): Promi
     cfg,
     auth: authWithLimit,
     startClient: false,
-    accountId: opts.accountId,
+    accountId: opts.accountId ?? undefined,
   });
   setActiveMatrixClient(client, opts.accountId);
 
@@ -286,6 +286,7 @@ export async function monitorMatrixProvider(opts: MonitorMatrixOpts = {}): Promi
     client,
     core,
     cfg,
+    accountId: opts.accountId ?? undefined,
     runtime,
     logger,
     logVerboseMessage,
