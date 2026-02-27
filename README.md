@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <strong>EXFOLIATE! EXFOLIATE!</strong>
+  <strong>⚠️ 特别声明 / Notice ⚠️<br>本项目仅用于自动编译与发布 OpenClaw Android 端的最新 APK 文件。<br>This fork is strictly used for automating the compilation and release of the OpenClaw Android APK.</strong>
 </p>
 
 <p align="center">
