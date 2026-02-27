@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <strong>⚠️ 特别声明 / Notice ⚠️<br>本项目仅用于自动编译与发布 OpenClaw Android 端的最新 APK 文件。<br>This fork is strictly used for automating the compilation and release of the OpenClaw Android APK.</strong>
+  <strong>⚠️ 特别声明 / Notice ⚠️<br>本项目仅使用原始的上游代码生成 APK，没有任何额外修改。如果对你有帮助，请 star 本项目。<br><br>This fork strictly uses the original upstream code to generate the APK, without any extra modifications. If this helps you, please consider starring this repository.</strong>
 </p>
 
 <p align="center">
