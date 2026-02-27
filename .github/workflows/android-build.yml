@@ -54,11 +54,15 @@ jobs:
             --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
             apps/android/app/build/outputs/apk/release/*.apk
 
+      - name: Rename APK for Release
+        run: |
+          mv apps/android/app/build/outputs/apk/release/*.apk apps/android/app/build/outputs/apk/release/openclaw-android-latest.apk
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: openclaw-android-apk
-          path: apps/android/app/build/outputs/apk/release/*.apk
+          path: apps/android/app/build/outputs/apk/release/openclaw-android-latest.apk
 
       - name: Create Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -66,7 +70,7 @@ jobs:
         with:
           tag_name: "release-${{ github.run_number }}"
           name: "Release #${{ github.run_number }}"
-          files: apps/android/app/build/outputs/apk/release/*.apk
+          files: apps/android/app/build/outputs/apk/release/openclaw-android-latest.apk
           body: "Automated Android Signed Release APK from commit ${{ github.sha }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
