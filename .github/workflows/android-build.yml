@@ -64,12 +64,18 @@ jobs:
           name: openclaw-android-apk
           path: apps/android/app/build/outputs/apk/release/openclaw-android-latest.apk
 
+      - name: Generate Build Variables
+        id: vars
+        run: |
+          echo "date=$(date +'%Y.%m.%d')" >> $GITHUB_OUTPUT
+          echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Create Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "release-${{ github.run_number }}"
-          name: "Release #${{ github.run_number }}"
+          tag_name: "apk-${{ steps.vars.outputs.date }}-${{ steps.vars.outputs.short_sha }}"
+          name: "OpenClaw Android APK (${{ steps.vars.outputs.date }})"
           files: apps/android/app/build/outputs/apk/release/openclaw-android-latest.apk
           body: "Automated Android Signed Release APK from commit ${{ github.sha }}"
         env:
