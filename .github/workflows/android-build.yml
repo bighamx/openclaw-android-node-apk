@@ -1,5 +1,8 @@
 name: Android Build
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [ "main" ]
@@ -31,23 +34,39 @@ jobs:
           gradle-version: wrapper
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > apps/android/app/keystore.jks
+
       - name: Build with Gradle
         working-directory: ./apps/android
-        run: ./gradlew :app:assembleDebug --parallel --build-cache --configure-on-demand --no-daemon
+        run: ./gradlew :app:assembleRelease --parallel --build-cache --configure-on-demand --no-daemon
+
+      - name: Setup Android SDK Build Tools
+        run: |
+          sudo apt-get install -y apksigner
+
+      - name: Sign APK
+        run: |
+          apksigner sign --ks apps/android/app/keystore.jks \
+            --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
+            apps/android/app/build/outputs/apk/release/*.apk
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: openclaw-android-apk
-          path: apps/android/app/build/outputs/apk/debug/*.apk
+          path: apps/android/app/build/outputs/apk/release/*.apk
 
       - name: Create Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "build-${{ github.run_number }}"
-          name: "Build #${{ github.run_number }}"
-          files: apps/android/app/build/outputs/apk/debug/*.apk
-          body: "Automated Android APK Build from commit ${{ github.sha }}"
+          tag_name: "release-${{ github.run_number }}"
+          name: "Release #${{ github.run_number }}"
+          files: apps/android/app/build/outputs/apk/release/*.apk
+          body: "Automated Android Signed Release APK from commit ${{ github.sha }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
