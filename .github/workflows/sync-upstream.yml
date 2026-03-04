@@ -2,8 +2,8 @@ name: Sync Upstream
 
 on:
   schedule:
-    # 每天 UTC 时间 00:00 执行一次 (北京时间早上 8:00)
-    - cron: '0 0 * * *'
+    # 每 6 小时执行一次
+    - cron: '0 */6 * * *'
   # 允许手动触发
   workflow_dispatch:
 
@@ -57,22 +57,17 @@ jobs:
               fi
             done
             
-            # --- 规则3: 其他工作流文件接受上游的更高版本 ---
-            # 找到所有有冲突的 .github/workflows/ 下的其他文件
-            CONFLICT_WFS=$(git ls-files -u | grep "\.github/workflows/" | awk '{print $4}' | sort -u)
-            for file in $CONFLICT_WFS; do
-              if [ "$file" != ".github/workflows/android-build.yml" ] && [ "$file" != ".github/workflows/sync-upstream.yml" ]; then
+            # --- 规则3 & 4: 剩余的所有其他冲突文件接受上游（远程）版本 ---
+            REMAINING_CONFLICTS=$(git ls-files -u | awk '{print $4}' | sort -u)
+            if [ -n "$REMAINING_CONFLICTS" ]; then
+              # 设置 IFS 以防文件名有空格（虽然这里大部分还是安全的）
+              IFS=$'\n'
+              for file in $REMAINING_CONFLICTS; do
                 echo "Resolving $file with --theirs"
                 git checkout --theirs "$file"
                 git add "$file"
-              fi
-            done
-            
-            # --- 规则4: 任何剩余的其他冲突文件 ---
-            # 对于其他任意文件（如果不在这几个规则内），我们这里做一个后备策略：如果不处理，那么 merge 将失败。
-            # 这里如果不进行处理，后续如果还有冲突文件 git commit 将 fail，这通常是我们期望的。
-            # 这允许人工介入处理未预料到的其他代码冲突。
-            # 如果你想其余所有代码也直接使用某一边的，你可以更改这里。我们先假设正常处理。
+              done
+            fi
           fi
           
           # 检查状态，并准备提交
