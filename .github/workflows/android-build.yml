@@ -6,8 +6,12 @@ permissions:
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - 'apps/android/**'
   pull_request:
     branches: [ "main" ]
+    paths:
+      - 'apps/android/**'
   workflow_dispatch:
 
 jobs:
