@@ -33,8 +33,54 @@ jobs:
           # 确保在 main 分支
           git checkout main
           
-          # 将上游的 main 分支合并到你的分支
-          git merge upstream/main
+          # 尝试合并上游，并不自动提交，以便我们在有冲突时进行处理
+          # 使用 || true 防止有冲突时脚本直接退出
+          git merge upstream/main --no-commit --no-ff || true
           
-          # 推送到你的 GitHub 仓库
-          git push origin main
+          # 检查是否有冲突未解决 (U状态的文件)
+          if git ls-files -u | grep -q "^"; then
+            echo "Conflicts detected. Applying custom resolution strategies..."
+            
+            # --- 规则1: README.md 保留我们的版本 ---
+            if git ls-files -u | grep -q "README.md"; then
+              echo "Resolving README.md with --ours"
+              git checkout --ours README.md
+              git add README.md
+            fi
+            
+            # --- 规则2: 保留我们的核心工作流文件 ---
+            for wf in ".github/workflows/android-build.yml" ".github/workflows/sync-upstream.yml"; do
+              if git ls-files -u | grep -q "$wf"; then
+                echo "Resolving $wf with --ours"
+                git checkout --ours "$wf"
+                git add "$wf"
+              fi
+            done
+            
+            # --- 规则3: 其他工作流文件接受上游的更高版本 ---
+            # 找到所有有冲突的 .github/workflows/ 下的其他文件
+            CONFLICT_WFS=$(git ls-files -u | grep "\.github/workflows/" | awk '{print $4}' | sort -u)
+            for file in $CONFLICT_WFS; do
+              if [ "$file" != ".github/workflows/android-build.yml" ] && [ "$file" != ".github/workflows/sync-upstream.yml" ]; then
+                echo "Resolving $file with --theirs"
+                git checkout --theirs "$file"
+                git add "$file"
+              fi
+            done
+            
+            # --- 规则4: 任何剩余的其他冲突文件 ---
+            # 对于其他任意文件（如果不在这几个规则内），我们这里做一个后备策略：如果不处理，那么 merge 将失败。
+            # 这里如果不进行处理，后续如果还有冲突文件 git commit 将 fail，这通常是我们期望的。
+            # 这允许人工介入处理未预料到的其他代码冲突。
+            # 如果你想其余所有代码也直接使用某一边的，你可以更改这里。我们先假设正常处理。
+          fi
+          
+          # 检查状态，并准备提交
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            # 提交合并结果
+            git commit -m "Auto-merge upstream with custom rules"
+            # 推送到你的 GitHub 仓库
+            git push origin main
+          fi
