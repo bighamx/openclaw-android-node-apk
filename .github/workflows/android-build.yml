@@ -85,5 +85,7 @@ jobs:
           name: "Android APK - ${{ steps.vars.outputs.display_date }}"
           files: apps/android/app/build/outputs/apk/release/openclaw-android-latest.apk
           body: "Automated Android Signed Release APK from commit ${{ github.sha }}"
+          draft: false
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
