@@ -31,7 +31,9 @@ Docs: https://docs.openclaw.ai
 
 - Gateway/chat streaming tool-boundary text retention: merge assistant delta segments into per-run chat buffers so pre-tool text is preserved in live chat deltas/finals when providers emit post-tool assistant segments as non-prefix snapshots. (#36957) Thanks @Datyedyeguy.
 - TUI/model indicator freshness: prevent stale session snapshots from overwriting freshly patched model selection (and reset per-session freshness when switching session keys) so `/model` updates reflect immediately instead of lagging by one or more commands. (#21255) Thanks @kowza.
+- TUI/final-error rendering fallback: when a chat `final` event has no renderable assistant content but includes envelope `errorMessage`, render the formatted error text instead of collapsing to `"(no output)"`, preserving actionable failure context in-session. (#14687) Thanks @Mquarmoc.
 - OpenAI Codex OAuth/login hardening: fail OAuth completion early when the returned token is missing `api.responses.write`, and allow `openclaw models auth login --provider openai-codex` to use the built-in OAuth path even when no provider plugins are installed. (#36660) Thanks @driesvints.
+- OpenAI Codex OAuth/scope request parity: augment the OAuth authorize URL with required API scopes (`api.responses.write`, `model.request`, `api.model.read`) before browser handoff so OAuth tokens include runtime model/request permissions expected by OpenAI API calls. (#24720) Thanks @Skippy-Gunboat.
 - Gateway/remote WS break-glass hostname support: honor `OPENCLAW_ALLOW_INSECURE_PRIVATE_WS=1` for `ws://` hostname URLs (not only private IP literals) across onboarding validation and runtime gateway connection checks, while still rejecting public IP literals and non-unicast IPv6 endpoints. (#36930) Thanks @manju-rn.
 - Routing/binding lookup scalability: pre-index route bindings by channel/account and avoid full binding-list rescans on channel-account cache rollover, preventing multi-second `resolveAgentRoute` stalls in large binding configurations. (#36915) Thanks @songchenghao.
 - Browser/session cleanup: track browser tabs opened by session-scoped browser tool runs and close tracked tabs during `sessions.reset`/`sessions.delete` runtime cleanup, preventing orphaned tabs and unbounded browser memory growth after session teardown. (#36666) Thanks @Harnoor6693.
@@ -156,6 +158,9 @@ Docs: https://docs.openclaw.ai
 - Agents/current-time UTC anchor: append a machine-readable UTC suffix alongside local `Current time:` lines in shared cron-style prompt contexts so agents can compare UTC-stamped workspace timestamps without doing timezone math. (#32423) thanks @jriff.
 - TUI/webchat command-owner scope alignment: treat internal-channel gateway sessions with `operator.admin` as owner-authorized in command auth, restoring cron/gateway/connector tool access for affected TUI/webchat sessions while keeping external channels on identity-based owner checks. (from #35666, #35673, #35704) Thanks @Naylenv, @Octane0411, and @Sid-Qin.
 - Discord/inbound timeout isolation: separate inbound worker timeout tracking from listener timeout budgets so queued Discord replies are no longer dropped when listener watchdog windows expire mid-run. (#36602) Thanks @dutifulbob.
+- Memory/doctor SecretRef handling: treat SecretRef-backed memory-search API keys as configured, and fail embedding setup with explicit unresolved-secret errors instead of crashing. (#36835) Thanks @joshavant.
+- Memory/flush default prompt: ban timestamped variant filenames during default memory flush runs so durable notes stay in the canonical daily `memory/YYYY-MM-DD.md` file. (#34951) thanks @zerone0x.
+- Agents/reply delivery timing: flush embedded Pi block replies before waiting on compaction retries so already-generated assistant replies reach channels before compaction wait completes. (#35489) thanks @Sid-Qin.
 
 ## 2026.3.2
 
