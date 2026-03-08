@@ -40,6 +40,17 @@ jobs:
           # 使用 || true 防止有冲突时脚本直接退出
           git merge upstream/main --no-commit --no-ff || true
           
+          # --- 自动清理: 删除原仓库里不必要的工作流文件 (不论是否有冲突) ---
+          UNWANTED_WFS=".github/workflows/auto-response.yml .github/workflows/ci.yml .github/workflows/docker-release.yml .github/workflows/install-smoke.yml .github/workflows/labeler.yml .github/workflows/stale.yml"
+          for unwanted in $UNWANTED_WFS; do
+            git rm -f "$unwanted" 2>/dev/null || true
+          done
+          
+          # 删除其他所有未在白名单的 workflows
+          if ls .github/workflows/*.yml 1> /dev/null 2>&1; then
+            ls .github/workflows/*.yml | grep -v 'android-build.yml\|sync-upstream.yml' | xargs -I {} git rm -f {} 2>/dev/null || true
+          fi
+          
           # 检查是否有冲突未解决 (U状态的文件)
           if git ls-files -u | grep -q "^"; then
             echo "Conflicts detected. Applying custom resolution strategies..."
@@ -60,18 +71,7 @@ jobs:
               fi
             done
             
-            # --- 规则3 & 4: 剩余的冲突文件处理 ---
-            # 1. 自动删除原仓库里不需要的 CI/CD 工作流文件
-            UNWANTED_WFS=".github/workflows/auto-response.yml .github/workflows/ci.yml .github/workflows/docker-release.yml .github/workflows/install-smoke.yml .github/workflows/labeler.yml .github/workflows/stale.yml"
-            for unwanted in $UNWANTED_WFS; do
-              if git ls-files -u | grep -q "$unwanted"; then
-                echo "Removing unwanted workflow: $unwanted"
-                git rm -f "$unwanted" || true
-              fi
-            done
-            ls .github/workflows/*.yml | grep -v 'android-build.yml\|sync-upstream.yml' | xargs -I {} git rm -f {} || true
-            
-            # 2. 其他所有的冲突文件接受上游（远程）版本
+            # --- 规则3: 其他所有的冲突文件接受上游（远程）版本 ---
             REMAINING_CONFLICTS=$(git ls-files -u | awk '{print $4}' | sort -u)
             if [ -n "$REMAINING_CONFLICTS" ]; then
               IFS=$'\n'
