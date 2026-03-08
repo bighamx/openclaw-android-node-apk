@@ -58,10 +58,20 @@ jobs:
               fi
             done
             
-            # --- 规则3 & 4: 剩余的所有其他冲突文件接受上游（远程）版本 ---
+            # --- 规则3 & 4: 剩余的冲突文件处理 ---
+            # 1. 自动删除原仓库里不需要的 CI/CD 工作流文件
+            UNWANTED_WFS=".github/workflows/auto-response.yml .github/workflows/ci.yml .github/workflows/docker-release.yml .github/workflows/install-smoke.yml .github/workflows/labeler.yml .github/workflows/stale.yml"
+            for unwanted in $UNWANTED_WFS; do
+              if git ls-files -u | grep -q "$unwanted"; then
+                echo "Removing unwanted workflow: $unwanted"
+                git rm -f "$unwanted" || true
+              fi
+            done
+            ls .github/workflows/*.yml | grep -v 'android-build.yml\|sync-upstream.yml' | xargs -I {} git rm -f {} || true
+            
+            # 2. 其他所有的冲突文件接受上游（远程）版本
             REMAINING_CONFLICTS=$(git ls-files -u | awk '{print $4}' | sort -u)
             if [ -n "$REMAINING_CONFLICTS" ]; then
-              # 设置 IFS 以防文件名有空格（虽然这里大部分还是安全的）
               IFS=$'\n'
               for file in $REMAINING_CONFLICTS; do
                 echo "Resolving $file with --theirs"
