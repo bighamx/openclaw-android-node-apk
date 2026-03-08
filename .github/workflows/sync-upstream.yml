@@ -31,8 +31,9 @@ jobs:
           # 拉取上游最新代码
           git fetch upstream
           
-          # 确保在 main 分支
+          # 确保在 main 分支，并同步自己仓库远端可能由其他途径新增的 commit
           git checkout main
+          git pull origin main --rebase
           
           # 尝试合并上游，并不自动提交，以便我们在有冲突时进行处理
           # 使用 || true 防止有冲突时脚本直接退出
