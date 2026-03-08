@@ -44,6 +44,14 @@ jobs:
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > apps/android/app/keystore.jks
 
+      - name: Setup Gradle Properties
+        run: |
+          mkdir -p ~/.gradle
+          echo "OPENCLAW_ANDROID_STORE_FILE=${GITHUB_WORKSPACE}/apps/android/app/keystore.jks" >> ~/.gradle/gradle.properties
+          echo "OPENCLAW_ANDROID_STORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> ~/.gradle/gradle.properties
+          echo "OPENCLAW_ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}" >> ~/.gradle/gradle.properties
+          echo "OPENCLAW_ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}" >> ~/.gradle/gradle.properties
+
       - name: Build with Gradle
         working-directory: ./apps/android
         run: ./gradlew :app:assembleRelease --parallel --build-cache --configure-on-demand --no-daemon
