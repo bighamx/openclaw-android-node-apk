@@ -82,7 +82,7 @@ jobs:
         id: vars
         run: |
           echo "tag_date=$(TZ='Asia/Shanghai' date +'%Y.%m.%d-%H%M')" >> $GITHUB_OUTPUT
-          echo "display_date=$(TZ='Asia/Shanghai' date +'%Y.%m.%d %H:%M')" >> $GITHUB_OUTPUT
+          echo "display_date=$(TZ='Asia/Shanghai' date +'%Y.%m.%d %H:%M') UTC+8" >> $GITHUB_OUTPUT
           echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Create Release
