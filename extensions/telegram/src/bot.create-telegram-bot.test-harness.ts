@@ -2,7 +2,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import { resetInboundDedupe } from "openclaw/plugin-sdk/reply-runtime";
 import type { MsgContext } from "openclaw/plugin-sdk/reply-runtime";
 import type { GetReplyOptions, ReplyPayload } from "openclaw/plugin-sdk/reply-runtime";
-import type { MockFn } from "openclaw/plugin-sdk/test-utils";
+import type { MockFn } from "openclaw/plugin-sdk/testing";
 import { beforeEach, vi } from "vitest";
 
 type AnyMock = MockFn<(...args: unknown[]) => unknown>;
@@ -214,8 +214,12 @@ vi.mock("grammy", () => ({
 }));
 
 const runnerHoisted = vi.hoisted(() => ({
-  sequentializeMiddleware: vi.fn(),
-  sequentializeSpy: vi.fn(),
+  sequentializeMiddleware: vi.fn(async (_ctx: unknown, next?: () => Promise<void>) => {
+    if (typeof next === "function") {
+      await next();
+    }
+  }),
+  sequentializeSpy: vi.fn(() => runnerHoisted.sequentializeMiddleware),
   throttlerSpy: vi.fn(() => "throttler"),
 }));
 export const sequentializeSpy: AnyMock = runnerHoisted.sequentializeSpy;
@@ -355,7 +359,14 @@ beforeEach(() => {
   listSkillCommandsForAgents.mockReset();
   listSkillCommandsForAgents.mockReturnValue([]);
   middlewareUseSpy.mockReset();
+  runnerHoisted.sequentializeMiddleware.mockReset();
+  runnerHoisted.sequentializeMiddleware.mockImplementation(async (_ctx, next) => {
+    if (typeof next === "function") {
+      await next();
+    }
+  });
   sequentializeSpy.mockReset();
+  sequentializeSpy.mockImplementation(() => runnerHoisted.sequentializeMiddleware);
   botCtorSpy.mockReset();
   sequentializeKey = undefined;
 });
