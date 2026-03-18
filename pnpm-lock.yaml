@@ -196,6 +196,9 @@ importers:
       undici:
         specifier: ^7.24.4
         version: 7.24.4
+      uuid:
+        specifier: ^11.1.0
+        version: 11.1.0
       ws:
         specifier: ^8.19.0
         version: 8.19.0
@@ -477,6 +480,9 @@ importers:
       express:
         specifier: ^5.2.1
         version: 5.2.1
+      uuid:
+        specifier: ^11.1.0
+        version: 11.1.0
 
   extensions/nextcloud-talk:
     dependencies:
@@ -532,8 +538,8 @@ importers:
   extensions/tlon:
     dependencies:
       '@tloncorp/api':
-        specifier: https://codeload.github.com/tloncorp/api-beta/tar.gz/c121deb82d97970418508691585aea4f71abcf9c
-        version: https://codeload.github.com/tloncorp/api-beta/tar.gz/c121deb82d97970418508691585aea4f71abcf9c
+        specifier: github:tloncorp/api-beta#7eede1c1a756977b09f96aa14a92e2b06318ae87
+        version: https://codeload.github.com/tloncorp/api-beta/tar.gz/7eede1c1a756977b09f96aa14a92e2b06318ae87
       '@tloncorp/tlon-skill':
         specifier: 0.2.2
         version: 0.2.2
@@ -3428,8 +3434,8 @@ packages:
     resolution: {integrity: sha512-5Kc5CM2Ysn3vTTArBs2vESUt0AQiWZA86yc1TI3B+lxXmtEq133C1nxXNOgnzhrivdPZIh3zLj5gDnZjoLL5GA==}
     engines: {node: '>=12.17.0'}
 
-  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/c121deb82d97970418508691585aea4f71abcf9c':
-    resolution: {tarball: https://codeload.github.com/tloncorp/api-beta/tar.gz/c121deb82d97970418508691585aea4f71abcf9c}
+  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/7eede1c1a756977b09f96aa14a92e2b06318ae87':
+    resolution: {tarball: https://codeload.github.com/tloncorp/api-beta/tar.gz/7eede1c1a756977b09f96aa14a92e2b06318ae87}
     version: 0.0.2
 
   '@tloncorp/tlon-skill-darwin-arm64@0.2.2':
@@ -10851,7 +10857,7 @@ snapshots:
 
   '@tinyhttp/content-disposition@2.2.4': {}
 
-  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/c121deb82d97970418508691585aea4f71abcf9c':
+  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/7eede1c1a756977b09f96aa14a92e2b06318ae87':
     dependencies:
       '@aws-sdk/client-s3': 3.1000.0
       '@aws-sdk/s3-request-presigner': 3.1000.0
