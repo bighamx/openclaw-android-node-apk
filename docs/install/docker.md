@@ -23,13 +23,19 @@ This guide covers:
 
 Sandboxing details: [Sandboxing](/gateway/sandboxing)
 
+## On this page
+
+- [Containerized Gateway](#containerized-gateway-docker-compose) — run the full OpenClaw Gateway in Docker
+- [Agent Sandbox](#agent-sandbox-host-gateway--docker-tools) — isolate agent tool execution in containers while the gateway runs on the host
+- [Troubleshooting](#troubleshooting)
+
 ## Requirements
 
 - Docker Desktop (or Docker Engine) + Docker Compose v2
 - At least 2 GB RAM for image build (`pnpm install` may be OOM-killed on 1 GB hosts with exit 137)
 - Enough disk for images + logs
 - If running on a VPS/public host, review
-  [Security hardening for network exposure](/gateway/security#04-network-exposure-bind--port--firewall),
+  [Security hardening for network exposure](/gateway/security#0-4-network-exposure-bind-port-firewall),
   especially Docker `DOCKER-USER` firewall policy.
 
 ## Containerized Gateway (Docker Compose)
