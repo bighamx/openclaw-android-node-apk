@@ -71,25 +71,39 @@ jobs:
           echo "OPENCLAW_ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}" >> ~/.gradle/gradle.properties
           echo "OPENCLAW_ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}" >> ~/.gradle/gradle.properties
 
-      - name: Build with Gradle
+      - name: Build thirdParty Release APK
         working-directory: ./apps/android
-        run: ./gradlew :app:assembleRelease --parallel --build-cache --configure-on-demand --no-daemon
+        run: ./gradlew :app:assembleThirdPartyRelease --parallel --build-cache --configure-on-demand --no-daemon
 
-      - name: Rename APK for Release
+      - name: Prepare Release APK
+        id: apk
         run: |
           mkdir -p apps/android/app/build/outputs/apk/release
-          # Prefer thirdParty flavor for the latest release artifact
-          if ls apps/android/app/build/outputs/apk/thirdParty/release/*.apk 1> /dev/null 2>&1; then
-            cp apps/android/app/build/outputs/apk/thirdParty/release/*.apk apps/android/app/build/outputs/apk/release/openclaw-android-latest.apk
-          else
-            cp apps/android/app/build/outputs/apk/*/release/*.apk apps/android/app/build/outputs/apk/release/openclaw-android-latest.apk
+          src_apk=$(find apps/android/app/build/outputs/apk/thirdParty/release -maxdepth 1 -type f -name '*.apk' | sort | head -n 1)
+          if [ -z "$src_apk" ]; then
+            echo "Expected thirdParty release APK was not found"
+            exit 1
           fi
+
+          src_name=$(basename "$src_apk")
+          version_name=$(printf '%s\n' "$src_name" | sed -E 's/^openclaw-([0-9.]+)-thirdParty-release\.apk$/\1/')
+          if [ "$version_name" = "$src_name" ]; then
+            echo "Could not derive version name from APK filename: $src_name"
+            exit 1
+          fi
+
+          release_name="openclaw-${version_name}-release.apk"
+          release_path="apps/android/app/build/outputs/apk/release/${release_name}"
+          cp "$src_apk" "$release_path"
+
+          echo "apk_name=${release_name}" >> "$GITHUB_OUTPUT"
+          echo "apk_path=${release_path}" >> "$GITHUB_OUTPUT"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: openclaw-android-apk
-          path: apps/android/app/build/outputs/apk/release/openclaw-android-latest.apk
+          path: ${{ steps.apk.outputs.apk_path }}
 
       - name: Generate Build Variables
         id: vars
@@ -104,7 +118,7 @@ jobs:
         with:
           tag_name: "apk-${{ steps.vars.outputs.tag_date }}-${{ steps.vars.outputs.short_sha }}"
           name: "Android APK - ${{ steps.vars.outputs.display_date }}"
-          files: apps/android/app/build/outputs/apk/release/openclaw-android-latest.apk
+          files: ${{ steps.apk.outputs.apk_path }}
           body: "Automated Android Signed Release APK from commit ${{ github.sha }}"
           draft: false
           make_latest: true
