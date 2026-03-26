@@ -59,7 +59,17 @@ jobs:
       - name: Sign APK
         run: |
           # Use apksigner from Android SDK
-          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -v | tail -n 1)
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -type f -name apksigner | sort -V | tail -n 1)
+          if [ -z "$APKSIGNER" ]; then
+            APKSIGNER=$(command -v apksigner)
+          fi
+
+          if [ -z "$APKSIGNER" ]; then
+            echo "Error: apksigner not found in $ANDROID_HOME/build-tools or PATH"
+            exit 1
+          fi
+
+          echo "Using apksigner: $APKSIGNER"
           $APKSIGNER sign --ks apps/android/app/keystore.jks \
             --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
             --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
