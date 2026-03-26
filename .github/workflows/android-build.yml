@@ -9,11 +9,6 @@ on:
     paths:
       - 'apps/android/**'
       - 'apps/shared/**'
-  pull_request:
-    branches: [ "main" ]
-    paths:
-      - 'apps/android/**'
-      - 'apps/shared/**'
   workflow_dispatch:
 
 jobs:
@@ -40,6 +35,30 @@ jobs:
           gradle-version: wrapper
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
+      - name: Validate Android Signing Secrets
+        run: |
+          missing=0
+          for secret_name in \
+            ANDROID_KEYSTORE_BASE64 \
+            ANDROID_KEYSTORE_PASSWORD \
+            ANDROID_KEY_ALIAS \
+            ANDROID_KEY_PASSWORD; do
+            if [ -z "${!secret_name}" ]; then
+              echo "Missing required secret: $secret_name"
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            echo "Android release build requires signing secrets configured in this fork repository."
+            exit 1
+          fi
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
       - name: Decode Keystore
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > apps/android/app/keystore.jks
@@ -55,33 +74,6 @@ jobs:
       - name: Build with Gradle
         working-directory: ./apps/android
         run: ./gradlew :app:assembleRelease --parallel --build-cache --configure-on-demand --no-daemon
-
-      - name: Sign APK
-        run: |
-          # Use apksigner from Android SDK
-          APKSIGNER=$(find $ANDROID_HOME/build-tools -type f -name apksigner | sort -V | tail -n 1)
-          if [ -z "$APKSIGNER" ]; then
-            APKSIGNER=$(command -v apksigner)
-          fi
-
-          if [ -z "$APKSIGNER" ]; then
-            echo "Error: apksigner not found in $ANDROID_HOME/build-tools or PATH"
-            exit 1
-          fi
-
-          echo "Using apksigner: $APKSIGNER"
-
-          # Sign each APK individually to avoid "Unexpected parameter(s)" error
-          shopt -s nullglob
-          for apk in apps/android/app/build/outputs/apk/*/release/*.apk; do
-            echo "Signing $apk..."
-            $APKSIGNER sign --ks apps/android/app/keystore.jks \
-              --ks-key-alias "${{ secrets.ANDROID_KEY_ALIAS }}" \
-              --ks-pass "pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
-              --key-pass "pass:${{ secrets.ANDROID_KEY_PASSWORD }}" \
-              --verbose \
-              "$apk"
-          done
 
       - name: Rename APK for Release
         run: |
