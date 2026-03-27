@@ -208,6 +208,22 @@ export function isOversizedForSummary(msg: AgentMessage, contextWindow: number):
   return tokens > contextWindow * 0.5;
 }
 
+function withSummaryHeaders(
+  model: NonNullable<ExtensionContext["model"]>,
+  headers?: Record<string, string>,
+): NonNullable<ExtensionContext["model"]> {
+  if (!headers || Object.keys(headers).length === 0) {
+    return model;
+  }
+  return {
+    ...model,
+    headers: {
+      ...model.headers,
+      ...headers,
+    },
+  };
+}
+
 async function summarizeChunks(params: {
   messages: AgentMessage[];
   model: NonNullable<ExtensionContext["model"]>;
@@ -232,15 +248,15 @@ async function summarizeChunks(params: {
     params.customInstructions,
     params.summarizationInstructions,
   );
+  const model = withSummaryHeaders(params.model, params.headers);
   for (const chunk of chunks) {
     summary = await retryAsync(
       () =>
         generateSummary(
           chunk,
-          params.model,
+          model,
           params.reserveTokens,
           params.apiKey,
-          params.headers,
           params.signal,
           effectiveInstructions,
           summary,
@@ -267,7 +283,6 @@ export async function summarizeWithFallback(params: {
   messages: AgentMessage[];
   model: NonNullable<ExtensionContext["model"]>;
   apiKey: string;
-  headers?: Record<string, string>;
   signal: AbortSignal;
   reserveTokens: number;
   maxChunkTokens: number;
@@ -337,7 +352,6 @@ export async function summarizeInStages(params: {
   messages: AgentMessage[];
   model: NonNullable<ExtensionContext["model"]>;
   apiKey: string;
-  headers?: Record<string, string>;
   signal: AbortSignal;
   reserveTokens: number;
   maxChunkTokens: number;
