@@ -27,7 +27,6 @@ function makeEntry(params: {
       baseDir: `/tmp/${params.name}`,
       sourceInfo: createSyntheticSourceInfo(`/tmp/${params.name}/SKILL.md`, {
         source: params.source ?? "openclaw-workspace",
-        scope: "project",
         baseDir: `/tmp/${params.name}`,
       }),
       disableModelInvocation: false,

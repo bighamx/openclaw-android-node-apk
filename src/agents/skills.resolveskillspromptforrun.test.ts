@@ -20,7 +20,6 @@ describe("resolveSkillsPromptForRun", () => {
         baseDir: "/app/skills/demo-skill",
         sourceInfo: createSyntheticSourceInfo("/app/skills/demo-skill/SKILL.md", {
           source: "openclaw-bundled",
-          scope: "project",
           baseDir: "/app/skills/demo-skill",
         }),
         disableModelInvocation: false,

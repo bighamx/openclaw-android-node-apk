@@ -220,9 +220,17 @@
       "types": "./dist/plugin-sdk/temp-path.d.ts",
       "default": "./dist/plugin-sdk/temp-path.js"
     },
+    "./plugin-sdk/logging-core": {
+      "types": "./dist/plugin-sdk/logging-core.d.ts",
+      "default": "./dist/plugin-sdk/logging-core.js"
+    },
     "./plugin-sdk/account-helpers": {
       "types": "./dist/plugin-sdk/account-helpers.d.ts",
       "default": "./dist/plugin-sdk/account-helpers.js"
+    },
+    "./plugin-sdk/account-core": {
+      "types": "./dist/plugin-sdk/account-core.d.ts",
+      "default": "./dist/plugin-sdk/account-core.js"
     },
     "./plugin-sdk/account-id": {
       "types": "./dist/plugin-sdk/account-id.d.ts",
@@ -235,6 +243,10 @@
     "./plugin-sdk/agent-config-primitives": {
       "types": "./dist/plugin-sdk/agent-config-primitives.d.ts",
       "default": "./dist/plugin-sdk/agent-config-primitives.js"
+    },
+    "./plugin-sdk/amazon-bedrock": {
+      "types": "./dist/plugin-sdk/amazon-bedrock.d.ts",
+      "default": "./dist/plugin-sdk/amazon-bedrock.js"
     },
     "./plugin-sdk/allow-from": {
       "types": "./dist/plugin-sdk/allow-from.d.ts",
@@ -411,6 +423,10 @@
     "./plugin-sdk/google": {
       "types": "./dist/plugin-sdk/google.d.ts",
       "default": "./dist/plugin-sdk/google.js"
+    },
+    "./plugin-sdk/huggingface": {
+      "types": "./dist/plugin-sdk/huggingface.d.ts",
+      "default": "./dist/plugin-sdk/huggingface.js"
     },
     "./plugin-sdk/directory-runtime": {
       "types": "./dist/plugin-sdk/directory-runtime.d.ts",
@@ -608,6 +624,10 @@
       "types": "./dist/plugin-sdk/moonshot.d.ts",
       "default": "./dist/plugin-sdk/moonshot.js"
     },
+    "./plugin-sdk/mistral": {
+      "types": "./dist/plugin-sdk/mistral.d.ts",
+      "default": "./dist/plugin-sdk/mistral.js"
+    },
     "./plugin-sdk/msteams": {
       "types": "./dist/plugin-sdk/msteams.d.ts",
       "default": "./dist/plugin-sdk/msteams.js"
@@ -651,6 +671,10 @@
     "./plugin-sdk/provider-auth": {
       "types": "./dist/plugin-sdk/provider-auth.d.ts",
       "default": "./dist/plugin-sdk/provider-auth.js"
+    },
+    "./plugin-sdk/provider-auth-runtime": {
+      "types": "./dist/plugin-sdk/provider-auth-runtime.d.ts",
+      "default": "./dist/plugin-sdk/provider-auth-runtime.js"
     },
     "./plugin-sdk/provider-auth-api-key": {
       "types": "./dist/plugin-sdk/provider-auth-api-key.d.ts",
@@ -863,6 +887,10 @@
     "./plugin-sdk/volcengine": {
       "types": "./dist/plugin-sdk/volcengine.d.ts",
       "default": "./dist/plugin-sdk/volcengine.js"
+    },
+    "./plugin-sdk/whatsapp-auth-presence": {
+      "types": "./dist/plugin-sdk/whatsapp-auth-presence.d.ts",
+      "default": "./dist/plugin-sdk/whatsapp-auth-presence.js"
     },
     "./plugin-sdk/whatsapp-core": {
       "types": "./dist/plugin-sdk/whatsapp-core.d.ts",
@@ -1186,6 +1214,7 @@
       "file-type": "22.0.0",
       "form-data": "2.5.4",
       "minimatch": "10.2.4",
+      "path-to-regexp": "8.4.0",
       "qs": "6.14.2",
       "node-domexception": "npm:@nolyfill/domexception@^1.0.28",
       "@sinclair/typebox": "0.34.48",
