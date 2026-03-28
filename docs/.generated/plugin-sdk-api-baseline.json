@@ -91,7 +91,7 @@
           "exportName": "ChannelConfigSchema",
           "kind": "type",
           "source": {
-            "line": 68,
+            "line": 69,
             "path": "src/channels/plugins/types.plugin.ts"
           }
         },
@@ -100,7 +100,7 @@
           "exportName": "ChannelConfigUiHint",
           "kind": "type",
           "source": {
-            "line": 37,
+            "line": 38,
             "path": "src/channels/plugins/types.plugin.ts"
           }
         },
@@ -181,7 +181,7 @@
           "exportName": "ChannelPlugin",
           "kind": "type",
           "source": {
-            "line": 76,
+            "line": 77,
             "path": "src/channels/plugins/types.plugin.ts"
           }
         },
@@ -1083,7 +1083,7 @@
           }
         },
         {
-          "declaration": "export const MSTeamsConfigSchema: z.ZodObject<{ enabled: z.ZodOptional<z.ZodBoolean>; capabilities: z.ZodOptional<z.ZodArray<z.ZodString>>; dangerouslyAllowNameMatching: z.ZodOptional<z.ZodBoolean>; markdown: z.ZodOptional<z.ZodObject<{ tables: z.ZodOptional<z.ZodEnum<{ off: \"off\"; bullets: \"bullets\"; code: \"code\"; }>>; }, z.core.$strict>>; configWrites: z.ZodOptional<z.ZodBoolean>; appId: z.ZodOptional<z.ZodString>; appPassword: z.ZodOptional<z.ZodUnion<readonly [z.ZodString, z.ZodDiscriminatedUnion<[z.ZodObject<{ source: z.ZodLiteral<\"env\">; provider: z.ZodString; id: z.ZodString; }, z.core.$strict>, z.ZodObject<{ source: z.ZodLiteral<\"file\">; provider: z.ZodString; id: z.ZodString; }, z.core.$strict>, z.ZodObject<{ source: z.ZodLiteral<\"exec\">; provider: z.ZodString; id: z.ZodString; }, z.core.$strict>], \"source\">]>>; tenantId: z.ZodOptional<z.ZodString>; webhook: z.ZodOptional<z.ZodObject<{ port: z.ZodOptional<z.ZodNumber>; path: z.ZodOptional<z.ZodString>; }, z.core.$strict>>; dmPolicy: z.ZodDefault<z.ZodOptional<z.ZodEnum<{ disabled: \"disabled\"; pairing: \"pairing\"; allowlist: \"allowlist\"; open: \"open\"; }>>>; allowFrom: z.ZodOptional<z.ZodArray<z.ZodString>>; defaultTo: z.ZodOptional<z.ZodString>; groupAllowFrom: z.ZodOptional<z.ZodArray<z.ZodString>>; groupPolicy: z.ZodDefault<z.ZodOptional<z.ZodEnum<{ disabled: \"disabled\"; allowlist: \"allowlist\"; open: \"open\"; }>>>; textChunkLimit: z.ZodOptional<z.ZodNumber>; chunkMode: z.ZodOptional<z.ZodEnum<{ length: \"length\"; newline: \"newline\"; }>>; blockStreamingCoalesce: z.ZodOptional<z.ZodObject<{ minChars: z.ZodOptional<z.ZodNumber>; maxChars: z.ZodOptional<z.ZodNumber>; idleMs: z.ZodOptional<z.ZodNumber>; }, z.core.$strict>>; mediaAllowHosts: z.ZodOptional<z.ZodArray<z.ZodString>>; mediaAuthAllowHosts: z.ZodOptional<z.ZodArray<z.ZodString>>; requireMention: z.ZodOptional<z.ZodBoolean>; historyLimit: z.ZodOptional<z.ZodNumber>; dmHistoryLimit: z.ZodOptional<z.ZodNumber>; dms: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodOptional<z.ZodObject<{ historyLimit: z.ZodOptional<z.ZodNumber>; }, z.core.$strict>>>>; replyStyle: z.ZodOptional<z.ZodEnum<{ thread: \"thread\"; \"top-level\": \"top-level\"; }>>; teams: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodOptional<z.ZodObject<{ requireMention: z.ZodOptional<z.ZodBoolean>; tools: z.ZodOptional<z.ZodObject<{ allow: z.ZodOptional<z.ZodArray<z.ZodString>>; alsoAllow: z.ZodOptional<z.ZodArray<z.ZodString>>; deny: z.ZodOptional<z.ZodArray<z.ZodString>>; }, z.core.$strict>>; toolsBySender: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodOptional<z.ZodObject<{ allow: z.ZodOptional<z.ZodArray<z.ZodString>>; alsoAllow: z.ZodOptional<z.ZodArray<z.ZodString>>; deny: z.ZodOptional<z.ZodArray<z.ZodString>>; }, z.core.$strict>>>>; replyStyle: z.ZodOptional<z.ZodEnum<{ thread: \"thread\"; \"top-level\": \"top-level\"; }>>; channels: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodOptional<z.ZodObject<{ requireMention: z.ZodOptional<z.ZodBoolean>; tools: z.ZodOptional<z.ZodObject<{ allow: z.ZodOptional<z.ZodArray<z.ZodString>>; alsoAllow: z.ZodOptional<z.ZodArray<z.ZodString>>; deny: z.ZodOptional<z.ZodArray<z.ZodString>>; }, z.core.$strict>>; toolsBySender: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodOptional<z.ZodObject<{ allow: z.ZodOptional<z.ZodArray<z.ZodString>>; alsoAllow: z.ZodOptional<z.ZodArray<z.ZodString>>; deny: z.ZodOptional<z.ZodArray<z.ZodString>>; }, z.core.$strict>>>>; replyStyle: z.ZodOptional<z.ZodEnum<{ thread: \"thread\"; \"top-level\": \"top-level\"; }>>; }, z.core.$strict>>>>; }, z.core.$strict>>>>; mediaMaxMb: z.ZodOptional<z.ZodNumber>; sharePointSiteId: z.ZodOptional<z.ZodString>; heartbeat: z.ZodOptional<z.ZodObject<{ showOk: z.ZodOptional<z.ZodBoolean>; showAlerts: z.ZodOptional<z.ZodBoolean>; useIndicator: z.ZodOptional<z.ZodBoolean>; }, z.core.$strict>>; healthMonitor: z.ZodOptional<z.ZodObject<{ enabled: z.ZodOptional<z.ZodBoolean>; }, z.core.$strict>>; responsePrefix: z.ZodOptional<z.ZodString>; welcomeCard: z.ZodOptional<z.ZodBoolean>; promptStarters: z.ZodOptional<z.ZodArray<z.ZodString>>; groupWelcomeCard: z.ZodOptional<z.ZodBoolean>; feedbackEnabled: z.ZodOptional<z.ZodBoolean>; feedbackReflection: z.ZodOptional<z.ZodBoolean>; feedbackReflectionCooldownMs: z.ZodOptional<z.ZodNumber>; }, z.core.$strict>;",
+          "declaration": "export const MSTeamsConfigSchema: z.ZodObject<{ enabled: z.ZodOptional<z.ZodBoolean>; capabilities: z.ZodOptional<z.ZodArray<z.ZodString>>; dangerouslyAllowNameMatching: z.ZodOptional<z.ZodBoolean>; markdown: z.ZodOptional<z.ZodObject<{ tables: z.ZodOptional<z.ZodEnum<{ off: \"off\"; bullets: \"bullets\"; code: \"code\"; }>>; }, z.core.$strict>>; configWrites: z.ZodOptional<z.ZodBoolean>; appId: z.ZodOptional<z.ZodString>; appPassword: z.ZodOptional<z.ZodUnion<readonly [z.ZodString, z.ZodDiscriminatedUnion<[z.ZodObject<{ source: z.ZodLiteral<\"env\">; provider: z.ZodString; id: z.ZodString; }, z.core.$strict>, z.ZodObject<{ source: z.ZodLiteral<\"file\">; provider: z.ZodString; id: z.ZodString; }, z.core.$strict>, z.ZodObject<{ source: z.ZodLiteral<\"exec\">; provider: z.ZodString; id: z.ZodString; }, z.core.$strict>], \"source\">]>>; tenantId: z.ZodOptional<z.ZodString>; webhook: z.ZodOptional<z.ZodObject<{ port: z.ZodOptional<z.ZodNumber>; path: z.ZodOptional<z.ZodString>; }, z.core.$strict>>; dmPolicy: z.ZodDefault<z.ZodOptional<z.ZodEnum<{ disabled: \"disabled\"; pairing: \"pairing\"; allowlist: \"allowlist\"; open: \"open\"; }>>>; allowFrom: z.ZodOptional<z.ZodArray<z.ZodString>>; defaultTo: z.ZodOptional<z.ZodString>; groupAllowFrom: z.ZodOptional<z.ZodArray<z.ZodString>>; groupPolicy: z.ZodDefault<z.ZodOptional<z.ZodEnum<{ disabled: \"disabled\"; allowlist: \"allowlist\"; open: \"open\"; }>>>; textChunkLimit: z.ZodOptional<z.ZodNumber>; chunkMode: z.ZodOptional<z.ZodEnum<{ length: \"length\"; newline: \"newline\"; }>>; blockStreaming: z.ZodOptional<z.ZodBoolean>; blockStreamingCoalesce: z.ZodOptional<z.ZodObject<{ minChars: z.ZodOptional<z.ZodNumber>; maxChars: z.ZodOptional<z.ZodNumber>; idleMs: z.ZodOptional<z.ZodNumber>; }, z.core.$strict>>; mediaAllowHosts: z.ZodOptional<z.ZodArray<z.ZodString>>; mediaAuthAllowHosts: z.ZodOptional<z.ZodArray<z.ZodString>>; requireMention: z.ZodOptional<z.ZodBoolean>; historyLimit: z.ZodOptional<z.ZodNumber>; dmHistoryLimit: z.ZodOptional<z.ZodNumber>; dms: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodOptional<z.ZodObject<{ historyLimit: z.ZodOptional<z.ZodNumber>; }, z.core.$strict>>>>; replyStyle: z.ZodOptional<z.ZodEnum<{ thread: \"thread\"; \"top-level\": \"top-level\"; }>>; teams: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodOptional<z.ZodObject<{ requireMention: z.ZodOptional<z.ZodBoolean>; tools: z.ZodOptional<z.ZodObject<{ allow: z.ZodOptional<z.ZodArray<z.ZodString>>; alsoAllow: z.ZodOptional<z.ZodArray<z.ZodString>>; deny: z.ZodOptional<z.ZodArray<z.ZodString>>; }, z.core.$strict>>; toolsBySender: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodOptional<z.ZodObject<{ allow: z.ZodOptional<z.ZodArray<z.ZodString>>; alsoAllow: z.ZodOptional<z.ZodArray<z.ZodString>>; deny: z.ZodOptional<z.ZodArray<z.ZodString>>; }, z.core.$strict>>>>; replyStyle: z.ZodOptional<z.ZodEnum<{ thread: \"thread\"; \"top-level\": \"top-level\"; }>>; channels: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodOptional<z.ZodObject<{ requireMention: z.ZodOptional<z.ZodBoolean>; tools: z.ZodOptional<z.ZodObject<{ allow: z.ZodOptional<z.ZodArray<z.ZodString>>; alsoAllow: z.ZodOptional<z.ZodArray<z.ZodString>>; deny: z.ZodOptional<z.ZodArray<z.ZodString>>; }, z.core.$strict>>; toolsBySender: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodOptional<z.ZodObject<{ allow: z.ZodOptional<z.ZodArray<z.ZodString>>; alsoAllow: z.ZodOptional<z.ZodArray<z.ZodString>>; deny: z.ZodOptional<z.ZodArray<z.ZodString>>; }, z.core.$strict>>>>; replyStyle: z.ZodOptional<z.ZodEnum<{ thread: \"thread\"; \"top-level\": \"top-level\"; }>>; }, z.core.$strict>>>>; }, z.core.$strict>>>>; mediaMaxMb: z.ZodOptional<z.ZodNumber>; sharePointSiteId: z.ZodOptional<z.ZodString>; heartbeat: z.ZodOptional<z.ZodObject<{ showOk: z.ZodOptional<z.ZodBoolean>; showAlerts: z.ZodOptional<z.ZodBoolean>; useIndicator: z.ZodOptional<z.ZodBoolean>; }, z.core.$strict>>; healthMonitor: z.ZodOptional<z.ZodObject<{ enabled: z.ZodOptional<z.ZodBoolean>; }, z.core.$strict>>; responsePrefix: z.ZodOptional<z.ZodString>; welcomeCard: z.ZodOptional<z.ZodBoolean>; promptStarters: z.ZodOptional<z.ZodArray<z.ZodString>>; groupWelcomeCard: z.ZodOptional<z.ZodBoolean>; feedbackEnabled: z.ZodOptional<z.ZodBoolean>; feedbackReflection: z.ZodOptional<z.ZodBoolean>; feedbackReflectionCooldownMs: z.ZodOptional<z.ZodNumber>; }, z.core.$strict>;",
           "exportName": "MSTeamsConfigSchema",
           "kind": "const",
           "source": {
@@ -2220,7 +2220,7 @@
           "exportName": "ChannelPlugin",
           "kind": "type",
           "source": {
-            "line": 76,
+            "line": 77,
             "path": "src/channels/plugins/types.plugin.ts"
           }
         },
@@ -2274,7 +2274,7 @@
           "exportName": "ChannelSecurityAdapter",
           "kind": "type",
           "source": {
-            "line": 606,
+            "line": 610,
             "path": "src/channels/plugins/types.adapters.ts"
           }
         },
@@ -3333,7 +3333,7 @@
           "exportName": "createChannelPluginBase",
           "kind": "function",
           "source": {
-            "line": 530,
+            "line": 534,
             "path": "src/plugin-sdk/core.ts"
           }
         },
@@ -3666,7 +3666,7 @@
           "exportName": "ChannelConfigUiHint",
           "kind": "type",
           "source": {
-            "line": 37,
+            "line": 38,
             "path": "src/channels/plugins/types.plugin.ts"
           }
         },
@@ -3711,7 +3711,7 @@
           "exportName": "ChannelPlugin",
           "kind": "type",
           "source": {
-            "line": 76,
+            "line": 77,
             "path": "src/channels/plugins/types.plugin.ts"
           }
         },
@@ -5273,7 +5273,7 @@
           "exportName": "applyBasicWebhookRequestGuards",
           "kind": "function",
           "source": {
-            "line": 148,
+            "line": 151,
             "path": "src/plugin-sdk/webhook-request-guards.ts"
           }
         },
@@ -5282,7 +5282,7 @@
           "exportName": "beginWebhookRequestPipelineOrReject",
           "kind": "function",
           "source": {
-            "line": 189,
+            "line": 192,
             "path": "src/plugin-sdk/webhook-request-guards.ts"
           }
         },
@@ -5318,7 +5318,7 @@
           "exportName": "createWebhookInFlightLimiter",
           "kind": "function",
           "source": {
-            "line": 91,
+            "line": 94,
             "path": "src/plugin-sdk/webhook-request-guards.ts"
           }
         },
@@ -5327,7 +5327,7 @@
           "exportName": "isJsonContentType",
           "kind": "function",
           "source": {
-            "line": 138,
+            "line": 141,
             "path": "src/plugin-sdk/webhook-request-guards.ts"
           }
         },
@@ -5363,7 +5363,7 @@
           "exportName": "readJsonWebhookBodyOrReject",
           "kind": "function",
           "source": {
-            "line": 275,
+            "line": 278,
             "path": "src/plugin-sdk/webhook-request-guards.ts"
           }
         },
@@ -5381,7 +5381,7 @@
           "exportName": "readWebhookBodyOrReject",
           "kind": "function",
           "source": {
-            "line": 240,
+            "line": 243,
             "path": "src/plugin-sdk/webhook-request-guards.ts"
           }
         },
@@ -5516,7 +5516,7 @@
           "exportName": "WEBHOOK_BODY_READ_DEFAULTS",
           "kind": "const",
           "source": {
-            "line": 19,
+            "line": 22,
             "path": "src/plugin-sdk/webhook-request-guards.ts"
           }
         },
@@ -5525,7 +5525,7 @@
           "exportName": "WEBHOOK_IN_FLIGHT_DEFAULTS",
           "kind": "const",
           "source": {
-            "line": 30,
+            "line": 33,
             "path": "src/plugin-sdk/webhook-request-guards.ts"
           }
         },
@@ -5597,7 +5597,7 @@
           "exportName": "WebhookBodyReadProfile",
           "kind": "type",
           "source": {
-            "line": 11,
+            "line": 12,
             "path": "src/plugin-sdk/webhook-request-guards.ts"
           }
         },
@@ -5606,7 +5606,7 @@
           "exportName": "WebhookInFlightLimiter",
           "kind": "type",
           "source": {
-            "line": 35,
+            "line": 38,
             "path": "src/plugin-sdk/webhook-request-guards.ts"
           }
         },

@@ -1,4 +1,5 @@
 import { expect, vi } from "vitest";
+import type { MockFn } from "../../test-utils/vitest-mock-fn.js";
 
 export function expectTypingPulseCount(pulse: { mock: { calls: unknown[] } }, expected: number) {
   expect(pulse.mock.calls).toHaveLength(expected);
@@ -7,10 +8,14 @@ export function expectTypingPulseCount(pulse: { mock: { calls: unknown[] } }, ex
 export function createPulseWithBackgroundFailure<
   TPulse extends (...args: never[]) => Promise<unknown>,
 >() {
-  const pulse = vi.fn(
-    async (..._args: never[]) => undefined as Awaited<ReturnType<TPulse>>,
-  ) as ReturnType<typeof vi.fn<TPulse>>;
-  pulse.mockRejectedValueOnce(new Error("boom"));
+  let callCount = 0;
+  const pulse: MockFn<TPulse> = vi.fn(async () => {
+    callCount += 1;
+    if (callCount === 2) {
+      throw new Error("boom");
+    }
+    return undefined;
+  }) as MockFn<TPulse>;
   return pulse;
 }
 
@@ -22,7 +27,7 @@ export async function expectIndependentTypingLeases<
   buildParams: (pulse: TParams["pulse"]) => TParams;
 }) {
   vi.useFakeTimers();
-  const pulse = vi.fn(async () => undefined) as TParams["pulse"];
+  const pulse: MockFn<TParams["pulse"]> = vi.fn(async () => undefined) as MockFn<TParams["pulse"]>;
 
   const leaseA = await params.createLease(params.buildParams(pulse));
   const leaseB = await params.createLease(params.buildParams(pulse));

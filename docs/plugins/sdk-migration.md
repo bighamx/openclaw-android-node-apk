@@ -127,11 +127,13 @@ is a small, self-contained module with a clear purpose and documented contract.
   | `plugin-sdk/channel-runtime` | Runtime wiring helpers | Channel runtime utilities |
   | `plugin-sdk/channel-send-result` | Send result types | Reply result types |
   | `plugin-sdk/runtime-store` | Persistent plugin storage | `createPluginRuntimeStore` |
+  | `plugin-sdk/fetch-runtime` | Wrapped fetch/proxy helpers | `resolveFetch`, proxy helpers |
   | `plugin-sdk/allow-from` | Allowlist formatting | `formatAllowFromLowercase` |
   | `plugin-sdk/allowlist-resolution` | Allowlist input mapping | `mapAllowlistResolutionInputs` |
   | `plugin-sdk/command-auth` | Command gating | `resolveControlCommandGate` |
   | `plugin-sdk/secret-input` | Secret input parsing | Secret input helpers |
   | `plugin-sdk/webhook-ingress` | Webhook request helpers | Webhook target utilities |
+  | `plugin-sdk/webhook-request-guards` | Webhook body guard helpers | Request body read/limit helpers |
   | `plugin-sdk/reply-payload` | Message reply types | Reply payload types |
   | `plugin-sdk/provider-onboard` | Provider onboarding patches | Onboarding config helpers |
   | `plugin-sdk/keyed-async-queue` | Ordered async queue | `KeyedAsyncQueue` |

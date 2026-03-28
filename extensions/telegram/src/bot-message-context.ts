@@ -33,6 +33,8 @@ import { enforceTelegramDmAccess } from "./dm-access.js";
 import { evaluateTelegramGroupBaseAccess } from "./group-access.js";
 import {
   buildTelegramStatusReactionVariants,
+  type TelegramReactionEmoji,
+  isTelegramSupportedReactionEmoji,
   resolveTelegramAllowedEmojiReactions,
   resolveTelegramReactionVariant,
   resolveTelegramStatusReactionEmojis,
@@ -45,7 +47,7 @@ export type {
 
 type TelegramMessageContextPayload = Awaited<ReturnType<typeof buildTelegramInboundContextPayload>>;
 type TelegramReactionApi = (
-  chatId: number | string,
+  chatId: BuildTelegramMessageContextParams["primaryCtx"]["message"]["chat"]["id"],
   messageId: number,
   reactions: Array<{ type: "emoji"; emoji: ReactionTypeEmoji["emoji"] }>,
 ) => Promise<unknown>;
@@ -54,7 +56,7 @@ export type TelegramMessageContext = {
   ctxPayload: TelegramMessageContextPayload["ctxPayload"];
   primaryCtx: BuildTelegramMessageContextParams["primaryCtx"];
   msg: BuildTelegramMessageContextParams["primaryCtx"]["message"];
-  chatId: number | string;
+  chatId: BuildTelegramMessageContextParams["primaryCtx"]["message"]["chat"]["id"];
   isGroup: boolean;
   groupConfig?: ReturnType<
     BuildTelegramMessageContextParams["resolveTelegramGroupConfig"]
@@ -76,7 +78,6 @@ export type TelegramMessageContext = {
   statusReactionController: StatusReactionController | null;
   accountId: string;
 };
-
 export const buildTelegramMessageContext = async ({
   primaryCtx,
   allMedia,
@@ -357,6 +358,8 @@ export const buildTelegramMessageContext = async ({
     channel: "telegram",
     accountId: account.accountId,
   });
+  const ackReactionEmoji =
+    ackReaction && isTelegramSupportedReactionEmoji(ackReaction) ? ackReaction : undefined;
   const removeAckAfterReply = cfg.messages?.removeAckAfterReply ?? false;
   const shouldAckReaction = () =>
     Boolean(
@@ -383,7 +386,7 @@ export const buildTelegramMessageContext = async ({
   const statusReactionVariantsByEmoji = buildTelegramStatusReactionVariants(
     resolvedStatusReactionEmojis,
   );
-  let allowedStatusReactionEmojisPromise: Promise<Set<string> | null> | null = null;
+  let allowedStatusReactionEmojisPromise: Promise<Set<TelegramReactionEmoji> | null> | null = null;
   const statusReactionController: StatusReactionController | null =
     statusReactionsEnabled && msg.message_id
       ? createStatusReactionController({
@@ -413,7 +416,7 @@ export const buildTelegramMessageContext = async ({
                   return;
                 }
                 await reactionApi(chatId, msg.message_id, [
-                  { type: "emoji", emoji: resolvedEmoji as ReactionTypeEmoji["emoji"] },
+                  { type: "emoji", emoji: resolvedEmoji },
                 ]);
               }
             },
@@ -429,20 +432,18 @@ export const buildTelegramMessageContext = async ({
       : null;
 
   // When status reactions are enabled, setQueued() replaces the simple ack reaction
-  const ackReactionPromise = statusReactionController
+  const ackReactionPromise: Promise<boolean> | null = statusReactionController
     ? shouldAckReaction()
       ? Promise.resolve(statusReactionController.setQueued()).then(
           () => true,
           () => false,
         )
       : null
-    : shouldAckReaction() && msg.message_id && reactionApi
+    : shouldAckReaction() && msg.message_id && reactionApi && ackReactionEmoji
       ? withTelegramApiErrorLogging({
           operation: "setMessageReaction",
           fn: () =>
-            reactionApi(chatId, msg.message_id, [
-              { type: "emoji", emoji: ackReaction as ReactionTypeEmoji["emoji"] },
-            ]),
+            reactionApi(chatId, msg.message_id, [{ type: "emoji", emoji: ackReactionEmoji }]),
         }).then(
           () => true,
           (err) => {
@@ -469,7 +470,7 @@ export const buildTelegramMessageContext = async ({
     route,
     rawBody: bodyResult.rawBody,
     bodyText: bodyResult.bodyText,
-    historyKey: bodyResult.historyKey,
+    historyKey: bodyResult.historyKey ?? "",
     historyLimit,
     groupHistories,
     groupConfig,
@@ -493,7 +494,7 @@ export const buildTelegramMessageContext = async ({
     threadSpec,
     replyThreadId,
     isForum,
-    historyKey: bodyResult.historyKey,
+    historyKey: bodyResult.historyKey ?? "",
     historyLimit,
     groupHistories,
     route,

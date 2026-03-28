@@ -85,6 +85,7 @@ subpaths is in `scripts/lib/plugin-sdk-entrypoints.json`.
     | `plugin-sdk/allow-from` | `formatAllowFromLowercase` |
     | `plugin-sdk/secret-input` | Secret input parsing helpers |
     | `plugin-sdk/webhook-ingress` | Webhook request/target helpers |
+    | `plugin-sdk/webhook-request-guards` | Request body size/timeout helpers |
   </Accordion>
 
   <Accordion title="Runtime and storage subpaths">
@@ -93,6 +94,7 @@ subpaths is in `scripts/lib/plugin-sdk-entrypoints.json`.
     | `plugin-sdk/runtime-store` | `createPluginRuntimeStore` |
     | `plugin-sdk/config-runtime` | Config load/write helpers |
     | `plugin-sdk/infra-runtime` | System event/heartbeat helpers |
+    | `plugin-sdk/fetch-runtime` | Wrapped fetch, proxy, and pinned lookup helpers |
     | `plugin-sdk/agent-runtime` | Agent dir/identity/workspace helpers |
     | `plugin-sdk/directory-runtime` | Config-backed directory query/dedup |
     | `plugin-sdk/keyed-async-queue` | `KeyedAsyncQueue` |

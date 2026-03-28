@@ -428,6 +428,10 @@
       "types": "./dist/plugin-sdk/feishu-setup.d.ts",
       "default": "./dist/plugin-sdk/feishu-setup.js"
     },
+    "./plugin-sdk/fetch-runtime": {
+      "types": "./dist/plugin-sdk/fetch-runtime.d.ts",
+      "default": "./dist/plugin-sdk/fetch-runtime.js"
+    },
     "./plugin-sdk/group-access": {
       "types": "./dist/plugin-sdk/group-access.d.ts",
       "default": "./dist/plugin-sdk/group-access.js"
@@ -752,6 +756,10 @@
       "types": "./dist/plugin-sdk/provider-stream.d.ts",
       "default": "./dist/plugin-sdk/provider-stream.js"
     },
+    "./plugin-sdk/provider-tools": {
+      "types": "./dist/plugin-sdk/provider-tools.d.ts",
+      "default": "./dist/plugin-sdk/provider-tools.js"
+    },
     "./plugin-sdk/provider-usage": {
       "types": "./dist/plugin-sdk/provider-usage.d.ts",
       "default": "./dist/plugin-sdk/provider-usage.js"
@@ -895,6 +903,10 @@
     "./plugin-sdk/webhook-ingress": {
       "types": "./dist/plugin-sdk/webhook-ingress.d.ts",
       "default": "./dist/plugin-sdk/webhook-ingress.js"
+    },
+    "./plugin-sdk/webhook-request-guards": {
+      "types": "./dist/plugin-sdk/webhook-request-guards.d.ts",
+      "default": "./dist/plugin-sdk/webhook-request-guards.js"
     },
     "./plugin-sdk/webhook-path": {
       "types": "./dist/plugin-sdk/webhook-path.d.ts",
@@ -1093,6 +1105,7 @@
     "test:docker:cleanup": "bash scripts/test-cleanup-docker.sh",
     "test:docker:doctor-switch": "bash scripts/e2e/doctor-install-switch-docker.sh",
     "test:docker:gateway-network": "bash scripts/e2e/gateway-network-docker.sh",
+    "test:docker:live-acp-bind": "bash scripts/test-live-acp-bind-docker.sh",
     "test:docker:live-cli-backend": "bash scripts/test-live-cli-backend-docker.sh",
     "test:docker:live-gateway": "bash scripts/test-live-gateway-models-docker.sh",
     "test:docker:live-models": "bash scripts/test-live-models-docker.sh",
