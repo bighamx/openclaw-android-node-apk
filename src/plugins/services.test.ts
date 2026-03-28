@@ -19,15 +19,17 @@ import { startPluginServices } from "./services.js";
 
 function createRegistry(services: OpenClawPluginService[]) {
   const registry = createEmptyPluginRegistry();
-  for (const service of services) {
-    registry.services.push({
-      pluginId: "plugin:test",
-      service,
-      source: "test",
-      rootDir: "/plugins/test-plugin",
-    });
-  }
+  registry.services = services.map((service) => ({
+    pluginId: "plugin:test",
+    service,
+    source: "test",
+    rootDir: "/plugins/test-plugin",
+  })) as typeof registry.services;
   return registry;
+}
+
+function createServiceConfig() {
+  return {} as Parameters<typeof startPluginServices>[0]["config"];
 }
 
 function expectServiceContext(
@@ -37,10 +39,24 @@ function expectServiceContext(
   expect(ctx.config).toBe(config);
   expect(ctx.workspaceDir).toBe("/tmp/workspace");
   expect(ctx.stateDir).toBe(STATE_DIR);
+  expectServiceLogger(ctx);
+}
+
+function expectServiceLogger(ctx: OpenClawPluginServiceContext) {
   expect(ctx.logger).toBeDefined();
   expect(typeof ctx.logger.info).toBe("function");
   expect(typeof ctx.logger.warn).toBe("function");
   expect(typeof ctx.logger.error).toBe("function");
+}
+
+function expectServiceContexts(
+  contexts: OpenClawPluginServiceContext[],
+  config: Parameters<typeof startPluginServices>[0]["config"],
+) {
+  expect(contexts).not.toHaveLength(0);
+  contexts.forEach((ctx) => {
+    expectServiceContext(ctx, config);
+  });
 }
 
 function createTrackingService(
@@ -88,7 +104,7 @@ describe("startPluginServices", () => {
     const stops: string[] = [];
     const contexts: OpenClawPluginServiceContext[] = [];
 
-    const config = {} as Parameters<typeof startPluginServices>[0]["config"];
+    const config = createServiceConfig();
     const handle = await startPluginServices({
       registry: createRegistry([
         createTrackingService("service-a", { starts, stops, contexts }),
@@ -103,9 +119,7 @@ describe("startPluginServices", () => {
     expect(starts).toEqual(["a", "b", "c"]);
     expect(stops).toEqual(["c", "a"]);
     expect(contexts).toHaveLength(3);
-    for (const ctx of contexts) {
-      expectServiceContext(ctx, config);
-    }
+    expectServiceContexts(contexts, config);
   });
 
   it("logs start/stop failures and continues", async () => {
@@ -123,7 +137,7 @@ describe("startPluginServices", () => {
         createTrackingService("service-ok", { stopSpy: stopOk }),
         createTrackingService("service-stop-fail", { stopSpy: stopThrows }),
       ]),
-      config: {} as Parameters<typeof startPluginServices>[0]["config"],
+      config: createServiceConfig(),
     });
 
     await handle.stop();

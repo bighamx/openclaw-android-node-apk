@@ -102,6 +102,15 @@ function setupRuntimeMediaMocks(params: { loadFileName: string; loadBytes: strin
 }
 
 describe("googlechatPlugin outbound sendMedia", () => {
+  it("chunks outbound text without requiring Google Chat runtime initialization", () => {
+    const chunker = googlechatPlugin.outbound?.chunker;
+    if (!chunker) {
+      throw new Error("Expected googlechatPlugin.outbound.chunker to be defined");
+    }
+
+    expect(chunker("alpha beta", 5)).toEqual(["alpha", "beta"]);
+  });
+
   it("loads local media with mediaLocalRoots via runtime media loader", async () => {
     const { loadWebMedia, fetchRemoteMedia } = setupRuntimeMediaMocks({
       loadFileName: "image.png",
@@ -281,6 +290,51 @@ describe("googlechatPlugin outbound resolveTarget", () => {
 });
 
 describe("googlechatPlugin outbound cfg threading", () => {
+  it("preserves accountId when sending pairing approvals", async () => {
+    const cfg = {
+      channels: {
+        googlechat: {
+          enabled: true,
+          accounts: {
+            work: {
+              serviceAccount: {
+                type: "service_account",
+              },
+            },
+          },
+        },
+      },
+    };
+    const account = {
+      accountId: "work",
+      config: {},
+      credentialSource: "inline",
+    };
+    resolveGoogleChatAccountMock.mockReturnValue(account);
+    resolveGoogleChatOutboundSpaceMock.mockResolvedValue("spaces/WORK");
+    sendGoogleChatMessageMock.mockResolvedValue({
+      messageName: "spaces/WORK/messages/msg-1",
+    });
+
+    await googlechatPlugin.pairing?.notifyApproval?.({
+      cfg: cfg as never,
+      id: "user@example.com",
+      accountId: "work",
+    });
+
+    expect(resolveGoogleChatAccountMock).toHaveBeenCalledWith({
+      cfg,
+      accountId: "work",
+    });
+    expect(sendGoogleChatMessageMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account,
+        space: "spaces/WORK",
+        text: expect.any(String),
+      }),
+    );
+  });
+
   it("threads resolved cfg into sendText account resolution", async () => {
     const cfg = {
       channels: {

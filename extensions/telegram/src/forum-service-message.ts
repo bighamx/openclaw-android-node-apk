@@ -19,5 +19,5 @@ export function isTelegramForumServiceMessage(msg: unknown): boolean {
     return false;
   }
   const record = msg as Record<string, unknown>;
-  return TELEGRAM_FORUM_SERVICE_FIELDS.some((field) => record[field] != null);
+  return TELEGRAM_FORUM_SERVICE_FIELDS.some((field) => field in record && record[field] != null);
 }

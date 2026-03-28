@@ -11,6 +11,54 @@ import {
   setActivePluginRegistry,
 } from "./runtime.js";
 
+function createRegistryWithRoute(path: string) {
+  const registry = createEmptyPluginRegistry();
+  registry.httpRoutes.push({
+    path,
+    auth: "plugin",
+    match: path === "/plugins/diffs" ? "prefix" : "exact",
+    handler: () => true,
+    pluginId: path === "/plugins/diffs" ? "diffs" : "demo",
+    source: "test",
+  });
+  return registry;
+}
+
+function createRuntimeRegistryPair() {
+  return {
+    startupRegistry: createEmptyPluginRegistry(),
+    laterRegistry: createEmptyPluginRegistry(),
+  };
+}
+
+function expectRegistryVersions(params: { active: number; routes: number }) {
+  expect(getActivePluginRegistryVersion()).toBe(params.active);
+  expect(getActivePluginHttpRouteRegistryVersion()).toBe(params.routes);
+}
+
+function expectActiveRouteRegistryResolution(params: {
+  pinnedRegistry: ReturnType<typeof createEmptyPluginRegistry>;
+  explicitRegistry: ReturnType<typeof createEmptyPluginRegistry>;
+  expectedRegistry: "pinned" | "explicit";
+}) {
+  setActivePluginRegistry(params.pinnedRegistry);
+  pinActivePluginHttpRouteRegistry(params.pinnedRegistry);
+
+  expect(resolveActivePluginHttpRouteRegistry(params.explicitRegistry)).toBe(
+    params.expectedRegistry === "pinned" ? params.pinnedRegistry : params.explicitRegistry,
+  );
+}
+
+function expectPinnedRouteRegistry(
+  startupRegistry: ReturnType<typeof createEmptyPluginRegistry>,
+  laterRegistry: ReturnType<typeof createEmptyPluginRegistry>,
+) {
+  setActivePluginRegistry(startupRegistry);
+  pinActivePluginHttpRouteRegistry(startupRegistry);
+  setActivePluginRegistry(laterRegistry);
+  expect(resolveActivePluginHttpRouteRegistry(laterRegistry)).toBe(startupRegistry);
+}
+
 describe("plugin runtime route registry", () => {
   afterEach(() => {
     releasePinnedPluginHttpRouteRegistry();
@@ -24,19 +72,12 @@ describe("plugin runtime route registry", () => {
   });
 
   it("keeps the pinned route registry when the active plugin registry changes", () => {
-    const startupRegistry = createEmptyPluginRegistry();
-    const laterRegistry = createEmptyPluginRegistry();
-
-    setActivePluginRegistry(startupRegistry);
-    pinActivePluginHttpRouteRegistry(startupRegistry);
-    setActivePluginRegistry(laterRegistry);
-
-    expect(resolveActivePluginHttpRouteRegistry(laterRegistry)).toBe(startupRegistry);
+    const { startupRegistry, laterRegistry } = createRuntimeRegistryPair();
+    expectPinnedRouteRegistry(startupRegistry, laterRegistry);
   });
 
   it("tracks route registry repins separately from the active registry version", () => {
-    const startupRegistry = createEmptyPluginRegistry();
-    const laterRegistry = createEmptyPluginRegistry();
+    const { startupRegistry, laterRegistry } = createRuntimeRegistryPair();
     const repinnedRegistry = createEmptyPluginRegistry();
 
     setActivePluginRegistry(startupRegistry);
@@ -47,51 +88,30 @@ describe("plugin runtime route registry", () => {
 
     pinActivePluginHttpRouteRegistry(repinnedRegistry);
 
-    expect(getActivePluginRegistryVersion()).toBe(activeVersionBeforeRepin);
-    expect(getActivePluginHttpRouteRegistryVersion()).toBe(routeVersionBeforeRepin + 1);
+    expectRegistryVersions({
+      active: activeVersionBeforeRepin,
+      routes: routeVersionBeforeRepin + 1,
+    });
   });
 
-  it("falls back to the provided registry when the pinned route registry has no routes", () => {
-    const startupRegistry = createEmptyPluginRegistry();
-    const explicitRegistry = createEmptyPluginRegistry();
-    explicitRegistry.httpRoutes.push({
-      path: "/demo",
-      auth: "plugin",
-      match: "exact",
-      handler: () => true,
-      pluginId: "demo",
-      source: "test",
+  it.each([
+    {
+      name: "falls back to the provided registry when the pinned route registry has no routes",
+      pinnedRegistry: createEmptyPluginRegistry(),
+      explicitRegistry: createRegistryWithRoute("/demo"),
+      expected: "explicit",
+    },
+    {
+      name: "prefers the pinned route registry when it already owns routes",
+      pinnedRegistry: createRegistryWithRoute("/bluebubbles-webhook"),
+      explicitRegistry: createRegistryWithRoute("/plugins/diffs"),
+      expected: "pinned",
+    },
+  ] as const)("$name", ({ pinnedRegistry, explicitRegistry, expected }) => {
+    expectActiveRouteRegistryResolution({
+      pinnedRegistry,
+      explicitRegistry,
+      expectedRegistry: expected,
     });
-
-    setActivePluginRegistry(startupRegistry);
-    pinActivePluginHttpRouteRegistry(startupRegistry);
-
-    expect(resolveActivePluginHttpRouteRegistry(explicitRegistry)).toBe(explicitRegistry);
-  });
-
-  it("prefers the pinned route registry when it already owns routes", () => {
-    const startupRegistry = createEmptyPluginRegistry();
-    const explicitRegistry = createEmptyPluginRegistry();
-    startupRegistry.httpRoutes.push({
-      path: "/bluebubbles-webhook",
-      auth: "plugin",
-      match: "exact",
-      handler: () => true,
-      pluginId: "bluebubbles",
-      source: "test",
-    });
-    explicitRegistry.httpRoutes.push({
-      path: "/plugins/diffs",
-      auth: "plugin",
-      match: "prefix",
-      handler: () => true,
-      pluginId: "diffs",
-      source: "test",
-    });
-
-    setActivePluginRegistry(startupRegistry);
-    pinActivePluginHttpRouteRegistry(startupRegistry);
-
-    expect(resolveActivePluginHttpRouteRegistry(explicitRegistry)).toBe(startupRegistry);
   });
 });
