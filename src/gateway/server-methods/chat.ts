@@ -124,6 +124,7 @@ type ChatSendDeliveryEntry = {
   origin?: {
     provider?: string;
     accountId?: string;
+    threadId?: string | number;
   };
   lastChannel?: string;
   lastTo?: string;
@@ -177,7 +178,9 @@ function resolveChatSendOriginatingRoute(params: {
     params.entry?.origin?.accountId ??
     undefined;
   const routeThreadIdCandidate =
-    params.entry?.deliveryContext?.threadId ?? params.entry?.lastThreadId;
+    params.entry?.deliveryContext?.threadId ??
+    params.entry?.lastThreadId ??
+    params.entry?.origin?.threadId;
   if (params.sessionKey.length > CHAT_SEND_SESSION_KEY_MAX_LENGTH) {
     return {
       originatingChannel: INTERNAL_MESSAGE_CHANNEL,
@@ -1728,7 +1731,7 @@ export const chatHandlers: GatewayRequestHandlers = {
 
     // Load session to find transcript file
     const rawSessionKey = p.sessionKey;
-    const { cfg, storePath, entry } = loadSessionEntry(rawSessionKey);
+    const { cfg, storePath, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
     const sessionId = entry?.sessionId;
     if (!sessionId || !storePath) {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "session not found"));
@@ -1741,7 +1744,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       sessionId,
       storePath,
       sessionFile: entry?.sessionFile,
-      agentId: resolveSessionAgentId({ sessionKey: rawSessionKey, config: cfg }),
+      agentId: resolveSessionAgentId({ sessionKey, config: cfg }),
       createIfMissing: true,
     });
     if (!appended.ok || !appended.messageId || !appended.message) {
@@ -1759,7 +1762,7 @@ export const chatHandlers: GatewayRequestHandlers = {
     // Broadcast to webchat for immediate UI update
     const chatPayload = {
       runId: `inject-${appended.messageId}`,
-      sessionKey: rawSessionKey,
+      sessionKey,
       seq: 0,
       state: "final" as const,
       message: stripInlineDirectiveTagsFromMessageForDisplay(
@@ -1767,7 +1770,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       ),
     };
     context.broadcast("chat", chatPayload);
-    context.nodeSendToSession(rawSessionKey, "chat", chatPayload);
+    context.nodeSendToSession(sessionKey, "chat", chatPayload);
 
     respond(true, { ok: true, messageId: appended.messageId });
   },
