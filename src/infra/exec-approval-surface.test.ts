@@ -34,6 +34,7 @@ async function loadExecApprovalSurfaceModule() {
   vi.doMock("../channels/plugins/index.js", () => ({
     getChannelPlugin: (...args: unknown[]) => getChannelPluginMock(...args),
     listChannelPlugins: (...args: unknown[]) => listChannelPluginsMock(...args),
+    resolveChannelApprovalAdapter: (plugin?: { approvals?: unknown } | null) => plugin?.approvals,
   }));
   vi.doMock("../utils/message-channel.js", () => ({
     INTERNAL_MESSAGE_CHANNEL: "web",
@@ -82,14 +83,18 @@ describe("resolveExecApprovalInitiatingSurfaceState", () => {
     getChannelPluginMock.mockImplementation((channel: string) =>
       channel === "telegram"
         ? {
-            execApprovals: {
-              getInitiatingSurfaceState: () => ({ kind: "enabled" }),
+            approvals: {
+              auth: {
+                getInitiatingSurfaceState: () => ({ kind: "enabled" }),
+              },
             },
           }
         : channel === "discord"
           ? {
-              execApprovals: {
-                getInitiatingSurfaceState: () => ({ kind: "disabled" }),
+              approvals: {
+                auth: {
+                  getInitiatingSurfaceState: () => ({ kind: "disabled" }),
+                },
               },
             }
           : undefined,
@@ -127,8 +132,10 @@ describe("resolveExecApprovalInitiatingSurfaceState", () => {
     getChannelPluginMock.mockImplementation((channel: string) =>
       channel === "telegram"
         ? {
-            execApprovals: {
-              getInitiatingSurfaceState: () => ({ kind: "disabled" }),
+            approvals: {
+              auth: {
+                getInitiatingSurfaceState: () => ({ kind: "disabled" }),
+              },
             },
           }
         : undefined,
@@ -171,13 +178,17 @@ describe("hasConfiguredExecApprovalDmRoute", () => {
     {
       plugins: [
         {
-          execApprovals: {
-            hasConfiguredDmRoute: () => false,
+          approvals: {
+            delivery: {
+              hasConfiguredDmRoute: () => false,
+            },
           },
         },
         {
-          execApprovals: {
-            hasConfiguredDmRoute: () => true,
+          approvals: {
+            delivery: {
+              hasConfiguredDmRoute: () => true,
+            },
           },
         },
       ],
@@ -186,17 +197,21 @@ describe("hasConfiguredExecApprovalDmRoute", () => {
     {
       plugins: [
         {
-          execApprovals: {
-            hasConfiguredDmRoute: () => false,
+          approvals: {
+            delivery: {
+              hasConfiguredDmRoute: () => false,
+            },
           },
         },
         {
-          execApprovals: {
-            hasConfiguredDmRoute: () => false,
+          approvals: {
+            delivery: {
+              hasConfiguredDmRoute: () => false,
+            },
           },
         },
         {
-          execApprovals: undefined,
+          approvals: undefined,
         },
       ],
       expected: false,
