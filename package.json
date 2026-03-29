@@ -30,7 +30,9 @@
     "docs/",
     "!docs/.generated/**",
     "!docs/.i18n/zh-CN.tm.jsonl",
-    "skills/"
+    "!docs/internal/**",
+    "skills/",
+    "scripts/postinstall-bundled-plugins.mjs"
   ],
   "type": "module",
   "main": "dist/index.js",
@@ -740,10 +742,6 @@
       "types": "./dist/plugin-sdk/provider-catalog-shared.d.ts",
       "default": "./dist/plugin-sdk/provider-catalog-shared.js"
     },
-    "./plugin-sdk/provider-catalog": {
-      "types": "./dist/plugin-sdk/provider-catalog.d.ts",
-      "default": "./dist/plugin-sdk/provider-catalog.js"
-    },
     "./plugin-sdk/provider-entry": {
       "types": "./dist/plugin-sdk/provider-entry.d.ts",
       "default": "./dist/plugin-sdk/provider-entry.js"
@@ -756,17 +754,9 @@
       "types": "./dist/plugin-sdk/provider-http.d.ts",
       "default": "./dist/plugin-sdk/provider-http.js"
     },
-    "./plugin-sdk/provider-google": {
-      "types": "./dist/plugin-sdk/provider-google.d.ts",
-      "default": "./dist/plugin-sdk/provider-google.js"
-    },
     "./plugin-sdk/provider-model-shared": {
       "types": "./dist/plugin-sdk/provider-model-shared.d.ts",
       "default": "./dist/plugin-sdk/provider-model-shared.js"
-    },
-    "./plugin-sdk/provider-models": {
-      "types": "./dist/plugin-sdk/provider-models.d.ts",
-      "default": "./dist/plugin-sdk/provider-models.js"
     },
     "./plugin-sdk/provider-moonshot": {
       "types": "./dist/plugin-sdk/provider-moonshot.d.ts",
@@ -1051,8 +1041,8 @@
     "format:all": "pnpm format && pnpm format:swift",
     "format:check": "oxfmt --check --threads=1",
     "format:diff": "oxfmt --write && git --no-pager diff",
-    "format:docs": "git ls-files 'docs/**/*.md' 'docs/**/*.mdx' 'README.md' | xargs oxfmt --write",
-    "format:docs:check": "git ls-files 'docs/**/*.md' 'docs/**/*.mdx' 'README.md' | xargs oxfmt --check",
+    "format:docs": "git ls-files 'docs/**/*.md' 'docs/**/*.mdx' 'README.md' ':(exclude)docs/internal/**' | xargs oxfmt --write",
+    "format:docs:check": "git ls-files 'docs/**/*.md' 'docs/**/*.mdx' 'README.md' ':(exclude)docs/internal/**' | xargs oxfmt --check",
     "format:fix": "oxfmt --write",
     "format:swift": "swiftformat --lint --config .swiftformat apps/macos/Sources apps/ios/Sources apps/shared/OpenClawKit/Sources",
     "gateway:dev": "OPENCLAW_SKIP_CHANNELS=1 node scripts/run-node.mjs --dev gateway",
@@ -1105,6 +1095,7 @@
     "plugin-sdk:sync-exports": "node scripts/sync-plugin-sdk-exports.mjs",
     "plugin-sdk:usage": "node --import tsx scripts/analyze-plugin-sdk-usage.ts",
     "plugins:sync": "node --import tsx scripts/sync-plugin-versions.ts",
+    "postinstall": "node scripts/postinstall-bundled-plugins.mjs",
     "prepack": "pnpm build && pnpm ui:build",
     "prepare": "command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath git-hooks || exit 0",
     "protocol:check": "pnpm protocol:gen && pnpm protocol:gen:swift && git diff --exit-code -- dist/protocol.schema.json apps/macos/Sources/OpenClawProtocol/GatewayModels.swift apps/shared/OpenClawKit/Sources/OpenClawProtocol/GatewayModels.swift",
@@ -1195,6 +1186,7 @@
     "@mariozechner/pi-ai": "0.63.2",
     "@mariozechner/pi-coding-agent": "0.63.2",
     "@mariozechner/pi-tui": "0.63.2",
+    "@matrix-org/matrix-sdk-crypto-wasm": "18.0.0",
     "@modelcontextprotocol/sdk": "1.28.0",
     "@mozilla/readability": "^0.6.0",
     "@openclaw/plugin-package-contract": "workspace:*",
