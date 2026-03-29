@@ -1,10 +1,13 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { logDebug, logWarn } from "../logger.js";
 import { loadEmbeddedPiMcpConfig } from "./embedded-pi-mcp.js";
+import { describeSseMcpServerLaunchConfig, resolveSseMcpServerLaunchConfig } from "./mcp-sse.js";
 import {
   describeStdioMcpServerLaunchConfig,
   resolveStdioMcpServerLaunchConfig,
@@ -19,7 +22,7 @@ type BundleMcpToolRuntime = {
 type BundleMcpSession = {
   serverName: string;
   client: Client;
-  transport: StdioClientTransport;
+  transport: Transport;
   detachStderr?: () => void;
 };
 
@@ -119,6 +122,90 @@ async function disposeSession(session: BundleMcpSession) {
   await session.transport.close().catch(() => {});
 }
 
+/** Try to create a stdio or SSE transport for the given raw server config. */
+function resolveTransport(
+  serverName: string,
+  rawServer: unknown,
+): {
+  transport: Transport;
+  description: string;
+  detachStderr?: () => void;
+} | null {
+  // Try stdio first (command-based servers).
+  const stdioLaunch = resolveStdioMcpServerLaunchConfig(rawServer);
+  if (stdioLaunch.ok) {
+    const transport = new StdioClientTransport({
+      command: stdioLaunch.config.command,
+      args: stdioLaunch.config.args,
+      env: stdioLaunch.config.env,
+      cwd: stdioLaunch.config.cwd,
+      stderr: "pipe",
+    });
+    return {
+      transport,
+      description: describeStdioMcpServerLaunchConfig(stdioLaunch.config),
+      detachStderr: attachStderrLogging(serverName, transport),
+    };
+  }
+
+  // Try SSE (url-based servers).
+  const sseLaunch = resolveSseMcpServerLaunchConfig(rawServer, {
+    onDroppedHeader: (key) => {
+      logWarn(
+        `bundle-mcp: server "${serverName}": header "${key}" has an unsupported value type and was ignored.`,
+      );
+    },
+    onMalformedHeaders: () => {
+      logWarn(
+        `bundle-mcp: server "${serverName}": "headers" must be a JSON object; the value was ignored.`,
+      );
+    },
+  });
+  if (sseLaunch.ok) {
+    const headers: Record<string, string> = {
+      ...sseLaunch.config.headers,
+    };
+    const hasHeaders = Object.keys(headers).length > 0;
+    const transport = new SSEClientTransport(new URL(sseLaunch.config.url), {
+      // Apply headers to POST requests (tool calls, listTools, etc.).
+      requestInit: hasHeaders ? { headers } : undefined,
+      // Apply headers to the initial SSE GET handshake (required for auth).
+      // Apply headers to the initial SSE GET handshake (required for auth).
+      // Note: init?.headers may be a Headers instance; convert to plain object
+      // so SDK defaults are preserved and user-configured headers take precedence.
+      eventSourceInit: hasHeaders
+        ? {
+            fetch: (url, init) => {
+              const sdkHeaders: Record<string, string> = {};
+              if (init?.headers) {
+                if (init.headers instanceof Headers) {
+                  init.headers.forEach((v, k) => {
+                    sdkHeaders[k] = v;
+                  });
+                } else {
+                  Object.assign(sdkHeaders, init.headers);
+                }
+              }
+              return fetch(url, {
+                ...init,
+                headers: { ...sdkHeaders, ...headers },
+              });
+            },
+          }
+        : undefined,
+    });
+    return {
+      transport,
+      description: describeSseMcpServerLaunchConfig(sseLaunch.config),
+    };
+  }
+
+  logWarn(
+    `bundle-mcp: skipped server "${serverName}" because ${stdioLaunch.reason} and ${sseLaunch.reason}.`,
+  );
+  return null;
+}
+
 export async function createBundleMcpToolRuntime(params: {
   workspaceDir: string;
   cfg?: OpenClawConfig;
@@ -144,20 +231,11 @@ export async function createBundleMcpToolRuntime(params: {
 
   try {
     for (const [serverName, rawServer] of Object.entries(loaded.mcpServers)) {
-      const launch = resolveStdioMcpServerLaunchConfig(rawServer);
-      if (!launch.ok) {
-        logWarn(`bundle-mcp: skipped server "${serverName}" because ${launch.reason}.`);
+      const resolved = resolveTransport(serverName, rawServer);
+      if (!resolved) {
         continue;
       }
-      const launchConfig = launch.config;
 
-      const transport = new StdioClientTransport({
-        command: launchConfig.command,
-        args: launchConfig.args,
-        env: launchConfig.env,
-        cwd: launchConfig.cwd,
-        stderr: "pipe",
-      });
       const client = new Client(
         {
           name: "openclaw-bundle-mcp",
@@ -168,12 +246,12 @@ export async function createBundleMcpToolRuntime(params: {
       const session: BundleMcpSession = {
         serverName,
         client,
-        transport,
-        detachStderr: attachStderrLogging(serverName, transport),
+        transport: resolved.transport,
+        detachStderr: resolved.detachStderr,
       };
 
       try {
-        await client.connect(transport);
+        await client.connect(resolved.transport);
         const listedTools = await listAllTools(client);
         sessions.push(session);
         for (const tool of listedTools) {
@@ -193,7 +271,7 @@ export async function createBundleMcpToolRuntime(params: {
             label: tool.title ?? tool.name,
             description:
               tool.description?.trim() ||
-              `Provided by bundle MCP server "${serverName}" (${describeStdioMcpServerLaunchConfig(launchConfig)}).`,
+              `Provided by bundle MCP server "${serverName}" (${resolved.description}).`,
             parameters: tool.inputSchema,
             execute: async (_toolCallId, input) => {
               const result = (await client.callTool({
@@ -210,7 +288,7 @@ export async function createBundleMcpToolRuntime(params: {
         }
       } catch (error) {
         logWarn(
-          `bundle-mcp: failed to start server "${serverName}" (${describeStdioMcpServerLaunchConfig(launchConfig)}): ${String(error)}`,
+          `bundle-mcp: failed to start server "${serverName}" (${resolved.description}): ${String(error)}`,
         );
         await disposeSession(session);
       }
