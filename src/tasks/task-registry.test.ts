@@ -11,6 +11,7 @@ import {
   createTaskRecord,
   findTaskByRunId,
   getTaskById,
+  getTaskRegistrySummary,
   listTaskRecords,
   maybeDeliverTaskStateChangeUpdate,
   maybeDeliverTaskTerminalUpdate,
@@ -137,6 +138,60 @@ describe("task-registry", () => {
         runtime: "acp",
         status: "succeeded",
         endedAt: 250,
+      });
+    });
+  });
+
+  it("summarizes task pressure by status and runtime", async () => {
+    await withTempDir({ prefix: "openclaw-task-registry-" }, async (root) => {
+      process.env.OPENCLAW_STATE_DIR = root;
+      resetTaskRegistryForTests();
+
+      createTaskRecord({
+        runtime: "acp",
+        requesterSessionKey: "agent:main:main",
+        runId: "run-summary-acp",
+        task: "Investigate issue",
+        status: "queued",
+        deliveryStatus: "pending",
+      });
+      createTaskRecord({
+        runtime: "cron",
+        requesterSessionKey: "",
+        runId: "run-summary-cron",
+        task: "Daily digest",
+        status: "running",
+        deliveryStatus: "not_applicable",
+      });
+      createTaskRecord({
+        runtime: "subagent",
+        requesterSessionKey: "agent:main:main",
+        runId: "run-summary-subagent",
+        task: "Write patch",
+        status: "timed_out",
+        deliveryStatus: "session_queued",
+      });
+
+      expect(getTaskRegistrySummary()).toEqual({
+        total: 3,
+        active: 2,
+        terminal: 1,
+        failures: 1,
+        byStatus: {
+          queued: 1,
+          running: 1,
+          succeeded: 0,
+          failed: 0,
+          timed_out: 1,
+          cancelled: 0,
+          lost: 0,
+        },
+        byRuntime: {
+          subagent: 1,
+          acp: 1,
+          cli: 0,
+          cron: 1,
+        },
       });
     });
   });
@@ -548,6 +603,7 @@ describe("task-registry", () => {
         childSessionKey: "agent:main:acp:child",
         runId: "run-shared-delivery",
         task: "Spawn ACP child",
+        preferMetadata: true,
         status: "succeeded",
         deliveryStatus: "pending",
       });
@@ -561,7 +617,52 @@ describe("task-registry", () => {
       );
       expect(findTaskByRunId("run-shared-delivery")).toMatchObject({
         taskId: directTask.taskId,
+        task: "Spawn ACP child",
         deliveryStatus: "delivered",
+      });
+    });
+  });
+
+  it("adopts preferred ACP spawn metadata when collapsing onto an earlier direct record", async () => {
+    await withTempDir({ prefix: "openclaw-task-registry-" }, async (root) => {
+      process.env.OPENCLAW_STATE_DIR = root;
+      resetTaskRegistryForTests();
+
+      const directTask = createTaskRecord({
+        runtime: "acp",
+        requesterSessionKey: "agent:main:main",
+        requesterOrigin: {
+          channel: "telegram",
+          to: "telegram:123",
+        },
+        childSessionKey: "agent:main:acp:child",
+        runId: "run-collapse-preferred",
+        task: "Direct ACP child",
+        status: "running",
+        deliveryStatus: "pending",
+      });
+
+      const spawnedTask = createTaskRecord({
+        runtime: "acp",
+        requesterSessionKey: "agent:main:main",
+        requesterOrigin: {
+          channel: "telegram",
+          to: "telegram:123",
+        },
+        childSessionKey: "agent:main:acp:child",
+        runId: "run-collapse-preferred",
+        label: "Quant patch",
+        task: "Implement the feature and report back",
+        preferMetadata: true,
+        status: "running",
+        deliveryStatus: "pending",
+      });
+
+      expect(spawnedTask.taskId).toBe(directTask.taskId);
+      expect(findTaskByRunId("run-collapse-preferred")).toMatchObject({
+        taskId: directTask.taskId,
+        label: "Quant patch",
+        task: "Implement the feature and report back",
       });
     });
   });
