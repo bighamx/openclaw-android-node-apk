@@ -8,7 +8,9 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
-## 2026.4.1-beta.1
+- Matrix/multi-account: keep room-level `account` scoping, inherited room overrides, and implicit account selection consistent across top-level default auth, named accounts, and cached-credential env setups. (#58449) thanks @Daanvdplas and @gumadeiras.
+
+## 2026.4.1
 
 ### Changes
 
