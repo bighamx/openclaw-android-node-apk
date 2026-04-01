@@ -22,8 +22,15 @@ import {
   resolveUsageProviderId,
 } from "../../infra/provider-usage.js";
 import type { MediaUnderstandingDecision } from "../../media-understanding/types.js";
-import { listTasksForAgentId, listTasksForSessionKey } from "../../tasks/task-registry.js";
-import { buildTaskStatusSnapshot } from "../../tasks/task-status.js";
+import {
+  listTasksForAgentIdForStatus,
+  listTasksForSessionKeyForStatus,
+} from "../../tasks/task-status-access.js";
+import {
+  buildTaskStatusSnapshot,
+  formatTaskStatusDetail,
+  formatTaskStatusTitle,
+} from "../../tasks/task-status.js";
 import { normalizeGroupActivation } from "../group-activation.js";
 import { resolveSelectedAndActiveModel } from "../model-runtime.js";
 import { buildStatusMessage } from "../status.js";
@@ -57,7 +64,7 @@ function shouldLoadUsageSummary(params: {
 }
 
 function formatSessionTaskLine(sessionKey: string): string | undefined {
-  const snapshot = buildTaskStatusSnapshot(listTasksForSessionKey(sessionKey));
+  const snapshot = buildTaskStatusSnapshot(listTasksForSessionKeyForStatus(sessionKey));
   const task = snapshot.focus;
   if (!task) {
     return undefined;
@@ -68,17 +75,14 @@ function formatSessionTaskLine(sessionKey: string): string | undefined {
       : snapshot.recentFailureCount > 0
         ? `${snapshot.recentFailureCount} recent failure${snapshot.recentFailureCount === 1 ? "" : "s"}`
         : "recently finished";
-  const title = task.label?.trim() || task.task.trim();
-  const detail =
-    task.status === "running" || task.status === "queued"
-      ? task.progressSummary?.trim()
-      : task.error?.trim() || task.terminalSummary?.trim();
+  const title = formatTaskStatusTitle(task);
+  const detail = formatTaskStatusDetail(task);
   const parts = [headline, task.runtime, title, detail].filter(Boolean);
   return parts.length ? `📌 Tasks: ${parts.join(" · ")}` : undefined;
 }
 
 function formatAgentTaskCountsLine(agentId: string): string | undefined {
-  const snapshot = buildTaskStatusSnapshot(listTasksForAgentId(agentId));
+  const snapshot = buildTaskStatusSnapshot(listTasksForAgentIdForStatus(agentId));
   if (snapshot.totalCount === 0) {
     return undefined;
   }
