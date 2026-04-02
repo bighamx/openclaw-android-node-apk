@@ -19,6 +19,7 @@ import { isRecord, resolveConfigDir, resolveUserPath } from "../utils.js";
 import { isChannelConfigured } from "./channel-configured.js";
 import type { OpenClawConfig } from "./config.js";
 import { ensurePluginAllowlisted } from "./plugins-allowlist.js";
+import { isBlockedObjectKey } from "./prototype-keys.js";
 
 type PluginEnableChange = {
   pluginId: string;
@@ -28,6 +29,7 @@ type PluginEnableChange = {
 export type PluginAutoEnableResult = {
   config: OpenClawConfig;
   changes: string[];
+  autoEnabledReasons: Record<string, string[]>;
 };
 
 const EMPTY_PLUGIN_MANIFEST_REGISTRY: PluginManifestRegistry = {
@@ -160,9 +162,11 @@ function hasPluginOwnedWebFetchConfig(cfg: OpenClawConfig, pluginId: string): bo
 function hasPluginOwnedToolConfig(cfg: OpenClawConfig, pluginId: string): boolean {
   if (pluginId === "xai") {
     const pluginConfig = cfg.plugins?.entries?.xai?.config;
+    const web = cfg.tools?.web as Record<string, unknown> | undefined;
     return Boolean(
-      isRecord(cfg.tools?.web?.x_search as Record<string, unknown> | undefined) ||
-      (isRecord(pluginConfig) && isRecord(pluginConfig.codeExecution)),
+      isRecord(web?.x_search) ||
+      (isRecord(pluginConfig) &&
+        (isRecord(pluginConfig.xSearch) || isRecord(pluginConfig.codeExecution))),
     );
   }
   return false;
@@ -382,7 +386,8 @@ function configMayNeedPluginAutoEnable(cfg: OpenClawConfig, env: NodeJS.ProcessE
   if (collectModelRefs(cfg).length > 0) {
     return true;
   }
-  if (isRecord(cfg.tools?.web?.x_search as Record<string, unknown> | undefined)) {
+  const web = cfg.tools?.web as Record<string, unknown> | undefined;
+  if (isRecord(web?.x_search)) {
     return true;
   }
   if (
@@ -649,7 +654,7 @@ export function applyPluginAutoEnable(params: {
 }): PluginAutoEnableResult {
   const env = params.env ?? process.env;
   if (!configMayNeedPluginAutoEnable(params.config, env)) {
-    return { config: params.config, changes: [] };
+    return { config: params.config, changes: [], autoEnabledReasons: {} };
   }
   const registry =
     params.manifestRegistry ??
@@ -658,14 +663,15 @@ export function applyPluginAutoEnable(params: {
       : EMPTY_PLUGIN_MANIFEST_REGISTRY);
   const configured = resolveConfiguredPlugins(params.config, env, registry);
   if (configured.length === 0) {
-    return { config: params.config, changes: [] };
+    return { config: params.config, changes: [], autoEnabledReasons: {} };
   }
 
   let next = params.config;
   const changes: string[] = [];
+  const autoEnabledReasons = new Map<string, string[]>();
 
   if (next.plugins?.enabled === false) {
-    return { config: next, changes };
+    return { config: next, changes, autoEnabledReasons: {} };
   }
 
   for (const entry of configured) {
@@ -704,8 +710,20 @@ export function applyPluginAutoEnable(params: {
     if (!builtInChannelId) {
       next = ensurePluginAllowlisted(next, entry.pluginId);
     }
+    autoEnabledReasons.set(entry.pluginId, [
+      ...(autoEnabledReasons.get(entry.pluginId) ?? []),
+      entry.reason,
+    ]);
     changes.push(formatAutoEnableChange(entry));
   }
 
-  return { config: next, changes };
+  const autoEnabledReasonRecord: Record<string, string[]> = Object.create(null);
+  for (const [pluginId, reasons] of autoEnabledReasons) {
+    if (isBlockedObjectKey(pluginId)) {
+      continue;
+    }
+    autoEnabledReasonRecord[pluginId] = [...reasons];
+  }
+
+  return { config: next, changes, autoEnabledReasons: autoEnabledReasonRecord };
 }
