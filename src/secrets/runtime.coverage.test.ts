@@ -3,6 +3,7 @@ import type { AuthProfileStore } from "../agents/auth-profiles.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type { PluginWebSearchProviderEntry } from "../plugins/types.js";
 import { getPath, setPathCreateStrict } from "./path-utils.js";
+import { canonicalizeSecretTargetCoverageId } from "./target-registry-test-helpers.js";
 import { listSecretTargetRegistryEntries } from "./target-registry.js";
 
 type SecretRegistryEntry = ReturnType<typeof listSecretTargetRegistryEntries>[number];
@@ -110,6 +111,10 @@ function resolveCoverageEnvId(entry: SecretRegistryEntry, fallbackEnvId: string)
   return entry.id === "plugins.entries.firecrawl.config.webFetch.apiKey"
     ? "FIRECRAWL_API_KEY"
     : fallbackEnvId;
+}
+
+function resolveCoverageResolvedPath(entry: SecretRegistryEntry): string {
+  return canonicalizeSecretTargetCoverageId(entry.id);
 }
 
 function buildConfigForOpenClawTarget(entry: SecretRegistryEntry, envId: string): OpenClawConfig {
@@ -262,7 +267,10 @@ describe("secrets runtime target coverage", () => {
         agentDirs: ["/tmp/openclaw-agent-main"],
         loadAuthStore: () => ({ version: 1, profiles: {} }),
       });
-      const resolved = getPath(snapshot.config, toConcretePathSegments(entry.pathPattern));
+      const resolved = getPath(
+        snapshot.config,
+        toConcretePathSegments(resolveCoverageResolvedPath(entry)),
+      );
       if (entry.expectedResolvedValue === "string") {
         expect(resolved).toBe(expectedValue);
       } else {
