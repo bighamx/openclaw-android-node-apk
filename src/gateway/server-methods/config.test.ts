@@ -3,12 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { configHandlers, resolveConfigOpenCommand } from "./config.js";
 import { createConfigHandlerHarness } from "./config.test-helpers.js";
 
-vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:child_process")>();
-  return {
-    ...actual,
-    execFile: vi.fn(),
-  };
+vi.mock("node:child_process", async () => {
+  const { mockNodeBuiltinModule } = await import("../../../test/helpers/node-builtin-mocks.js");
+  return mockNodeBuiltinModule(
+    () => vi.importActual<typeof import("node:child_process")>("node:child_process"),
+    {
+      execFile: vi.fn() as unknown as typeof import("node:child_process").execFile,
+    },
+  );
 });
 
 function invokeExecFileCallback(args: unknown[], error: Error | null) {
