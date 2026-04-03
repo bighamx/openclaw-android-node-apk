@@ -1,9 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runWithReconnect } from "./reconnect.js";
 
 beforeEach(() => {
+  vi.restoreAllMocks();
+  vi.useFakeTimers();
   vi.clearAllMocks();
 });
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+async function resolveReconnectRun(promise: Promise<void>): Promise<void> {
+  await vi.runAllTimersAsync();
+  await promise;
+}
 
 describe("runWithReconnect", () => {
   it("retries after connectFn resolves (normal close)", async () => {
@@ -16,10 +28,11 @@ describe("runWithReconnect", () => {
       }
     });
 
-    await runWithReconnect(connectFn, {
+    const run = runWithReconnect(connectFn, {
       abortSignal: abort.signal,
       initialDelayMs: 1,
     });
+    await resolveReconnectRun(run);
 
     expect(connectFn).toHaveBeenCalledTimes(3);
   });
@@ -36,11 +49,12 @@ describe("runWithReconnect", () => {
       abort.abort();
     });
 
-    await runWithReconnect(connectFn, {
+    const run = runWithReconnect(connectFn, {
       abortSignal: abort.signal,
       onError,
       initialDelayMs: 1,
     });
+    await resolveReconnectRun(run);
 
     expect(connectFn).toHaveBeenCalledTimes(3);
     expect(onError).toHaveBeenCalledTimes(2);
@@ -60,13 +74,14 @@ describe("runWithReconnect", () => {
       throw new Error("connection refused");
     });
 
-    await runWithReconnect(connectFn, {
+    const run = runWithReconnect(connectFn, {
       abortSignal: abort.signal,
       onReconnect: (delayMs) => delays.push(delayMs),
       // Keep this test fast: validate the exponential pattern, not real-time waiting.
       initialDelayMs: 1,
       maxDelayMs: 10,
     });
+    await resolveReconnectRun(run);
 
     expect(connectFn).toHaveBeenCalledTimes(6);
     // 5 errors produce delays: 1, 2, 4, 8, 10(cap)
@@ -93,12 +108,13 @@ describe("runWithReconnect", () => {
       abort.abort();
     });
 
-    await runWithReconnect(connectFn, {
+    const run = runWithReconnect(connectFn, {
       abortSignal: abort.signal,
       onReconnect: (delayMs) => delays.push(delayMs),
       initialDelayMs: 1,
       maxDelayMs: 60_000,
     });
+    await resolveReconnectRun(run);
 
     expect(connectFn).toHaveBeenCalledTimes(4);
     // call 1: fail -> delay 1
@@ -140,10 +156,11 @@ describe("runWithReconnect", () => {
     });
 
     const start = Date.now();
-    await runWithReconnect(connectFn, {
+    const run = runWithReconnect(connectFn, {
       abortSignal: abort.signal,
       initialDelayMs: 60_000,
     });
+    await resolveReconnectRun(run);
     const elapsed = Date.now() - start;
 
     expect(connectFn).toHaveBeenCalledTimes(1);
@@ -162,13 +179,14 @@ describe("runWithReconnect", () => {
       abort.abort();
     });
 
-    await runWithReconnect(connectFn, {
+    const run = runWithReconnect(connectFn, {
       abortSignal: abort.signal,
       onReconnect: (delayMs) => delays.push(delayMs),
       initialDelayMs: 10,
       jitterRatio: 0.5,
       random: () => 1,
     });
+    await resolveReconnectRun(run);
 
     expect(connectFn).toHaveBeenCalledTimes(2);
     expect(delays).toEqual([15]);
