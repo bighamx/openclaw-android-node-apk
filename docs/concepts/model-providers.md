@@ -119,7 +119,7 @@ Current bundled examples:
 - `zai`: GLM-5 forward-compat fallback, `tool_stream` defaults, cache-TTL
   policy, binary-thinking/live-model policy, and usage auth + quota fetching
 - `mistral`, `opencode`, and `opencode-go`: plugin-owned capability metadata
-- `byteplus`, `cloudflare-ai-gateway`, `huggingface`, `kimi-coding`,
+- `byteplus`, `cloudflare-ai-gateway`, `huggingface`, `kimi`,
   `modelstudio`, `nvidia`, `qianfan`, `stepfun`, `synthetic`, `together`, `venice`,
   `vercel-ai-gateway`, and `volcengine`: plugin-owned catalogs only
 - `minimax` and `xiaomi`: plugin-owned catalogs plus usage auth/snapshot logic
@@ -163,6 +163,11 @@ OpenClaw ships with the pi‑ai catalog. These providers require **no**
 - OpenAI priority processing can be enabled via `agents.defaults.models["openai/<model>"].params.serviceTier`
 - `/fast` and `params.fastMode` map direct `openai/*` Responses requests to `service_tier=priority` on `api.openai.com`
 - Use `params.serviceTier` when you want an explicit tier instead of the shared `/fast` toggle
+- Hidden OpenClaw attribution headers (`originator`, `version`,
+  `User-Agent`) apply only on native OpenAI traffic to `api.openai.com`, not
+  generic OpenAI-compatible proxies
+- Native OpenAI routes also keep Responses `store`, prompt-cache hints, and
+  OpenAI reasoning-compat payload shaping; proxy routes do not
 - `openai/gpt-5.3-codex-spark` is intentionally suppressed in OpenClaw because the live OpenAI API rejects it; Spark is treated as Codex-only
 
 ```json5
@@ -197,6 +202,9 @@ OpenClaw ships with the pi‑ai catalog. These providers require **no**
 - Default transport is `auto` (WebSocket-first, SSE fallback)
 - Override per model via `agents.defaults.models["openai-codex/<model>"].params.transport` (`"sse"`, `"websocket"`, or `"auto"`)
 - `params.serviceTier` is also forwarded on native Codex Responses requests (`chatgpt.com/backend-api`)
+- Hidden OpenClaw attribution headers (`originator`, `version`,
+  `User-Agent`) are only attached on native Codex traffic to
+  `chatgpt.com/backend-api`, not generic OpenAI-compatible proxies
 - Shares the same `/fast` toggle and `params.fastMode` config as direct `openai/*`; OpenClaw maps that to `service_tier=priority`
 - `openai-codex/gpt-5.3-codex-spark` remains available when the Codex OAuth catalog exposes it; entitlement-dependent
 - `openai-codex/gpt-5.4` keeps native `contextWindow = 1050000` and a default runtime `contextTokens = 272000`; override the runtime cap with `models.providers.openai-codex.models[].contextTokens`
@@ -280,7 +288,7 @@ OpenClaw ships with the pi‑ai catalog. These providers require **no**
 - Provider: `kilocode`
 - Auth: `KILOCODE_API_KEY`
 - Example model: `kilocode/anthropic/claude-opus-4.6`
-- CLI: `openclaw onboard --kilocode-api-key <key>`
+- CLI: `openclaw onboard --auth-choice kilocode-api-key`
 - Base URL: `https://api.kilo.ai/api/gateway/`
 - Expanded built-in catalog includes GLM-5 Free, MiniMax M2.7 Free, GPT-5.2, Gemini 3 Pro Preview, Gemini 3 Flash Preview, Grok Code Fast 1, and Kimi K2.5.
 
@@ -289,12 +297,17 @@ See [/providers/kilocode](/providers/kilocode) for setup details.
 ### Other bundled provider plugins
 
 - OpenRouter: `openrouter` (`OPENROUTER_API_KEY`)
-- Example model: `openrouter/anthropic/claude-sonnet-4-6`
+- Example model: `openrouter/auto`
+- OpenClaw applies OpenRouter's documented app-attribution headers only when
+  the request actually targets `openrouter.ai`
+- OpenRouter remains on the proxy-style OpenAI-compatible path, so native
+  OpenAI-only request shaping (`serviceTier`, Responses `store`,
+  prompt-cache hints, OpenAI reasoning-compat payloads) is not forwarded
 - Kilo Gateway: `kilocode` (`KILOCODE_API_KEY`)
 - Example model: `kilocode/anthropic/claude-opus-4.6`
 - MiniMax: `minimax` (`MINIMAX_API_KEY`)
 - Moonshot: `moonshot` (`MOONSHOT_API_KEY`)
-- Kimi Coding: `kimi-coding` (`KIMI_API_KEY` or `KIMICODE_API_KEY`)
+- Kimi Coding: `kimi` (`KIMI_API_KEY` or `KIMICODE_API_KEY`)
 - Qianfan: `qianfan` (`QIANFAN_API_KEY`)
 - Model Studio: `modelstudio` (`MODELSTUDIO_API_KEY`)
 - NVIDIA: `nvidia` (`NVIDIA_API_KEY`)
@@ -330,11 +343,14 @@ default base URL, headers, or model list.
 
 ### Moonshot AI (Kimi)
 
-Moonshot uses OpenAI-compatible endpoints, so configure it as a custom provider:
+Moonshot ships as a bundled provider plugin. Use the built-in provider by
+default, and add an explicit `models.providers.moonshot` entry only when you
+need to override the base URL or model metadata:
 
 - Provider: `moonshot`
 - Auth: `MOONSHOT_API_KEY`
 - Example model: `moonshot/kimi-k2.5`
+- CLI: `openclaw onboard --auth-choice moonshot-api-key`
 
 Kimi K2 model IDs:
 
@@ -371,18 +387,20 @@ Kimi K2 model IDs:
 
 Kimi Coding uses Moonshot AI's Anthropic-compatible endpoint:
 
-- Provider: `kimi-coding`
+- Provider: `kimi`
 - Auth: `KIMI_API_KEY`
-- Example model: `kimi-coding/k2p5`
+- Example model: `kimi/kimi-code`
 
 ```json5
 {
   env: { KIMI_API_KEY: "sk-..." },
   agents: {
-    defaults: { model: { primary: "kimi-coding/k2p5" } },
+    defaults: { model: { primary: "kimi/kimi-code" } },
   },
 }
 ```
+
+Legacy `kimi/k2p5` remains accepted as a compatibility model id.
 
 ### Volcano Engine (Doubao)
 
@@ -613,6 +631,10 @@ Notes:
   - `maxTokens: 8192`
 - Recommended: set explicit values that match your proxy/model limits.
 - For `api: "openai-completions"` on non-native endpoints (any non-empty `baseUrl` whose host is not `api.openai.com`), OpenClaw forces `compat.supportsDeveloperRole: false` to avoid provider 400 errors for unsupported `developer` roles.
+- Proxy-style OpenAI-compatible routes also skip native OpenAI-only request
+  shaping: no `service_tier`, no Responses `store`, no prompt-cache hints, no
+  OpenAI reasoning-compat payload shaping, and no hidden OpenClaw attribution
+  headers.
 - If `baseUrl` is empty/omitted, OpenClaw keeps the default OpenAI behavior (which resolves to `api.openai.com`).
 - For safety, an explicit `compat.supportsDeveloperRole: true` is still overridden on non-native `openai-completions` endpoints.
 

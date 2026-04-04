@@ -105,7 +105,7 @@ local while `web_search` and `x_search` can use xAI Responses under the hood.
 | [Gemini](/tools/gemini-search)            | AI-synthesized + citations | --                                               | `GEMINI_API_KEY`                            |
 | [Grok](/tools/grok-search)                | AI-synthesized + citations | --                                               | `XAI_API_KEY`                               |
 | [Kimi](/tools/kimi-search)                | AI-synthesized + citations | --                                               | `KIMI_API_KEY` / `MOONSHOT_API_KEY`         |
-| [Ollama Web Search](/tools/ollama-search) | Structured snippets        | --                                               | None (`ollama signin` required)             |
+| [Ollama Web Search](/tools/ollama-search) | Structured snippets        | --                                               | None by default; `ollama signin` required   |
 | [Perplexity](/tools/perplexity-search)    | Structured snippets        | Country, language, time, domains, content limits | `PERPLEXITY_API_KEY` / `OPENROUTER_API_KEY` |
 | [SearXNG](/tools/searxng-search)          | Structured snippets        | Categories, language                             | None (self-hosted)                          |
 | [Tavily](/tools/tavily)                   | Structured snippets        | Via `tavily_search` tool                         | `TAVILY_API_KEY`                            |
@@ -164,7 +164,7 @@ first one that is ready:
 7. **Exa** -- `EXA_API_KEY` or `plugins.entries.exa.config.webSearch.apiKey`
 8. **Tavily** -- `TAVILY_API_KEY` or `plugins.entries.tavily.config.webSearch.apiKey`
 9. **DuckDuckGo** -- key-free HTML fallback with no account or API key
-10. **Ollama Web Search** -- key-free fallback via your configured Ollama host; requires Ollama to be reachable and signed in with `ollama signin`
+10. **Ollama Web Search** -- key-free fallback via your configured Ollama host; requires Ollama to be reachable and signed in with `ollama signin` (reuses Ollama provider auth if the host needs bearer auth)
 
 Key-free providers are checked after API-backed providers:
 
@@ -200,6 +200,12 @@ error prompting you to configure one).
 Provider-specific config (API keys, base URLs, modes) lives under
 `plugins.entries.<plugin>.config.webSearch.*`. See the provider pages for
 examples.
+
+When you choose **Kimi** during `openclaw onboard` or
+`openclaw configure --section web`, OpenClaw can also ask for:
+
+- the Moonshot API region (`https://api.moonshot.ai/v1` or `https://api.moonshot.cn/v1`)
+- the default Kimi web-search model (defaults to `kimi-k2.5`)
 
 For `x_search`, configure `plugins.entries.xai.config.xSearch.*`. It uses the
 same `XAI_API_KEY` fallback as Grok web search.
@@ -254,6 +260,7 @@ show the `x_search` prompt.
 | `count`               | Results to return (1-10, default: 5)                  |
 | `country`             | 2-letter ISO country code (e.g. "US", "DE")           |
 | `language`            | ISO 639-1 language code (e.g. "en", "de")             |
+| `search_lang`         | Search-language code (Brave only)                     |
 | `freshness`           | Time filter: `day`, `week`, `month`, or `year`        |
 | `date_after`          | Results after this date (YYYY-MM-DD)                  |
 | `date_before`         | Results before this date (YYYY-MM-DD)                 |
@@ -265,6 +272,14 @@ show the `x_search` prompt.
 <Warning>
   Not all parameters work with all providers. Brave `llm-context` mode
   rejects `ui_lang`, `freshness`, `date_after`, and `date_before`.
+  Gemini, Grok, and Kimi return one synthesized answer with citations. They
+  accept `count` for shared-tool compatibility, but it does not change the
+  grounded answer shape.
+  Perplexity behaves the same way when you use the Sonar/OpenRouter
+  compatibility path (`plugins.entries.perplexity.config.webSearch.baseUrl` /
+  `model` or `OPENROUTER_API_KEY`).
+  SearXNG accepts `http://` only for trusted private-network or loopback hosts;
+  public SearXNG endpoints must use `https://`.
   Firecrawl and Tavily only support `query` and `count` through `web_search`
   -- use their dedicated tools for advanced options.
 </Warning>
