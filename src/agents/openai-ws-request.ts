@@ -7,6 +7,7 @@ import type {
 } from "./openai-ws-connection.js";
 import { resolveOpenAITextVerbosity } from "./pi-embedded-runner/openai-stream-wrappers.js";
 import { resolveProviderRequestPolicyConfig } from "./provider-request-config.js";
+import { stripSystemPromptCacheBoundary } from "./system-prompt-cache-boundary.js";
 
 type WsModel = Parameters<StreamFn>[0];
 type WsContext = Parameters<StreamFn>[1];
@@ -30,6 +31,7 @@ export function buildOpenAIWebSocketWarmUpPayload(params: {
   model: string;
   tools?: FunctionToolDefinition[];
   instructions?: string;
+  metadata?: Record<string, string>;
 }): WarmUpEvent {
   return {
     type: "response.create",
@@ -38,6 +40,7 @@ export function buildOpenAIWebSocketWarmUpPayload(params: {
     input: [],
     ...(params.tools?.length ? { tools: params.tools } : {}),
     ...(params.instructions ? { instructions: params.instructions } : {}),
+    ...(params.metadata ? { metadata: params.metadata } : {}),
   };
 }
 
@@ -47,6 +50,7 @@ export function buildOpenAIWebSocketResponseCreatePayload(params: {
   options?: WsOptions;
   turnInput: PlannedWsTurnInput;
   tools: FunctionToolDefinition[];
+  metadata?: Record<string, string>;
 }): ResponseCreateEvent {
   const extraParams: Record<string, unknown> = {};
   const streamOpts = params.options;
@@ -103,11 +107,14 @@ export function buildOpenAIWebSocketResponseCreatePayload(params: {
     model: params.model.id,
     ...(supportsResponsesStoreField ? { store: false } : {}),
     input: params.turnInput.inputItems,
-    instructions: params.context.systemPrompt ?? undefined,
+    instructions: params.context.systemPrompt
+      ? stripSystemPromptCacheBoundary(params.context.systemPrompt)
+      : undefined,
     tools: params.tools.length > 0 ? params.tools : undefined,
     ...(params.turnInput.previousResponseId
       ? { previous_response_id: params.turnInput.previousResponseId }
       : {}),
+    ...(params.metadata ? { metadata: params.metadata } : {}),
     ...extraParams,
   };
 }
