@@ -22,7 +22,7 @@ OpenClaw features that can generate provider usage or paid API calls.
 **Per-message cost footer**
 
 - `/usage full` appends a usage footer to every reply, including **estimated cost** (API-key only).
-- `/usage tokens` shows tokens only; OAuth/setup-token/CLI subscription flows hide dollar cost.
+- `/usage tokens` shows tokens only; subscription-style OAuth, legacy token, and CLI flows hide dollar cost.
 
 Anthropic note: starting **April 4, 2026 at 12:00 PM PT / 8:00 PM BST**,
 Anthropic says OpenClaw no longer uses included Claude subscription limits.
@@ -44,7 +44,7 @@ OpenClaw can pick up credentials from:
 - **Auth profiles** (per-agent, stored in `auth-profiles.json`).
 - **Environment variables** (e.g. `OPENAI_API_KEY`, `BRAVE_API_KEY`, `FIRECRAWL_API_KEY`).
 - **Config** (`models.providers.*.apiKey`, `tools.web.search.*`, `tools.web.fetch.firecrawl.*`,
-  `memorySearch.*`, `talk.apiKey`).
+  `memorySearch.*`, `talk.providers.*.apiKey`).
 - **Skills** (`skills.entries.<name>.apiKey`) which may export keys to the skill process env.
 
 ## Features that can spend keys
@@ -148,7 +148,7 @@ See [Models CLI](/cli/models).
 
 Talk mode can invoke **ElevenLabs** when configured:
 
-- `ELEVENLABS_API_KEY` or `talk.apiKey`
+- `ELEVENLABS_API_KEY` or `talk.providers.elevenlabs.apiKey`
 
 See [Talk mode](/nodes/talk).
 

@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as acpSessionManager from "../acp/control-plane/manager.js";
 import type { AcpInitializeSessionInput } from "../acp/control-plane/manager.types.js";
@@ -96,11 +99,17 @@ const resolveAcpSpawnStreamLogPathSpy = vi.spyOn(
 const { spawnAcpDirect } = await import("./acp-spawn.js");
 type SpawnRequest = Parameters<typeof spawnAcpDirect>[0];
 type SpawnContext = Parameters<typeof spawnAcpDirect>[1];
+type SpawnResult = Awaited<ReturnType<typeof spawnAcpDirect>>;
 type AgentCallParams = {
   deliver?: boolean;
   channel?: string;
   to?: string;
   threadId?: string;
+};
+type CrossAgentWorkspaceFixture = {
+  workspaceRoot: string;
+  mainWorkspace: string;
+  targetWorkspace: string;
 };
 
 function replaceSpawnConfig(next: OpenClawConfig): void {
@@ -183,10 +192,66 @@ function createRequesterContext(overrides?: Partial<SpawnContext>): SpawnContext
   };
 }
 
+async function createCrossAgentWorkspaceFixture(options?: {
+  targetDirName?: string;
+  createTargetWorkspace?: boolean;
+}): Promise<CrossAgentWorkspaceFixture> {
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-acp-spawn-"));
+  const mainWorkspace = path.join(workspaceRoot, "main");
+  const targetWorkspace = path.join(workspaceRoot, options?.targetDirName?.trim() || "claude-code");
+  await fs.mkdir(mainWorkspace, { recursive: true });
+  if (options?.createTargetWorkspace !== false) {
+    await fs.mkdir(targetWorkspace, { recursive: true });
+  }
+  return {
+    workspaceRoot,
+    mainWorkspace,
+    targetWorkspace,
+  };
+}
+
+function configureCrossAgentWorkspaceSpawn(fixture: CrossAgentWorkspaceFixture): void {
+  replaceSpawnConfig({
+    ...hoisted.state.cfg,
+    acp: {
+      ...hoisted.state.cfg.acp,
+      allowedAgents: ["codex", "claude-code"],
+    },
+    agents: {
+      list: [
+        {
+          id: "main",
+          default: true,
+          workspace: fixture.mainWorkspace,
+        },
+        {
+          id: "claude-code",
+          workspace: fixture.targetWorkspace,
+        },
+      ],
+    },
+  });
+}
+
 function findAgentGatewayCall(): { method?: string; params?: Record<string, unknown> } | undefined {
   return hoisted.callGatewayMock.mock.calls
     .map((call: unknown[]) => call[0] as { method?: string; params?: Record<string, unknown> })
     .find((request) => request.method === "agent");
+}
+
+function expectFailedSpawn(
+  result: SpawnResult,
+  status?: "error" | "forbidden",
+): Extract<SpawnResult, { status: "error" | "forbidden" }> {
+  if (status) {
+    expect(result.status).toBe(status);
+  } else {
+    expect(result.status).not.toBe("accepted");
+  }
+  if (result.status === "accepted") {
+    throw new Error("Expected ACP spawn to fail");
+  }
+  return result;
 }
 
 function expectAgentGatewayCall(overrides: AgentCallParams): void {
@@ -536,6 +601,100 @@ describe("spawnAcpDirect", () => {
       to: "channel:child-thread",
       threadId: "child-thread",
     });
+  });
+
+  it("uses the target agent workspace for cross-agent ACP spawns when cwd is omitted", async () => {
+    const fixture = await createCrossAgentWorkspaceFixture();
+    try {
+      configureCrossAgentWorkspaceSpawn(fixture);
+
+      const result = await spawnAcpDirect(
+        {
+          task: "Inspect the queue owner state",
+          agentId: "claude-code",
+          mode: "run",
+        },
+        {
+          agentSessionKey: "agent:main:main",
+        },
+      );
+
+      expect(result.status).toBe("accepted");
+      expect(hoisted.initializeSessionMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionKey: expect.stringMatching(/^agent:claude-code:acp:/),
+          agent: "claude-code",
+          cwd: fixture.targetWorkspace,
+        }),
+      );
+    } finally {
+      await fs.rm(fixture.workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to backend default cwd when the inherited target workspace does not exist", async () => {
+    const fixture = await createCrossAgentWorkspaceFixture({
+      targetDirName: "claude-code-missing",
+      createTargetWorkspace: false,
+    });
+    try {
+      configureCrossAgentWorkspaceSpawn(fixture);
+
+      const result = await spawnAcpDirect(
+        {
+          task: "Inspect the queue owner state",
+          agentId: "claude-code",
+          mode: "run",
+        },
+        {
+          agentSessionKey: "agent:main:main",
+        },
+      );
+
+      expect(result.status).toBe("accepted");
+      expect(hoisted.initializeSessionMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionKey: expect.stringMatching(/^agent:claude-code:acp:/),
+          agent: "claude-code",
+          cwd: undefined,
+        }),
+      );
+    } finally {
+      await fs.rm(fixture.workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces non-missing target workspace access failures instead of silently dropping cwd", async () => {
+    const fixture = await createCrossAgentWorkspaceFixture();
+    const accessSpy = vi.spyOn(fs, "access");
+    try {
+      configureCrossAgentWorkspaceSpawn(fixture);
+
+      accessSpy.mockRejectedValueOnce(
+        Object.assign(new Error("permission denied"), { code: "EACCES" }),
+      );
+
+      const result = await spawnAcpDirect(
+        {
+          task: "Inspect the queue owner state",
+          agentId: "claude-code",
+          mode: "run",
+        },
+        {
+          agentSessionKey: "agent:main:main",
+        },
+      );
+
+      expect(result).toEqual({
+        status: "error",
+        errorCode: "cwd_resolution_failed",
+        error: "permission denied",
+      });
+      expect(hoisted.initializeSessionMock).not.toHaveBeenCalled();
+    } finally {
+      accessSpy.mockRestore();
+      await fs.rm(fixture.workspaceRoot, { recursive: true, force: true });
+    }
   });
 
   it("binds LINE ACP sessions to the current conversation when the channel has no native threads", async () => {
@@ -899,8 +1058,7 @@ describe("spawnAcpDirect", () => {
       },
     );
 
-    expect(result.status).toBe("error");
-    expect(result.error).toContain("set `acp.defaultAgent`");
+    expect(expectFailedSpawn(result, "error").error).toContain("set `acp.defaultAgent`");
   });
 
   it("fails fast when Discord ACP thread spawn is disabled", async () => {
@@ -930,8 +1088,7 @@ describe("spawnAcpDirect", () => {
       },
     );
 
-    expect(result.status).toBe("error");
-    expect(result.error).toContain("spawnAcpSessions=true");
+    expect(expectFailedSpawn(result, "error").error).toContain("spawnAcpSessions=true");
   });
 
   it("forbids ACP spawn from sandboxed requester sessions", async () => {
@@ -954,8 +1111,9 @@ describe("spawnAcpDirect", () => {
       },
     );
 
-    expect(result.status).toBe("forbidden");
-    expect(result.error).toContain("Sandboxed sessions cannot spawn ACP sessions");
+    expect(expectFailedSpawn(result, "forbidden").error).toContain(
+      "Sandboxed sessions cannot spawn ACP sessions",
+    );
     expect(hoisted.callGatewayMock).not.toHaveBeenCalled();
     expect(hoisted.initializeSessionMock).not.toHaveBeenCalled();
   });
@@ -972,8 +1130,7 @@ describe("spawnAcpDirect", () => {
       },
     );
 
-    expect(result.status).toBe("forbidden");
-    expect(result.error).toContain('sandbox="require"');
+    expect(expectFailedSpawn(result, "forbidden").error).toContain('sandbox="require"');
     expect(hoisted.callGatewayMock).not.toHaveBeenCalled();
     expect(hoisted.initializeSessionMock).not.toHaveBeenCalled();
   });
@@ -1489,8 +1646,7 @@ describe("spawnAcpDirect", () => {
       },
     );
 
-    expect(result.status).toBe("error");
-    expect(result.error).toContain("agent dispatch failed");
+    expect(expectFailedSpawn(result, "error").error).toContain("agent dispatch failed");
     expect(relayHandle.dispose).toHaveBeenCalledTimes(1);
     expect(relayHandle.notifyStarted).not.toHaveBeenCalled();
   });
@@ -1509,8 +1665,7 @@ describe("spawnAcpDirect", () => {
       },
     );
 
-    expect(result.status).toBe("error");
-    expect(result.error).toContain('streamTo="parent"');
+    expect(expectFailedSpawn(result, "error").error).toContain('streamTo="parent"');
     expect(hoisted.callGatewayMock).not.toHaveBeenCalled();
     expect(hoisted.startAcpSpawnParentStreamRelayMock).not.toHaveBeenCalled();
   });

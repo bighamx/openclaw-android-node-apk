@@ -195,10 +195,9 @@ openclaw onboard --non-interactive \
   </Accordion>
 </AccordionGroup>
 
-Anthropic setup-token remains supported for manual flows, but interactive
-onboarding/configure no longer offers it as an assistant choice. Use
-`openclaw models auth setup-token --provider anthropic` or
-`openclaw models auth paste-token --provider anthropic` when you need it.
+Anthropic setup-token is no longer offered as a new onboarding/configure path.
+Existing legacy Anthropic token profiles still run if they are already
+configured.
 
 ## Add another agent
 
@@ -208,7 +207,7 @@ sessions, and auth profiles. Running without `--workspace` launches the wizard.
 ```bash
 openclaw agents add work \
   --workspace ~/.openclaw/workspace-work \
-  --model openai/gpt-5.2 \
+  --model openai/gpt-5.4 \
   --bind whatsapp:biz \
   --non-interactive \
   --json

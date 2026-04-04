@@ -1,5 +1,4 @@
 import type {
-  BlockStreamingChunkConfig,
   BlockStreamingCoalesceConfig,
   ContextVisibilityMode,
   DmPolicy,
@@ -158,12 +157,8 @@ export type TelegramAccountConfig = {
    * - "progress": alias that maps to "partial" on Telegram
    */
   streaming?: TelegramStreamingMode;
-  /** @deprecated Legacy preview streaming key; normalized into `streaming` on load. */
-  streamMode?: "off" | "partial" | "block" | "progress";
   /** Disable block streaming for this account. */
   blockStreaming?: boolean;
-  /** @deprecated Legacy chunking config from `streamMode: "block"`; ignored after migration. */
-  draftChunk?: BlockStreamingChunkConfig;
   /** Merge streamed block replies before sending. */
   blockStreamingCoalesce?: BlockStreamingCoalesceConfig;
   mediaMaxMb?: number;
@@ -229,6 +224,8 @@ export type TelegramAccountConfig = {
   ackReaction?: string;
   /** Custom Telegram Bot API root URL (e.g. "https://my-proxy.example.com" or a local Bot API server). */
   apiRoot?: string;
+  /** Trusted local filesystem roots for self-hosted Telegram Bot API absolute file_path values. */
+  trustedLocalFileRoots?: string[];
   /** Auto-rename DM forum topics on first message using LLM. Default: true. */
   autoTopicLabel?: AutoTopicLabelConfig;
 };
