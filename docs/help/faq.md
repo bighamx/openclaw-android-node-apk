@@ -587,7 +587,7 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
     explicitly supported for external tools like OpenClaw.
 
     OpenClaw also supports other hosted subscription-style options including
-    **Alibaba Cloud Model Studio Coding Plan**, **MiniMax Coding Plan**, and
+    **Qwen Cloud Coding Plan**, **MiniMax Coding Plan**, and
     **Z.AI / GLM Coding Plan**.
 
     Docs: [Anthropic](/providers/anthropic), [OpenAI](/providers/openai),
@@ -1232,6 +1232,12 @@ for usage/billing and raise limits as needed.
 
     This path is host-local. If the Gateway runs elsewhere, either run a node host on the browser machine or use remote CDP instead.
 
+    Current limits on `existing-session` / `user`:
+
+    - actions are ref-driven, not CSS-selector driven
+    - uploads require `ref` / `inputRef` and currently support one file at a time
+    - `responsebody`, PDF export, download interception, and batch actions still need a managed browser or raw CDP profile
+
   </Accordion>
 </AccordionGroup>
 
@@ -1549,29 +1555,32 @@ for usage/billing and raise limits as needed.
             },
           },
         },
-      },
-      tools: {
-        web: {
-          search: {
-            enabled: true,
-            provider: "brave",
-            maxResults: 5,
-          },
-          fetch: {
-            enabled: true,
+        },
+        tools: {
+          web: {
+            search: {
+              enabled: true,
+              provider: "brave",
+              maxResults: 5,
+            },
+            fetch: {
+              enabled: true,
+              provider: "firecrawl", // optional; omit for auto-detect
+            },
           },
         },
-      },
     }
     ```
 
     Provider-specific web-search config now lives under `plugins.entries.<plugin>.config.webSearch.*`.
     Legacy `tools.web.search.*` provider paths still load temporarily for compatibility, but they should not be used for new configs.
+    Firecrawl web-fetch fallback config lives under `plugins.entries.firecrawl.config.webFetch.*`.
 
     Notes:
 
-    - If you use allowlists, add `web_search`/`web_fetch` or `group:web`.
+    - If you use allowlists, add `web_search`/`web_fetch`/`x_search` or `group:web`.
     - `web_fetch` is enabled by default (unless explicitly disabled).
+    - If `tools.web.fetch.provider` is omitted, OpenClaw auto-detects the first ready fetch fallback provider from available credentials. Today the bundled provider is Firecrawl.
     - Daemons read env vars from `~/.openclaw/.env` (or the service environment).
 
     Docs: [Web tools](/tools/web).
@@ -2148,7 +2157,7 @@ for usage/billing and raise limits as needed.
     agents.defaults.model.primary
     ```
 
-    Models are referenced as `provider/model` (example: `openai/gpt-5.4`). If you omit the provider, OpenClaw first tries an alias, then a unique configured-provider match for that exact model id, and only then falls back to the configured default provider as a deprecated compatibility path. You should still **explicitly** set `provider/model`.
+    Models are referenced as `provider/model` (example: `openai/gpt-5.4`). If you omit the provider, OpenClaw first tries an alias, then a unique configured-provider match for that exact model id, and only then falls back to the configured default provider as a deprecated compatibility path. If that provider no longer exposes the configured default model, OpenClaw falls back to the first configured provider/model instead of surfacing a stale removed-provider default. You should still **explicitly** set `provider/model`.
 
   </Accordion>
 
@@ -2462,8 +2471,9 @@ for usage/billing and raise limits as needed.
 
     Some billing-looking responses are not `402`, and some HTTP `402`
     responses also stay in that transient bucket. If a provider returns
-    explicit billing text on `401` or `403` (for example OpenRouter
-    `Key limit exceeded`), OpenClaw keeps that in the billing lane. If a `402`
+    explicit billing text on `401` or `403`, OpenClaw can still keep that in
+    the billing lane, but provider-specific text matchers stay scoped to the
+    provider that owns them (for example OpenRouter `Key limit exceeded`). If a `402`
     message instead looks like a retryable usage-window or
     organization/workspace spend limit (`daily limit reached, resets tomorrow`,
     `organization spending limit exceeded`), OpenClaw treats it as
@@ -2476,13 +2486,13 @@ for usage/billing and raise limits as needed.
 
     Generic server-error text is intentionally narrower than "anything with
     unknown/error in it". OpenClaw does treat provider-scoped transient shapes
-    such as Anthropic bare `An unknown error occurred`, stop-reason errors like
-    `Unhandled stop reason: error`, and JSON `api_error` payloads with
-    transient server text (`internal server error`, `unknown error, 520`,
-    `upstream error`, `backend error`) as timeout/failover signals. But generic
-    internal fallback text like `LLM request failed with an unknown error.` or
-    a bare `Provider returned error` stays conservative and does not trigger
-    model fallback by itself.
+    such as Anthropic bare `An unknown error occurred`, OpenRouter bare
+    `Provider returned error`, stop-reason errors like `Unhandled stop reason:
+    error`, and JSON `api_error` payloads with transient server text
+    (`internal server error`, `unknown error, 520`, `upstream error`, `backend
+    error`) as timeout/failover signals when the provider context matches.
+    Generic internal fallback text like `LLM request failed with an unknown
+    error.` stays conservative and does not trigger model fallback by itself.
 
   </Accordion>
 

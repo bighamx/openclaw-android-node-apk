@@ -577,7 +577,7 @@ Subcommands:
 - `config set --strict-json`: require JSON5 parsing for path/value input. `--json` remains a legacy alias for strict parsing outside dry-run output mode.
 - `config unset <path>`: remove a value.
 - `config file`: print the active config file path.
-- `config schema`: print the generated JSON schema for `openclaw.json`.
+- `config schema`: print the generated JSON schema for `openclaw.json`, including field docs and best-effort live plugin/channel schema metadata.
 - `config validate`: validate the current config against the schema without starting the gateway.
 - `config validate --json`: emit machine-readable JSON output.
 
@@ -1478,7 +1478,7 @@ at 12:00 PM PT / 8:00 PM BST**. Anthropic says Claude subscription limits no
 longer cover OpenClaw, and Claude CLI usage in OpenClaw now requires **Extra
 Usage** billed separately from the subscription. For production, prefer an
 Anthropic API key or another supported subscription-style provider such as
-OpenAI Codex, Alibaba Cloud Model Studio Coding Plan, MiniMax Coding Plan, or
+OpenAI Codex, Qwen Cloud Coding Plan, MiniMax Coding Plan, or
 Z.AI / GLM Coding Plan.
 
 Anthropic Claude CLI migration:
