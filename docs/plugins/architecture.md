@@ -817,7 +817,7 @@ api.registerProvider({
 - Mistral, OpenCode Zen, and OpenCode Go use `capabilities` only to keep
   transcript/tooling quirks out of core.
 - Catalog-only bundled providers such as `byteplus`, `cloudflare-ai-gateway`,
-  `huggingface`, `kimi-coding`, `modelstudio`, `nvidia`, `qianfan`,
+  `huggingface`, `kimi-coding`, `qwen`, `nvidia`, `qianfan`,
   `synthetic`, `together`, `venice`, `vercel-ai-gateway`, and `volcengine` use
   `catalog` only.
 - MiniMax and Xiaomi use `catalog` plus usage hooks because their `/usage`
@@ -1064,7 +1064,7 @@ authoring plugins:
   envelope formatting, and inbound envelope context helpers.
   `channel-setup` is the narrow optional-install setup seam.
   `setup-runtime` is the runtime-safe setup surface used by `setupEntry` /
-  deferred startup.
+  deferred startup, including the import-safe setup patch adapters.
   `setup-adapter-runtime` is the env-aware account-setup adapter seam.
   `setup-tools` is the small CLI/archive/docs helper seam (`formatCliCommand`,
   `detectBinary`, `extractArchive`, `resolveBrewExecutable`, `formatDocsLink`,
@@ -1082,11 +1082,15 @@ authoring plugins:
   `openclaw/plugin-sdk/reply-history`,
   `openclaw/plugin-sdk/routing`,
   `openclaw/plugin-sdk/status-helpers`,
+  `openclaw/plugin-sdk/text-runtime`,
   `openclaw/plugin-sdk/runtime-store`, and
   `openclaw/plugin-sdk/directory-runtime` for shared runtime/config helpers.
   `telegram-command-config` is the narrow public seam for Telegram custom
   command normalization/validation and stays available even if the bundled
   Telegram contract surface is temporarily unavailable.
+  `text-runtime` is the shared text/markdown/logging seam, including
+  assistant-visible-text stripping, markdown render/chunking helpers, redaction
+  helpers, directive-tag helpers, and safe-text utilities.
 - Approval-specific channel seams should prefer one `approvalCapability`
   contract on the plugin. Core then reads approval auth, delivery, render, and
   native-routing behavior through that one capability instead of mixing
@@ -1335,6 +1339,10 @@ named promoted account when named accounts already exist, and it can preserve a
 configured non-canonical default-account key instead of always creating
 `accounts.default`.
 
+Those setup patch adapters keep bundled contract-surface discovery lazy. Import
+time stays light; the promotion surface is loaded only on first use instead of
+re-entering bundled channel startup on module import.
+
 When those startup surfaces include gateway RPC methods, keep them on a
 plugin-specific prefix. Core admin namespaces (`config.*`,
 `exec.approvals.*`, `wizard.*`, `update.*`) remain reserved and always resolve
@@ -1527,7 +1535,7 @@ api.registerVideoGenerationProvider({
 });
 
 // shared runtime helper for feature/channel plugins
-const clip = await api.runtime.videoGeneration.generateFile({
+const clip = await api.runtime.videoGeneration.generate({
   prompt: "Show the robot walking through the lab.",
   cfg,
 });
