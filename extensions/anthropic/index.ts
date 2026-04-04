@@ -382,6 +382,7 @@ export default definePluginEntry({
             choiceId: "anthropic-cli",
             choiceLabel: "Anthropic Claude CLI",
             choiceHint: "Reuse a local Claude CLI login on this host",
+            assistantPriority: -20,
             groupId: "anthropic",
             groupLabel: "Anthropic",
             groupHint: "Claude CLI + setup-token + API key",
@@ -409,6 +410,7 @@ export default definePluginEntry({
             choiceId: "token",
             choiceLabel: "Anthropic token (paste setup-token)",
             choiceHint: "Run `claude setup-token` elsewhere, then paste the token here",
+            assistantVisibility: "manual-only",
             groupId: "anthropic",
             groupLabel: "Anthropic",
             groupHint: "Claude CLI + setup-token + API key",
@@ -450,6 +452,7 @@ export default definePluginEntry({
       resolveDynamicModel: (ctx) => resolveAnthropicForwardCompatModel(ctx),
       buildReplayPolicy: (ctx) => buildAnthropicReplayPolicy(ctx),
       isModernModelRef: ({ modelId }) => matchesAnthropicModernModel(modelId),
+      resolveReasoningOutputMode: () => "native",
       wrapStreamFn: (ctx) => {
         const anthropicBetas = resolveAnthropicBetas(ctx.extraParams, ctx.modelId);
         const serviceTier = resolveAnthropicServiceTier(ctx.extraParams);

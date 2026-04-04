@@ -61,6 +61,16 @@ function createModuleLoader() {
 
 const loadModule = createModuleLoader();
 
+function getContractSurfaceDiscoveryEnv(): NodeJS.ProcessEnv {
+  if (RUNNING_FROM_BUILT_ARTIFACT) {
+    return process.env;
+  }
+  return {
+    ...process.env,
+    VITEST: process.env.VITEST || "1",
+  };
+}
+
 function matchesPreferredBasename(
   basename: ContractSurfaceBasename,
   preferredBasename: ContractSurfaceBasename | undefined,
@@ -153,9 +163,11 @@ function loadBundledChannelContractSurfaceEntries(): Array<{
   pluginId: string;
   surface: unknown;
 }> {
-  const discovery = discoverOpenClawPlugins({ cache: false });
+  const env = getContractSurfaceDiscoveryEnv();
+  const discovery = discoverOpenClawPlugins({ cache: false, env });
   const manifestRegistry = loadPluginManifestRegistry({
     cache: false,
+    env,
     config: {},
     candidates: discovery.candidates,
     diagnostics: discovery.diagnostics,
@@ -165,20 +177,16 @@ function loadBundledChannelContractSurfaceEntries(): Array<{
     if (manifest.origin !== "bundled" || manifest.channels.length === 0) {
       continue;
     }
-    const modulePaths = resolveSourceFirstContractSurfaceModulePaths({
+    const modulePath = resolveSourceFirstContractSurfaceModulePaths({
       rootDir: manifest.rootDir,
-    });
-    if (modulePaths.length === 0) {
+    })[0];
+    if (!modulePath) {
       continue;
     }
     try {
-      const surface = Object.assign(
-        {},
-        ...modulePaths.map((modulePath) => loadModule(modulePath)(modulePath) as object),
-      );
       surfaces.push({
         pluginId: manifest.id,
-        surface,
+        surface: loadModule(modulePath)(modulePath),
       });
     } catch {
       continue;
@@ -208,9 +216,11 @@ export function getBundledChannelContractSurfaceModule<T = unknown>(params: {
   if (cachedPreferredSurfaceModules.has(cacheKey)) {
     return (cachedPreferredSurfaceModules.get(cacheKey) ?? null) as T | null;
   }
-  const discovery = discoverOpenClawPlugins({ cache: false });
+  const env = getContractSurfaceDiscoveryEnv();
+  const discovery = discoverOpenClawPlugins({ cache: false, env });
   const manifestRegistry = loadPluginManifestRegistry({
     cache: false,
+    env,
     config: {},
     candidates: discovery.candidates,
     diagnostics: discovery.diagnostics,

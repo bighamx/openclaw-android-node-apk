@@ -285,7 +285,15 @@ If the `claude` binary is not on the gateway host PATH:
 ### Migrate from Anthropic auth to Claude CLI
 
 If you currently use `anthropic/...` with a setup-token or API key and want to
-switch the same gateway host to Claude CLI:
+switch the same gateway host to Claude CLI, OpenClaw supports that as a normal
+provider-auth migration path.
+
+Prerequisites:
+
+- Claude CLI installed on the **same gateway host** that runs OpenClaw
+- Claude CLI already signed in there: `claude auth login`
+
+Then run:
 
 ```bash
 openclaw models auth login --provider anthropic --method cli --set-default
@@ -297,6 +305,11 @@ Or in onboarding:
 openclaw onboard --auth-choice anthropic-cli
 ```
 
+Interactive `openclaw onboard` and `openclaw configure` now prefer **Anthropic
+Claude CLI** first and **Anthropic API key** second. The setup-token flow
+remains supported through manual auth commands, but is not shown in the
+assistant picker.
+
 What this does:
 
 - verifies Claude CLI is already signed in on the gateway host
@@ -304,6 +317,14 @@ What this does:
 - rewrites Anthropic default-model fallbacks like `anthropic/claude-opus-4-6`
   to `claude-cli/claude-opus-4-6`
 - adds matching `claude-cli/...` entries to `agents.defaults.models`
+
+Quick verification:
+
+```bash
+openclaw models status
+```
+
+You should see the resolved primary model under `claude-cli/...`.
 
 What it does **not** do:
 
@@ -323,7 +344,7 @@ you need to.
 
 More details: [/gateway/cli-backends](/gateway/cli-backends)
 
-## Option C: Claude setup-token
+## Option C: Claude setup-token (manual)
 
 **Best for:** using your Claude subscription with Anthropic **Extra Usage**
 enabled, or while transitioning to API-key billing.
@@ -336,23 +357,16 @@ Setup-tokens are created by the **Claude Code CLI**, not the Anthropic Console. 
 claude setup-token
 ```
 
-Paste the token into OpenClaw (wizard: **Anthropic token (paste setup-token)**), or run it on the gateway host:
+Then either run it on the gateway host:
 
 ```bash
 openclaw models auth setup-token --provider anthropic
 ```
 
-If you generated the token on a different machine, paste it:
+Or if you generated the token on a different machine, paste it:
 
 ```bash
 openclaw models auth paste-token --provider anthropic
-```
-
-### CLI setup (setup-token)
-
-```bash
-# Paste a setup-token during setup
-openclaw onboard --auth-choice setup-token
 ```
 
 ### Config snippet (setup-token)

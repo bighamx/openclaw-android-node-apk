@@ -3,7 +3,7 @@ summary: "OAuth in OpenClaw: token exchange, storage, and multi-account patterns
 read_when:
   - You want to understand OpenClaw OAuth end-to-end
   - You hit token invalidation / logout issues
-  - You want setup-token or OAuth auth flows
+  - You want setup-token, Claude CLI, or OAuth auth flows
   - You want multiple accounts or profile routing
 title: "OAuth"
 ---
@@ -100,7 +100,16 @@ openclaw models status
 ## Anthropic Claude CLI migration
 
 If Claude CLI is already installed and signed in on the gateway host, you can
-switch Anthropic model selection over to the local CLI backend:
+switch Anthropic model selection over to the local CLI backend. This is a
+supported OpenClaw path when you want to reuse a local Claude CLI login on the
+same host.
+
+Prerequisites:
+
+- the `claude` binary is installed on the gateway host
+- Claude CLI is already authenticated there via `claude auth login`
+
+Migration command:
 
 ```bash
 openclaw models auth login --provider anthropic --method cli --set-default
@@ -113,7 +122,15 @@ openclaw onboard --auth-choice anthropic-cli
 ```
 
 This keeps existing Anthropic auth profiles for rollback, but rewrites the main
-default-model path from `anthropic/...` to `claude-cli/...`.
+default-model path from `anthropic/...` to `claude-cli/...`, rewrites matching
+Anthropic Claude fallbacks, and adds matching `claude-cli/...` allowlist
+entries under `agents.defaults.models`.
+
+Verify:
+
+```bash
+openclaw models status
+```
 
 ## OAuth exchange (how login works)
 
@@ -134,11 +151,16 @@ Claude CLI path:
 1. sign in with `claude auth login` on the gateway host
 2. run `openclaw models auth login --provider anthropic --method cli --set-default`
 3. store no new auth profile; switch model selection to `claude-cli/...`
+4. keep existing Anthropic auth profiles for rollback
 
-Wizard paths:
+Interactive assistant path:
 
-- `openclaw onboard` → auth choice `anthropic-cli`
-- `openclaw onboard` → auth choice `setup-token` (Anthropic)
+- `openclaw onboard` / `openclaw configure` → auth choice `anthropic-cli`
+
+Manual setup-token path:
+
+- `openclaw models auth setup-token --provider anthropic`
+- `openclaw models auth paste-token --provider anthropic`
 
 ### OpenAI Codex (ChatGPT OAuth)
 

@@ -130,7 +130,13 @@ Optional ops scripts (systemd/Termux) are documented here:
 
 If Claude CLI is already installed and signed in on the gateway host, you can
 switch an existing Anthropic setup over to the CLI backend instead of pasting a
-setup-token:
+setup-token. This is a supported OpenClaw migration path for reusing a local
+Claude CLI login on that host.
+
+Prerequisites:
+
+- `claude` installed on the gateway host
+- Claude CLI already signed in there with `claude auth login`
 
 ```bash
 openclaw models auth login --provider anthropic --method cli --set-default
@@ -140,11 +146,21 @@ This keeps your existing Anthropic auth profiles for rollback, but changes the
 default model selection to `claude-cli/...` and adds matching Claude CLI
 allowlist entries under `agents.defaults.models`.
 
+Verify:
+
+```bash
+openclaw models status
+```
+
 Onboarding shortcut:
 
 ```bash
 openclaw onboard --auth-choice anthropic-cli
 ```
+
+Interactive `openclaw onboard` and `openclaw configure` prefer Claude CLI for
+Anthropic and do not show setup-token in the assistant picker. Setup-token
+remains supported through the manual commands above.
 
 ## Checking model auth status
 
