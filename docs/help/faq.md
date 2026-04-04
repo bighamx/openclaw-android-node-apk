@@ -550,7 +550,7 @@ Quick answers plus deeper troubleshooting for real-world setups (local dev, VPS,
     - **Model/auth setup** (provider OAuth, Claude CLI reuse, and API keys supported, plus local model options such as LM Studio)
     - **Workspace** location + bootstrap files
     - **Gateway settings** (bind/port/auth/tailscale)
-    - **Providers** (WhatsApp, Telegram, Discord, Mattermost (plugin), Signal, iMessage)
+    - **Channels** (WhatsApp, Telegram, Discord, Mattermost, Signal, iMessage, plus bundled channel plugins like QQ Bot)
     - **Daemon install** (LaunchAgent on macOS; systemd user unit on Linux/WSL2)
     - **Health checks** and **skills** selection
 
@@ -651,10 +651,13 @@ for usage/billing and raise limits as needed.
 
     Steps:
 
-    1. Enable the plugin: `openclaw plugins enable google`
-    2. Login: `openclaw models auth login --provider google-gemini-cli --set-default`
-    3. Default model after login: `google-gemini-cli/gemini-3.1-pro-preview`
-    4. If requests fail, set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_CLOUD_PROJECT_ID` on the gateway host
+    1. Install Gemini CLI locally so `gemini` is on `PATH`
+       - Homebrew: `brew install gemini-cli`
+       - npm: `npm install -g @google/gemini-cli`
+    2. Enable the plugin: `openclaw plugins enable google`
+    3. Login: `openclaw models auth login --provider google-gemini-cli --set-default`
+    4. Default model after login: `google-gemini-cli/gemini-3.1-pro-preview`
+    5. If requests fail, set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_CLOUD_PROJECT_ID` on the gateway host
 
     This stores OAuth tokens in auth profiles on the gateway host. Details: [Model providers](/concepts/model-providers).
 
@@ -814,7 +817,7 @@ for usage/billing and raise limits as needed.
     - **Pros:** always-on, stable network, no laptop sleep issues, easier to keep running.
     - **Cons:** often run headless (use screenshots), remote file access only, you must SSH for updates.
 
-    **OpenClaw-specific note:** WhatsApp/Telegram/Slack/Mattermost (plugin)/Discord all work fine from a VPS. The only real trade-off is **headless browser** vs a visible window. See [Browser](/tools/browser).
+    **OpenClaw-specific note:** WhatsApp/Telegram/Slack/Mattermost/Discord all work fine from a VPS. The only real trade-off is **headless browser** vs a visible window. See [Browser](/tools/browser).
 
     **Recommended default:** VPS if you had gateway disconnects before. Local is great when you're actively using the Mac and want local file access or UI automation with a visible browser.
 
@@ -864,7 +867,7 @@ for usage/billing and raise limits as needed.
 
 <AccordionGroup>
   <Accordion title="What is OpenClaw, in one paragraph?">
-    OpenClaw is a personal AI assistant you run on your own devices. It replies on the messaging surfaces you already use (WhatsApp, Telegram, Slack, Mattermost (plugin), Discord, Google Chat, Signal, iMessage, WebChat) and can also do voice + a live Canvas on supported platforms. The **Gateway** is the always-on control plane; the assistant is the product.
+    OpenClaw is a personal AI assistant you run on your own devices. It replies on the messaging surfaces you already use (WhatsApp, Telegram, Slack, Mattermost, Discord, Google Chat, Signal, iMessage, WebChat, and bundled channel plugins such as QQ Bot) and can also do voice + a live Canvas on supported platforms. The **Gateway** is the always-on control plane; the assistant is the product.
   </Accordion>
 
   <Accordion title="Value proposition">
@@ -1002,6 +1005,24 @@ for usage/billing and raise limits as needed.
 
   </Accordion>
 
+  <Accordion title="A subagent finished, but the completion update went to the wrong place or never posted. What should I check?">
+    Check the resolved requester route first:
+
+    - Completion-mode subagent delivery prefers any bound thread or conversation route when one exists.
+    - If the completion origin only carries a channel, OpenClaw falls back to the requester session's stored route (`lastChannel` / `lastTo` / `lastAccountId`) so direct delivery can still succeed.
+    - If neither a bound route nor a usable stored route exists, direct delivery can fail and the result falls back to queued session delivery instead of posting immediately to chat.
+    - Invalid or stale targets can still force queue fallback or final delivery failure.
+
+    Debug:
+
+    ```bash
+    openclaw tasks show <runId-or-sessionKey>
+    ```
+
+    Docs: [Sub-agents](/tools/subagents), [Background Tasks](/automation/tasks), [Session Tools](/concepts/session-tool).
+
+  </Accordion>
+
   <Accordion title="Cron or reminders do not fire. What should I check?">
     Cron runs inside the Gateway process. If the Gateway is not running continuously,
     scheduled jobs will not run.
@@ -1043,6 +1064,35 @@ for usage/billing and raise limits as needed.
     ```
 
     Docs: [Cron jobs](/automation/cron-jobs), [Background Tasks](/automation/tasks).
+
+  </Accordion>
+
+  <Accordion title="Why did an isolated cron run switch models or retry once?">
+    That is usually the live model-switch path, not duplicate scheduling.
+
+    Isolated cron can persist a runtime model handoff and retry when the active
+    run throws `LiveSessionModelSwitchError`. The retry keeps the switched
+    provider/model, and if the switch carried a new auth profile override, cron
+    persists that too before retrying.
+
+    Related selection rules:
+
+    - Gmail hook model override wins first when applicable.
+    - Then per-job `model`.
+    - Then any stored cron-session model override.
+    - Then the normal agent/default model selection.
+
+    The retry loop is bounded. After the initial attempt plus 2 switch retries,
+    cron aborts instead of looping forever.
+
+    Debug:
+
+    ```bash
+    openclaw cron runs --id <jobId> --limit 50
+    openclaw tasks show <runId-or-sessionKey>
+    ```
+
+    Docs: [Cron jobs](/automation/cron-jobs), [cron CLI](/cli/cron).
 
   </Accordion>
 
@@ -2078,7 +2128,7 @@ for usage/billing and raise limits as needed.
     agents.defaults.model.primary
     ```
 
-    Models are referenced as `provider/model` (example: `openai/gpt-5.4`). If you omit the provider, OpenClaw currently assumes the configured default provider (currently `openai`) as a temporary deprecation fallback - but you should still **explicitly** set `provider/model`.
+    Models are referenced as `provider/model` (example: `openai/gpt-5.4`). If you omit the provider, OpenClaw first tries an alias, then a unique configured-provider match for that exact model id, and only then falls back to the configured default provider as a deprecated compatibility path. You should still **explicitly** set `provider/model`.
 
   </Accordion>
 
@@ -2390,10 +2440,14 @@ for usage/billing and raise limits as needed.
     `ThrottlingException`, `resource exhausted`, and periodic usage-window
     limits (`weekly/monthly limit reached`) as failover-worthy rate limits.
 
-    Some HTTP `402` responses also stay in that transient bucket. If the
-    message looks like a retryable usage-window or organization/workspace spend
-    limit (`daily limit reached, resets tomorrow`, `organization spending limit
-    exceeded`), OpenClaw treats it as `rate_limit`, not a long billing disable.
+    Some billing-looking responses are not `402`, and some HTTP `402`
+    responses also stay in that transient bucket. If a provider returns
+    explicit billing text on `401` or `403` (for example OpenRouter
+    `Key limit exceeded`), OpenClaw keeps that in the billing lane. If a `402`
+    message instead looks like a retryable usage-window or
+    organization/workspace spend limit (`daily limit reached, resets tomorrow`,
+    `organization spending limit exceeded`), OpenClaw treats it as
+    `rate_limit`, not a long billing disable.
 
     Context-overflow errors are different: signatures such as
     `request_too_large`, `input exceeds the maximum number of tokens`, or
@@ -2605,6 +2659,9 @@ Related: [/concepts/oauth](/concepts/oauth) (OAuth flows, token storage, multi-a
     - If mismatch persists after the one retry, rotate/re-approve the paired device token:
       - `openclaw devices list`
       - `openclaw devices rotate --device <id> --role operator`
+    - If that rotate call says it was denied, check two things:
+      - paired-device sessions can rotate only their **own** device unless they also have `operator.admin`
+      - explicit `--scope` values cannot exceed the caller's current operator scopes
     - Still stuck? Run `openclaw status --all` and follow [Troubleshooting](/gateway/troubleshooting). See [Dashboard](/web/dashboard) for auth details.
 
   </Accordion>
