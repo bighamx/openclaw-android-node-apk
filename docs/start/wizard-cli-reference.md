@@ -180,7 +180,8 @@ What you set:
     More detail: [Cloudflare AI Gateway](/providers/cloudflare-ai-gateway).
   </Accordion>
   <Accordion title="MiniMax">
-    Config is auto-written. Hosted default is `MiniMax-M2.7`.
+    Config is auto-written. Hosted default is `MiniMax-M2.7`; API-key setup uses
+    `minimax/...`, and OAuth setup uses `minimax-portal/...`.
     More detail: [MiniMax](/providers/minimax).
   </Accordion>
   <Accordion title="StepFun">
@@ -280,6 +281,8 @@ Typical fields in `~/.openclaw/openclaw.json`:
 - `channels.telegram.botToken`, `channels.discord.token`, `channels.matrix.*`, `channels.signal.*`, `channels.imessage.*`
 - Channel allowlists (Slack, Discord, Matrix, Microsoft Teams) when you opt in during prompts (names resolve to IDs when possible)
 - `skills.install.nodeManager`
+  - The `setup --node-manager` flag accepts `npm`, `pnpm`, or `bun`.
+  - Manual config can still set `skills.install.nodeManager: "yarn"` later.
 - `wizard.lastRunAt`
 - `wizard.lastRunVersion`
 - `wizard.lastRunCommit`

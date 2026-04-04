@@ -1011,7 +1011,7 @@ for usage/billing and raise limits as needed.
     Debug:
 
     ```bash
-    openclaw cron run <jobId> --force
+    openclaw cron run <jobId>
     openclaw cron runs --id <jobId> --limit 50
     ```
 
@@ -1021,15 +1021,24 @@ for usage/billing and raise limits as needed.
 
   <Accordion title="How do I install skills on Linux?">
     Use native `openclaw skills` commands or drop skills into your workspace. The macOS Skills UI isn't available on Linux.
-    Browse skills at [https://clawhub.com](https://clawhub.com).
+    Browse skills at [https://clawhub.ai](https://clawhub.ai).
 
     ```bash
     openclaw skills search "calendar"
+    openclaw skills search --limit 20
     openclaw skills install <skill-slug>
+    openclaw skills install <skill-slug> --version <version>
+    openclaw skills install <skill-slug> --force
     openclaw skills update --all
+    openclaw skills list --eligible
+    openclaw skills check
     ```
 
-    Install the separate `clawhub` CLI only if you want to publish or sync your own skills. For shared installs across agents, put the skill under `~/.openclaw/skills` and use `agents.defaults.skills` or `agents.list[].skills` if you want to narrow which agents can see it.
+    Native `openclaw skills install` writes into the active workspace `skills/`
+    directory. Install the separate `clawhub` CLI only if you want to publish or
+    sync your own skills. For shared installs across agents, put the skill under
+    `~/.openclaw/skills` and use `agents.defaults.skills` or
+    `agents.list[].skills` if you want to narrow which agents can see it.
 
   </Accordion>
 
@@ -2193,10 +2202,14 @@ for usage/billing and raise limits as needed.
     Fix checklist:
 
     1. Upgrade to a current OpenClaw release (or run from source `main`), then restart the gateway.
-    2. Make sure MiniMax is configured (wizard or JSON), or that a MiniMax API key
-       exists in env/auth profiles so the provider can be injected.
-    3. Use the exact model id (case-sensitive): `minimax/MiniMax-M2.7` or
-       `minimax/MiniMax-M2.7-highspeed`.
+    2. Make sure MiniMax is configured (wizard or JSON), or that MiniMax auth
+       exists in env/auth profiles so the matching provider can be injected
+       (`MINIMAX_API_KEY` for `minimax`, `MINIMAX_OAUTH_TOKEN` or stored MiniMax
+       OAuth for `minimax-portal`).
+    3. Use the exact model id (case-sensitive) for your auth path:
+       `minimax/MiniMax-M2.7` or `minimax/MiniMax-M2.7-highspeed` for API-key
+       setup, or `minimax-portal/MiniMax-M2.7` /
+       `minimax-portal/MiniMax-M2.7-highspeed` for OAuth setup.
     4. Run:
 
        ```bash

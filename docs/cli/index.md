@@ -356,7 +356,7 @@ Note: plugins can add additional top-level commands (for example `openclaw voice
 
 - `openclaw security audit` — audit config + local state for common security foot-guns.
 - `openclaw security audit --deep` — best-effort live Gateway probe.
-- `openclaw security audit --fix` — tighten safe defaults and chmod state/config.
+- `openclaw security audit --fix` — tighten safe defaults and state/config permissions.
 
 ## Secrets
 
@@ -546,7 +546,7 @@ Options:
 - `--skip-ui`
 - `--cloudflare-ai-gateway-account-id <id>`
 - `--cloudflare-ai-gateway-gateway-id <id>`
-- `--node-manager <npm|pnpm|bun>` (node manager for skills; pnpm recommended, bun also supported)
+- `--node-manager <npm|pnpm|bun>` (setup/onboarding node manager for skills; pnpm recommended, bun also supported)
 - `--json`
 
 ### `configure`
@@ -770,11 +770,18 @@ List and inspect available skills plus readiness info.
 Subcommands:
 
 - `skills search [query...]`: search ClawHub skills.
+- `skills search --limit <n> --json`: cap search results or emit machine-readable output.
 - `skills install <slug>`: install a skill from ClawHub into the active workspace.
+- `skills install <slug> --version <version>`: install a specific ClawHub version.
+- `skills install <slug> --force`: overwrite an existing workspace skill folder.
 - `skills update <slug|--all>`: update tracked ClawHub skills.
 - `skills list`: list skills (default when no subcommand).
+- `skills list --json`: emit machine-readable skill inventory.
+- `skills list --verbose`: include missing requirements in the table.
 - `skills info <name>`: show details for one skill.
+- `skills info <name> --json`: emit machine-readable details.
 - `skills check`: summary of ready vs missing requirements.
+- `skills check --json`: emit machine-readable readiness output.
 
 Options:
 
@@ -1213,9 +1220,9 @@ Notes:
 
 - Data comes directly from provider usage endpoints (no estimates).
 - Human-readable output is normalized to `X% left` across providers.
-- Providers with current usage windows: Anthropic, GitHub Copilot, Gemini CLI, OpenAI Codex, MiniMax, and z.ai.
-- MiniMax note: raw `usage_percent` / `usagePercent` means remaining quota, so OpenClaw inverts it before display; count-based fields still win when present.
-- If no matching credentials exist, usage is hidden.
+- Providers with current usage windows: Anthropic, GitHub Copilot, Gemini CLI, OpenAI Codex, MiniMax, Xiaomi, and z.ai.
+- MiniMax note: raw `usage_percent` / `usagePercent` means remaining quota, so OpenClaw inverts it before display; count-based fields still win when present. `model_remains` responses prefer the chat-model entry, derive the window label from timestamps when needed, and include the model name in the plan label.
+- Usage auth comes from provider-specific hooks when available; otherwise OpenClaw falls back to matching OAuth/API-key credentials from auth profiles, env, or config. If none resolve, usage is hidden.
 - Details: see [Usage tracking](/concepts/usage-tracking).
 
 ### `health`
