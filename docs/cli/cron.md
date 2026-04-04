@@ -19,6 +19,10 @@ Tip: run `openclaw cron --help` for the full command surface.
 Note: isolated `cron add` jobs default to `--announce` delivery. Use `--no-deliver` to keep
 output internal. `--deliver` remains as a deprecated alias for `--announce`.
 
+Note: cron-owned isolated runs expect a plain-text summary and the runner owns
+the final send path. `--no-deliver` keeps the run internal; it does not hand
+delivery back to the agent's message tool.
+
 Note: one-shot (`--at`) jobs delete after success by default. Use `--keep-after-run` to keep them.
 
 Note: `--session` supports `main`, `isolated`, `current`, and `session:<id>`.
@@ -34,6 +38,17 @@ Note: `openclaw cron run` now returns as soon as the manual run is queued for ex
 
 Note: `openclaw cron run <job-id>` force-runs by default. Use `--due` to keep the
 older "only run if due" behavior.
+
+Note: isolated cron turns suppress stale acknowledgement-only replies. If the
+first result is just an interim status update and no descendant subagent run is
+responsible for the eventual answer, cron re-prompts once for the real result
+before delivery.
+
+Note: `cron add|edit --model ...` uses that selected allowed model for the job.
+If the model is not allowed, cron warns and falls back to the job's agent/default
+model selection instead. Configured fallback chains still apply, but a plain
+model override with no explicit per-job fallback list no longer appends the
+agent primary as a hidden extra retry target.
 
 Note: failure notifications use `delivery.failureDestination` first, then
 global `cron.failureDestination`, and finally fall back to the job's primary
@@ -89,6 +104,14 @@ openclaw cron add \
 ```
 
 `--light-context` applies to isolated agent-turn jobs only. For cron runs, lightweight mode keeps bootstrap context empty instead of injecting the full workspace bootstrap set.
+
+Delivery ownership note:
+
+- Cron-owned isolated jobs always route final user-visible delivery through the
+  cron runner (`announce`, `webhook`, or internal-only `none`).
+- If the task mentions messaging some external recipient, the agent should
+  describe the intended destination in its result instead of trying to send it
+  directly.
 
 ## Common admin commands
 
