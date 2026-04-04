@@ -88,6 +88,8 @@ active runtime model label from the latest transcript usage entry.
 
 For partial changes, prefer `config.schema.lookup` then `config.patch`. Use
 `config.apply` only when you intentionally replace the entire config.
+The tool also refuses to change `tools.exec.ask` or `tools.exec.security`;
+legacy `tools.bash.*` aliases normalize to the same protected exec paths.
 
 ### Plugin-provided tools
 
@@ -147,8 +149,11 @@ Use `group:*` shorthands in allow/deny lists:
 
 `sessions_history` returns a bounded, safety-filtered recall view. It strips
 thinking tags, `<relevant-memories>` scaffolding, plain-text tool-call XML
-payloads, downgraded tool-call scaffolding, leaked model control tokens, and
-malformed MiniMax tool-call XML from assistant text, then applies
+payloads (including `<tool_call>...</tool_call>`,
+`<function_call>...</function_call>`, `<tool_calls>...</tool_calls>`,
+`<function_calls>...</function_calls>`, and truncated tool-call blocks),
+downgraded tool-call scaffolding, leaked ASCII/full-width model control
+tokens, and malformed MiniMax tool-call XML from assistant text, then applies
 redaction/truncation and possible oversized-row placeholders instead of acting
 as a raw transcript dump.
 

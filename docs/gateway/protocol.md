@@ -296,7 +296,9 @@ implemented in `src/gateway/server-methods/*.ts`.
   CLI tooling: schema, `uiHints`, version, and generation metadata, including
   plugin + channel schema metadata when the runtime can load it. The schema
   includes field `title` / `description` metadata derived from the same labels
-  and help text used by the UI.
+  and help text used by the UI, including nested object, wildcard, array-item,
+  and `anyOf` / `oneOf` / `allOf` composition branches when matching field
+  documentation exists.
 - `config.schema.lookup` returns a path-scoped lookup payload for one config
   path: normalized path, a shallow schema node, matched hint + `hintPath`, and
   immediate child summaries for UI/CLI drill-down.
@@ -346,8 +348,12 @@ implemented in `src/gateway/server-methods/*.ts`.
 - chat execution still uses `chat.history`, `chat.send`, `chat.abort`, and
   `chat.inject`.
 - `chat.history` is display-normalized for UI clients: inline directive tags are
-  stripped from visible text, pure `NO_REPLY` assistant rows are omitted, and
-  oversized rows can be replaced with placeholders.
+  stripped from visible text, plain-text tool-call XML payloads (including
+  `<tool_call>...</tool_call>`, `<function_call>...</function_call>`,
+  `<tool_calls>...</tool_calls>`, `<function_calls>...</function_calls>`, and
+  truncated tool-call blocks) and leaked ASCII/full-width model control tokens
+  are stripped, pure silent-token assistant rows such as exact `NO_REPLY` /
+  `no_reply` are omitted, and oversized rows can be replaced with placeholders.
 
 #### Device pairing and device tokens
 
