@@ -114,11 +114,29 @@ Per-agent heartbeat is supported at `agents.list[].heartbeat`.
 
 ### OpenRouter Anthropic models
 
-For `openrouter/anthropic/*` model refs, OpenClaw injects Anthropic `cache_control` on system/developer prompt blocks to improve prompt-cache reuse.
+For `openrouter/anthropic/*` model refs, OpenClaw injects Anthropic
+`cache_control` on system/developer prompt blocks to improve prompt-cache
+reuse only when the request is still targeting a verified OpenRouter route
+(`openrouter` on its default endpoint, or any provider/base URL that resolves
+to `openrouter.ai`).
+
+If you repoint the model at an arbitrary OpenAI-compatible proxy URL, OpenClaw
+stops injecting those OpenRouter-specific Anthropic cache markers.
 
 ### Other providers
 
 If the provider does not support this cache mode, `cacheRetention` has no effect.
+
+### Google Gemini direct API
+
+- Direct Gemini transport (`api: "google-generative-ai"`) reports cache hits
+  through upstream `cachedContentTokenCount`; OpenClaw maps that to `cacheRead`.
+- If you already have a Gemini cached-content handle, you can pass it through as
+  `params.cachedContent` (or legacy `params.cached_content`) on the configured
+  model.
+- This is separate from Anthropic/OpenAI prompt-prefix caching. OpenClaw is
+  forwarding a provider-native cached-content reference, not synthesizing cache
+  markers.
 
 ## OpenClaw cache-stability guards
 
