@@ -1,3 +1,4 @@
+import { isSingleUseReplyToMode } from "openclaw/plugin-sdk/reply-reference";
 import { vi, type Mock } from "vitest";
 import { parsePluginBindingApprovalCustomId } from "../../../../src/plugins/conversation-binding.js";
 import { resolvePinnedMainDmOwnerFromAllowlist } from "../../../../src/security/dm-policy-shared.js";
@@ -94,10 +95,7 @@ vi.mock("../monitor/agent-components.runtime.js", () => {
             if (params.replyToMode === "off") {
               return undefined;
             }
-            if (
-              (params.replyToMode === "first" || params.replyToMode === "batched") &&
-              hasReplied
-            ) {
+            if (isSingleUseReplyToMode(params.replyToMode ?? "off") && hasReplied) {
               return undefined;
             }
             const value = nextId;

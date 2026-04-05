@@ -224,7 +224,7 @@ describe("applyReplyThreading auto-threading", () => {
       payloads: [{ text: "A" }, { text: "B" }],
       replyToMode: "batched",
       currentMessageId: "42",
-      allowImplicitReplyToCurrentMessage: true,
+      replyThreading: { implicitCurrentMessage: "allow" },
     });
 
     expect(result).toHaveLength(2);
@@ -237,7 +237,7 @@ describe("applyReplyThreading auto-threading", () => {
       payloads: [{ text: "Hello" }],
       replyToMode: "batched",
       currentMessageId: "42",
-      allowImplicitReplyToCurrentMessage: false,
+      replyThreading: { implicitCurrentMessage: "deny" },
     });
 
     expect(result).toHaveLength(1);
@@ -249,7 +249,7 @@ describe("applyReplyThreading auto-threading", () => {
       payloads: [{ text: "Hello [[reply_to_current]]" }],
       replyToMode: "batched",
       currentMessageId: "42",
-      allowImplicitReplyToCurrentMessage: false,
+      replyThreading: { implicitCurrentMessage: "deny" },
     });
 
     expect(result).toHaveLength(1);
@@ -300,7 +300,7 @@ describe("applyReplyThreading auto-threading", () => {
     });
 
     expect(result).toHaveLength(1);
-    expect(result[0].replyToId).toBeUndefined();
+    expect(result[0].replyToId).toBe("42");
     expect(result[0].replyToTag).toBe(true);
   });
 
@@ -313,7 +313,7 @@ describe("applyReplyThreading auto-threading", () => {
     });
 
     expect(result).toHaveLength(1);
-    expect(result[0].replyToId).toBeUndefined();
+    expect(result[0].replyToId).toBe("42");
     expect(result[0].replyToTag).toBe(true);
   });
 

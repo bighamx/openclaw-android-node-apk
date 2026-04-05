@@ -145,11 +145,7 @@ export function createDiscordMessageHandler(
         if (!ctx) {
           return;
         }
-        applyImplicitReplyBatchGate(
-          ctx as unknown as Record<string, unknown>,
-          params.replyToMode,
-          false,
-        );
+        applyImplicitReplyBatchGate(ctx, params.replyToMode, false);
         inboundWorker.enqueue(buildDiscordInboundJob(ctx));
         return;
       }
@@ -182,11 +178,7 @@ export function createDiscordMessageHandler(
       if (!ctx) {
         return;
       }
-      applyImplicitReplyBatchGate(
-        ctx as unknown as Record<string, unknown>,
-        params.replyToMode,
-        true,
-      );
+      applyImplicitReplyBatchGate(ctx, params.replyToMode, true);
       if (entries.length > 1) {
         const ids = entries.map((entry) => entry.data.message?.id).filter(Boolean) as string[];
         if (ids.length > 0) {

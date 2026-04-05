@@ -595,7 +595,7 @@ export async function runReplyAgent(params: {
       replyToMode,
       replyToChannel,
       currentMessageId: sessionCtx.MessageSidFull ?? sessionCtx.MessageSid,
-      allowImplicitReplyToCurrentMessage: sessionCtx.AllowImplicitReplyToCurrentMessage,
+      replyThreading: sessionCtx.ReplyThreading,
       messageProvider: followupRun.run.messageProvider,
       messagingToolSentTexts: runResult.messagingToolSentTexts,
       messagingToolSentMediaUrls: runResult.messagingToolSentMediaUrls,

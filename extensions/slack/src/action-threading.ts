@@ -1,3 +1,4 @@
+import { isSingleUseReplyToMode } from "openclaw/plugin-sdk/reply-reference";
 import { parseSlackTarget } from "./targets.js";
 
 export function resolveSlackAutoThreadId(params: {
@@ -13,11 +14,7 @@ export function resolveSlackAutoThreadId(params: {
   if (!context?.currentThreadTs || !context.currentChannelId) {
     return undefined;
   }
-  if (
-    context.replyToMode !== "all" &&
-    context.replyToMode !== "first" &&
-    context.replyToMode !== "batched"
-  ) {
+  if (context.replyToMode !== "all" && !isSingleUseReplyToMode(context.replyToMode ?? "off")) {
     return undefined;
   }
   const parsedTarget = parseSlackTarget(params.to, { defaultKind: "channel" });
@@ -27,10 +24,7 @@ export function resolveSlackAutoThreadId(params: {
   if (parsedTarget.id.toLowerCase() !== context.currentChannelId.toLowerCase()) {
     return undefined;
   }
-  if (
-    (context.replyToMode === "first" || context.replyToMode === "batched") &&
-    context.hasRepliedRef?.value
-  ) {
+  if (isSingleUseReplyToMode(context.replyToMode ?? "off") && context.hasRepliedRef?.value) {
     return undefined;
   }
   return context.currentThreadTs;

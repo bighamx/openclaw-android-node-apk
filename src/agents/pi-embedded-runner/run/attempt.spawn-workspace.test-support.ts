@@ -497,15 +497,6 @@ vi.mock("./history-image-prune.js", () => ({
   pruneProcessedHistoryImages: <T>(messages: T) => messages,
 }));
 
-let runEmbeddedAttemptPromise:
-  | Promise<typeof import("./attempt.js").runEmbeddedAttempt>
-  | undefined;
-
-async function loadRunEmbeddedAttempt() {
-  runEmbeddedAttemptPromise ??= import("./attempt.js").then((mod) => mod.runEmbeddedAttempt);
-  return await runEmbeddedAttemptPromise;
-}
-
 export type MutableSession = {
   sessionId: string;
   messages: unknown[];
@@ -544,6 +535,17 @@ export function createSubscriptionMock(): SubscriptionMock {
     isCompacting: () => false,
     isCompactionInFlight: () => false,
   };
+}
+
+let runEmbeddedAttemptPromise:
+  | Promise<typeof import("./attempt.js").runEmbeddedAttempt>
+  | undefined;
+
+async function loadRunEmbeddedAttempt() {
+  runEmbeddedAttemptPromise ??= import("./attempt.ts?spawn-workspace-test").then(
+    (mod) => mod.runEmbeddedAttempt,
+  );
+  return await runEmbeddedAttemptPromise;
 }
 
 export function resetEmbeddedAttemptHarness(
@@ -767,8 +769,9 @@ export async function createContextEngineAttemptRunner(params: {
     session: createDefaultEmbeddedSession(),
   }));
 
-  const runEmbeddedAttempt = await loadRunEmbeddedAttempt();
-  return await runEmbeddedAttempt({
+  return await (
+    await loadRunEmbeddedAttempt()
+  )({
     sessionId: "embedded-session",
     sessionKey: params.sessionKey,
     sessionFile,
@@ -781,7 +784,10 @@ export async function createContextEngineAttemptRunner(params: {
     provider: "openai",
     modelId: "gpt-test",
     model: testModel,
-    authStorage: {} as never,
+    authStorage: {
+      getApiKey: async () => undefined,
+      setRuntimeApiKey: () => {},
+    } as never,
     modelRegistry: {} as never,
     thinkLevel: "off",
     senderIsOwner: true,

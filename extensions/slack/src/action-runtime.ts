@@ -1,4 +1,5 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import { isSingleUseReplyToMode } from "openclaw/plugin-sdk/reply-reference";
 import { parseSlackBlocksInput } from "./blocks-input.js";
 import {
   createActionGate,
@@ -77,7 +78,7 @@ export type SlackActionContext = {
   currentThreadTs?: string;
   /** Reply-to mode for auto-threading. */
   replyToMode?: "off" | "first" | "all" | "batched";
-  /** Mutable ref to track if a reply was sent (for "first" mode). */
+  /** Mutable ref to track if a reply was sent for single-use reply modes. */
   hasRepliedRef?: { value: boolean };
   /** Allowed local media directories for file uploads. */
   mediaLocalRoots?: readonly string[];
@@ -87,7 +88,7 @@ export type SlackActionContext = {
 /**
  * Resolve threadTs for a Slack message based on context and replyToMode.
  * - "all": always inject threadTs
- * - "first": inject only for first message (updates hasRepliedRef)
+ * - "first"/"batched": inject only for the first eligible message (updates hasRepliedRef)
  * - "off": never auto-inject
  */
 function resolveThreadTsFromContext(
@@ -122,7 +123,7 @@ function resolveThreadTsFromContext(
     return context.currentThreadTs;
   }
   if (
-    (context.replyToMode === "first" || context.replyToMode === "batched") &&
+    isSingleUseReplyToMode(context.replyToMode ?? "off") &&
     context.hasRepliedRef &&
     !context.hasRepliedRef.value
   ) {

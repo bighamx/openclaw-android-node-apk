@@ -242,6 +242,44 @@ describe("deliverDiscordReply", () => {
     );
   });
 
+  it("sends text first and videos as a separate media-only follow-up", async () => {
+    await deliverDiscordReply({
+      replies: [
+        {
+          text: "done — i kicked off a 5s Molty clip",
+          mediaUrls: ["/tmp/molty.mp4"],
+        },
+      ],
+      target: "channel:654",
+      token: "token",
+      runtime,
+      cfg,
+      textLimit: 2000,
+      replyToId: "reply-1",
+    });
+
+    expect(sendMessageDiscordMock).toHaveBeenCalledTimes(2);
+    expect(sendMessageDiscordMock).toHaveBeenNthCalledWith(
+      1,
+      "channel:654",
+      "done — i kicked off a 5s Molty clip",
+      expect.objectContaining({
+        token: "token",
+        replyTo: "reply-1",
+      }),
+    );
+    expect(sendMessageDiscordMock).toHaveBeenNthCalledWith(
+      2,
+      "channel:654",
+      "",
+      expect.objectContaining({
+        token: "token",
+        mediaUrl: "/tmp/molty.mp4",
+        replyTo: "reply-1",
+      }),
+    );
+  });
+
   it("forwards cfg to Discord send helpers", async () => {
     await deliverDiscordReply({
       replies: [{ text: "cfg path" }],

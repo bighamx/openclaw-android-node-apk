@@ -1,9 +1,12 @@
 import type { ReplyToMode } from "../../config/types.js";
 import { hasReplyPayloadContent } from "../../interactive/payload.js";
 import type { OriginatingChannelType } from "../templating.js";
-import type { ReplyPayload } from "../types.js";
+import type { ReplyPayload, ReplyThreadingPolicy } from "../types.js";
 import { extractReplyToTag } from "./reply-tags.js";
-import { createReplyToModeFilterForChannel } from "./reply-threading.js";
+import {
+  createReplyToModeFilterForChannel,
+  resolveImplicitCurrentMessageReplyAllowance,
+} from "./reply-threading.js";
 
 export function formatBtwTextForExternalDelivery(payload: ReplyPayload): string | undefined {
   const text = payload.text?.trim();
@@ -23,14 +26,14 @@ function resolveReplyThreadingForPayload(params: {
   replyToMode?: ReplyToMode;
   implicitReplyToId?: string;
   currentMessageId?: string;
-  allowImplicitReplyToCurrentMessage?: boolean;
+  replyThreading?: ReplyThreadingPolicy;
 }): ReplyPayload {
   const implicitReplyToId = params.implicitReplyToId?.trim() || undefined;
   const currentMessageId = params.currentMessageId?.trim() || undefined;
-  const allowImplicitReplyToCurrentMessage =
-    params.replyToMode === "batched"
-      ? params.allowImplicitReplyToCurrentMessage === true
-      : params.allowImplicitReplyToCurrentMessage !== false;
+  const allowImplicitReplyToCurrentMessage = resolveImplicitCurrentMessageReplyAllowance(
+    params.replyToMode,
+    params.replyThreading,
+  );
 
   let resolved: ReplyPayload =
     params.payload.replyToId ||
@@ -84,15 +87,9 @@ export function applyReplyThreading(params: {
   replyToMode: ReplyToMode;
   replyToChannel?: OriginatingChannelType;
   currentMessageId?: string;
-  allowImplicitReplyToCurrentMessage?: boolean;
+  replyThreading?: ReplyThreadingPolicy;
 }): ReplyPayload[] {
-  const {
-    payloads,
-    replyToMode,
-    replyToChannel,
-    currentMessageId,
-    allowImplicitReplyToCurrentMessage,
-  } = params;
+  const { payloads, replyToMode, replyToChannel, currentMessageId, replyThreading } = params;
   const applyReplyToMode = createReplyToModeFilterForChannel(replyToMode, replyToChannel);
   const implicitReplyToId = currentMessageId?.trim() || undefined;
   return payloads
@@ -102,7 +99,7 @@ export function applyReplyThreading(params: {
         replyToMode,
         implicitReplyToId,
         currentMessageId,
-        allowImplicitReplyToCurrentMessage,
+        replyThreading,
       }),
     )
     .filter(isRenderablePayload)

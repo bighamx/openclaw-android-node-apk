@@ -1,12 +1,19 @@
 import type { ReplyToMode } from "openclaw/plugin-sdk/config-runtime";
+import type { ReplyThreadingPolicy } from "openclaw/plugin-sdk/reply-reference";
+import { resolveBatchedReplyThreadingPolicy } from "openclaw/plugin-sdk/reply-reference";
 
-export function applyImplicitReplyBatchGate(
-  ctx: Record<string, unknown>,
+type ReplyThreadingContext = {
+  ReplyThreading?: ReplyThreadingPolicy;
+};
+
+export function applyImplicitReplyBatchGate<T extends object>(
+  ctx: T,
   replyToMode: ReplyToMode,
   isBatched: boolean,
 ) {
-  if (replyToMode !== "batched") {
+  const replyThreading = resolveBatchedReplyThreadingPolicy(replyToMode, isBatched);
+  if (!replyThreading) {
     return;
   }
-  ctx.AllowImplicitReplyToCurrentMessage = isBatched;
+  (ctx as T & ReplyThreadingContext).ReplyThreading = replyThreading;
 }
