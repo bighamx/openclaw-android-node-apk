@@ -12,6 +12,8 @@ Docs: https://docs.openclaw.ai
 
 - Providers/Amazon Bedrock Mantle: add a bundled OpenAI-compatible Mantle provider with bearer-token discovery, automatic OSS model catalog loading, and Bedrock Mantle region detection for hosted GPT-OSS, Qwen, Kimi, GLM, and similar routes. (#61296) Thanks @wirjo.
 - Providers/Amazon Bedrock: discover regional and global inference profiles, inherit their backing model capabilities, and inject the Bedrock request region automatically so cross-region Claude profiles work without manual provider overrides. (#61299) Thanks @wirjo.
+- Providers/Anthropic: remove the Claude CLI backend, have `openclaw doctor` convert stale `anthropic:claude-cli` state back to Anthropic token/OAuth when stored credential bytes still exist (or delete the stale Claude CLI config when they do not), and steer Anthropic setup to API keys or legacy setup-token with the correct Extra Usage billing guidance.
+- Providers/Anthropic: remove setup-token from new onboarding and auth-command setup paths, keep existing configured legacy token profiles runnable, and steer new Anthropic setup to API keys.
 - Providers/Fireworks: add a bundled Fireworks AI provider plugin with `FIREWORKS_API_KEY` onboarding, Fire Pass Kimi defaults, and dynamic Fireworks model-id support.
 - Providers/Qwen: add a bundled Qwen provider plugin with dedicated onboarding, media understanding, and video generation support.
 - Providers/StepFun: add the bundled StepFun provider plugin with standard and Step Plan endpoints, China/global onboarding choices, `step-3.5-flash` on both catalogs, and `step-3.5-flash-2603` currently exposed on Step Plan. (#60032) Thanks @hengm3467.
@@ -38,7 +40,6 @@ Docs: https://docs.openclaw.ai
 - Agents/cache: stabilize cache-relevant system prompt fingerprints by normalizing equivalent structured prompt whitespace, line endings, hook-added system context, and runtime capability ordering so semantically unchanged prompts reuse KV/cache more reliably. Thanks @vincentkoc.
 - Providers/OpenAI Codex: add forward-compat `openai-codex/gpt-5.4-mini` synthesis across provider runtime, model catalog, and model listing so Codex mini works before bundled Pi catalog updates land.
 - Providers/OpenAI: add an opt-in GPT personality and move GPT-5 prompt tuning onto provider-owned system-prompt contributions so cache-stable guidance stays above the prompt cache boundary and embedded runner paths reuse the same provider-specific prompt behavior.
-- Providers/Anthropic: remove setup-token from new onboarding and auth-command setup paths, keep existing configured legacy token profiles runnable, and steer new Anthropic setup to Claude CLI or API keys.
 - Docs/IRC: replace public IRC hostname examples with `irc.example.com` and recommend private servers for bot coordination while listing common public networks for intentional use.
 - Memory/dreaming: add configurable aging controls (`recencyHalfLifeDays`, `maxAgeDays`) plus optional verbose logging so operators can tune recall decay and inspect promotion decisions more easily.
 - Plugins/reply dispatch: add a generic `reply_dispatch` hook so bundled plugins like ACPX can own reply interception without hardcoded ACP paths in core auto-reply routing.
@@ -68,12 +69,10 @@ Docs: https://docs.openclaw.ai
 - Outbound/sanitizer: strip leaked `<tool_call>`, `<function_calls>`, and model special tokens from shared user-visible assistant text, including truncated tool-call streams, so internal scaffolding no longer bleeds into replies across surfaces. (#60619) Thanks @oliviareid-svg.
 - Agents/output delivery: suppress `phase:”commentary”` assistant text at the embedded subscribe boundary so internal planning text cannot leak into user-visible replies or Telegram partials. (#61282) Thanks @mbelinky.
 - Agents/errors: surface an explicit disk-full message when local session or transcript writes fail with `ENOSPC`/`disk full`, so those runs stop degrading into opaque `NO_REPLY`-style failures. Thanks @vincentkoc.
+- Exec approvals: remove heuristic command-obfuscation gating from host exec so gateway and node runs rely on explicit policy, allowlist, and strict inline-eval rules only.
 - Config/All Settings: keep the raw config view intact when sensitive fields are blank instead of corrupting or dropping the rendered snapshot. (#28214) Thanks @solodmd.
-<<<<<<< HEAD
-- Plugin SDK/facades: back-fill bundled plugin facade sentinels before plugin-id tracking re-enters config loading, so CLI/provider startup no longer crashes with `shouldNormalizeGoogleProviderConfig is not a function` or other empty-facade reads during bundled plugin re-entry. Thanks @adam91holt.
-- Plugin SDK/facades: back-fill bundled plugin facade sentinels before plugin-id tracking re-enters config loading, so CLI/provider startup no longer crashes with `shouldNormalizeGoogleProviderConfig is not a function` or other empty-facade reads during bundled plugin re-entry. Thanks @adam91holt.
-- Discord/image generation: include the real generated `MEDIA:` paths in tool output and avoid duplicate plain-output media requeueing so Discord image replies stop pointing at missing local files.
 - Plugins/facades: back-fill facade sentinels before tracked-plugin resolution re-enters config loading, so facade exports stay defined during circular provider normalization. (#61180) Thanks @adam91holt.
+- Discord/image generation: include the real generated `MEDIA:` paths in tool output and avoid duplicate plain-output media requeueing so Discord image replies stop pointing at missing local files.
 - Slack: route live DM replies back to the concrete inbound DM channel while keeping persisted routing metadata user-scoped, so normal assistant replies stop disappearing when pairing and system messages still arrive. (#59030) Thanks @afurm.
 - Discord/reply tags: strip leaked `[[reply_to_current]]` control tags from preview text and honor explicit reply-tag threading during final delivery, so Discord replies stay attached to the triggering message instead of printing reply metadata into chat.
 - Telegram: fix current-model checks in the model picker, HTML-format non-default `/model` confirmations, explicit topic replies, persisted reaction ownership across restarts, caption-media placeholder and `file_id` preservation on download failure, and upgraded-install inbound image reads. (#60384, #60042, #59634, #59207, #59948, #59971) Thanks @sfuminya, @GitZhangChi, @dashhuang, @samzong, @v1p0r, and @neeravmakwana.
@@ -118,6 +117,7 @@ Docs: https://docs.openclaw.ai
 - Agents/OpenAI: mark Claude-compatible file tool schemas as `additionalProperties: false` so direct OpenAI GPT-5 routes stop rejecting the `read` tool with invalid strict-schema errors.
 - Agents/GPT: add explicit work-item lifecycle events for embedded runs, use them to surface real progress more reliably, and stop counting tool-started turns as planning-only retries.
 - Plugins/OpenAI: enable `gpt-image-1` reference-image edits through `/images/edits` multipart uploads, and stop inferring unsupported resolution overrides when no explicit `size` or `resolution` is provided.
+- Agents/replay: remove the malformed assistant-content canonicalization repair from replay history sanitization instead of extending that legacy repair path into replay validation.
 - Plugins/OpenAI: tune the OpenAI prompt overlay for live-chat cadence so GPT replies stay shorter, more human, and less wall-of-text by default.
 - Providers/compat: stop forcing OpenAI-only defaults on proxy and custom OpenAI-compatible routes, preserve native vendor-specific reasoning/tool/streaming behavior across Anthropic-compatible, Moonshot, Mistral, ModelStudio, OpenRouter, xAI, and Z.ai endpoints, and route GitHub Copilot Claude models through Anthropic Messages instead of OpenAI Responses.
 - Providers/GitHub Copilot: send IDE identity headers on runtime model requests and GitHub token exchange so IDE-authenticated Copilot runs stop failing with missing `Editor-Version`. (#60641) Thanks @VACInc and @vincentkoc.
@@ -188,6 +188,7 @@ Docs: https://docs.openclaw.ai
 - Tasks/maintenance: reconcile stale cron and chat-backed CLI task rows against live cron-job and agent-run ownership instead of treating any persisted session key as proof that the task is still running. (#60310) Thanks @lml2468.
 - Update/npm: prefer the npm binary that owns the installed global OpenClaw prefix so mixed Homebrew-plus-nvm setups update the right install. (#60153) Thanks @jayeshp19.
 - Windows/restart: clean up stale gateway listeners before Windows self-restart and treat listener and argv probe failures as inconclusive, so scheduled-task relaunch no longer falls into an `EADDRINUSE` retry loop. (#60480) Thanks @arifahmedjoy.
+- Plugins: suppress trust-warning noise during non-activating snapshot and CLI metadata loads. (#61427) Thanks @gumadeiras.
 
 ## 2026.4.2
 
