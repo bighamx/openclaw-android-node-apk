@@ -411,6 +411,7 @@ export const tr: TranslationMap = {
     ko: "한국어 (Korece)",
     fr: "Français (Fransızca)",
     tr: "Türkçe (Türkçe)",
+    uk: "Українська (Ukraynaca)",
     id: "Bahasa Indonesia (Endonezce)",
     pl: "Polski (Lehçe)",
   },

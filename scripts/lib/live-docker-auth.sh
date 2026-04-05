@@ -27,7 +27,7 @@ openclaw_live_should_include_auth_dir_for_provider() {
   local provider
   provider="$(openclaw_live_trim "${1:-}")"
   case "$provider" in
-    codex-cli | openai-codex)
+    openai-codex)
       printf '%s\n' ".codex"
       ;;
     minimax | minimax-portal)

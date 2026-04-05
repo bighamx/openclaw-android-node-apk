@@ -402,6 +402,7 @@ export const zh_TW: TranslationMap = {
     ko: "한국어（Korean）",
     fr: "Français（French）",
     tr: "Türkçe（Turkish）",
+    uk: "Українська (烏克蘭語)",
     id: "Bahasa Indonesia（Indonesian）",
     pl: "Polski（Polish）",
   },

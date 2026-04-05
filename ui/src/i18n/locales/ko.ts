@@ -46,7 +46,7 @@ export const ko: TranslationMap = {
     aiAgents: "AI 및 에이전트",
     debug: "디버그",
     logs: "로그",
-    dreams: "Dreams",
+    dreams: "Dreaming",
   },
   subtitles: {
     agents: "워크스페이스, 도구, 정체성.",
@@ -406,6 +406,7 @@ export const ko: TranslationMap = {
     ko: "한국어 (Korean)",
     fr: "Français (French)",
     tr: "Türkçe (Turkish)",
+    uk: "우크라이나어 (Ukrainian)",
     id: "Bahasa Indonesia (Indonesian)",
     pl: "Polski (Polish)",
   },
