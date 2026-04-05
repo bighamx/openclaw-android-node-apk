@@ -264,7 +264,7 @@ export async function deliverDiscordReply(params: {
   const replyTo = params.replyToId?.trim() || undefined;
   const replyToMode = params.replyToMode ?? "all";
   // replyToMode=first should only apply to the first physical send.
-  const replyOnce = replyToMode === "first";
+  const replyOnce = replyToMode === "first" || replyToMode === "batched";
   let replyUsed = false;
   const resolveReplyTo = () => {
     if (!replyTo) {

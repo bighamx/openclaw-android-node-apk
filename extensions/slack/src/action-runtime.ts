@@ -76,7 +76,7 @@ export type SlackActionContext = {
   /** Current thread timestamp for auto-threading. */
   currentThreadTs?: string;
   /** Reply-to mode for auto-threading. */
-  replyToMode?: "off" | "first" | "all";
+  replyToMode?: "off" | "first" | "all" | "batched";
   /** Mutable ref to track if a reply was sent (for "first" mode). */
   hasRepliedRef?: { value: boolean };
   /** Allowed local media directories for file uploads. */
@@ -121,7 +121,11 @@ function resolveThreadTsFromContext(
   if (context.replyToMode === "all") {
     return context.currentThreadTs;
   }
-  if (context.replyToMode === "first" && context.hasRepliedRef && !context.hasRepliedRef.value) {
+  if (
+    (context.replyToMode === "first" || context.replyToMode === "batched") &&
+    context.hasRepliedRef &&
+    !context.hasRepliedRef.value
+  ) {
     context.hasRepliedRef.value = true;
     return context.currentThreadTs;
   }

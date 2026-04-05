@@ -78,7 +78,7 @@ vi.mock("../monitor/agent-components.runtime.js", () => {
       (params: {
         existingId?: string;
         hasReplied?: boolean;
-        replyToMode?: "off" | "first" | "all";
+        replyToMode?: "off" | "first" | "all" | "batched";
         startId?: string;
       }) => {
         let hasReplied = params.hasReplied ?? false;
@@ -94,7 +94,10 @@ vi.mock("../monitor/agent-components.runtime.js", () => {
             if (params.replyToMode === "off") {
               return undefined;
             }
-            if (params.replyToMode === "first" && hasReplied) {
+            if (
+              (params.replyToMode === "first" || params.replyToMode === "batched") &&
+              hasReplied
+            ) {
               return undefined;
             }
             const value = nextId;

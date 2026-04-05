@@ -20,14 +20,23 @@ export function formatBtwTextForExternalDelivery(payload: ReplyPayload): string 
 
 function resolveReplyThreadingForPayload(params: {
   payload: ReplyPayload;
+  replyToMode?: ReplyToMode;
   implicitReplyToId?: string;
   currentMessageId?: string;
+  allowImplicitReplyToCurrentMessage?: boolean;
 }): ReplyPayload {
   const implicitReplyToId = params.implicitReplyToId?.trim() || undefined;
   const currentMessageId = params.currentMessageId?.trim() || undefined;
+  const allowImplicitReplyToCurrentMessage =
+    params.replyToMode === "batched"
+      ? params.allowImplicitReplyToCurrentMessage === true
+      : params.allowImplicitReplyToCurrentMessage !== false;
 
   let resolved: ReplyPayload =
-    params.payload.replyToId || params.payload.replyToCurrent === false || !implicitReplyToId
+    params.payload.replyToId ||
+    params.payload.replyToCurrent === false ||
+    !implicitReplyToId ||
+    !allowImplicitReplyToCurrentMessage
       ? params.payload
       : { ...params.payload, replyToId: implicitReplyToId };
 
@@ -75,13 +84,26 @@ export function applyReplyThreading(params: {
   replyToMode: ReplyToMode;
   replyToChannel?: OriginatingChannelType;
   currentMessageId?: string;
+  allowImplicitReplyToCurrentMessage?: boolean;
 }): ReplyPayload[] {
-  const { payloads, replyToMode, replyToChannel, currentMessageId } = params;
+  const {
+    payloads,
+    replyToMode,
+    replyToChannel,
+    currentMessageId,
+    allowImplicitReplyToCurrentMessage,
+  } = params;
   const applyReplyToMode = createReplyToModeFilterForChannel(replyToMode, replyToChannel);
   const implicitReplyToId = currentMessageId?.trim() || undefined;
   return payloads
     .map((payload) =>
-      resolveReplyThreadingForPayload({ payload, implicitReplyToId, currentMessageId }),
+      resolveReplyThreadingForPayload({
+        payload,
+        replyToMode,
+        implicitReplyToId,
+        currentMessageId,
+        allowImplicitReplyToCurrentMessage,
+      }),
     )
     .filter(isRenderablePayload)
     .map(applyReplyToMode);

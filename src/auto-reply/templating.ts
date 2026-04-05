@@ -64,6 +64,11 @@ export type MsgContext = {
   MessageSids?: string[];
   MessageSidFirst?: string;
   MessageSidLast?: string;
+  /**
+   * Whether this inbound turn should implicitly reply to the current message
+   * when reply threading is enabled. Undefined preserves legacy behavior.
+   */
+  AllowImplicitReplyToCurrentMessage?: boolean;
   ReplyToId?: string;
   /**
    * Root message id for thread reconstruction (used by Feishu for root_id).

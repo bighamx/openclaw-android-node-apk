@@ -124,6 +124,7 @@ export function createReplyToModeFilter(
     if (mode === "all") {
       return payload;
     }
+    // "first" and "batched" both keep only the first eligible physical send.
     if (hasThreaded) {
       // Compaction notices are transient status messages that should always
       // appear in-thread, even after the first assistant block has already
@@ -135,7 +136,7 @@ export function createReplyToModeFilter(
     }
     // Compaction notices are transient status messages — they should be
     // threaded (so they appear in-context), but they must not consume the
-    // "first" slot of the replyToMode=first filter.  Skip advancing
+    // "first" slot of the replyToMode=first|batched filter.  Skip advancing
     // hasThreaded so the real assistant reply still gets replyToId.
     if (!payload.isCompactionNotice) {
       hasThreaded = true;

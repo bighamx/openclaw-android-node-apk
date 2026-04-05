@@ -40,7 +40,7 @@ export function createReplyReferencePlanner(options: {
       hasReplied = true;
       return id;
     }
-    // "first": only the first reply gets a reference.
+    // "first" and "batched": only the first eligible reply gets a reference.
     if (!hasReplied) {
       hasReplied = true;
       return id;
