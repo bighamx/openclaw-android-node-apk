@@ -34,6 +34,8 @@ type SessionManagerMocks = {
   resetLeaf: UnknownMock;
   buildSessionContext: Mock<() => { messages: AgentMessage[] }>;
   appendCustomEntry: UnknownMock;
+  flushPendingToolResults: UnknownMock;
+  clearPendingToolResults: UnknownMock;
 };
 type AttemptSpawnWorkspaceHoisted = {
   spawnSubagentDirectMock: UnknownMock;
@@ -97,6 +99,8 @@ const hoisted = vi.hoisted((): AttemptSpawnWorkspaceHoisted => {
     resetLeaf: vi.fn(),
     buildSessionContext: vi.fn<() => { messages: AgentMessage[] }>(() => ({ messages: [] })),
     appendCustomEntry: vi.fn(),
+    flushPendingToolResults: vi.fn(),
+    clearPendingToolResults: vi.fn(),
   };
   return {
     spawnSubagentDirectMock,
@@ -540,11 +544,12 @@ export function createSubscriptionMock(): SubscriptionMock {
 let runEmbeddedAttemptPromise:
   | Promise<typeof import("./attempt.js").runEmbeddedAttempt>
   | undefined;
+const ATTEMPT_SPAWN_WORKSPACE_TEST_SPECIFIER = "./attempt.ts?spawn-workspace-test";
 
 async function loadRunEmbeddedAttempt() {
-  runEmbeddedAttemptPromise ??= import("./attempt.ts?spawn-workspace-test").then(
-    (mod) => mod.runEmbeddedAttempt,
-  );
+  runEmbeddedAttemptPromise ??= (
+    import(ATTEMPT_SPAWN_WORKSPACE_TEST_SPECIFIER) as Promise<typeof import("./attempt.js")>
+  ).then((mod) => mod.runEmbeddedAttempt);
   return await runEmbeddedAttemptPromise;
 }
 

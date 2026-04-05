@@ -185,6 +185,7 @@ import {
   wrapStreamFnSanitizeMalformedToolCalls,
   wrapStreamFnTrimToolCallNames,
 } from "./attempt.tool-call-normalization.js";
+import { buildEmbeddedAttemptToolRunContext } from "./attempt.tool-run-context.js";
 import { waitForCompactionRetryWithAggregateTimeout } from "./compaction-retry-aggregate-timeout.js";
 import {
   resolveRunTimeoutDuringCompaction,
@@ -422,8 +423,7 @@ export async function runEmbeddedAttempt(
       : (() => {
           const allTools = createOpenClawCodingTools({
             agentId: sessionAgentId,
-            trigger: params.trigger,
-            memoryFlushWritePath: params.memoryFlushWritePath,
+            ...buildEmbeddedAttemptToolRunContext(params),
             exec: {
               ...params.execOverrides,
               elevated: params.bashElevated,
