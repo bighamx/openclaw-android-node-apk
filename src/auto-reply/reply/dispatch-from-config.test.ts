@@ -3,6 +3,7 @@ import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionBindingRecord } from "../../infra/outbound/session-binding-service.js";
 import type {
   PluginHookBeforeDispatchResult,
+  PluginHookReplyDispatchResult,
   PluginTargetedInboundClaimOutcome,
 } from "../../plugins/hooks.js";
 import { setActivePluginRegistry } from "../../plugins/runtime.js";
@@ -48,6 +49,9 @@ const hookMocks = vi.hoisted(() => ({
     runBeforeDispatch: vi.fn<
       (_event: unknown, _ctx: unknown) => Promise<PluginHookBeforeDispatchResult | undefined>
     >(async () => undefined),
+    runReplyDispatch: vi.fn<
+      (_event: unknown, _ctx: unknown) => Promise<PluginHookReplyDispatchResult | undefined>
+    >(async () => undefined),
   },
 }));
 const internalHookMocks = vi.hoisted(() => ({
@@ -56,8 +60,19 @@ const internalHookMocks = vi.hoisted(() => ({
 }));
 const acpMocks = vi.hoisted(() => ({
   listAcpSessionEntries: vi.fn(async () => []),
-  readAcpSessionEntry: vi.fn<() => unknown>(() => null),
-  upsertAcpSessionMeta: vi.fn(async () => null),
+  readAcpSessionEntry: vi.fn<(params: { sessionKey: string; cfg?: OpenClawConfig }) => unknown>(
+    () => null,
+  ),
+  upsertAcpSessionMeta: vi.fn<
+    (params: {
+      sessionKey: string;
+      cfg?: OpenClawConfig;
+      mutate: (
+        current: Record<string, unknown> | undefined,
+        entry: { acp?: Record<string, unknown> } | undefined,
+      ) => Record<string, unknown> | null | undefined;
+    }) => Promise<unknown>
+  >(async () => null),
   requireAcpRuntimeBackend: vi.fn<() => unknown>(),
 }));
 const sessionBindingMocks = vi.hoisted(() => ({
@@ -317,7 +332,13 @@ function createAcpRuntime(events: Array<Record<string, unknown>>) {
           runtimeSessionName: `${input.sessionKey}:${input.mode}`,
         }) as { sessionKey: string; backend: string; runtimeSessionName: string },
     ),
-    runTurn: vi.fn(async function* (_params: { text?: string }) {
+    runTurn: vi.fn(async function* (_params: {
+      text?: string;
+      attachments?: unknown[];
+      mode?: string;
+      requestId?: string;
+      signal?: AbortSignal;
+    }) {
       for (const event of events) {
         yield event;
       }
@@ -496,6 +517,8 @@ describe("dispatchReplyFromConfig", () => {
     hookMocks.runner.runMessageReceived.mockClear();
     hookMocks.runner.runBeforeDispatch.mockClear();
     hookMocks.runner.runBeforeDispatch.mockResolvedValue(undefined);
+    hookMocks.runner.runReplyDispatch.mockClear();
+    hookMocks.runner.runReplyDispatch.mockResolvedValue(undefined);
     hookMocks.registry.plugins = [];
     internalHookMocks.createInternalHookEvent.mockClear();
     internalHookMocks.createInternalHookEvent.mockImplementation(createInternalHookEventPayload);
@@ -3296,6 +3319,8 @@ describe("before_dispatch hook", () => {
     setNoAbort();
     hookMocks.runner.runBeforeDispatch.mockClear();
     hookMocks.runner.runBeforeDispatch.mockResolvedValue(undefined);
+    hookMocks.runner.runReplyDispatch.mockClear();
+    hookMocks.runner.runReplyDispatch.mockResolvedValue(undefined);
     hookMocks.runner.hasHooks.mockImplementation(
       (hookName?: string) => hookName === "before_dispatch",
     );
@@ -3386,5 +3411,83 @@ describe("before_dispatch hook", () => {
     });
     expect(hookMocks.runner.runBeforeDispatch).toHaveBeenCalled();
     expect(dispatcher.sendFinalReply).toHaveBeenCalledWith({ text: "model reply" });
+  });
+});
+
+describe("reply_dispatch hook", () => {
+  const createHookCtx = (overrides: Partial<MsgContext> = {}) =>
+    buildTestCtx({
+      Body: "hello",
+      BodyForAgent: "hello",
+      BodyForCommands: "hello",
+      From: "user1",
+      Surface: "telegram",
+      ChatType: "private",
+      SessionKey: "agent:test:session",
+      ...overrides,
+    });
+
+  beforeEach(async () => {
+    vi.resetModules();
+    ({ dispatchReplyFromConfig } = await import("./dispatch-from-config.js"));
+    ({ resetInboundDedupe } = await import("./inbound-dedupe.js"));
+    resetInboundDedupe();
+    hookMocks.runner.runBeforeDispatch.mockReset();
+    hookMocks.runner.runBeforeDispatch.mockResolvedValue(undefined);
+    hookMocks.runner.runReplyDispatch.mockReset();
+    hookMocks.runner.runReplyDispatch.mockResolvedValue(undefined);
+    hookMocks.runner.hasHooks.mockImplementation(
+      (hookName?: string) => hookName === "reply_dispatch",
+    );
+  });
+
+  it("returns handled dispatch results from plugins", async () => {
+    hookMocks.runner.runReplyDispatch.mockResolvedValue({
+      handled: true,
+      queuedFinal: true,
+      counts: { tool: 1, block: 2, final: 3 },
+    });
+
+    const result = await dispatchReplyFromConfig({
+      ctx: createHookCtx(),
+      cfg: emptyConfig,
+      dispatcher: createDispatcher(),
+      replyResolver: async () => ({ text: "model reply" }),
+    });
+
+    expect(hookMocks.runner.runReplyDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionKey: "agent:test:session",
+        sendPolicy: "allow",
+        inboundAudio: false,
+      }),
+      expect.objectContaining({
+        cfg: emptyConfig,
+      }),
+    );
+    expect(result).toEqual({
+      queuedFinal: true,
+      counts: { tool: 1, block: 2, final: 3 },
+    });
+  });
+
+  it("still applies send-policy deny after an unhandled plugin dispatch", async () => {
+    const result = await dispatchReplyFromConfig({
+      ctx: createHookCtx(),
+      cfg: {
+        ...emptyConfig,
+        session: {
+          sendPolicy: "deny",
+        },
+      },
+      dispatcher: createDispatcher(),
+      replyResolver: async () => ({ text: "model reply" }),
+    });
+
+    expect(hookMocks.runner.runReplyDispatch).toHaveBeenCalled();
+    expect(result).toEqual({
+      queuedFinal: false,
+      counts: { tool: 0, block: 0, final: 0 },
+    });
   });
 });
