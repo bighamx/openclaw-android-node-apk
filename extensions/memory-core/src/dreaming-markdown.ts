@@ -6,26 +6,24 @@ import {
   type MemoryDreamingStorageConfig,
 } from "openclaw/plugin-sdk/memory-core-host-status";
 
-const DAILY_PHASE_HEADINGS: Record<Exclude<MemoryDreamingPhaseName, "deep">, string> = {
-  light: "## Light Sleep",
-  rem: "## REM Sleep",
-};
-
 const DAILY_PHASE_LABELS: Record<Exclude<MemoryDreamingPhaseName, "deep">, string> = {
   light: "light",
   rem: "rem",
 };
 
-const DREAMS_FILENAME = "dreams.md";
+const DREAMS_FILENAME = "DREAMS.md";
 
-function resolvePhaseMarkers(phase: Exclude<MemoryDreamingPhaseName, "deep">): {
+function resolvePhaseMarkers(
+  phase: Exclude<MemoryDreamingPhaseName, "deep">,
+  isoDay: string,
+): {
   start: string;
   end: string;
 } {
   const label = DAILY_PHASE_LABELS[phase];
   return {
-    start: `<!-- openclaw:dreaming:${label}:start -->`,
-    end: `<!-- openclaw:dreaming:${label}:end -->`,
+    start: `<!-- openclaw:dreaming:${isoDay}:${label}:start -->`,
+    end: `<!-- openclaw:dreaming:${isoDay}:${label}:end -->`,
   };
 }
 
@@ -63,6 +61,13 @@ function resolveDreamsPath(workspaceDir: string): string {
   return path.join(workspaceDir, DREAMS_FILENAME);
 }
 
+function resolveDreamsBlockHeading(
+  phase: Exclude<MemoryDreamingPhaseName, "deep">,
+  isoDay: string,
+): string {
+  return `## ${isoDay} - ${phase === "light" ? "Light Sleep" : "REM Sleep"}`;
+}
+
 function resolveSeparateReportPath(
   workspaceDir: string,
   phase: MemoryDreamingPhaseName,
@@ -90,23 +95,23 @@ export async function writeDailyDreamingPhaseBlock(params: {
   storage: MemoryDreamingStorageConfig;
 }): Promise<{ inlinePath?: string; reportPath?: string }> {
   const nowMs = Number.isFinite(params.nowMs) ? (params.nowMs as number) : Date.now();
+  const isoDay = formatMemoryDreamingDay(nowMs, params.timezone);
   const body = params.bodyLines.length > 0 ? params.bodyLines.join("\n") : "- No notable updates.";
   let inlinePath: string | undefined;
   let reportPath: string | undefined;
 
   if (shouldWriteInline(params.storage)) {
     inlinePath = resolveDreamsPath(params.workspaceDir);
-    await fs.mkdir(path.dirname(inlinePath), { recursive: true });
     const original = await fs.readFile(inlinePath, "utf-8").catch((err: unknown) => {
       if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
         return "";
       }
       throw err;
     });
-    const markers = resolvePhaseMarkers(params.phase);
+    const markers = resolvePhaseMarkers(params.phase, isoDay);
     const updated = replaceManagedBlock({
       original,
-      heading: DAILY_PHASE_HEADINGS[params.phase],
+      heading: resolveDreamsBlockHeading(params.phase, isoDay),
       startMarker: markers.start,
       endMarker: markers.end,
       body,

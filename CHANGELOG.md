@@ -12,6 +12,7 @@ Docs: https://docs.openclaw.ai
 
 - Memory/dreaming (experimental): add weighted short-term recall promotion, a `/dreaming` command, Dreams UI, multilingual conceptual tagging, and doctor/status repair support, while refactoring dreaming from competing modes into three cooperative phases (light, deep, REM) with independent schedules and recovery behavior so durable memory promotion can run in the background with less manual setup. (#60569, #60697) Thanks @vignesh07.
 - Memory/dreaming: add configurable aging controls (`recencyHalfLifeDays`, `maxAgeDays`) plus optional verbose logging so operators can tune recall decay and inspect promotion decisions more easily.
+- Memory/dreaming: add REM preview tooling (`openclaw memory rem-harness`, `promote-explain`), surface possible lasting truths during REM staging, and make deep promotion replay-safe so reruns reconcile instead of duplicating `MEMORY.md` entries.
 - Agents/video generation: add the built-in `video_generate` tool so agents can create videos through configured providers and return the generated media directly in the reply.
 - Control UI/multilingual: add localized control UI support for Simplified Chinese, Traditional Chinese, Brazilian Portuguese, German, Spanish, Japanese, Korean, French, Turkish, Indonesian, Polish, and Ukrainian. Thanks @vincentkoc.
 - iOS/exec approvals: add generic APNs approval notifications that open an in-app exec approval modal, fetch command details only after authenticated operator reconnect, and clear stale notification state when the approval resolves. (#60239) Thanks @ngutman.
@@ -33,10 +34,12 @@ Docs: https://docs.openclaw.ai
 - Agents/cache: stabilize cache-relevant system prompt fingerprints by normalizing equivalent structured prompt whitespace, line endings, hook-added system context, and runtime capability ordering so semantically unchanged prompts reuse KV/cache more reliably. Thanks @vincentkoc.
 - Agents/tool prompts: remove the duplicate in-band tool inventory from agent system prompts so tool-calling models rely on the structured tool definitions as the single source of truth, improving prompt stability and reducing stale tool guidance.
 - Tools/video generation: add bundled xAI (`grok-imagine-video`) and Alibaba Model Studio Wan video providers, plus live-test/default model wiring for both.
+- Agents/video generation: register `video_generate` runs in the task ledger with task/run ids and lifecycle updates so long-running generations can be tracked more reliably.
 - Providers/CLI: remove bundled CLI text-provider backends and the `agents.defaults.cliBackends` surface, while keeping ACP harness sessions and Gemini media understanding on the native bundled providers.
 - Matrix/exec approvals: clarify unavailable-approval replies so Matrix no longer claims chat approvals are unsupported when native exec approvals are merely unconfigured. (#61424) Thanks @gumadeiras.
 - Docs/IRC: replace public IRC hostname examples with `irc.example.com` and recommend private servers for bot coordination while listing common public networks for intentional use.
-- Memory/dreaming: write dreaming trail content to top-level `dreams.md` instead of daily memory notes, update `/dreaming` help text to point there, and keep `dreams.md` available for explicit reads without pulling it into default recall. Thanks @davemorin.
+- Memory/dreaming: write dreaming trail content to top-level `DREAMS.md` instead of daily memory notes, update `/dreaming` help text to point there, and keep `DREAMS.md` available for explicit reads without pulling it into default recall. Thanks @davemorin.
+- Plugins/Lobster: run bundled Lobster workflows in process instead of spawning the external CLI, reducing transport overhead and unblocking native runtime integration. (#61523) Thanks @mbelinky.
 
 ### Fixes
 
@@ -51,6 +54,7 @@ Docs: https://docs.openclaw.ai
 - Discord/reply tags: strip leaked `[[reply_to_current]]` control tags from preview text and honor explicit reply-tag threading during final delivery, so Discord replies stay attached to the triggering message instead of printing reply metadata into chat.
 - Discord/replies: replace the unshipped `replyToOnlyWhenBatched` flag with `replyToMode: "batched"` so native reply references only attach on debounced multi-message turns while explicit reply tags still work.
 - Discord/image generation: include the real generated `MEDIA:` paths in tool output, avoid duplicate plain-output media requeueing, and persist volatile workspace-generated media into durable outbound media before final reply delivery so generated image replies stop pointing at missing local files.
+- Tools/image generation: ignore unsupported provider geometry overrides such as OpenAI `aspectRatio` hints, report the dropped overrides in tool output, and keep compatible provider fallbacks working instead of failing early.
 - Slack: route live DM replies back to the concrete inbound DM channel while keeping persisted routing metadata user-scoped, so normal assistant replies stop disappearing when pairing and system messages still arrive. (#59030) Thanks @afurm.
 - WhatsApp: restore `channels.whatsapp.blockStreaming` and reset watchdog timeouts after reconnect so quiet chats stop falling into reconnect loops. (#60007, #60069) Thanks @MonkeyLeeT and @mcaxtr.
 - Android/Talk Mode: cancel in-flight `talk.speak` playback when speech is explicitly stopped, and restore spoken replies on both node-scoped and gateway-backed sessions by keeping reply routing and embedded transport overrides aligned with the current playback path. (#60306, #61164, #61214)
@@ -107,6 +111,7 @@ Docs: https://docs.openclaw.ai
 - Exec approvals: remove heuristic command-obfuscation gating from host exec so gateway and node runs rely on explicit policy, allowlist, and strict inline-eval rules only.
 - Agents/tool results: cap live tool-result persistence and overflow-recovery truncation at 40k characters so oversized tool output stays bounded without discarding recent context entirely.
 - Discord/video replies: split text-plus-video deliveries into a text reply followed by a media-only send, and let live provider auth checks honor manifest-declared API key env vars like `MODELSTUDIO_API_KEY`.
+- Providers/fal video: switch long-running fal video generation to the queue-backed submit/status/result flow, and accept `FAL_API_KEY` as a compatibility alias for the canonical `FAL_KEY`.
 - Config/All Settings: keep the raw config view intact when sensitive fields are blank instead of corrupting or dropping the rendered snapshot. (#28214) Thanks @solodmd.
 - Plugin SDK/facades: back-fill bundled plugin facade sentinels before plugin-id tracking re-enters config loading, so CLI/provider startup no longer crashes with `shouldNormalizeGoogleProviderConfig is not a function` or other empty-facade reads during bundled plugin re-entry. Thanks @adam91holt.
 - Plugins/facades: back-fill facade sentinels before tracked-plugin resolution re-enters config loading, so facade exports stay defined during circular provider normalization. (#61180) Thanks @adam91holt.
@@ -157,6 +162,7 @@ Docs: https://docs.openclaw.ai
 - Plugins/OpenAI: tune the OpenAI prompt overlay for live-chat cadence so GPT replies stay shorter, more human, and less wall-of-text by default.
 - Providers/compat: stop forcing OpenAI-only defaults on proxy and custom OpenAI-compatible routes, preserve native vendor-specific reasoning/tool/streaming behavior across Anthropic-compatible, Moonshot, Mistral, ModelStudio, OpenRouter, xAI, and Z.ai endpoints, and route GitHub Copilot Claude models through Anthropic Messages instead of OpenAI Responses.
 - Providers/GitHub Copilot: send IDE identity headers on runtime model requests and GitHub token exchange so IDE-authenticated Copilot runs stop failing with missing `Editor-Version`. (#60641) Thanks @VACInc and @vincentkoc.
+- Discord/native commands: authorize slash commands and autocomplete in explicitly allowlisted guild channels when `commands.allowFrom` is unset, while still keeping `commands.allowFrom` authoritative when it is configured and denying non-allowlisted channels.
 - Providers/OpenRouter failover: classify `403 “Key limit exceeded”` spending-limit responses as billing so model fallback continues instead of stopping on generic auth. (#59892) Thanks @rockcent.
 - Providers/Anthropic: keep `claude-cli/*` auth on live Claude CLI credentials at runtime, avoid persisting stale bearer-token profiles, and suppress macOS Keychain prompts during non-interactive Claude CLI setup. (#61234) Thanks @darkamenosa.
 - Providers/Anthropic: when Claude CLI auth becomes the default, write a real `claude-cli` auth profile so local and gateway agent runs can use Claude CLI immediately without missing-API-key failures. Thanks @vincentkoc.
