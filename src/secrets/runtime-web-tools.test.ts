@@ -23,29 +23,21 @@ const {
   ),
   resolveBundledWebFetchProvidersFromPublicArtifactsMock: vi.fn(() => buildTestWebFetchProviders()),
 }));
-let runtimeWebSearchProviders: typeof import("../plugins/web-search-providers.runtime.js");
-let runtimeWebFetchProviders: typeof import("../plugins/web-fetch-providers.runtime.js");
 let secretResolve: typeof import("./resolve.js");
 let createResolverContext: typeof import("./runtime-shared.js").createResolverContext;
 let resolveRuntimeWebTools: typeof import("./runtime-web-tools.js").resolveRuntimeWebTools;
 
-vi.mock("../plugins/web-search-providers.runtime.js", async () => {
-  const actual = await vi.importActual<typeof import("../plugins/web-search-providers.runtime.js")>(
-    "../plugins/web-search-providers.runtime.js",
+vi.mock("./runtime-web-tools-fallback.runtime.js", async () => {
+  const actual = await vi.importActual<typeof import("./runtime-web-tools-fallback.runtime.js")>(
+    "./runtime-web-tools-fallback.runtime.js",
   );
   return {
     ...actual,
-    resolvePluginWebSearchProviders: resolvePluginWebSearchProvidersMock,
-  };
-});
-
-vi.mock("../plugins/web-fetch-providers.runtime.js", async () => {
-  const actual = await vi.importActual<typeof import("../plugins/web-fetch-providers.runtime.js")>(
-    "../plugins/web-fetch-providers.runtime.js",
-  );
-  return {
-    ...actual,
-    resolvePluginWebFetchProviders: resolvePluginWebFetchProvidersMock,
+    runtimeWebToolsFallbackProviders: {
+      ...actual.runtimeWebToolsFallbackProviders,
+      resolvePluginWebSearchProviders: resolvePluginWebSearchProvidersMock,
+      resolvePluginWebFetchProviders: resolvePluginWebFetchProvidersMock,
+    },
   };
 });
 
@@ -261,17 +253,14 @@ function expectInactiveWebFetchProviderSecretRef(params: {
 
 describe("runtime web tools resolution", () => {
   beforeAll(async () => {
-    runtimeWebSearchProviders = await import("../plugins/web-search-providers.runtime.js");
-    runtimeWebFetchProviders = await import("../plugins/web-fetch-providers.runtime.js");
     secretResolve = await import("./resolve.js");
     ({ createResolverContext } = await import("./runtime-shared.js"));
     ({ resolveRuntimeWebTools } = await import("./runtime-web-tools.js"));
   });
 
   beforeEach(() => {
-    runtimeWebSearchProviders.__testing.resetWebSearchProviderSnapshotCacheForTests();
-    vi.mocked(runtimeWebSearchProviders.resolvePluginWebSearchProviders).mockClear();
-    vi.mocked(runtimeWebFetchProviders.resolvePluginWebFetchProviders).mockClear();
+    resolvePluginWebSearchProvidersMock.mockClear();
+    resolvePluginWebFetchProvidersMock.mockClear();
     resolveBundledWebSearchProvidersFromPublicArtifactsMock.mockClear();
     resolveBundledWebFetchProvidersFromPublicArtifactsMock.mockClear();
   });
@@ -738,7 +727,7 @@ describe("runtime web tools resolution", () => {
         onlyPluginIds: ["google"],
       }),
     );
-    expect(runtimeWebSearchProviders.resolvePluginWebSearchProviders).not.toHaveBeenCalled();
+    expect(resolvePluginWebSearchProvidersMock).not.toHaveBeenCalled();
   });
 
   it("does not resolve web fetch provider SecretRef when web fetch is inactive", async () => {
@@ -867,8 +856,8 @@ describe("runtime web tools resolution", () => {
 
     expect(metadata.search.providerSource).toBe("none");
     expect(metadata.fetch.providerSource).toBe("none");
-    expect(runtimeWebSearchProviders.resolvePluginWebSearchProviders).not.toHaveBeenCalled();
-    expect(runtimeWebFetchProviders.resolvePluginWebFetchProviders).not.toHaveBeenCalled();
+    expect(resolvePluginWebSearchProvidersMock).not.toHaveBeenCalled();
+    expect(resolvePluginWebFetchProvidersMock).not.toHaveBeenCalled();
   });
 
   it("uses bundled public artifacts for bundled web search provider discovery", async () => {
@@ -888,7 +877,7 @@ describe("runtime web tools resolution", () => {
     });
 
     expect(metadata.search.selectedProvider).toBe("brave");
-    expect(runtimeWebSearchProviders.resolvePluginWebSearchProviders).not.toHaveBeenCalled();
+    expect(resolvePluginWebSearchProvidersMock).not.toHaveBeenCalled();
   });
 
   it("uses bundled public artifacts for bundled web fetch provider discovery", async () => {
@@ -908,7 +897,7 @@ describe("runtime web tools resolution", () => {
     });
 
     expect(metadata.fetch.selectedProvider).toBe("firecrawl");
-    expect(runtimeWebFetchProviders.resolvePluginWebFetchProviders).not.toHaveBeenCalled();
+    expect(resolvePluginWebFetchProvidersMock).not.toHaveBeenCalled();
   });
 
   it("uses env fallback for unresolved web fetch provider SecretRef when active", async () => {
@@ -1116,6 +1105,6 @@ describe("runtime web tools resolution", () => {
         bundledAllowlistCompat: true,
       }),
     );
-    expect(runtimeWebFetchProviders.resolvePluginWebFetchProviders).not.toHaveBeenCalled();
+    expect(resolvePluginWebFetchProvidersMock).not.toHaveBeenCalled();
   });
 });

@@ -191,9 +191,7 @@ describe("memory cli", () => {
   }
 
   async function withQmdIndexDb(content: string, run: (dbPath: string) => Promise<void>) {
-    const tmpDir = path.join(qmdFixtureRoot, `case-${qmdCaseId++}`);
-    await fs.mkdir(tmpDir, { recursive: true });
-    const dbPath = path.join(tmpDir, "index.sqlite");
+    const dbPath = path.join(qmdFixtureRoot, `case-${qmdCaseId++}.sqlite`);
     await fs.writeFile(dbPath, content, "utf-8");
     await run(dbPath);
   }
