@@ -505,6 +505,7 @@ describe("matrix monitor handler pairing account scope", () => {
     );
 
     expect(recordInboundSession).not.toHaveBeenCalled();
+    expect(resolveAgentRoute).not.toHaveBeenCalled();
   });
 
   it("skips media downloads for unmentioned group media messages", async () => {
@@ -1383,7 +1384,7 @@ describe("matrix monitor handler pairing account scope", () => {
         sender: "@user:example.org",
         body: "hello there",
         mentions: { room: true },
-      }) as MatrixRawEvent,
+      }),
     );
 
     expect(enqueueSystemEvent).not.toHaveBeenCalled();

@@ -12,12 +12,7 @@ import { ensureOpenClawCliOnPath } from "../infra/path-env.js";
 import { assertSupportedRuntime } from "../infra/runtime-guard.js";
 import { enableConsoleCapture } from "../logging.js";
 import { hasMemoryRuntime } from "../plugins/memory-state.js";
-import {
-  getCommandPathWithRootOptions,
-  getPrimaryCommand,
-  hasHelpOrVersion,
-  isRootHelpInvocation,
-} from "./argv.js";
+import { resolveCliArgvInvocation } from "./argv-invocation.js";
 import {
   shouldRegisterPrimaryCommandOnly,
   shouldSkipPluginCommandRegistration,
@@ -52,14 +47,15 @@ export function rewriteUpdateFlagArgv(argv: string[]): string[] {
 }
 
 export function shouldEnsureCliPath(argv: string[]): boolean {
-  if (hasHelpOrVersion(argv)) {
+  const invocation = resolveCliArgvInvocation(argv);
+  if (invocation.hasHelpOrVersion) {
     return false;
   }
-  return shouldEnsureCliPathForCommandPath(getCommandPathWithRootOptions(argv, 2));
+  return shouldEnsureCliPathForCommandPath(invocation.commandPath);
 }
 
 export function shouldUseRootHelpFastPath(argv: string[]): boolean {
-  return isRootHelpInvocation(argv);
+  return resolveCliArgvInvocation(argv).isRootHelpInvocation;
 }
 
 export function resolveMissingPluginCommandMessage(
@@ -157,9 +153,13 @@ export async function runCli(argv: string[] = process.argv) {
     // Capture all console output into structured logs while keeping stdout/stderr behavior.
     enableConsoleCapture();
 
-    const { buildProgram } = await import("./program.js");
+    const [{ buildProgram }, { installUnhandledRejectionHandler }, { restoreTerminalState }] =
+      await Promise.all([
+        import("./program.js"),
+        import("../infra/unhandled-rejections.js"),
+        import("../terminal/restore.js"),
+      ]);
     const program = buildProgram();
-    const { installUnhandledRejectionHandler } = await import("../infra/unhandled-rejections.js");
 
     // Global error handlers to prevent silent crashes from unhandled rejections/exceptions.
     // These log the error and exit gracefully instead of crashing without trace.
@@ -167,13 +167,15 @@ export async function runCli(argv: string[] = process.argv) {
 
     process.on("uncaughtException", (error) => {
       console.error("[openclaw] Uncaught exception:", formatUncaughtError(error));
+      restoreTerminalState("uncaught exception", { resumeStdinIfPaused: false });
       process.exit(1);
     });
 
     const parseArgv = rewriteUpdateFlagArgv(normalizedArgv);
+    const invocation = resolveCliArgvInvocation(parseArgv);
     // Register the primary command (builtin or subcli) so help and command parsing
     // are correct even with lazy command registration.
-    const primary = getPrimaryCommand(parseArgv);
+    const { primary } = invocation;
     if (primary && shouldRegisterPrimaryCommandOnly(parseArgv)) {
       const { getProgramContext } = await import("./program/program-context.js");
       const ctx = getProgramContext(program);
@@ -194,15 +196,17 @@ export async function runCli(argv: string[] = process.argv) {
     });
     if (!shouldSkipPluginRegistration) {
       // Register plugin CLI commands before parsing
-      const { registerPluginCliCommands } = await import("../plugins/cli.js");
-      const { loadValidatedConfigForPluginRegistration } =
-        await import("./program/register.subclis.js");
-      const config = await loadValidatedConfigForPluginRegistration();
-      if (config) {
-        await registerPluginCliCommands(program, config, undefined, undefined, {
+      const { registerPluginCliCommandsFromValidatedConfig } = await import("../plugins/cli.js");
+      const config = await registerPluginCliCommandsFromValidatedConfig(
+        program,
+        undefined,
+        undefined,
+        {
           mode: "lazy",
           primary,
-        });
+        },
+      );
+      if (config) {
         if (primary && !program.commands.some((command) => command.name() === primary)) {
           const missingPluginCommandMessage = resolveMissingPluginCommandMessage(primary, config);
           if (missingPluginCommandMessage) {
