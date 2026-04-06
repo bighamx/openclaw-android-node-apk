@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
     createSubsystemLogger: vi.fn(() => ({ debug })),
     describeFailoverError: vi.fn(),
     getProviderEnvVars: vi.fn<(providerId: string) => string[]>(() => []),
+    resolveProviderAuthEnvVarCandidates: vi.fn(() => ({})),
     getVideoGenerationProvider: vi.fn<
       (providerId: string, config?: OpenClawConfig) => VideoGenerationProvider | undefined
     >(() => undefined),
@@ -49,9 +50,14 @@ vi.mock("../config/model-input.js", () => ({
 vi.mock("../logging/subsystem.js", () => ({
   createSubsystemLogger: mocks.createSubsystemLogger,
 }));
-vi.mock("../secrets/provider-env-vars.js", () => ({
-  getProviderEnvVars: mocks.getProviderEnvVars,
-}));
+vi.mock("../secrets/provider-env-vars.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../secrets/provider-env-vars.js")>();
+  return {
+    ...actual,
+    getProviderEnvVars: mocks.getProviderEnvVars,
+    resolveProviderAuthEnvVarCandidates: mocks.resolveProviderAuthEnvVarCandidates,
+  };
+});
 vi.mock("./model-ref.js", () => ({
   parseVideoGenerationModelRef: mocks.parseVideoGenerationModelRef,
 }));
@@ -66,6 +72,8 @@ describe("video-generation runtime", () => {
     mocks.describeFailoverError.mockReset();
     mocks.getProviderEnvVars.mockReset();
     mocks.getProviderEnvVars.mockReturnValue([]);
+    mocks.resolveProviderAuthEnvVarCandidates.mockReset();
+    mocks.resolveProviderAuthEnvVarCandidates.mockReturnValue({});
     mocks.getVideoGenerationProvider.mockReset();
     mocks.isFailoverError.mockReset();
     mocks.isFailoverError.mockReturnValue(false);
@@ -125,6 +133,68 @@ describe("video-generation runtime", () => {
         buffer: Buffer.from("mp4-bytes"),
         mimeType: "video/mp4",
         fileName: "sample.mp4",
+      },
+    ]);
+  });
+
+  it("auto-detects and falls through to another configured video-generation provider by default", async () => {
+    mocks.getVideoGenerationProvider.mockImplementation((providerId: string) => {
+      if (providerId === "openai") {
+        return {
+          id: "openai",
+          defaultModel: "sora-2",
+          capabilities: {},
+          isConfigured: () => true,
+          async generateVideo() {
+            throw new Error("Your request was blocked by our moderation system.");
+          },
+        };
+      }
+      if (providerId === "runway") {
+        return {
+          id: "runway",
+          defaultModel: "gen4.5",
+          capabilities: {},
+          isConfigured: () => true,
+          async generateVideo() {
+            return {
+              videos: [{ buffer: Buffer.from("mp4-bytes"), mimeType: "video/mp4" }],
+              model: "gen4.5",
+            };
+          },
+        };
+      }
+      return undefined;
+    });
+    mocks.listVideoGenerationProviders.mockReturnValue([
+      {
+        id: "openai",
+        defaultModel: "sora-2",
+        capabilities: {},
+        isConfigured: () => true,
+        generateVideo: async () => ({ videos: [] }),
+      },
+      {
+        id: "runway",
+        defaultModel: "gen4.5",
+        capabilities: {},
+        isConfigured: () => true,
+        generateVideo: async () => ({ videos: [] }),
+      },
+    ]);
+
+    const result = await generateVideo({
+      cfg: {} as OpenClawConfig,
+      prompt: "animate a cat",
+    });
+
+    expect(result.provider).toBe("runway");
+    expect(result.model).toBe("gen4.5");
+    expect(result.attempts).toEqual([
+      {
+        provider: "openai",
+        model: "sora-2",
+        error: "Your request was blocked by our moderation system.",
       },
     ]);
   });
@@ -303,7 +373,6 @@ describe("video-generation runtime", () => {
       } as OpenClawConfig,
       prompt: "animate a lobster",
       size: "1280x720",
-      aspectRatio: "16:9",
       inputImages: [{ buffer: Buffer.from("png"), mimeType: "image/png" }],
     });
 
@@ -312,7 +381,12 @@ describe("video-generation runtime", () => {
       aspectRatio: "16:9",
       resolution: undefined,
     });
-    expect(result.ignoredOverrides).toEqual([{ key: "size", value: "1280x720" }]);
+    expect(result.ignoredOverrides).toEqual([]);
+    expect(result.metadata).toMatchObject({
+      requestedSize: "1280x720",
+      normalizedAspectRatio: "16:9",
+      aspectRatioDerivedFromSize: "16:9",
+    });
   });
 
   it("builds a generic config hint without hardcoded provider ids", async () => {

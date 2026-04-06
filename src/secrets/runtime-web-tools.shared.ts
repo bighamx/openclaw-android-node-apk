@@ -8,6 +8,8 @@ import type {
 } from "./runtime-shared.js";
 import { pushInactiveSurfaceWarning, pushWarning } from "./runtime-shared.js";
 import type { RuntimeWebDiagnostic, RuntimeWebDiagnosticCode } from "./runtime-web-tools.types.js";
+export { isRecord } from "./shared.js";
+import { isRecord } from "./shared.js";
 
 type RuntimeWebWarningCode = Extract<RuntimeWebDiagnosticCode, SecretResolverWarningCode>;
 export type SecretResolutionResult<TSource extends string> = {
@@ -75,10 +77,6 @@ export type RuntimeWebProviderSelectionParams<
     selectedResolution?: SecretResolutionResult<TSource>;
   }) => Promise<void>;
 };
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function ensureObject(
   target: Record<string, unknown>,

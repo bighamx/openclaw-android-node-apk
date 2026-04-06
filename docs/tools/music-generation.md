@@ -131,8 +131,10 @@ Direct generation example:
 | `filename`        | string   | Output filename hint                                                                              |
 
 Not all providers support all parameters. OpenClaw still validates hard limits
-such as input counts before submission, but unsupported optional hints are
-ignored with a warning when the selected provider or model cannot honor them.
+such as input counts before submission. When a provider supports duration but
+uses a shorter maximum than the requested value, OpenClaw automatically clamps
+to the closest supported duration. Truly unsupported optional hints are ignored
+with a warning when the selected provider or model cannot honor them.
 
 ## Async behavior for the shared provider-backed path
 
@@ -193,6 +195,10 @@ When generating music, OpenClaw tries providers in this order:
 
 If a provider fails, the next candidate is tried automatically. If all fail, the
 error includes details from each attempt.
+
+Set `agents.defaults.mediaGenerationAutoProviderFallback: false` if you want
+music generation to use only the explicit `model`, `primary`, and `fallbacks`
+entries.
 
 ## Provider notes
 

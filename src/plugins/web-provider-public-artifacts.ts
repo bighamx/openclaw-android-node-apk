@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isRecord } from "../utils.js";
 import type { PluginLoadOptions } from "./loader.js";
 import { loadPluginManifestRegistry } from "./manifest-registry.js";
 import { loadBundledPluginPublicArtifactModuleSync } from "./public-surface-loader.js";
@@ -12,7 +13,11 @@ import { resolveBundledWebFetchResolutionConfig } from "./web-fetch-providers.sh
 import { resolveManifestDeclaredWebProviderCandidatePluginIds } from "./web-provider-resolution-shared.js";
 import { resolveBundledWebSearchResolutionConfig } from "./web-search-providers.shared.js";
 
-const WEB_SEARCH_ARTIFACT_CANDIDATES = ["web-search-provider.js", "web-search.js"] as const;
+const WEB_SEARCH_ARTIFACT_CANDIDATES = [
+  "web-search-contract-api.js",
+  "web-search-provider.js",
+  "web-search.js",
+] as const;
 const WEB_FETCH_ARTIFACT_CANDIDATES = ["web-fetch-provider.js", "web-fetch.js"] as const;
 
 type BundledWebProviderPublicArtifactParams = {
@@ -22,10 +27,6 @@ type BundledWebProviderPublicArtifactParams = {
   bundledAllowlistCompat?: boolean;
   onlyPluginIds?: readonly string[];
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
@@ -160,7 +161,7 @@ function resolveBundledManifestRecordsByPluginId(params: {
 
 export function resolveBundledWebSearchProvidersFromPublicArtifacts(
   params: BundledWebProviderPublicArtifactParams,
-): PluginWebSearchProviderEntry[] {
+): PluginWebSearchProviderEntry[] | null {
   const pluginIds = resolveBundledCandidatePluginIds({
     contract: "webSearchProviders",
     configKey: "webSearch",
@@ -183,32 +184,31 @@ export function resolveBundledWebSearchProvidersFromPublicArtifacts(
   for (const pluginId of pluginIds) {
     const record = recordsByPluginId.get(pluginId);
     if (!record) {
-      continue;
+      return null;
     }
     const mod = tryLoadBundledPublicArtifactModule({
       dirName: path.basename(record.rootDir),
       artifactCandidates: WEB_SEARCH_ARTIFACT_CANDIDATES,
     });
     if (!mod) {
-      continue;
+      return null;
     }
-    providers.push(
-      ...collectProviderFactories({
-        mod,
-        suffix: "WebSearchProvider",
-        isProvider: isWebSearchProviderPlugin,
-      }).map((provider) => ({
-        ...provider,
-        pluginId,
-      })),
-    );
+    const loadedProviders = collectProviderFactories({
+      mod,
+      suffix: "WebSearchProvider",
+      isProvider: isWebSearchProviderPlugin,
+    });
+    if (loadedProviders.length === 0) {
+      return null;
+    }
+    providers.push(...loadedProviders.map((provider) => ({ ...provider, pluginId })));
   }
   return providers;
 }
 
 export function resolveBundledWebFetchProvidersFromPublicArtifacts(
   params: BundledWebProviderPublicArtifactParams,
-): PluginWebFetchProviderEntry[] {
+): PluginWebFetchProviderEntry[] | null {
   const pluginIds = resolveBundledCandidatePluginIds({
     contract: "webFetchProviders",
     configKey: "webFetch",
@@ -231,25 +231,24 @@ export function resolveBundledWebFetchProvidersFromPublicArtifacts(
   for (const pluginId of pluginIds) {
     const record = recordsByPluginId.get(pluginId);
     if (!record) {
-      continue;
+      return null;
     }
     const mod = tryLoadBundledPublicArtifactModule({
       dirName: path.basename(record.rootDir),
       artifactCandidates: WEB_FETCH_ARTIFACT_CANDIDATES,
     });
     if (!mod) {
-      continue;
+      return null;
     }
-    providers.push(
-      ...collectProviderFactories({
-        mod,
-        suffix: "WebFetchProvider",
-        isProvider: isWebFetchProviderPlugin,
-      }).map((provider) => ({
-        ...provider,
-        pluginId,
-      })),
-    );
+    const loadedProviders = collectProviderFactories({
+      mod,
+      suffix: "WebFetchProvider",
+      isProvider: isWebFetchProviderPlugin,
+    });
+    if (loadedProviders.length === 0) {
+      return null;
+    }
+    providers.push(...loadedProviders.map((provider) => ({ ...provider, pluginId })));
   }
   return providers;
 }

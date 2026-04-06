@@ -11,7 +11,6 @@ import {
   resolveVideoGenerationMode,
   resolveVideoGenerationModeCapabilities,
 } from "../../video-generation/capabilities.js";
-import { resolveVideoGenerationSupportedDurations } from "../../video-generation/duration-support.js";
 import { parseVideoGenerationModelRef } from "../../video-generation/model-ref.js";
 import {
   generateVideo,
@@ -327,22 +326,6 @@ function validateVideoGenerationCapabilities(params: {
       );
     }
   }
-  if (
-    typeof params.durationSeconds === "number" &&
-    Number.isFinite(params.durationSeconds) &&
-    !resolveVideoGenerationSupportedDurations({
-      provider,
-      model: params.model,
-      inputImageCount: params.inputImageCount,
-      inputVideoCount: params.inputVideoCount,
-    }) &&
-    typeof caps.maxDurationSeconds === "number" &&
-    params.durationSeconds > caps.maxDurationSeconds
-  ) {
-    throw new ToolInputError(
-      `${provider.id} supports at most ${caps.maxDurationSeconds} seconds per video.`,
-    );
-  }
 }
 
 function formatIgnoredVideoGenerationOverride(override: VideoGenerationIgnoredOverride): string {
@@ -566,6 +549,25 @@ async function executeVideoGenerationJob(params: {
         (entry): entry is number => typeof entry === "number" && Number.isFinite(entry),
       )
     : undefined;
+  const normalizedSize =
+    typeof result.metadata?.normalizedSize === "string" && result.metadata.normalizedSize.trim()
+      ? result.metadata.normalizedSize
+      : undefined;
+  const normalizedAspectRatio =
+    typeof result.metadata?.normalizedAspectRatio === "string" &&
+    result.metadata.normalizedAspectRatio.trim()
+      ? result.metadata.normalizedAspectRatio
+      : undefined;
+  const normalizedResolution =
+    typeof result.metadata?.normalizedResolution === "string" &&
+    result.metadata.normalizedResolution.trim()
+      ? result.metadata.normalizedResolution
+      : undefined;
+  const sizeTranslatedToAspectRatio =
+    !normalizedSize &&
+    typeof result.metadata?.requestedSize === "string" &&
+    result.metadata.requestedSize === params.size &&
+    Boolean(normalizedAspectRatio);
   const lines = [
     `Generated ${savedVideos.length} video${savedVideos.length === 1 ? "" : "s"} with ${result.provider}/${result.model}.`,
     ...(warning ? [`Warning: ${warning}`] : []),
@@ -629,12 +631,15 @@ async function executeVideoGenerationJob(params: {
               })),
             }
           : {}),
-      ...(!ignoredOverrideKeys.has("size") && params.size ? { size: params.size } : {}),
-      ...(!ignoredOverrideKeys.has("aspectRatio") && params.aspectRatio
-        ? { aspectRatio: params.aspectRatio }
+      ...(normalizedSize ||
+      (!ignoredOverrideKeys.has("size") && params.size && !sizeTranslatedToAspectRatio)
+        ? { size: normalizedSize ?? params.size }
         : {}),
-      ...(!ignoredOverrideKeys.has("resolution") && params.resolution
-        ? { resolution: params.resolution }
+      ...(normalizedAspectRatio || (!ignoredOverrideKeys.has("aspectRatio") && params.aspectRatio)
+        ? { aspectRatio: normalizedAspectRatio ?? params.aspectRatio }
+        : {}),
+      ...(normalizedResolution || (!ignoredOverrideKeys.has("resolution") && params.resolution)
+        ? { resolution: normalizedResolution ?? params.resolution }
         : {}),
       ...(typeof normalizedDurationSeconds === "number"
         ? { durationSeconds: normalizedDurationSeconds }

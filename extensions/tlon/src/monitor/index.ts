@@ -28,7 +28,7 @@ import {
   mergeUniqueStrings,
   shouldMigrateTlonSetting,
 } from "./settings-helpers.js";
-import { asRecord, formatErrorMessage } from "./utils.js";
+import { asRecord, formatErrorMessage, readString } from "./utils.js";
 import {
   extractMessageText,
   formatModelName,
@@ -45,11 +45,6 @@ export type MonitorTlonOpts = {
   abortSignal?: AbortSignal;
   accountId?: string | null;
 };
-
-function readString(record: Record<string, unknown> | null, key: string): string | undefined {
-  const value = record?.[key];
-  return typeof value === "string" ? value : undefined;
-}
 
 function readNumber(record: Record<string, unknown> | null, key: string): number | undefined {
   const value = record?.[key];

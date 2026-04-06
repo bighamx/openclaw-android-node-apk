@@ -1,14 +1,9 @@
 import type { OpenClawConfig } from "../../../config/types.js";
 import { applyPluginDoctorCompatibilityMigrations } from "../../../plugins/doctor-contract-registry.js";
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
+import { isRecord } from "./legacy-config-record-shared.js";
 
 function collectRelevantDoctorChannelIds(raw: unknown): string[] {
-  const channels = asRecord(asRecord(raw)?.channels);
+  const channels = isRecord(raw) && isRecord(raw.channels) ? raw.channels : null;
   if (!channels) {
     return [];
   }

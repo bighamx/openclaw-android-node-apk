@@ -272,7 +272,7 @@ function resolveBundledWebSearchProviders(params: {
       bundledAllowlistCompat: true,
       onlyPluginIds: [params.configuredBundledPluginId],
     });
-    if (bundled.length > 0) {
+    if (bundled && bundled.length > 0) {
       return bundled;
     }
     return resolvePluginWebSearchProviders({
@@ -289,7 +289,7 @@ function resolveBundledWebSearchProviders(params: {
       env,
       bundledAllowlistCompat: true,
     });
-    if (bundled.length > 0) {
+    if (bundled && bundled.length > 0) {
       return bundled;
     }
     return resolvePluginWebSearchProviders({
@@ -319,7 +319,7 @@ function resolveBundledWebFetchProviders(params: {
       bundledAllowlistCompat: true,
       onlyPluginIds: [params.configuredBundledPluginId],
     });
-    if (bundled.length > 0) {
+    if (bundled && bundled.length > 0) {
       return bundled;
     }
     return resolvePluginWebFetchProviders({
@@ -335,7 +335,7 @@ function resolveBundledWebFetchProviders(params: {
     env,
     bundledAllowlistCompat: true,
   });
-  if (bundled.length > 0) {
+  if (bundled && bundled.length > 0) {
     return bundled;
   }
   return resolvePluginWebFetchProviders({

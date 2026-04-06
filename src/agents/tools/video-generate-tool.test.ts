@@ -298,6 +298,59 @@ describe("createVideoGenerateTool", () => {
     });
   });
 
+  it("surfaces normalized video geometry from runtime metadata", async () => {
+    vi.spyOn(videoGenerationRuntime, "generateVideo").mockResolvedValue({
+      provider: "runway",
+      model: "gen4.5",
+      attempts: [],
+      ignoredOverrides: [],
+      videos: [
+        {
+          buffer: Buffer.from("video-bytes"),
+          mimeType: "video/mp4",
+          fileName: "lobster.mp4",
+        },
+      ],
+      metadata: {
+        requestedSize: "1280x720",
+        normalizedAspectRatio: "16:9",
+      },
+    });
+    vi.spyOn(mediaStore, "saveMediaBuffer").mockResolvedValueOnce({
+      path: "/tmp/generated-lobster.mp4",
+      id: "generated-lobster.mp4",
+      size: 11,
+      contentType: "video/mp4",
+    });
+
+    const tool = createVideoGenerateTool({
+      config: asConfig({
+        agents: {
+          defaults: {
+            videoGenerationModel: { primary: "runway/gen4.5" },
+          },
+        },
+      }),
+    });
+    if (!tool) {
+      throw new Error("expected video_generate tool");
+    }
+
+    const result = await tool.execute("call-1", {
+      prompt: "friendly lobster surfing",
+      size: "1280x720",
+    });
+
+    expect(result.details).toMatchObject({
+      aspectRatio: "16:9",
+      metadata: {
+        requestedSize: "1280x720",
+        normalizedAspectRatio: "16:9",
+      },
+    });
+    expect(result.details).not.toHaveProperty("size");
+  });
+
   it("lists supported provider durations when advertised", async () => {
     vi.spyOn(videoGenerationRuntime, "listRuntimeVideoGenerationProviders").mockReturnValue([
       {
