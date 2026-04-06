@@ -1,4 +1,8 @@
+import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
+import { createJiti } from "jiti";
+import { openBoundaryFileSync } from "../../infra/boundary-file-read.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import type {
   BundledChannelEntryContract,
@@ -7,10 +11,10 @@ import type {
 import { loadPluginManifestRegistry } from "../../plugins/manifest-registry.js";
 import type { PluginRuntime } from "../../plugins/runtime/types.js";
 import {
-  isJavaScriptModulePath,
-  loadChannelPluginModule,
-  resolveCompiledBundledModulePath,
-} from "./module-loader.js";
+  buildPluginLoaderAliasMap,
+  buildPluginLoaderJitiOptions,
+  shouldPreferNativeJiti,
+} from "../../plugins/sdk-alias.js";
 import type { ChannelId, ChannelPlugin } from "./types.js";
 
 type GeneratedBundledChannelEntry = {
@@ -20,6 +24,7 @@ type GeneratedBundledChannelEntry = {
 };
 
 const log = createSubsystemLogger("channels");
+const nodeRequire = createRequire(import.meta.url);
 
 function resolveChannelPluginModuleEntry(
   moduleExport: unknown,
@@ -71,6 +76,70 @@ function resolveChannelSetupModuleEntry(
   return record as BundledChannelSetupEntryContract;
 }
 
+function createModuleLoader() {
+  const jitiLoaders = new Map<string, ReturnType<typeof createJiti>>();
+
+  return (modulePath: string) => {
+    const tryNative =
+      shouldPreferNativeJiti(modulePath) || modulePath.includes(`${path.sep}dist${path.sep}`);
+    const aliasMap = buildPluginLoaderAliasMap(modulePath, process.argv[1], import.meta.url);
+    const cacheKey = JSON.stringify({
+      tryNative,
+      aliasMap: Object.entries(aliasMap).toSorted(([left], [right]) => left.localeCompare(right)),
+    });
+    const cached = jitiLoaders.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    const loader = createJiti(import.meta.url, {
+      ...buildPluginLoaderJitiOptions(aliasMap),
+      tryNative,
+    });
+    jitiLoaders.set(cacheKey, loader);
+    return loader;
+  };
+}
+
+const loadModule = createModuleLoader();
+
+function loadBundledModule(modulePath: string, rootDir: string): unknown {
+  const boundaryRoot = resolveCompiledBundledModulePath(rootDir);
+  const opened = openBoundaryFileSync({
+    absolutePath: modulePath,
+    rootPath: boundaryRoot,
+    boundaryLabel: "plugin root",
+    rejectHardlinks: false,
+    skipLexicalRootCheck: true,
+  });
+  if (!opened.ok) {
+    throw new Error("plugin entry path escapes plugin root or fails alias checks");
+  }
+  const safePath = opened.path;
+  fs.closeSync(opened.fd);
+  if (
+    process.platform === "win32" &&
+    safePath.includes(`${path.sep}dist${path.sep}`) &&
+    [".js", ".mjs", ".cjs"].includes(path.extname(safePath).toLowerCase())
+  ) {
+    try {
+      return nodeRequire(safePath);
+    } catch {
+      // Fall back to the Jiti loader path when require() cannot handle the entry.
+    }
+  }
+  return loadModule(safePath)(safePath);
+}
+
+function resolveCompiledBundledModulePath(modulePath: string): string {
+  const compiledDistModulePath = modulePath.replace(
+    `${path.sep}dist-runtime${path.sep}`,
+    `${path.sep}dist${path.sep}`,
+  );
+  return compiledDistModulePath !== modulePath && fs.existsSync(compiledDistModulePath)
+    ? compiledDistModulePath
+    : modulePath;
+}
+
 function loadGeneratedBundledChannelEntries(): readonly GeneratedBundledChannelEntry[] {
   const manifestRegistry = loadPluginManifestRegistry({ cache: false, config: {} });
   const entries: GeneratedBundledChannelEntry[] = [];
@@ -83,13 +152,7 @@ function loadGeneratedBundledChannelEntries(): readonly GeneratedBundledChannelE
     try {
       const sourcePath = resolveCompiledBundledModulePath(manifest.source);
       const entry = resolveChannelPluginModuleEntry(
-        loadChannelPluginModule({
-          modulePath: sourcePath,
-          rootDir: manifest.rootDir,
-          boundaryRootDir: resolveCompiledBundledModulePath(manifest.rootDir),
-          shouldTryNativeRequire: (safePath) =>
-            safePath.includes(`${path.sep}dist${path.sep}`) && isJavaScriptModulePath(safePath),
-        }),
+        loadBundledModule(sourcePath, manifest.rootDir),
       );
       if (!entry) {
         log.warn(
@@ -99,13 +162,10 @@ function loadGeneratedBundledChannelEntries(): readonly GeneratedBundledChannelE
       }
       const setupEntry = manifest.setupSource
         ? resolveChannelSetupModuleEntry(
-            loadChannelPluginModule({
-              modulePath: resolveCompiledBundledModulePath(manifest.setupSource),
-              rootDir: manifest.rootDir,
-              boundaryRootDir: resolveCompiledBundledModulePath(manifest.rootDir),
-              shouldTryNativeRequire: (safePath) =>
-                safePath.includes(`${path.sep}dist${path.sep}`) && isJavaScriptModulePath(safePath),
-            }),
+            loadBundledModule(
+              resolveCompiledBundledModulePath(manifest.setupSource),
+              manifest.rootDir,
+            ),
           )
         : null;
       entries.push({
@@ -131,6 +191,8 @@ type BundledChannelState = {
   sortedIds: readonly ChannelId[];
   pluginsById: Map<ChannelId, ChannelPlugin>;
   setupPluginsById: Map<ChannelId, ChannelPlugin>;
+  secretsById: Map<ChannelId, ChannelPlugin["secrets"] | null>;
+  setupSecretsById: Map<ChannelId, ChannelPlugin["secrets"] | null>;
   runtimeSettersById: Map<ChannelId, NonNullable<BundledChannelEntryContract["setChannelRuntime"]>>;
 };
 
@@ -141,6 +203,8 @@ const EMPTY_BUNDLED_CHANNEL_STATE: BundledChannelState = {
   sortedIds: [],
   pluginsById: new Map(),
   setupPluginsById: new Map(),
+  secretsById: new Map(),
+  setupSecretsById: new Map(),
   runtimeSettersById: new Map(),
 };
 
@@ -187,6 +251,8 @@ function getBundledChannelState(): BundledChannelState {
       sortedIds: [...entriesById.keys()].toSorted((left, right) => left.localeCompare(right)),
       pluginsById: new Map(),
       setupPluginsById: new Map(),
+      secretsById: new Map(),
+      setupSecretsById: new Map(),
       runtimeSettersById,
     };
     return cachedBundledChannelState;
@@ -234,6 +300,20 @@ export function getBundledChannelPlugin(id: ChannelId): ChannelPlugin | undefine
   }
 }
 
+export function getBundledChannelSecrets(id: ChannelId): ChannelPlugin["secrets"] | undefined {
+  const state = getBundledChannelState();
+  if (state.secretsById.has(id)) {
+    return state.secretsById.get(id) ?? undefined;
+  }
+  const entry = state.entriesById.get(id);
+  if (!entry) {
+    return undefined;
+  }
+  const secrets = entry.loadChannelSecrets?.() ?? getBundledChannelPlugin(id)?.secrets;
+  state.secretsById.set(id, secrets ?? null);
+  return secrets;
+}
+
 export function getBundledChannelSetupPlugin(id: ChannelId): ChannelPlugin | undefined {
   const state = getBundledChannelState();
   const cached = state.setupPluginsById.get(id);
@@ -255,6 +335,20 @@ export function getBundledChannelSetupPlugin(id: ChannelId): ChannelPlugin | und
   } finally {
     setupPluginLoadInProgressIds.delete(id);
   }
+}
+
+export function getBundledChannelSetupSecrets(id: ChannelId): ChannelPlugin["secrets"] | undefined {
+  const state = getBundledChannelState();
+  if (state.setupSecretsById.has(id)) {
+    return state.setupSecretsById.get(id) ?? undefined;
+  }
+  const entry = state.setupEntriesById.get(id);
+  if (!entry) {
+    return undefined;
+  }
+  const secrets = entry.loadSetupSecrets?.() ?? getBundledChannelSetupPlugin(id)?.secrets;
+  state.setupSecretsById.set(id, secrets ?? null);
+  return secrets;
 }
 
 export function requireBundledChannelPlugin(id: ChannelId): ChannelPlugin {

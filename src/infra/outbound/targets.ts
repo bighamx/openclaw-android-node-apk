@@ -1,6 +1,7 @@
 import { mapAllowFromEntries } from "openclaw/plugin-sdk/channel-config-helpers";
 import { normalizeChatType, type ChatType } from "../../channels/chat-type.js";
 import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.js";
+import { formatCliCommand } from "../../cli/command-format.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import type { AgentDefaultsConfig } from "../../config/types.agent-defaults.js";
@@ -22,10 +23,7 @@ import {
   normalizeDeliverableOutboundChannel,
   resolveOutboundChannelPlugin,
 } from "./channel-resolution.js";
-import {
-  resolveOutboundTargetWithPlugin,
-  type OutboundTargetResolution,
-} from "./targets-resolve-shared.js";
+import { missingTargetError } from "./target-errors.js";
 
 export type OutboundChannel = DeliverableMessageChannel;
 
@@ -47,7 +45,8 @@ export type HeartbeatSenderContext = {
   allowFrom: string[];
 };
 
-export type { OutboundTargetResolution } from "./targets-resolve-shared.js";
+export type OutboundTargetResolution = { ok: true; to: string } | { ok: false; error: Error };
+
 export { resolveSessionDeliveryTarget, type SessionDeliveryTarget } from "./targets-session.js";
 import { resolveSessionDeliveryTarget } from "./targets-session.js";
 
@@ -60,25 +59,65 @@ export function resolveOutboundTarget(params: {
   accountId?: string | null;
   mode?: ChannelOutboundTargetMode;
 }): OutboundTargetResolution {
-  return (
-    resolveOutboundTargetWithPlugin({
-      plugin: resolveOutboundChannelPlugin({
-        channel: params.channel,
-        cfg: params.cfg,
-      }),
-      target: params,
-      onMissingPlugin: () =>
-        params.channel === INTERNAL_MESSAGE_CHANNEL
-          ? undefined
-          : {
-              ok: false,
-              error: new Error(`Unsupported channel: ${params.channel}`),
-            },
-    }) ?? {
+  if (params.channel === INTERNAL_MESSAGE_CHANNEL) {
+    return {
+      ok: false,
+      error: new Error(
+        `Delivering to WebChat is not supported via \`${formatCliCommand("openclaw agent")}\`; use WhatsApp/Telegram or run with --deliver=false.`,
+      ),
+    };
+  }
+
+  const plugin = resolveOutboundChannelPlugin({
+    channel: params.channel,
+    cfg: params.cfg,
+  });
+  if (!plugin) {
+    return {
       ok: false,
       error: new Error(`Unsupported channel: ${params.channel}`),
-    }
-  );
+    };
+  }
+
+  const allowFromRaw =
+    params.allowFrom ??
+    (params.cfg && plugin.config.resolveAllowFrom
+      ? plugin.config.resolveAllowFrom({
+          cfg: params.cfg,
+          accountId: params.accountId ?? undefined,
+        })
+      : undefined);
+  const allowFrom = allowFromRaw ? mapAllowFromEntries(allowFromRaw) : undefined;
+
+  // Fall back to per-channel defaultTo when no explicit target is provided.
+  const effectiveTo =
+    params.to?.trim() ||
+    (params.cfg && plugin.config.resolveDefaultTo
+      ? plugin.config.resolveDefaultTo({
+          cfg: params.cfg,
+          accountId: params.accountId ?? undefined,
+        })
+      : undefined);
+
+  const resolveTarget = plugin.outbound?.resolveTarget;
+  if (resolveTarget) {
+    return resolveTarget({
+      cfg: params.cfg,
+      to: effectiveTo,
+      allowFrom,
+      accountId: params.accountId ?? undefined,
+      mode: params.mode ?? "explicit",
+    });
+  }
+
+  if (effectiveTo) {
+    return { ok: true, to: effectiveTo };
+  }
+  const hint = plugin.messaging?.targetResolver?.hint;
+  return {
+    ok: false,
+    error: missingTargetError(plugin.meta.label ?? params.channel, hint),
+  };
 }
 
 export function resolveHeartbeatDeliveryTarget(params: {

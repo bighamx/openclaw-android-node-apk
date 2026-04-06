@@ -17,6 +17,18 @@ export type DiscordGatewayEvent = {
   shouldStopLifecycle: boolean;
 };
 
+export class DiscordGatewayLifecycleError extends Error {
+  readonly eventType: DiscordGatewayEventType;
+
+  constructor(event: Pick<DiscordGatewayEvent, "type" | "message" | "err">) {
+    super(`discord gateway ${event.type}: ${event.message}`, {
+      cause: event.err instanceof Error ? event.err : undefined,
+    });
+    this.name = "DiscordGatewayLifecycleError";
+    this.eventType = event.type;
+  }
+}
+
 export type DiscordGatewaySupervisor = {
   emitter?: EventEmitter;
   attachLifecycle: (handler: (event: DiscordGatewayEvent) => void) => void;
@@ -29,16 +41,40 @@ export type DiscordGatewaySupervisor = {
 
 type GatewaySupervisorPhase = "active" | "buffering" | "disposed" | "teardown";
 
+function readFirstStackFrame(err: Error): string | undefined {
+  const stack = err.stack;
+  if (!stack) {
+    return undefined;
+  }
+  const frame = stack
+    .split("\n")
+    .slice(1)
+    .map((line) => line.trim())
+    .find(Boolean);
+  return frame ? frame.replace(/^at\s+/, "") : undefined;
+}
+
+function formatDiscordGatewayErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) {
+    return formatErrorMessage(err);
+  }
+  if (err.message) {
+    const detail = formatErrorMessage(err);
+    return err.name ? `${err.name}: ${detail}` : detail;
+  }
+  const detail = formatErrorMessage(err);
+  const firstFrame = readFirstStackFrame(err);
+  if (firstFrame && detail === (err.name || "Error")) {
+    return `${detail} @ ${firstFrame}`;
+  }
+  return detail;
+}
+
 export function classifyDiscordGatewayEvent(params: {
   err: unknown;
   isDisallowedIntentsError: (err: unknown) => boolean;
 }): DiscordGatewayEvent {
-  const message =
-    params.err instanceof Error
-      ? params.err.message
-        ? `${params.err.name}: ${params.err.message}`
-        : params.err.name || "Error"
-      : formatErrorMessage(params.err);
+  const message = formatDiscordGatewayErrorMessage(params.err);
   if (params.isDisallowedIntentsError(params.err)) {
     return {
       type: "disallowed-intents",
@@ -97,9 +133,15 @@ export function createDiscordGatewaySupervisor(params: {
 
   let lifecycleHandler: ((event: DiscordGatewayEvent) => void) | undefined;
   let phase: GatewaySupervisorPhase = "buffering";
+  const seenLateEventKeys = new Set<string>();
   const logLateEvent =
     (state: Extract<GatewaySupervisorPhase, "disposed" | "teardown">) =>
     (event: DiscordGatewayEvent) => {
+      const key = `${state}:${event.type}:${event.message}`;
+      if (seenLateEventKeys.has(key)) {
+        return;
+      }
+      seenLateEventKeys.add(key);
       params.runtime.error?.(
         danger(
           `discord: suppressed late gateway ${event.type} error ${

@@ -67,4 +67,90 @@ describe("scripts/test-projects changed-target routing", () => {
       },
     ]);
   });
+
+  it("routes explicit plugin-sdk light tests to the lighter plugin-sdk lane", () => {
+    const plans = buildVitestRunPlans(["src/plugin-sdk/temp-path.test.ts"], process.cwd());
+
+    expect(plans).toEqual([
+      {
+        config: "vitest.plugin-sdk-light.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/plugin-sdk/temp-path.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("routes explicit commands light tests to the lighter commands lane", () => {
+    const plans = buildVitestRunPlans(["src/commands/cleanup-utils.test.ts"], process.cwd());
+
+    expect(plans).toEqual([
+      {
+        config: "vitest.commands-light.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/commands/cleanup-utils.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("routes changed plugin-sdk source allowlist files to sibling light tests", () => {
+    const plans = buildVitestRunPlans(["--changed", "origin/main"], process.cwd(), () => [
+      "src/plugin-sdk/lazy-value.ts",
+    ]);
+
+    expect(plans).toEqual([
+      {
+        config: "vitest.plugin-sdk-light.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/plugin-sdk/lazy-value.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("routes changed commands source allowlist files to sibling light tests", () => {
+    const plans = buildVitestRunPlans(["--changed", "origin/main"], process.cwd(), () => [
+      "src/commands/status-overview-values.ts",
+    ]);
+
+    expect(plans).toEqual([
+      {
+        config: "vitest.commands-light.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/commands/status-overview-values.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("keeps non-allowlisted plugin-sdk source files on the heavy lane", () => {
+    const plans = buildVitestRunPlans(["--changed", "origin/main"], process.cwd(), () => [
+      "src/plugin-sdk/facade-runtime.ts",
+    ]);
+
+    expect(plans).toEqual([
+      {
+        config: "vitest.plugin-sdk.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/plugin-sdk/**/*.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("keeps non-allowlisted commands source files on the heavy lane", () => {
+    const plans = buildVitestRunPlans(["--changed", "origin/main"], process.cwd(), () => [
+      "src/commands/channels.add.ts",
+    ]);
+
+    expect(plans).toEqual([
+      {
+        config: "vitest.commands.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/commands/**/*.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
 });

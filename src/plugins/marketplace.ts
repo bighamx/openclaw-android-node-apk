@@ -479,62 +479,33 @@ async function loadMarketplace(params: {
   logger?: MarketplaceLogger;
   timeoutMs?: number;
 }): Promise<{ ok: true; marketplace: LoadedMarketplace } | { ok: false; error: string }> {
-  const loadMarketplaceFromManifestFile = async (params: {
-    manifestPath: string;
-    sourceLabel: string;
-    rootDir: string;
-    origin: MarketplaceManifestOrigin;
-    cleanup?: () => Promise<void>;
-  }): Promise<{ ok: true; marketplace: LoadedMarketplace } | { ok: false; error: string }> => {
-    const raw = await fs.readFile(params.manifestPath, "utf-8");
-    const parsed = parseMarketplaceManifest(raw, params.manifestPath);
+  const loadResolvedLocalMarketplace = async (
+    local: ResolvedLocalMarketplaceSource,
+    sourceLabel: string,
+  ): Promise<{ ok: true; marketplace: LoadedMarketplace } | { ok: false; error: string }> => {
+    const raw = await fs.readFile(local.manifestPath, "utf-8");
+    const parsed = parseMarketplaceManifest(raw, local.manifestPath);
     if (!parsed.ok) {
-      await params.cleanup?.();
       return parsed;
     }
     const validated = await validateMarketplaceManifest({
       manifest: parsed.manifest,
-      sourceLabel: params.sourceLabel,
-      rootDir: params.rootDir,
-      origin: params.origin,
+      sourceLabel: local.manifestPath,
+      rootDir: local.rootDir,
+      origin: "local",
     });
     if (!validated.ok) {
-      await params.cleanup?.();
       return validated;
     }
     return {
       ok: true,
       marketplace: {
         manifest: validated.manifest,
-        rootDir: params.rootDir,
-        sourceLabel: params.sourceLabel,
-        origin: params.origin,
-        cleanup: params.cleanup,
+        rootDir: local.rootDir,
+        sourceLabel,
+        origin: "local",
       },
     };
-  };
-
-  const loadResolvedLocalMarketplace = async (
-    local: ResolvedLocalMarketplaceSource,
-    sourceLabel: string,
-  ): Promise<{ ok: true; marketplace: LoadedMarketplace } | { ok: false; error: string }> =>
-    loadMarketplaceFromManifestFile({
-      manifestPath: local.manifestPath,
-      sourceLabel,
-      rootDir: local.rootDir,
-      origin: "local",
-    });
-
-  const resolveClonedMarketplaceManifestPath = async (
-    rootDir: string,
-  ): Promise<string | undefined> => {
-    for (const candidate of MARKETPLACE_MANIFEST_CANDIDATES) {
-      const next = path.join(rootDir, candidate);
-      if (await pathExists(next)) {
-        return next;
-      }
-    }
-    return undefined;
   };
 
   const knownMarketplaces = await readClaudeKnownMarketplaces();
@@ -575,19 +546,46 @@ async function loadMarketplace(params: {
     return cloned;
   }
 
-  const manifestPath = await resolveClonedMarketplaceManifestPath(cloned.rootDir);
+  let manifestPath: string | undefined;
+  for (const candidate of MARKETPLACE_MANIFEST_CANDIDATES) {
+    const next = path.join(cloned.rootDir, candidate);
+    if (await pathExists(next)) {
+      manifestPath = next;
+      break;
+    }
+  }
   if (!manifestPath) {
     await cloned.cleanup();
     return { ok: false, error: `marketplace manifest not found in ${cloned.label}` };
   }
 
-  return await loadMarketplaceFromManifestFile({
-    manifestPath,
+  const raw = await fs.readFile(manifestPath, "utf-8");
+  const parsed = parseMarketplaceManifest(raw, manifestPath);
+  if (!parsed.ok) {
+    await cloned.cleanup();
+    return parsed;
+  }
+  const validated = await validateMarketplaceManifest({
+    manifest: parsed.manifest,
     sourceLabel: cloned.label,
     rootDir: cloned.rootDir,
     origin: "remote",
-    cleanup: cloned.cleanup,
   });
+  if (!validated.ok) {
+    await cloned.cleanup();
+    return validated;
+  }
+
+  return {
+    ok: true,
+    marketplace: {
+      manifest: validated.manifest,
+      rootDir: cloned.rootDir,
+      sourceLabel: cloned.label,
+      origin: "remote",
+      cleanup: cloned.cleanup,
+    },
+  };
 }
 
 function resolveSafeMarketplaceDownloadFileName(url: string, fallback: string): string {

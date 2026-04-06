@@ -1,9 +1,5 @@
 import type { PluginDiagnostic, ProviderAuthMethod, ProviderPlugin } from "./types.js";
 
-type ProviderWizardSetup = NonNullable<NonNullable<ProviderPlugin["wizard"]>["setup"]>;
-type ProviderWizardModelPicker = NonNullable<NonNullable<ProviderPlugin["wizard"]>["modelPicker"]>;
-type ProviderWizardModelAllowlist = NonNullable<ProviderWizardSetup["modelAllowlist"]>;
-
 function pushProviderDiagnostic(params: {
   level: PluginDiagnostic["level"];
   pluginId: string;
@@ -67,104 +63,14 @@ function normalizeProviderOAuthProfileIdRepairs(
   return normalized.length > 0 ? normalized : undefined;
 }
 
-function resolveWizardMethodId(params: {
-  providerId: string;
-  pluginId: string;
-  source: string;
-  auth: ProviderAuthMethod[];
-  methodId: string | undefined;
-  metadataKind: "setup" | "model-picker";
-  pushDiagnostic: (diag: PluginDiagnostic) => void;
-}): string | undefined {
-  if (!params.methodId) {
-    return undefined;
-  }
-  if (params.auth.some((method) => method.id === params.methodId)) {
-    return params.methodId;
-  }
-  pushProviderDiagnostic({
-    level: "warn",
-    pluginId: params.pluginId,
-    source: params.source,
-    message: `provider "${params.providerId}" ${params.metadataKind} method "${params.methodId}" not found; falling back to available methods`,
-    pushDiagnostic: params.pushDiagnostic,
-  });
-  return undefined;
-}
-
-function buildNormalizedModelAllowlist(
-  modelAllowlist: ProviderWizardModelAllowlist | undefined,
-): ProviderWizardModelAllowlist | undefined {
-  if (!modelAllowlist) {
-    return undefined;
-  }
-  const allowedKeys = normalizeTextList(modelAllowlist.allowedKeys);
-  const initialSelections = normalizeTextList(modelAllowlist.initialSelections);
-  const message = normalizeText(modelAllowlist.message);
-  if (!allowedKeys && !initialSelections && !message) {
-    return undefined;
-  }
-  return {
-    ...(allowedKeys ? { allowedKeys } : {}),
-    ...(initialSelections ? { initialSelections } : {}),
-    ...(message ? { message } : {}),
-  };
-}
-
-function buildNormalizedWizardSetup(params: {
-  setup: ProviderWizardSetup;
-  methodId: string | undefined;
-}): ProviderWizardSetup {
-  const choiceId = normalizeText(params.setup.choiceId);
-  const choiceLabel = normalizeText(params.setup.choiceLabel);
-  const choiceHint = normalizeText(params.setup.choiceHint);
-  const groupId = normalizeText(params.setup.groupId);
-  const groupLabel = normalizeText(params.setup.groupLabel);
-  const groupHint = normalizeText(params.setup.groupHint);
-  const onboardingScopes = normalizeOnboardingScopes(params.setup.onboardingScopes);
-  const modelAllowlist = buildNormalizedModelAllowlist(params.setup.modelAllowlist);
-  return {
-    ...(choiceId ? { choiceId } : {}),
-    ...(choiceLabel ? { choiceLabel } : {}),
-    ...(choiceHint ? { choiceHint } : {}),
-    ...(typeof params.setup.assistantPriority === "number" &&
-    Number.isFinite(params.setup.assistantPriority)
-      ? { assistantPriority: params.setup.assistantPriority }
-      : {}),
-    ...(params.setup.assistantVisibility === "manual-only" ||
-    params.setup.assistantVisibility === "visible"
-      ? { assistantVisibility: params.setup.assistantVisibility }
-      : {}),
-    ...(groupId ? { groupId } : {}),
-    ...(groupLabel ? { groupLabel } : {}),
-    ...(groupHint ? { groupHint } : {}),
-    ...(params.methodId ? { methodId: params.methodId } : {}),
-    ...(onboardingScopes ? { onboardingScopes } : {}),
-    ...(modelAllowlist ? { modelAllowlist } : {}),
-  };
-}
-
-function buildNormalizedModelPicker(
-  modelPicker: ProviderWizardModelPicker,
-  methodId: string | undefined,
-): ProviderWizardModelPicker {
-  const label = normalizeText(modelPicker.label);
-  const hint = normalizeText(modelPicker.hint);
-  return {
-    ...(label ? { label } : {}),
-    ...(hint ? { hint } : {}),
-    ...(methodId ? { methodId } : {}),
-  };
-}
-
 function normalizeProviderWizardSetup(params: {
   providerId: string;
   pluginId: string;
   source: string;
   auth: ProviderAuthMethod[];
-  setup: ProviderWizardSetup;
+  setup: NonNullable<ProviderPlugin["wizard"]>["setup"];
   pushDiagnostic: (diag: PluginDiagnostic) => void;
-}): ProviderWizardSetup | undefined {
+}): NonNullable<ProviderPlugin["wizard"]>["setup"] {
   const hasAuthMethods = params.auth.length > 0;
   if (!params.setup) {
     return undefined;
@@ -179,19 +85,67 @@ function normalizeProviderWizardSetup(params: {
     });
     return undefined;
   }
-  const methodId = resolveWizardMethodId({
-    providerId: params.providerId,
-    pluginId: params.pluginId,
-    source: params.source,
-    auth: params.auth,
-    methodId: normalizeText(params.setup.methodId),
-    metadataKind: "setup",
-    pushDiagnostic: params.pushDiagnostic,
-  });
-  return buildNormalizedWizardSetup({
-    setup: params.setup,
-    methodId,
-  });
+  const methodId = normalizeText(params.setup.methodId);
+  if (methodId && !params.auth.some((method) => method.id === methodId)) {
+    pushProviderDiagnostic({
+      level: "warn",
+      pluginId: params.pluginId,
+      source: params.source,
+      message: `provider "${params.providerId}" setup method "${methodId}" not found; falling back to available methods`,
+      pushDiagnostic: params.pushDiagnostic,
+    });
+  }
+  return {
+    ...(normalizeText(params.setup.choiceId)
+      ? { choiceId: normalizeText(params.setup.choiceId) }
+      : {}),
+    ...(normalizeText(params.setup.choiceLabel)
+      ? { choiceLabel: normalizeText(params.setup.choiceLabel) }
+      : {}),
+    ...(normalizeText(params.setup.choiceHint)
+      ? { choiceHint: normalizeText(params.setup.choiceHint) }
+      : {}),
+    ...(typeof params.setup.assistantPriority === "number" &&
+    Number.isFinite(params.setup.assistantPriority)
+      ? { assistantPriority: params.setup.assistantPriority }
+      : {}),
+    ...(params.setup.assistantVisibility === "manual-only" ||
+    params.setup.assistantVisibility === "visible"
+      ? { assistantVisibility: params.setup.assistantVisibility }
+      : {}),
+    ...(normalizeText(params.setup.groupId)
+      ? { groupId: normalizeText(params.setup.groupId) }
+      : {}),
+    ...(normalizeText(params.setup.groupLabel)
+      ? { groupLabel: normalizeText(params.setup.groupLabel) }
+      : {}),
+    ...(normalizeText(params.setup.groupHint)
+      ? { groupHint: normalizeText(params.setup.groupHint) }
+      : {}),
+    ...(methodId && params.auth.some((method) => method.id === methodId) ? { methodId } : {}),
+    ...(normalizeOnboardingScopes(params.setup.onboardingScopes)
+      ? { onboardingScopes: normalizeOnboardingScopes(params.setup.onboardingScopes) }
+      : {}),
+    ...(params.setup.modelAllowlist
+      ? {
+          modelAllowlist: {
+            ...(normalizeTextList(params.setup.modelAllowlist.allowedKeys)
+              ? { allowedKeys: normalizeTextList(params.setup.modelAllowlist.allowedKeys) }
+              : {}),
+            ...(normalizeTextList(params.setup.modelAllowlist.initialSelections)
+              ? {
+                  initialSelections: normalizeTextList(
+                    params.setup.modelAllowlist.initialSelections,
+                  ),
+                }
+              : {}),
+            ...(normalizeText(params.setup.modelAllowlist.message)
+              ? { message: normalizeText(params.setup.modelAllowlist.message) }
+              : {}),
+          },
+        }
+      : {}),
+  };
 }
 
 function normalizeProviderAuthMethods(params: {
@@ -227,17 +181,14 @@ function normalizeProviderAuthMethods(params: {
       continue;
     }
     seenMethodIds.add(methodId);
-    const wizardSetup = method.wizard;
-    const wizard = wizardSetup
-      ? normalizeProviderWizardSetup({
-          providerId: params.providerId,
-          pluginId: params.pluginId,
-          source: params.source,
-          auth: [{ ...method, id: methodId }],
-          setup: wizardSetup,
-          pushDiagnostic: params.pushDiagnostic,
-        })
-      : undefined;
+    const wizard = normalizeProviderWizardSetup({
+      providerId: params.providerId,
+      pluginId: params.pluginId,
+      source: params.source,
+      auth: [{ ...method, id: methodId }],
+      setup: method.wizard,
+      pushDiagnostic: params.pushDiagnostic,
+    });
     normalized.push({
       ...method,
       id: methodId,
@@ -263,6 +214,9 @@ function normalizeProviderWizard(params: {
   }
 
   const hasAuthMethods = params.auth.length > 0;
+  const hasMethod = (methodId: string | undefined) =>
+    Boolean(methodId && params.auth.some((method) => method.id === methodId));
+
   const normalizeSetup = () => {
     const setup = params.wizard?.setup;
     if (!setup) {
@@ -293,18 +247,21 @@ function normalizeProviderWizard(params: {
       });
       return undefined;
     }
-    return buildNormalizedModelPicker(
-      modelPicker,
-      resolveWizardMethodId({
-        providerId: params.providerId,
+    const methodId = normalizeText(modelPicker.methodId);
+    if (methodId && !hasMethod(methodId)) {
+      pushProviderDiagnostic({
+        level: "warn",
         pluginId: params.pluginId,
         source: params.source,
-        auth: params.auth,
-        methodId: normalizeText(modelPicker.methodId),
-        metadataKind: "model-picker",
+        message: `provider "${params.providerId}" model-picker method "${methodId}" not found; falling back to available methods`,
         pushDiagnostic: params.pushDiagnostic,
-      }),
-    );
+      });
+    }
+    return {
+      ...(normalizeText(modelPicker.label) ? { label: normalizeText(modelPicker.label) } : {}),
+      ...(normalizeText(modelPicker.hint) ? { hint: normalizeText(modelPicker.hint) } : {}),
+      ...(methodId && hasMethod(methodId) ? { methodId } : {}),
+    };
   };
 
   const setup = normalizeSetup();

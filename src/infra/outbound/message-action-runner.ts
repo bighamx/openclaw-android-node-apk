@@ -232,61 +232,39 @@ async function resolveActionTarget(params: {
   let resolvedTarget: ResolvedMessagingTarget | undefined;
   const toRaw = typeof params.args.to === "string" ? params.args.to.trim() : "";
   if (toRaw) {
-    const resolved = await resolveResolvedTargetOrThrow({
+    const resolved = await resolveChannelTarget({
       cfg: params.cfg,
       channel: params.channel,
       input: toRaw,
       accountId: params.accountId ?? undefined,
     });
-    params.args.to = resolved.to;
-    resolvedTarget = resolved;
+    if (resolved.ok) {
+      params.args.to = resolved.target.to;
+      resolvedTarget = resolved.target;
+    } else {
+      throw resolved.error;
+    }
   }
   const channelIdRaw =
     typeof params.args.channelId === "string" ? params.args.channelId.trim() : "";
   if (channelIdRaw) {
-    const resolved = await resolveResolvedTargetOrThrow({
+    const resolved = await resolveChannelTarget({
       cfg: params.cfg,
       channel: params.channel,
       input: channelIdRaw,
       accountId: params.accountId ?? undefined,
       preferredKind: "group",
-      validateResolvedTarget: (target) =>
-        target.kind === "user"
-          ? `Channel id "${channelIdRaw}" resolved to a user target.`
-          : undefined,
     });
-    params.args.channelId = sanitizeGroupTargetId(resolved.to);
+    if (resolved.ok) {
+      if (resolved.target.kind === "user") {
+        throw new Error(`Channel id "${channelIdRaw}" resolved to a user target.`);
+      }
+      params.args.channelId = resolved.target.to.replace(/^(channel|group):/i, "");
+    } else {
+      throw resolved.error;
+    }
   }
   return resolvedTarget;
-}
-
-function sanitizeGroupTargetId(target: string): string {
-  return target.replace(/^(channel|group):/i, "");
-}
-
-async function resolveResolvedTargetOrThrow(params: {
-  cfg: OpenClawConfig;
-  channel: ChannelId;
-  input: string;
-  accountId?: string;
-  preferredKind?: "group" | "user" | "channel";
-  validateResolvedTarget?: (target: ResolvedMessagingTarget) => string | undefined;
-}): Promise<ResolvedMessagingTarget> {
-  const resolved = await resolveChannelTarget({
-    cfg: params.cfg,
-    channel: params.channel,
-    input: params.input,
-    accountId: params.accountId,
-    preferredKind: params.preferredKind,
-  });
-  if (!resolved.ok) {
-    throw resolved.error;
-  }
-  const validationError = params.validateResolvedTarget?.(resolved.target);
-  if (validationError) {
-    throw new Error(validationError);
-  }
-  return resolved.target;
 }
 
 type ResolvedActionContext = {
@@ -353,23 +331,26 @@ async function handleBroadcastAction(
     for (const target of rawTargets) {
       throwIfAborted(input.abortSignal);
       try {
-        const resolved = await resolveResolvedTargetOrThrow({
+        const resolved = await resolveChannelTarget({
           cfg: input.cfg,
           channel: targetChannel,
           input: target,
         });
+        if (!resolved.ok) {
+          throw resolved.error;
+        }
         const sendResult = await runMessageAction({
           ...input,
           action: "send",
           params: {
             ...params,
             channel: targetChannel,
-            target: resolved.to,
+            target: resolved.target.to,
           },
         });
         results.push({
           channel: targetChannel,
-          to: resolved.to,
+          to: resolved.target.to,
           ok: true,
           result: sendResult.kind === "send" ? sendResult.sendResult : undefined,
         });
