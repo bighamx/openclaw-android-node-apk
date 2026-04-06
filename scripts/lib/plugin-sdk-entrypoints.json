@@ -134,6 +134,7 @@
   "googlechat-runtime-shared",
   "media-generation-runtime-shared",
   "image-generation",
+  "image-generation-runtime",
   "image-generation-core",
   "music-generation",
   "music-generation-core",

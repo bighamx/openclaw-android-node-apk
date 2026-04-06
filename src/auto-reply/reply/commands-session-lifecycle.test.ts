@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionBindingRecord } from "../../infra/outbound/session-binding-service.js";
-import { parseInlineDirectives } from "./directive-handling.js";
 import type { HandleCommandsParams } from "./commands-types.js";
+import { parseInlineDirectives } from "./directive-handling.js";
 
 const THREAD_CHANNEL = "thread-chat";
 const ROOM_CHANNEL = "room-chat";
@@ -190,7 +190,7 @@ vi.mock("../../channels/plugins/index.js", () => ({
     hoisted.runtimeChannelRegistry.channels.find((entry) => entry.plugin.id === channelId)?.plugin,
   normalizeChannelId: (raw?: string | null) => {
     const normalized = raw?.trim().toLowerCase();
-    return normalized ? (normalized as string) : null;
+    return normalized || null;
   },
 }));
 
@@ -289,13 +289,17 @@ function buildSessionCommandParams(
     SenderId: "user-1",
     ...ctxOverrides,
   } as HandleCommandsParams["ctx"];
-  const channel = String(ctx.Provider ?? ctx.Surface ?? "").trim().toLowerCase();
+  const channel = String(ctx.Provider ?? ctx.Surface ?? "")
+    .trim()
+    .toLowerCase();
   const senderId = typeof ctx.SenderId === "string" ? ctx.SenderId : undefined;
   return {
     ctx,
     cfg: baseCfg,
     command: {
-      surface: String(ctx.Surface ?? ctx.Provider ?? "").trim().toLowerCase(),
+      surface: String(ctx.Surface ?? ctx.Provider ?? "")
+        .trim()
+        .toLowerCase(),
       channel,
       channelId: channel,
       ownerList: [],

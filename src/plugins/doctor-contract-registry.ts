@@ -177,6 +177,11 @@ function resolvePluginDoctorContracts(params?: {
     return cached;
   }
 
+  if (params?.pluginIds && params.pluginIds.length === 0) {
+    doctorContractCache.set(cacheKey, []);
+    return [];
+  }
+
   const discovery = discoverOpenClawPlugins({
     workspaceDir: params?.workspaceDir,
     env,
@@ -191,8 +196,7 @@ function resolvePluginDoctorContracts(params?: {
   });
 
   const entries: PluginDoctorContractEntry[] = [];
-  const selectedPluginIds =
-    params?.pluginIds && params.pluginIds.length > 0 ? new Set(params.pluginIds) : null;
+  const selectedPluginIds = params?.pluginIds ? new Set(params.pluginIds) : null;
   for (const record of manifestRegistry.plugins) {
     if (
       selectedPluginIds &&

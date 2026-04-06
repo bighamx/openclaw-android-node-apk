@@ -9,6 +9,10 @@ import type {
 } from "../plugins/types.js";
 import { resolvePluginWebFetchProviders } from "../plugins/web-fetch-providers.runtime.js";
 import { sortWebFetchProvidersForAutoDetect } from "../plugins/web-fetch-providers.shared.js";
+import {
+  resolveBundledWebFetchProvidersFromPublicArtifacts,
+  resolveBundledWebSearchProvidersFromPublicArtifacts,
+} from "../plugins/web-provider-public-artifacts.js";
 import { resolvePluginWebSearchProviders } from "../plugins/web-search-providers.runtime.js";
 import { sortWebSearchProvidersForAutoDetect } from "../plugins/web-search-providers.shared.js";
 import { normalizeSecretInput } from "../utils/normalize-secret-input.js";
@@ -254,6 +258,94 @@ function setResolvedWebSearchApiKey(params: {
   params.provider.setCredentialValue(search, params.value);
 }
 
+function resolveBundledWebSearchProviders(params: {
+  sourceConfig: OpenClawConfig;
+  context: ResolverContext;
+  configuredBundledPluginId?: string;
+  hasCustomWebSearchPluginRisk: boolean;
+}): PluginWebSearchProviderEntry[] {
+  const env = { ...process.env, ...params.context.env };
+  if (params.configuredBundledPluginId) {
+    const bundled = resolveBundledWebSearchProvidersFromPublicArtifacts({
+      config: params.sourceConfig,
+      env,
+      bundledAllowlistCompat: true,
+      onlyPluginIds: [params.configuredBundledPluginId],
+    });
+    if (bundled.length > 0) {
+      return bundled;
+    }
+    return resolvePluginWebSearchProviders({
+      config: params.sourceConfig,
+      env,
+      bundledAllowlistCompat: true,
+      onlyPluginIds: [params.configuredBundledPluginId],
+      origin: "bundled",
+    });
+  }
+  if (!params.hasCustomWebSearchPluginRisk) {
+    const bundled = resolveBundledWebSearchProvidersFromPublicArtifacts({
+      config: params.sourceConfig,
+      env,
+      bundledAllowlistCompat: true,
+    });
+    if (bundled.length > 0) {
+      return bundled;
+    }
+    return resolvePluginWebSearchProviders({
+      config: params.sourceConfig,
+      env,
+      bundledAllowlistCompat: true,
+      origin: "bundled",
+    });
+  }
+  return resolvePluginWebSearchProviders({
+    config: params.sourceConfig,
+    env,
+    bundledAllowlistCompat: true,
+  });
+}
+
+function resolveBundledWebFetchProviders(params: {
+  sourceConfig: OpenClawConfig;
+  context: ResolverContext;
+  configuredBundledPluginId?: string;
+}): PluginWebFetchProviderEntry[] {
+  const env = { ...process.env, ...params.context.env };
+  if (params.configuredBundledPluginId) {
+    const bundled = resolveBundledWebFetchProvidersFromPublicArtifacts({
+      config: params.sourceConfig,
+      env,
+      bundledAllowlistCompat: true,
+      onlyPluginIds: [params.configuredBundledPluginId],
+    });
+    if (bundled.length > 0) {
+      return bundled;
+    }
+    return resolvePluginWebFetchProviders({
+      config: params.sourceConfig,
+      env,
+      bundledAllowlistCompat: true,
+      onlyPluginIds: [params.configuredBundledPluginId],
+      origin: "bundled",
+    });
+  }
+  const bundled = resolveBundledWebFetchProvidersFromPublicArtifacts({
+    config: params.sourceConfig,
+    env,
+    bundledAllowlistCompat: true,
+  });
+  if (bundled.length > 0) {
+    return bundled;
+  }
+  return resolvePluginWebFetchProviders({
+    config: params.sourceConfig,
+    env,
+    bundledAllowlistCompat: true,
+    origin: "bundled",
+  });
+}
+
 function readConfiguredProviderCredential(params: {
   provider: PluginWebSearchProviderEntry;
   config: OpenClawConfig;
@@ -390,26 +482,12 @@ export async function resolveRuntimeWebTools(params: {
     sourceConfig: params.sourceConfig,
     context: params.context,
     resolveProviders: ({ configuredBundledPluginId }) =>
-      configuredBundledPluginId
-        ? resolvePluginWebSearchProviders({
-            config: params.sourceConfig,
-            env: { ...process.env, ...params.context.env },
-            bundledAllowlistCompat: true,
-            onlyPluginIds: [configuredBundledPluginId],
-            origin: "bundled",
-          })
-        : !hasCustomWebSearchPluginRisk(params.sourceConfig)
-          ? resolvePluginWebSearchProviders({
-              config: params.sourceConfig,
-              env: { ...process.env, ...params.context.env },
-              bundledAllowlistCompat: true,
-              origin: "bundled",
-            })
-          : resolvePluginWebSearchProviders({
-              config: params.sourceConfig,
-              env: { ...process.env, ...params.context.env },
-              bundledAllowlistCompat: true,
-            }),
+      resolveBundledWebSearchProviders({
+        sourceConfig: params.sourceConfig,
+        context: params.context,
+        configuredBundledPluginId,
+        hasCustomWebSearchPluginRisk: hasCustomWebSearchPluginRisk(params.sourceConfig),
+      }),
     sortProviders: sortWebSearchProvidersForAutoDetect,
     readConfiguredCredential: ({ provider, config, toolConfig }) =>
       readConfiguredProviderCredential({
@@ -500,20 +578,11 @@ export async function resolveRuntimeWebTools(params: {
     sourceConfig: params.sourceConfig,
     context: params.context,
     resolveProviders: ({ configuredBundledPluginId }) =>
-      configuredBundledPluginId
-        ? resolvePluginWebFetchProviders({
-            config: params.sourceConfig,
-            env: { ...process.env, ...params.context.env },
-            bundledAllowlistCompat: true,
-            onlyPluginIds: [configuredBundledPluginId],
-            origin: "bundled",
-          })
-        : resolvePluginWebFetchProviders({
-            config: params.sourceConfig,
-            env: { ...process.env, ...params.context.env },
-            bundledAllowlistCompat: true,
-            origin: "bundled",
-          }),
+      resolveBundledWebFetchProviders({
+        sourceConfig: params.sourceConfig,
+        context: params.context,
+        configuredBundledPluginId,
+      }),
     sortProviders: sortWebFetchProvidersForAutoDetect,
     readConfiguredCredential: ({ provider, config, toolConfig }) =>
       readConfiguredFetchProviderCredential({

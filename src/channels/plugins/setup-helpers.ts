@@ -408,6 +408,11 @@ const COMMON_SINGLE_ACCOUNT_KEYS_TO_MOVE = new Set([
   "defaultTo",
 ]);
 
+const BUNDLED_SINGLE_ACCOUNT_PROMOTION_FALLBACKS: Record<string, readonly string[]> = {
+  // Some setup/migration paths run before the channel setup surface has been loaded.
+  telegram: ["streaming"],
+};
+
 type ChannelSetupPromotionSurface = {
   singleAccountKeysToMove?: readonly string[];
   namedAccountPromotionKeys?: readonly string[];
@@ -433,6 +438,10 @@ export function shouldMoveSingleAccountChannelKey(params: {
   }
   const contractKeys = getChannelSetupPromotionSurface(params.channelKey)?.singleAccountKeysToMove;
   if (contractKeys?.includes(params.key)) {
+    return true;
+  }
+  const fallbackKeys = BUNDLED_SINGLE_ACCOUNT_PROMOTION_FALLBACKS[params.channelKey];
+  if (fallbackKeys?.includes(params.key)) {
     return true;
   }
   return false;

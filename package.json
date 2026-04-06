@@ -580,6 +580,10 @@
       "types": "./dist/plugin-sdk/image-generation.d.ts",
       "default": "./dist/plugin-sdk/image-generation.js"
     },
+    "./plugin-sdk/image-generation-runtime": {
+      "types": "./dist/plugin-sdk/image-generation-runtime.d.ts",
+      "default": "./dist/plugin-sdk/image-generation-runtime.js"
+    },
     "./plugin-sdk/image-generation-core": {
       "types": "./dist/plugin-sdk/image-generation-core.d.ts",
       "default": "./dist/plugin-sdk/image-generation-core.js"

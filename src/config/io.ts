@@ -1984,7 +1984,6 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       const resolvedConfigRaw = readResolution.resolvedConfigRaw;
       const legacyResolution = resolveLegacyConfigForRead(resolvedConfigRaw, effectiveParsed);
       const effectiveConfigRaw = legacyResolution.effectiveConfigRaw;
-
       const validated = validateConfigObjectWithPlugins(effectiveConfigRaw, { env: deps.env });
       if (!validated.ok) {
         return await finalizeReadConfigSnapshotInternalResult(deps, {

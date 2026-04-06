@@ -10,6 +10,7 @@ import {
   summarizeConceptTagScriptCoverage,
   type ConceptTagScriptCoverage,
 } from "./concept-vocabulary.js";
+import { asRecord } from "./dreaming-shared.js";
 
 const SHORT_TERM_PATH_RE = /(?:^|\/)memory\/(\d{4})-(\d{2})-(\d{2})\.md$/;
 const SHORT_TERM_BASENAME_RE = /^(\d{4})-(\d{2})-(\d{2})\.md$/;
@@ -1526,13 +1527,6 @@ export async function auditShortTermPromotionArtifacts(params: {
     issues,
     ...(qmd ? { qmd } : {}),
   };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  return value as Record<string, unknown>;
 }
 
 export async function repairShortTermPromotionArtifacts(params: {
