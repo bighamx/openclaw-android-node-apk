@@ -42,6 +42,13 @@ type ManagedFlowResumeParams = {
   waitingStep?: string;
 };
 
+type ManagedFlowSuccessResult = {
+  ok: true;
+  envelope: unknown;
+  flow: unknown;
+  mutation: unknown;
+};
+
 function readOptionalTrimmedString(value: unknown, fieldName: string): string | undefined {
   if (value === undefined) {
     return undefined;
@@ -167,6 +174,18 @@ function parseResumeFlowParams(params: Record<string, unknown>): ManagedFlowResu
   };
 }
 
+function formatManagedFlowResult(result: ManagedFlowSuccessResult) {
+  const details = {
+    ...result.envelope,
+    flow: result.flow,
+    mutation: result.mutation,
+  };
+  return {
+    content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
+    details,
+  };
+}
+
 export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolOptions) {
   const runner = options?.runner ?? createEmbeddedLobsterRunner();
   return {
@@ -246,15 +265,7 @@ export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolO
           if (!result.ok) {
             throw result.error;
           }
-          const details = {
-            ...result.envelope,
-            flow: result.flow,
-            mutation: result.mutation,
-          };
-          return {
-            content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
-            details,
-          };
+          return formatManagedFlowResult(result);
         }
       } else {
         const flowParams = parseResumeFlowParams(params);
@@ -278,15 +289,7 @@ export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolO
           if (!result.ok) {
             throw result.error;
           }
-          const details = {
-            ...result.envelope,
-            flow: result.flow,
-            mutation: result.mutation,
-          };
-          return {
-            content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
-            details,
-          };
+          return formatManagedFlowResult(result);
         }
       }
 
