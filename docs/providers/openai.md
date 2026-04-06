@@ -145,8 +145,10 @@ The bundled `openai` plugin also registers video generation through the shared
 - Default video model: `openai/sora-2`
 - Modes: text-to-video, image-to-video, and single-video reference/edit flows
 - Current limits: 1 image or 1 video reference input
-- Current OpenAI-specific caveat: OpenClaw does not forward `aspectRatio` or
-  `resolution` overrides to the native OpenAI video API today
+- Current OpenAI-specific caveat: OpenClaw currently only forwards `size`
+  overrides for native OpenAI video generation. Unsupported optional overrides
+  such as `aspectRatio`, `resolution`, `audio`, and `watermark` are ignored
+  and reported back as a tool warning.
 
 To use OpenAI as the default video provider:
 
@@ -398,6 +400,12 @@ When fast mode is enabled, OpenClaw maps it to OpenAI priority processing:
 - `openai-codex/*` Responses calls to `chatgpt.com/backend-api` also send `service_tier = "priority"`
 - existing payload `service_tier` values are preserved
 - fast mode does not rewrite `reasoning` or `text.verbosity`
+
+For GPT 5.4 specifically, the most common setup is:
+
+- send `/fast on` in a session using `openai/gpt-5.4` or `openai-codex/gpt-5.4`
+- or set `agents.defaults.models["openai/gpt-5.4"].params.fastMode = true`
+- if you also use Codex OAuth, set `agents.defaults.models["openai-codex/gpt-5.4"].params.fastMode = true` too
 
 Example:
 

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestPluginApi } from "../../../test/helpers/plugins/plugin-api.js";
 import type { OpenClawPluginApi, OpenClawPluginToolContext } from "../runtime-api.js";
+import { createFakeTaskFlow } from "./taskflow-test-helpers.js";
 
 let createLobsterTool: typeof import("./lobster-tool.js").createLobsterTool;
 
@@ -131,6 +132,136 @@ describe("lobster plugin tool", () => {
         pipeline: "noop",
       }),
     ).rejects.toThrow("boom");
+  });
+
+  it("can run through managed TaskFlow mode", async () => {
+    ({ createLobsterTool } = await import("./lobster-tool.js"));
+
+    const runner = {
+      run: vi.fn().mockResolvedValue({
+        ok: true,
+        status: "needs_approval",
+        output: [],
+        requiresApproval: {
+          type: "approval_request",
+          prompt: "Approve this?",
+          items: [{ id: "item-1" }],
+          resumeToken: "resume-1",
+        },
+      }),
+    };
+    const taskFlow = createFakeTaskFlow();
+
+    const tool = createLobsterTool(fakeApi(), { runner, taskFlow });
+    const res = await tool.execute("call-managed-run", {
+      action: "run",
+      pipeline: "noop",
+      flowControllerId: "tests/lobster",
+      flowGoal: "Run Lobster workflow",
+      flowStateJson: '{"lane":"email"}',
+      flowCurrentStep: "run_lobster",
+      flowWaitingStep: "await_review",
+    });
+
+    expect(taskFlow.createManaged).toHaveBeenCalledWith({
+      controllerId: "tests/lobster",
+      goal: "Run Lobster workflow",
+      currentStep: "run_lobster",
+      stateJson: { lane: "email" },
+    });
+    expect(taskFlow.setWaiting).toHaveBeenCalledWith({
+      flowId: "flow-1",
+      expectedRevision: 1,
+      currentStep: "await_review",
+      waitJson: {
+        kind: "lobster_approval",
+        prompt: "Approve this?",
+        items: [{ id: "item-1" }],
+        resumeToken: "resume-1",
+      },
+    });
+    expect(res.details).toMatchObject({
+      ok: true,
+      status: "needs_approval",
+      flow: {
+        flowId: "flow-1",
+      },
+      mutation: {
+        applied: true,
+      },
+    });
+  });
+
+  it("rejects managed TaskFlow params when no bound taskFlow runtime is available", async () => {
+    ({ createLobsterTool } = await import("./lobster-tool.js"));
+
+    const tool = createLobsterTool(fakeApi(), {
+      runner: { run: vi.fn() },
+    });
+
+    await expect(
+      tool.execute("call-missing-taskflow", {
+        action: "run",
+        pipeline: "noop",
+        flowControllerId: "tests/lobster",
+        flowGoal: "Run Lobster workflow",
+      }),
+    ).rejects.toThrow(/Managed TaskFlow run mode requires a bound taskFlow runtime/);
+  });
+
+  it("rejects invalid flowStateJson in managed TaskFlow mode", async () => {
+    ({ createLobsterTool } = await import("./lobster-tool.js"));
+
+    const tool = createLobsterTool(fakeApi(), {
+      runner: { run: vi.fn() },
+      taskFlow: createFakeTaskFlow(),
+    });
+
+    await expect(
+      tool.execute("call-invalid-flow-json", {
+        action: "run",
+        pipeline: "noop",
+        flowControllerId: "tests/lobster",
+        flowGoal: "Run Lobster workflow",
+        flowStateJson: "{bad",
+      }),
+    ).rejects.toThrow(/flowStateJson must be valid JSON/);
+  });
+
+  it("rejects managed TaskFlow resume mode without a token", async () => {
+    ({ createLobsterTool } = await import("./lobster-tool.js"));
+
+    const tool = createLobsterTool(fakeApi(), {
+      runner: { run: vi.fn() },
+      taskFlow: createFakeTaskFlow(),
+    });
+
+    await expect(
+      tool.execute("call-missing-resume-token", {
+        action: "resume",
+        flowId: "flow-1",
+        flowExpectedRevision: 1,
+        approve: true,
+      }),
+    ).rejects.toThrow(/token required when using managed TaskFlow resume mode/);
+  });
+
+  it("rejects managed TaskFlow resume mode without approve", async () => {
+    ({ createLobsterTool } = await import("./lobster-tool.js"));
+
+    const tool = createLobsterTool(fakeApi(), {
+      runner: { run: vi.fn() },
+      taskFlow: createFakeTaskFlow(),
+    });
+
+    await expect(
+      tool.execute("call-missing-resume-approve", {
+        action: "resume",
+        token: "resume-token",
+        flowId: "flow-1",
+        flowExpectedRevision: 1,
+      }),
+    ).rejects.toThrow(/approve required when using managed TaskFlow resume mode/);
   });
 
   it("requires action", async () => {
