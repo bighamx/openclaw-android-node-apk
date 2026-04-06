@@ -175,8 +175,12 @@ function parseResumeFlowParams(params: Record<string, unknown>): ManagedFlowResu
 }
 
 function formatManagedFlowResult(result: ManagedFlowSuccessResult) {
+  const envelope =
+    result.envelope && typeof result.envelope === "object" && !Array.isArray(result.envelope)
+      ? result.envelope
+      : { envelope: result.envelope };
   const details = {
-    ...result.envelope,
+    ...envelope,
     flow: result.flow,
     mutation: result.mutation,
   };

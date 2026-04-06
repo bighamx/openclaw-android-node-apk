@@ -19,6 +19,7 @@ import {
   type MemorySource,
 } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import { MemoryManagerSyncOps } from "./manager-sync-ops.js";
+import { replaceMemoryVectorRow } from "./manager-vector-write.js";
 
 const VECTOR_TABLE = "chunks_vec";
 const FTS_TABLE = "chunks_fts";
@@ -33,9 +34,6 @@ const EMBEDDING_QUERY_TIMEOUT_REMOTE_MS = 60_000;
 const EMBEDDING_QUERY_TIMEOUT_LOCAL_MS = 5 * 60_000;
 const EMBEDDING_BATCH_TIMEOUT_REMOTE_MS = 2 * 60_000;
 const EMBEDDING_BATCH_TIMEOUT_LOCAL_MS = 10 * 60_000;
-
-const vectorToBlob = (embedding: number[]): Buffer =>
-  Buffer.from(new Float32Array(embedding).buffer);
 
 const log = createSubsystemLogger("memory");
 
@@ -639,12 +637,12 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerSyncOps {
           now,
         );
       if (vectorReady && embedding.length > 0) {
-        try {
-          this.db.prepare(`DELETE FROM ${VECTOR_TABLE} WHERE id = ?`).run(id);
-        } catch {}
-        this.db
-          .prepare(`INSERT INTO ${VECTOR_TABLE} (id, embedding) VALUES (?, ?)`)
-          .run(id, vectorToBlob(embedding));
+        replaceMemoryVectorRow({
+          db: this.db,
+          tableName: VECTOR_TABLE,
+          id,
+          embedding,
+        });
       }
       if (this.fts.enabled && this.fts.available) {
         this.db

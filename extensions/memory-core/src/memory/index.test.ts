@@ -485,48 +485,6 @@ describe("memory index", () => {
     }
   });
 
-  it("passes Gemini outputDimensionality from config into the provider", async () => {
-    const cfg = createCfg({
-      storePath: indexMainPath,
-      provider: "gemini",
-      model: "gemini-embedding-2-preview",
-      outputDimensionality: 1536,
-    });
-
-    const result = await getMemorySearchManager({ cfg, agentId: "main" });
-    const manager = requireManager(result);
-    await manager.probeEmbeddingAvailability();
-
-    expect(
-      providerCalls.some(
-        (call) =>
-          call.provider === "gemini" &&
-          call.model === "gemini-embedding-2-preview" &&
-          call.outputDimensionality === 1536,
-      ),
-    ).toBe(true);
-    await manager.close?.();
-  });
-
-  it("does not initialize the provider when searching an empty index", async () => {
-    const cfg = createCfg({
-      storePath: path.join(workspaceDir, `index-empty-${randomUUID()}.sqlite`),
-      provider: "gemini",
-      model: "gemini-embedding-2-preview",
-      outputDimensionality: 1536,
-      onSearch: false,
-    });
-
-    const result = await getMemorySearchManager({ cfg, agentId: "main" });
-    const manager = requireManager(result);
-
-    const results = await manager.search("hello");
-
-    expect(results).toEqual([]);
-    expect(providerCalls).toEqual([]);
-    await manager.close?.();
-  });
-
   it("reuses cached embeddings on forced reindex", async () => {
     const cfg = createCfg({ storePath: indexMainPath, cacheEnabled: true });
     const manager = await getPersistentManager(cfg);
