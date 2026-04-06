@@ -246,7 +246,9 @@ describe("runCliAgent spawn path", () => {
       abortSignal: abortController.signal,
     });
 
-    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(supervisorSpawnMock).toHaveBeenCalledTimes(1);
+    });
     abortController.abort();
 
     await expect(runPromise).rejects.toMatchObject({ name: "AbortError" });
@@ -449,10 +451,10 @@ describe("runCliAgent spawn path", () => {
     };
     expect(input.env?.SAFE_KEEP).toBe("ok");
     expect(input.env?.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST).toBe("1");
-    expect(input.env?.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(input.env?.ANTHROPIC_BASE_URL).toBe("https://override.example.com/v1");
     expect(input.env?.CLAUDE_CODE_USE_BEDROCK).toBeUndefined();
     expect(input.env?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
-    expect(input.env?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(input.env?.CLAUDE_CODE_OAUTH_TOKEN).toBe("override-oauth-token");
     expect(input.env?.CLAUDE_CODE_REMOTE).toBeUndefined();
     expect(input.env?.ANTHROPIC_UNIX_SOCKET).toBeUndefined();
     expect(input.env?.OTEL_LOGS_EXPORTER).toBeUndefined();

@@ -3,6 +3,7 @@ import { acquireLocalHeavyCheckLockSync } from "./lib/local-heavy-check-runtime.
 import { spawnPnpmRunner } from "./pnpm-runner.mjs";
 import { resolveVitestCliEntry, resolveVitestNodeArgs } from "./run-vitest.mjs";
 import {
+  buildFullSuiteVitestRunPlans,
   createVitestRunSpecs,
   parseTestProjectsArgs,
   resolveChangedTargetArgs,
@@ -59,27 +60,6 @@ function runVitestSpec(spec) {
   });
 }
 
-function createRootVitestRunSpec(args) {
-  const { forwardedArgs, watchMode } = parseTestProjectsArgs(args, process.cwd());
-  return {
-    config: "vitest.config.ts",
-    env: process.env,
-    includeFilePath: null,
-    includePatterns: null,
-    pnpmArgs: [
-      "exec",
-      "node",
-      ...resolveVitestNodeArgs(process.env),
-      resolveVitestCliEntry(),
-      ...(watchMode ? [] : ["run"]),
-      "--config",
-      "vitest.config.ts",
-      ...forwardedArgs,
-    ],
-    watchMode,
-  };
-}
-
 async function main() {
   const args = process.argv.slice(2);
   const { targetArgs } = parseTestProjectsArgs(args, process.cwd());
@@ -87,12 +67,30 @@ async function main() {
     targetArgs.length === 0 ? resolveChangedTargetArgs(args, process.cwd()) : null;
   const runSpecs =
     targetArgs.length === 0 && changedTargetArgs === null
-      ? [createRootVitestRunSpec(args)]
+      ? buildFullSuiteVitestRunPlans(args, process.cwd()).map((plan) => ({
+          config: plan.config,
+          continueOnFailure: true,
+          env: process.env,
+          includeFilePath: null,
+          includePatterns: null,
+          pnpmArgs: [
+            "exec",
+            "node",
+            ...resolveVitestNodeArgs(process.env),
+            resolveVitestCliEntry(),
+            ...(plan.watchMode ? [] : ["run"]),
+            "--config",
+            plan.config,
+            ...plan.forwardedArgs,
+          ],
+          watchMode: plan.watchMode,
+        }))
       : createVitestRunSpecs(args, {
           baseEnv: process.env,
           cwd: process.cwd(),
         });
 
+  let exitCode = 0;
   for (const spec of runSpecs) {
     const result = await runVitestSpec(spec);
     if (result.signal) {
@@ -101,12 +99,18 @@ async function main() {
       return;
     }
     if (result.code !== 0) {
-      releaseLockOnce();
-      process.exit(result.code);
+      exitCode = exitCode || result.code;
+      if (spec.continueOnFailure !== true) {
+        releaseLockOnce();
+        process.exit(result.code);
+      }
     }
   }
 
   releaseLockOnce();
+  if (exitCode !== 0) {
+    process.exit(exitCode);
+  }
 }
 
 main().catch((error) => {

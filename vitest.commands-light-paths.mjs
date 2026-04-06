@@ -12,8 +12,24 @@ const commandsLightEntries = [
     test: "src/commands/doctor-gateway-auth-token.test.ts",
   },
   {
+    source: "src/commands/gateway-status/helpers.ts",
+    test: "src/commands/gateway-status/helpers.test.ts",
+  },
+  {
     source: "src/commands/sandbox-formatters.ts",
     test: "src/commands/sandbox-formatters.test.ts",
+  },
+  {
+    source: "src/commands/status-json-command.ts",
+    test: "src/commands/status-json-command.test.ts",
+  },
+  {
+    source: "src/commands/status-json-payload.ts",
+    test: "src/commands/status-json-payload.test.ts",
+  },
+  {
+    source: "src/commands/status-json-runtime.ts",
+    test: "src/commands/status-json-runtime.test.ts",
   },
   {
     source: "src/commands/status-overview-rows.ts",

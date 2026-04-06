@@ -85,6 +85,40 @@ function resolveEntryBoundaryRoot(importMetaUrl: string): string {
   return path.dirname(fileURLToPath(importMetaUrl));
 }
 
+function formatBundledEntryUnknownError(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error === undefined) {
+    return "boundary validation failed";
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "non-serializable error";
+  }
+}
+
+function formatBundledEntryModuleOpenFailure(params: {
+  importMetaUrl: string;
+  specifier: string;
+  resolvedPath: string;
+  boundaryRoot: string;
+  failure: Extract<ReturnType<typeof openBoundaryFileSync>, { ok: false }>;
+}): string {
+  const importerPath = fileURLToPath(params.importMetaUrl);
+  const errorDetail =
+    params.failure.error instanceof Error
+      ? params.failure.error.message
+      : formatBundledEntryUnknownError(params.failure.error);
+  return [
+    `bundled plugin entry "${params.specifier}" failed to open`,
+    `from "${importerPath}"`,
+    `(resolved "${params.resolvedPath}", plugin root "${params.boundaryRoot}",`,
+    `reason "${params.failure.reason}"): ${errorDetail}`,
+  ].join(" ");
+}
+
 function resolveBundledEntryModulePath(importMetaUrl: string, specifier: string): string {
   const importerPath = fileURLToPath(importMetaUrl);
   const resolved = path.resolve(path.dirname(importerPath), specifier);
@@ -99,7 +133,15 @@ function resolveBundledEntryModulePath(importMetaUrl: string, specifier: string)
     skipLexicalRootCheck: true,
   });
   if (!opened.ok) {
-    throw new Error(`plugin entry path escapes plugin root: ${specifier}`);
+    throw new Error(
+      formatBundledEntryModuleOpenFailure({
+        importMetaUrl,
+        specifier,
+        resolvedPath: candidate,
+        boundaryRoot,
+        failure: opened,
+      }),
+    );
   }
   fs.closeSync(opened.fd);
   return opened.path;

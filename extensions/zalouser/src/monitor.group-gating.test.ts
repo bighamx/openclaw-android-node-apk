@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig, PluginRuntime } from "../runtime-api.js";
+import "./monitor.send-mocks.js";
+import "./zalo-js.test-mocks.js";
 import { resolveZalouserAccountSync } from "./accounts.js";
 import { __testing } from "./monitor.js";
-import "./monitor.send-mocks.js";
 import {
   sendDeliveredZalouserMock,
   sendMessageZalouserMock,
@@ -12,7 +13,6 @@ import {
 import { setZalouserRuntime } from "./runtime.js";
 import { createZalouserRuntimeEnv } from "./test-helpers.js";
 import type { ResolvedZalouserAccount, ZaloInboundMessage } from "./types.js";
-import "./zalo-js.test-mocks.js";
 
 function createAccount(): ResolvedZalouserAccount {
   return {

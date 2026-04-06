@@ -2,7 +2,7 @@ import { resolveHeartbeatPrompt } from "../../auto-reply/heartbeat.js";
 import {
   createMcpLoopbackServerConfig,
   getActiveMcpLoopbackRuntime,
-} from "../../gateway/mcp-http.js";
+} from "../../gateway/mcp-http.loopback-runtime.js";
 import { resolveSessionAgentIds } from "../agent-scope.js";
 import {
   buildBootstrapInjectionStats,

@@ -34,6 +34,10 @@ describe("light vitest path routing", () => {
     expect(resolveCommandsLightIncludePattern("src/commands/text-format.test.ts")).toBe(
       "src/commands/text-format.test.ts",
     );
+    expect(isCommandsLightTarget("src/commands/gateway-status/helpers.ts")).toBe(true);
+    expect(resolveCommandsLightIncludePattern("src/commands/gateway-status/helpers.ts")).toBe(
+      "src/commands/gateway-status/helpers.test.ts",
+    );
   });
 
   it("keeps non-allowlisted commands files off the light lane", () => {

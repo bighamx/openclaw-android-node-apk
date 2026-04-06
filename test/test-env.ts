@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import JSON5 from "json5";
+import { migrateLegacyConfig } from "../src/commands/doctor/shared/legacy-config-migrate.js";
 
 type RestoreEntry = { key: string; value: string | undefined };
 
@@ -276,7 +277,8 @@ function sanitizeLiveConfig(raw: string): string {
       });
     }
 
-    return `${JSON.stringify(parsed, null, 2)}\n`;
+    const migrated = migrateLegacyConfig(parsed);
+    return `${JSON.stringify(migrated.config ?? parsed, null, 2)}\n`;
   } catch {
     return raw;
   }
