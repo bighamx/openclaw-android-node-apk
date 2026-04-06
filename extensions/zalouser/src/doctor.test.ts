@@ -35,7 +35,13 @@ describe("zalouser doctor", () => {
     expect(result.config.channels?.zalouser?.groups?.["group:trusted"]).toEqual({
       enabled: true,
     });
-    expect(result.config.channels?.zalouser?.accounts?.work?.groups?.["group:legacy"]).toEqual({
+    expect(
+      (
+        result.config.channels?.zalouser?.accounts?.work as
+          | { groups?: Record<string, unknown> }
+          | undefined
+      )?.groups?.["group:legacy"],
+    ).toEqual({
       enabled: false,
     });
     expect(result.changes).toEqual(

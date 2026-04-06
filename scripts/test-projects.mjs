@@ -9,6 +9,10 @@ import {
   resolveChangedTargetArgs,
   writeVitestIncludeFile,
 } from "./test-projects.test-support.mjs";
+import {
+  installVitestProcessGroupCleanup,
+  shouldUseDetachedVitestProcessGroup,
+} from "./vitest-process-group.mjs";
 
 // Keep this shim so `pnpm test -- src/foo.test.ts` still forwards filters
 // cleanly instead of leaking pnpm's passthrough sentinel to Vitest.
@@ -44,16 +48,21 @@ function runVitestSpec(spec) {
   }
   return new Promise((resolve, reject) => {
     const child = spawnPnpmRunner({
+      cwd: process.cwd(),
+      detached: shouldUseDetachedVitestProcessGroup(),
       pnpmArgs: spec.pnpmArgs,
       env: spec.env,
     });
+    const teardownChildCleanup = installVitestProcessGroupCleanup({ child });
 
     child.on("exit", (code, signal) => {
+      teardownChildCleanup();
       cleanupVitestRunSpec(spec);
       resolve({ code: code ?? 1, signal });
     });
 
     child.on("error", (error) => {
+      teardownChildCleanup();
       cleanupVitestRunSpec(spec);
       reject(error);
     });
