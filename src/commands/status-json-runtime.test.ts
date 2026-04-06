@@ -21,7 +21,11 @@ function createScan() {
     cfg: { update: { channel: "stable" }, gateway: {} },
     sourceConfig: { gateway: {} },
     summary: { ok: true },
-    update: { installKind: "npm", git: null },
+    update: {
+      root: "/tmp/openclaw",
+      installKind: "package",
+      packageManager: "npm",
+    },
     osSummary: { platform: "linux" },
     memory: null,
     memoryPlugin: { enabled: true },
@@ -32,10 +36,17 @@ function createScan() {
     gatewayProbe: { connectLatencyMs: 42, error: null },
     gatewaySelf: { host: "gateway" },
     gatewayProbeAuthWarning: null,
-    agentStatus: [{ id: "main" }],
+    agentStatus: { agents: [{ id: "main" }], defaultId: "main" },
     secretDiagnostics: [],
-    pluginCompatibility: [{ pluginId: "legacy", message: "warn" }],
-  };
+    pluginCompatibility: [
+      {
+        pluginId: "legacy",
+        code: "legacy-before-agent-start",
+        severity: "warn",
+        message: "warn",
+      },
+    ],
+  } satisfies Parameters<typeof resolveStatusJsonOutput>[0]["scan"];
 }
 
 describe("status-json-runtime", () => {
@@ -74,7 +85,14 @@ describe("status-json-runtime", () => {
         usage: { providers: [] },
         health: { ok: true },
         lastHeartbeat: { status: "ok" },
-        pluginCompatibility: [{ pluginId: "legacy", message: "warn" }],
+        pluginCompatibility: [
+          {
+            pluginId: "legacy",
+            code: "legacy-before-agent-start",
+            severity: "warn",
+            message: "warn",
+          },
+        ],
       }),
     );
     expect(result).toEqual({ built: true, input: expect.any(Object) });

@@ -1,4 +1,5 @@
 import type { OpenClawConfig } from "../config/types.js";
+import type { UpdateCheckResult } from "../infra/update-check.js";
 import { buildStatusJsonPayload } from "./status-json-payload.ts";
 import {
   resolveStatusRuntimeDetails,
@@ -9,13 +10,7 @@ type StatusJsonScanLike = {
   cfg: OpenClawConfig;
   sourceConfig: OpenClawConfig;
   summary: Record<string, unknown>;
-  update: {
-    installKind?: string | null;
-    git?: {
-      tag?: string | null;
-      branch?: string | null;
-    } | null;
-  } & Record<string, unknown>;
+  update: UpdateCheckResult;
   osSummary: unknown;
   memory: unknown;
   memoryPlugin: unknown;

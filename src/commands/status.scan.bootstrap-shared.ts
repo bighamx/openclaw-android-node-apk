@@ -57,7 +57,7 @@ export async function createStatusScanCoreBootstrap<TAgentStatus>(params: {
   hasConfiguredChannels: boolean;
   opts: { timeoutMs?: number; all?: boolean };
   getTailnetHostname: (
-    runner: (cmd: string, args: string[]) => Promise<unknown>,
+    runner: (cmd: string, args: string[]) => Promise<Awaited<ReturnType<typeof runExec>>>,
   ) => Promise<string | null>;
   getUpdateCheckResult: (params: {
     timeoutMs: number;
@@ -122,7 +122,7 @@ export async function createStatusScanBootstrap<TAgentStatus, TSummary>(params: 
   hasConfiguredChannels: boolean;
   opts: { timeoutMs?: number; all?: boolean };
   getTailnetHostname: (
-    runner: (cmd: string, args: string[]) => Promise<unknown>,
+    runner: (cmd: string, args: string[]) => Promise<Awaited<ReturnType<typeof runExec>>>,
   ) => Promise<string | null>;
   getUpdateCheckResult: (params: {
     timeoutMs: number;

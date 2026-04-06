@@ -109,8 +109,6 @@ export async function statusAllCommand(
       ].join("\n");
     })();
 
-    const callOverrides = gatewayCallOverrides ?? {};
-
     const health = nodeOnlyGateway
       ? undefined
       : await resolveStatusGatewayHealthSafe({
@@ -118,7 +116,7 @@ export async function statusAllCommand(
           timeoutMs: Math.min(8000, opts?.timeoutMs ?? 10_000),
           gatewayReachable,
           gatewayProbeError: gatewayProbe?.error ?? null,
-          callOverrides,
+          callOverrides: gatewayCallOverrides,
         });
     const channelsStatus = overview.channelsStatus;
     const channelIssues = overview.channelIssues;

@@ -1,4 +1,5 @@
 import { resolveGatewayPort } from "../../config/config.js";
+import type { OpenClawConfig } from "../../config/types.js";
 import { resolveControlUiLinks } from "../../gateway/control-ui-links.js";
 import { formatDurationPrecise } from "../../infra/format-time/format-duration.ts";
 import {
@@ -16,23 +17,11 @@ export type StatusOverviewRow = {
   Value: string;
 };
 
-type StatusUpdateLike = {
-  installKind?: string | null;
-  git?: {
-    tag?: string | null;
-    branch?: string | null;
-  } | null;
-} & UpdateCheckResult;
+type UpdateConfigChannel = NonNullable<OpenClawConfig["update"]>["channel"];
 
 export function resolveStatusUpdateChannelInfo(params: {
-  updateConfigChannel?: string | null;
-  update: {
-    installKind?: string | null;
-    git?: {
-      tag?: string | null;
-      branch?: string | null;
-    } | null;
-  };
+  updateConfigChannel?: UpdateConfigChannel;
+  update: UpdateCheckResult;
 }) {
   return resolveUpdateChannelDisplay({
     configChannel: normalizeUpdateChannel(params.updateConfigChannel),
@@ -43,8 +32,8 @@ export function resolveStatusUpdateChannelInfo(params: {
 }
 
 export function buildStatusUpdateSurface(params: {
-  updateConfigChannel?: string | null;
-  update: StatusUpdateLike;
+  updateConfigChannel?: UpdateConfigChannel;
+  update: UpdateCheckResult;
 }) {
   const channelInfo = resolveStatusUpdateChannelInfo({
     updateConfigChannel: params.updateConfigChannel,
@@ -126,16 +115,7 @@ export function formatStatusServiceValue(params: {
 }
 
 export function resolveStatusDashboardUrl(params: {
-  cfg: {
-    gateway?: {
-      bind?: string;
-      customBindHost?: string;
-      controlUi?: {
-        enabled?: boolean;
-        basePath?: string;
-      };
-    };
-  };
+  cfg: Pick<OpenClawConfig, "gateway">;
 }): string | null {
   if (!(params.cfg.gateway?.controlUi?.enabled ?? true)) {
     return null;
@@ -289,16 +269,7 @@ export function buildGatewayStatusSummaryParts(params: {
 }
 
 export function buildStatusGatewaySurfaceValues(params: {
-  cfg: {
-    gateway?: {
-      bind?: string;
-      customBindHost?: string;
-      controlUi?: {
-        enabled?: boolean;
-        basePath?: string;
-      };
-    };
-  };
+  cfg: Pick<OpenClawConfig, "gateway">;
   gatewayMode: "local" | "remote";
   remoteUrlMissing: boolean;
   gatewayConnection: {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { collectSynologyChatSecurityAuditFindings } from "../../extensions/synology-chat/contract-api.js";
+import { resolveAccount as resolveSynologyChatAccount } from "../../extensions/synology-chat/src/accounts.js";
 import { collectZalouserSecurityAuditFindings } from "../../extensions/zalouser/contract-api.js";
 import type { ResolvedZalouserAccount } from "../../extensions/zalouser/src/accounts.js";
 import type { ChannelPlugin } from "../channels/plugins/types.js";
@@ -99,14 +100,7 @@ describe("security audit synology and zalo channel routing", () => {
         ? "beta"
         : "default";
       const findings = collectSynologyChatSecurityAuditFindings({
-        account: {
-          accountId,
-          enabled: true,
-          dangerouslyAllowNameMatching:
-            accountId === "beta"
-              ? synologyChat.accounts?.beta?.dangerouslyAllowNameMatching === true
-              : synologyChat.dangerouslyAllowNameMatching === true,
-        },
+        account: resolveSynologyChatAccount(testCase.cfg, accountId),
         accountId,
         orderedAccountIds: Object.keys(synologyChat.accounts ?? {}),
         hasExplicitAccountPath: accountId !== "default",

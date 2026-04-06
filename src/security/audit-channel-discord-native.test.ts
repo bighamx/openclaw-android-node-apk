@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { collectDiscordSecurityAuditFindings } from "../../extensions/discord/contract-api.js";
 import type { ResolvedDiscordAccount } from "../../extensions/discord/src/accounts.js";
+import type { DiscordAccountConfig } from "../../extensions/discord/src/runtime-api.js";
 import type { OpenClawConfig } from "../config/config.js";
 
 const { readChannelAllowFromStoreMock } = vi.hoisted(() => ({
@@ -11,9 +12,7 @@ vi.mock("openclaw/plugin-sdk/conversation-runtime", () => ({
   readChannelAllowFromStore: readChannelAllowFromStoreMock,
 }));
 
-function createAccount(
-  config: NonNullable<OpenClawConfig["channels"]>["discord"],
-): ResolvedDiscordAccount {
+function createAccount(config: DiscordAccountConfig): ResolvedDiscordAccount {
   return {
     accountId: "default",
     enabled: true,
@@ -78,7 +77,7 @@ describe("security audit discord native command findings", () => {
         throw new Error("discord config required");
       }
       const findings = await collectDiscordSecurityAuditFindings({
-        cfg: testCase.cfg as OpenClawConfig & { channels: { discord: typeof discord } },
+        cfg: testCase.cfg as OpenClawConfig & { channels: { discord: DiscordAccountConfig } },
         account: createAccount(discord),
         accountId: "default",
         orderedAccountIds: ["default"],

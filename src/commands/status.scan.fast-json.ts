@@ -1,5 +1,7 @@
 import { hasPotentialConfiguredChannels } from "../channels/config-presence.js";
+import type { OpenClawConfig } from "../config/types.js";
 import type { RuntimeEnv } from "../runtime.js";
+import type { getAgentLocalStatuses } from "./status.agent-local.js";
 import {
   resolveDefaultMemoryStorePath,
   resolveStatusMemoryStatusSnapshot,
@@ -10,7 +12,11 @@ import {
 } from "./status.scan-overview.ts";
 import type { StatusScanResult } from "./status.scan-result.ts";
 import { buildStatusScanResult } from "./status.scan-result.ts";
-import { resolveMemoryPluginStatus } from "./status.scan.shared.js";
+import {
+  type MemoryPluginStatus,
+  type MemoryStatusSnapshot,
+  resolveMemoryPluginStatus,
+} from "./status.scan.shared.js";
 let pluginRegistryModulePromise: Promise<typeof import("../cli/plugin-registry.js")> | undefined;
 
 function loadPluginRegistryModule() {
@@ -24,7 +30,12 @@ type StatusJsonScanPolicy = {
   resolveHasConfiguredChannels: (
     cfg: Parameters<typeof hasPotentialConfiguredChannels>[0],
   ) => boolean;
-  resolveMemory: Parameters<typeof scanStatusJsonCore>[0]["resolveMemory"];
+  resolveMemory: (params: {
+    cfg: OpenClawConfig;
+    agentStatus: Awaited<ReturnType<typeof getAgentLocalStatuses>>;
+    memoryPlugin: MemoryPluginStatus;
+    runtime: RuntimeEnv;
+  }) => Promise<MemoryStatusSnapshot | null>;
 };
 
 export async function scanStatusJsonWithPolicy(

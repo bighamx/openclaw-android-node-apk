@@ -1,3 +1,5 @@
+import type { TableColumn } from "../../terminal/table.js";
+
 type HeadingFn = (text: string) => string;
 
 export function appendStatusSectionHeading(params: {
@@ -26,12 +28,8 @@ export function appendStatusTableSection<Row extends Record<string, string>>(par
   heading: HeadingFn;
   title: string;
   width: number;
-  renderTable: (input: {
-    width: number;
-    columns: Array<Record<string, unknown>>;
-    rows: Row[];
-  }) => string;
-  columns: Array<Record<string, unknown>>;
+  renderTable: (input: { width: number; columns: TableColumn[]; rows: Row[] }) => string;
+  columns: readonly TableColumn[];
   rows: Row[];
 }) {
   appendStatusSectionHeading(params);
@@ -39,7 +37,7 @@ export function appendStatusTableSection<Row extends Record<string, string>>(par
     params
       .renderTable({
         width: params.width,
-        columns: params.columns,
+        columns: [...params.columns],
         rows: params.rows,
       })
       .trimEnd(),

@@ -1,3 +1,4 @@
+import type { TableColumn } from "../terminal/table.js";
 import { appendStatusLinesSection, appendStatusTableSection } from "./status-all/text-report.js";
 
 export async function buildStatusCommandReportLines(params: {
@@ -5,7 +6,7 @@ export async function buildStatusCommandReportLines(params: {
   muted: (text: string) => string;
   renderTable: (input: {
     width: number;
-    columns: Array<Record<string, unknown>>;
+    columns: TableColumn[];
     rows: Array<Record<string, string>>;
   }) => string;
   width: number;
@@ -15,13 +16,13 @@ export async function buildStatusCommandReportLines(params: {
   pluginCompatibilityLines: string[];
   pairingRecoveryLines: string[];
   securityAuditLines: string[];
-  channelsColumns: Array<Record<string, unknown>>;
+  channelsColumns: readonly TableColumn[];
   channelsRows: Array<Record<string, string>>;
-  sessionsColumns: Array<Record<string, unknown>>;
+  sessionsColumns: readonly TableColumn[];
   sessionsRows: Array<Record<string, string>>;
   systemEventsRows?: Array<Record<string, string>>;
   systemEventsTrailer?: string | null;
-  healthColumns?: Array<Record<string, unknown>>;
+  healthColumns?: readonly TableColumn[];
   healthRows?: Array<Record<string, string>>;
   usageLines?: string[];
   footerLines: string[];
