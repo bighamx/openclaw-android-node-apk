@@ -105,19 +105,13 @@ function resolveGeneratedBundledChannelModulePath(params: {
   if (!params.entry) {
     return null;
   }
-  const candidateRoots = [
-    path.resolve(OPENCLAW_PACKAGE_ROOT, "dist", "extensions", params.metadata.dirName),
-    path.resolve(OPENCLAW_PACKAGE_ROOT, "extensions", params.metadata.dirName),
-  ];
-  for (const rootDir of candidateRoots) {
-    const resolved = resolveBundledChannelGeneratedPath(
-      rootDir,
-      params.entry,
-      params.metadata.dirName,
-    );
-    if (resolved) {
-      return resolved;
-    }
+  const resolved = resolveBundledChannelGeneratedPath(
+    OPENCLAW_PACKAGE_ROOT,
+    params.entry,
+    params.metadata.dirName,
+  );
+  if (resolved) {
+    return resolved;
   }
   return null;
 }

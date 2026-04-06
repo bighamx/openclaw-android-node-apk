@@ -168,7 +168,7 @@ export const qqbotSetupAdapterShared = {
   }: {
     cfg: OpenClawConfig;
     accountId: string;
-    name: string;
+    name?: string;
   }) =>
     applyAccountNameToChannelSection({
       cfg,

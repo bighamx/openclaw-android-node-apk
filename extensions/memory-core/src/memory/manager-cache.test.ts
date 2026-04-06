@@ -8,7 +8,7 @@ import {
 
 type TestEntry = {
   id: string;
-  close: ReturnType<typeof vi.fn>;
+  close: () => Promise<void>;
 };
 
 function createTestCache(): ManagedCache<TestEntry> {

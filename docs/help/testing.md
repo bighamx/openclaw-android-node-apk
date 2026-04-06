@@ -58,7 +58,7 @@ Think of the suites as “increasing realism” (and increasing flakiness/cost):
   - No real keys required
   - Should be fast and stable
 - Projects note:
-  - Untargeted `pnpm test` now runs five smaller shard configs (`core-unit`, `core-runtime`, `agentic`, `auto-reply`, `extensions`) instead of one giant native root-project process. This cuts peak RSS on loaded machines and avoids auto-reply/extension work starving unrelated suites.
+  - Untargeted `pnpm test` now runs eight smaller shard configs (`core-unit-src`, `core-unit-security`, `core-unit-support`, `core-contracts`, `core-runtime`, `agentic`, `auto-reply`, `extensions`) instead of one giant native root-project process. This cuts peak RSS on loaded machines and avoids auto-reply/extension work starving unrelated suites.
   - `pnpm test --watch` still uses the native root `vitest.config.ts` project graph, because a multi-shard watch loop is not practical.
   - `pnpm test`, `pnpm test:watch`, and `pnpm test:perf:imports` route explicit file/directory targets through scoped lanes first, so `pnpm test extensions/discord/src/monitor/message-handler.preflight.test.ts` avoids paying the full root project startup tax.
   - `pnpm test:changed` expands changed git paths into the same scoped lanes when the diff only touches routable source/test files; config/setup edits still fall back to the broad root-project rerun.
@@ -454,6 +454,7 @@ If you want to rely on env keys (e.g. exported in your `~/.profile`), run local 
 
 - Test: `src/image-generation/runtime.live.test.ts`
 - Command: `pnpm test:live src/image-generation/runtime.live.test.ts`
+- Harness: `pnpm test:live:media image`
 - Scope:
   - Enumerates every registered image-generation provider plugin
   - Loads missing provider env vars from your login shell (`~/.profile`) before probing
@@ -478,6 +479,7 @@ If you want to rely on env keys (e.g. exported in your `~/.profile`), run local 
 
 - Test: `extensions/music-generation-providers.live.test.ts`
 - Enable: `OPENCLAW_LIVE_TEST=1 pnpm test:live -- extensions/music-generation-providers.live.test.ts`
+- Harness: `pnpm test:live:media music`
 - Scope:
   - Exercises the shared bundled music-generation provider path
   - Currently covers Google and MiniMax
@@ -501,6 +503,7 @@ If you want to rely on env keys (e.g. exported in your `~/.profile`), run local 
 
 - Test: `extensions/video-generation-providers.live.test.ts`
 - Enable: `OPENCLAW_LIVE_TEST=1 pnpm test:live -- extensions/video-generation-providers.live.test.ts`
+- Harness: `pnpm test:live:media video`
 - Scope:
   - Exercises the shared bundled video-generation provider path
   - Loads provider env vars from your login shell (`~/.profile`) before probing
@@ -508,19 +511,38 @@ If you want to rely on env keys (e.g. exported in your `~/.profile`), run local 
   - Skips providers with no usable auth/profile/model
   - Runs both declared runtime modes when available:
     - `generate` with prompt-only input
-    - `imageToVideo` when the provider declares `capabilities.imageToVideo.enabled`
+    - `imageToVideo` when the provider declares `capabilities.imageToVideo.enabled` and the selected provider/model accepts buffer-backed local image input in the shared sweep
     - `videoToVideo` when the provider declares `capabilities.videoToVideo.enabled` and the selected provider/model accepts buffer-backed local video input in the shared sweep
+  - Current declared-but-skipped `imageToVideo` providers in the shared sweep:
+    - `vydra` because bundled `veo3` is text-only and bundled `kling` requires a remote image URL
+  - Provider-specific Vydra coverage:
+    - `OPENCLAW_LIVE_TEST=1 OPENCLAW_LIVE_VYDRA_VIDEO=1 pnpm test:live -- extensions/vydra/vydra.live.test.ts`
+    - that file runs `veo3` text-to-video plus a `kling` lane that uses a remote image URL fixture by default
   - Current `videoToVideo` live coverage:
-    - `google`
-    - `openai`
     - `runway` only when the selected model is `runway/gen4_aleph`
   - Current declared-but-skipped `videoToVideo` providers in the shared sweep:
     - `alibaba`, `qwen`, `xai` because those paths currently require remote `http(s)` / MP4 reference URLs
+    - `google` because the current shared Gemini/Veo lane uses local buffer-backed input and that path is not accepted in the shared sweep
+    - `openai` because the current shared lane lacks org-specific video inpaint/remix access guarantees
 - Optional narrowing:
   - `OPENCLAW_LIVE_VIDEO_GENERATION_PROVIDERS="google,openai,runway"`
   - `OPENCLAW_LIVE_VIDEO_GENERATION_MODELS="google/veo-3.1-fast-generate-preview,openai/sora-2,runway/gen4_aleph"`
 - Optional auth behavior:
   - `OPENCLAW_LIVE_REQUIRE_PROFILE_KEYS=1` to force profile-store auth and ignore env-only overrides
+
+## Media live harness
+
+- Command: `pnpm test:live:media`
+- Purpose:
+  - Runs the shared image, music, and video live suites through one repo-native entrypoint
+  - Auto-loads missing provider env vars from `~/.profile`
+  - Auto-narrows each suite to providers that currently have usable auth by default
+  - Reuses `scripts/test-live.mjs`, so heartbeat and quiet-mode behavior stay consistent
+- Examples:
+  - `pnpm test:live:media`
+  - `pnpm test:live:media image video --providers openai,google,minimax`
+  - `pnpm test:live:media video --video-providers openai,runway --all-providers`
+  - `pnpm test:live:media music --quiet`
 
 ## Docker runners (optional "works in Linux" checks)
 
