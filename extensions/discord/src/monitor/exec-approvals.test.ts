@@ -4,9 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const resolveApprovalOverGatewayMock = vi.hoisted(() => vi.fn());
 
-vi.mock("openclaw/plugin-sdk/approval-handler-runtime", async (importOriginal) => {
+vi.mock("openclaw/plugin-sdk/approval-gateway-runtime", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("openclaw/plugin-sdk/approval-handler-runtime")>();
+    await importOriginal<typeof import("openclaw/plugin-sdk/approval-gateway-runtime")>();
   return {
     ...actual,
     resolveApprovalOverGateway: resolveApprovalOverGatewayMock,

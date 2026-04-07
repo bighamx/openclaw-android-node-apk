@@ -13,6 +13,7 @@ import type { Duplex } from "node:stream";
 import tls from "node:tls";
 import { fileURLToPath } from "node:url";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
+import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 import { handleQaBusRequest, writeError, writeJson } from "./bus-server.js";
 import { createQaBusState, type QaBusState } from "./bus-state.js";
 import { createQaRunnerRuntime } from "./harness-runtime.js";
@@ -346,7 +347,7 @@ function proxyUpgradeRequest(params: {
   for (let index = 0; index < params.req.rawHeaders.length; index += 2) {
     const name = params.req.rawHeaders[index];
     const value = params.req.rawHeaders[index + 1] ?? "";
-    if (name.toLowerCase() === "host") {
+    if (normalizeLowercaseStringOrEmpty(name) === "host") {
       continue;
     }
     headerLines.push(`${name}: ${value}`);

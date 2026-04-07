@@ -3,7 +3,7 @@ import {
   createApproverRestrictedNativeApprovalCapability,
   splitChannelApprovalCapability,
 } from "openclaw/plugin-sdk/approval-delivery-runtime";
-import { createLazyChannelApprovalNativeRuntimeAdapter } from "openclaw/plugin-sdk/approval-handler-runtime";
+import { createLazyChannelApprovalNativeRuntimeAdapter } from "openclaw/plugin-sdk/approval-handler-adapter-runtime";
 import {
   createChannelNativeOriginTargetResolver,
   resolveApprovalRequestSessionConversation,
@@ -42,7 +42,7 @@ function normalizeComparableTarget(value: string): string {
   if (target.kind === "user") {
     return `user:${normalizeMatrixUserId(target.id)}`;
   }
-  return `${target.kind.toLowerCase()}:${target.id}`;
+  return `${normalizeLowercaseStringOrEmpty(target.kind)}:${target.id}`;
 }
 
 function resolveMatrixNativeTarget(raw: string): string | null {

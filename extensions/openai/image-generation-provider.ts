@@ -1,3 +1,4 @@
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import type { ImageGenerationProvider } from "openclaw/plugin-sdk/image-generation";
 import { isProviderApiKeyConfigured } from "openclaw/plugin-sdk/provider-auth";
 import { resolveApiKeyForProvider } from "openclaw/plugin-sdk/provider-auth-runtime";
@@ -18,7 +19,7 @@ const MOCK_OPENAI_PROVIDER_ID = "mock-openai";
 
 function shouldAllowPrivateImageEndpoint(req: {
   provider: string;
-  cfg: { models?: { providers?: Record<string, { baseUrl?: string }> } };
+  cfg: OpenClawConfig | undefined;
 }) {
   if (req.provider === MOCK_OPENAI_PROVIDER_ID) {
     return true;

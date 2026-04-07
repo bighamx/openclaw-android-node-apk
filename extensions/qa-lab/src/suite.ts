@@ -12,6 +12,7 @@ import {
   resolveSessionTranscriptsDirForAgent,
 } from "openclaw/plugin-sdk/memory-core";
 import { buildAgentSessionKey } from "openclaw/plugin-sdk/routing";
+import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 import type { QaBusState } from "./bus-state.js";
 import { waitForCronRunCompletion } from "./cron-run-wait.js";
 import {
@@ -1112,8 +1113,10 @@ function buildScenarioMap(env: QaSuiteEnvironment) {
                       (candidate) =>
                         candidate.direction === "outbound" &&
                         candidate.conversation.id === "qa-operator" &&
-                        (candidate.text.toLowerCase().includes("switch") ||
-                          candidate.text.toLowerCase().includes("handoff")),
+                        (() => {
+                          const lower = normalizeLowercaseStringOrEmpty(candidate.text);
+                          return lower.includes("switch") || lower.includes("handoff");
+                        })(),
                     )
                     .at(-1),
                 resolveQaLiveTurnTimeoutMs(env, 20_000, env.alternateModel),
@@ -1299,16 +1302,21 @@ function buildScenarioMap(env: QaSuiteEnvironment) {
                       (candidate) =>
                         candidate.direction === "outbound" &&
                         candidate.conversation.id === "qa-operator" &&
-                        candidate.text.toLowerCase().includes("delegated task") &&
-                        candidate.text.toLowerCase().includes("result") &&
-                        candidate.text.toLowerCase().includes("evidence") &&
-                        !candidate.text.toLowerCase().includes("waiting"),
+                        (() => {
+                          const lower = normalizeLowercaseStringOrEmpty(candidate.text);
+                          return (
+                            lower.includes("delegated task") &&
+                            lower.includes("result") &&
+                            lower.includes("evidence") &&
+                            !lower.includes("waiting")
+                          );
+                        })(),
                     )
                     .at(-1),
                 liveTurnTimeoutMs(env, 45_000),
                 env.providerMode === "mock-openai" ? 100 : 250,
               );
-              const lower = outbound.text.toLowerCase();
+              const lower = normalizeLowercaseStringOrEmpty(outbound.text);
               if (
                 lower.includes("failed to delegate") ||
                 lower.includes("could not delegate") ||
@@ -1409,7 +1417,7 @@ function buildScenarioMap(env: QaSuiteEnvironment) {
               if (leaked) {
                 throw new Error("thread reply leaked into root channel");
               }
-              const lower = outbound.text.toLowerCase();
+              const lower = normalizeLowercaseStringOrEmpty(outbound.text);
               if (
                 lower.includes("acp backend") ||
                 lower.includes("acpx") ||
@@ -1824,7 +1832,7 @@ function buildScenarioMap(env: QaSuiteEnvironment) {
                   (candidate) => candidate.conversation.id === "qa-operator",
                   liveTurnTimeoutMs(env, 30_000),
                 );
-                const lower = outbound.text.toLowerCase();
+                const lower = normalizeLowercaseStringOrEmpty(outbound.text);
                 if (outbound.text.includes("ORBIT-9")) {
                   throw new Error(`hallucinated hidden fact: ${outbound.text}`);
                 }
@@ -2419,7 +2427,7 @@ When the user asks for the hot install marker exactly, reply with exactly: HOT-I
                 (candidate) => candidate.conversation.id === "qa-operator",
                 liveTurnTimeoutMs(env, 45_000),
               );
-              const lower = outbound.text.toLowerCase();
+              const lower = normalizeLowercaseStringOrEmpty(outbound.text);
               if (!lower.includes("red") || !lower.includes("blue")) {
                 throw new Error(`missing expected colors in image description: ${outbound.text}`);
               }
