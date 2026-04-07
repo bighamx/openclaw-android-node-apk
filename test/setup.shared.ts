@@ -11,6 +11,12 @@ vi.mock("@mariozechner/pi-ai", async () => {
   };
 });
 
+vi.mock("@mariozechner/pi-ai/oauth", () => ({
+  getOAuthApiKey: () => undefined,
+  getOAuthProviders: () => [],
+  loginOpenAICodex: vi.fn(),
+}));
+
 vi.mock("@mariozechner/clipboard", () => ({
   availableFormats: () => [],
   getText: async () => "",
@@ -84,8 +90,10 @@ export function installSharedTestSetup(options?: SharedTestSetupOptions): {
       }
       cleaned = true;
       testEnv.cleanup();
+      delete globalState[SHARED_TEST_SETUP];
     },
   };
+  process.once("exit", handle.cleanup);
   globalState[SHARED_TEST_SETUP] = handle;
   return handle;
 }
