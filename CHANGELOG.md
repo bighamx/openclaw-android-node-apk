@@ -6,6 +6,7 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- CLI/infer: add a first-class `openclaw infer ...` hub for provider-backed inference workflows across model, media, web, and embedding tasks. Thanks @Takhoffman.
 - Plugins/webhooks: add a bundled webhook ingress plugin so external automation can create and drive bound TaskFlows through per-route shared-secret endpoints. (#61892) Thanks @mbelinky.
 - Tools/media generation: preserve intent across auth-backed image, music, and video provider fallback, remap size, aspect ratio, resolution, and duration hints to the closest supported option, and surface explicit provider capabilities plus mode-aware video-to-video support.
 - Memory/wiki: restore the bundled `memory-wiki` stack with plugin, CLI, sync/query/apply tooling, and memory-host integration for wiki-backed memory workflows.
@@ -29,6 +30,7 @@ Docs: https://docs.openclaw.ai
 ### Fixes
 
 - Plugins/media: when `plugins.allow` is set, capability fallback now merges bundled capability plugin ids into the allowlist (not only `plugins.entries`), so media understanding providers such as OpenAI-compatible STT load for voice transcription without requiring `openai` in `plugins.allow`. (#62205) Thanks @neeravmakwana.
+- CLI/infer: keep provider-backed infer behavior aligned with actual runtime execution by fixing explicit TTS override handling, profile-aware gateway TTS prefs resolution, per-request transcription `prompt`/`language` overrides, image output MIME/extension mismatches, configured web-search fallback behavior, and agent-vs-CLI web-search execution drift.
 - Auth/OpenAI Codex OAuth: reload fresh on-disk credentials inside the locked refresh path and retry once after `refresh_token_reused` rotates only the stored refresh token, so relogin/restart recovery stops getting stuck on stale cached auth state. Thanks @owen-ever.
 - Agents/history and replies: buffer phaseless OpenAI WS text until a real assistant phase arrives, keep replay and SSE history sequence tracking aligned, hide commentary and leaked tool XML from user-visible history, and keep history-based follow-up replies on `final_answer` text only. (#61729, #61747, #61829, #61855, #61954) Thanks @100yenadmin, @afurm, and @openperf.
 - Plugins/channels: keep bundled channel artifact and secret-contract loading stable under lazy loading, preserve plugin-schema defaults during install, and fix Windows `file://` plus native-Jiti plugin loader paths so onboarding, doctor, `openclaw secret`, and bundled plugin installs work again. (#61832, #61836, #61853, #61856) Thanks @Zeesejo and @SuperMarioYL.
@@ -49,6 +51,7 @@ Docs: https://docs.openclaw.ai
 - macOS/gateway version: strip trailing commit metadata from CLI version output before semver parsing so the Mac app recognizes installed gateway versions like `OpenClaw 2026.4.2 (d74a122)` again. (#61111) Thanks @oliviareid-svg.
 - Discord: recover forwarded referenced message text and attachments when snapshots are missing, use `ws://` again for gateway monitor sockets, stop forcing a hardcoded temperature for Codex-backed auto-thread titles, and harden voice receive recovery so rapid speaker restarts keep their next utterance. (#41536, #61670) Thanks @artwalker and @wit-oc.
 - Slack/threading: keep legacy thread stickiness for real replies when older callers omit `isThreadReply`, while still honoring `replyToMode` for Slack's auto-created top-level `thread_ts`. (#61835) Thanks @kaonash.
+- Plugins/loaders: centralize bundled `dist/**` Jiti native-load policy and keep channel, public-surface, facade, and config-metadata loader seams off native Jiti on Windows so onboarding and configure flows stop tripping `ERR_UNSUPPORTED_ESM_URL_SCHEME`. (#62286) Thanks @chen-zhang-cs-code.
 - Providers/xAI: recognize `api.grok.x.ai` as an xAI-native endpoint again and keep legacy `x_search` auth resolution working so older xAI web-search configs continue to load. (#61377) Thanks @jjjojoj.
 - Memory/vector recall: surface explicit warnings when `sqlite-vec` is unavailable or vector writes are degraded, and strip managed Light Sleep and REM blocks before daily-note ingestion so memory indexing and dreaming stop reporting false-success or re-ingesting staged output. (#61720) Thanks @MonkeyLeeT.
 - Matrix/formatting: preserve multi-paragraph and loose-list rendering in Element so numbered and bulleted Markdown keeps their content attached to the correct list item. (#60997) Thanks @gucasbrg.
