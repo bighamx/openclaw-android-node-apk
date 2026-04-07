@@ -23,7 +23,7 @@ export const browserPluginNodeHostCommands: OpenClawPluginNodeHostCommand[] = [
   },
 ];
 
-export const browserSecurityAuditCollectors = [collectBrowserSecurityAuditFindings] as const;
+export const browserSecurityAuditCollectors = [collectBrowserSecurityAuditFindings];
 
 export function registerBrowserPlugin(api: OpenClawPluginApi) {
   api.registerTool(((ctx: OpenClawPluginToolContext) =>
