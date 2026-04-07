@@ -84,7 +84,7 @@ export function registerBrowserDebugCommands(
           query: resolveProfileQuery(profile),
           body: {
             ref: ref.trim(),
-            targetId: opts.targetId?.trim() || undefined,
+            targetId: normalizeOptionalString(opts.targetId),
           },
         });
         if (printJsonResult(parent, result)) {
@@ -190,7 +190,7 @@ export function registerBrowserDebugCommands(
           path: "/trace/start",
           query: resolveProfileQuery(profile),
           body: {
-            targetId: opts.targetId?.trim() || undefined,
+            targetId: normalizeOptionalString(opts.targetId),
             screenshots: Boolean(opts.screenshots),
             snapshots: Boolean(opts.snapshots),
             sources: Boolean(opts.sources),
@@ -218,8 +218,8 @@ export function registerBrowserDebugCommands(
           path: "/trace/stop",
           query: resolveProfileQuery(profile),
           body: {
-            targetId: opts.targetId?.trim() || undefined,
-            path: opts.out?.trim() || undefined,
+            targetId: normalizeOptionalString(opts.targetId),
+            path: normalizeOptionalString(opts.out),
           },
         });
         if (printJsonResult(parent, result)) {

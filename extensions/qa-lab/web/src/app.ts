@@ -1,4 +1,4 @@
-import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
+import { formatErrorMessage } from "./errors.js";
 import {
   type Bootstrap,
   type OutcomesEnvelope,

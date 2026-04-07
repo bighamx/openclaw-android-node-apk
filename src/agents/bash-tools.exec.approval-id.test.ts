@@ -2,8 +2,12 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearConfigCache, clearRuntimeConfigSnapshot } from "../config/config.js";
+import { clearPluginDiscoveryCache } from "../plugins/discovery.js";
+import { clearPluginLoaderCache } from "../plugins/loader.js";
+import { clearPluginManifestRegistryCache } from "../plugins/manifest-registry.js";
+import { resetPluginRuntimeStateForTest } from "../plugins/runtime.js";
 import { buildSystemRunPreparePayload } from "../test-utils/system-run-prepare-payload.js";
 
 vi.mock("./tools/gateway.js", () => ({
@@ -55,6 +59,26 @@ async function writeExecApprovalsConfig(config: Record<string, unknown>) {
   const approvalsPath = path.join(process.env.HOME ?? "", ".openclaw", "exec-approvals.json");
   await fs.mkdir(path.dirname(approvalsPath), { recursive: true });
   await fs.writeFile(approvalsPath, JSON.stringify(config, null, 2));
+}
+
+function resetPluginState() {
+  clearPluginDiscoveryCache();
+  clearPluginLoaderCache();
+  clearPluginManifestRegistryCache();
+  resetPluginRuntimeStateForTest();
+  clearRuntimeConfigSnapshot();
+  clearConfigCache();
+}
+
+async function withBundledChannels<T>(run: () => Promise<T>) {
+  delete process.env.OPENCLAW_DISABLE_BUNDLED_PLUGINS;
+  resetPluginState();
+  try {
+    return await run();
+  } finally {
+    process.env.OPENCLAW_DISABLE_BUNDLED_PLUGINS = "1";
+    resetPluginState();
+  }
 }
 
 function acceptedApprovalResponse(params: unknown) {
@@ -234,14 +258,8 @@ describe("exec approvals", () => {
   let previousBundledPluginsDir: string | undefined;
   let previousDisableBundledPlugins: string | undefined;
 
-  beforeAll(async () => {
-    ({ callGatewayTool } = await import("./tools/gateway.js"));
-    ({ createExecTool } = await import("./bash-tools.exec.js"));
-    ({ getExecApprovalApproverDmNoticeText } = await import("../infra/exec-approval-reply.js"));
-    ({ sendMessage } = await import("../infra/outbound/message.js"));
-  });
-
   beforeEach(async () => {
+    vi.resetModules();
     previousHome = process.env.HOME;
     previousUserProfile = process.env.USERPROFILE;
     previousBundledPluginsDir = process.env.OPENCLAW_BUNDLED_PLUGINS_DIR;
@@ -252,6 +270,10 @@ describe("exec approvals", () => {
     process.env.USERPROFILE = tempDir;
     delete process.env.OPENCLAW_BUNDLED_PLUGINS_DIR;
     process.env.OPENCLAW_DISABLE_BUNDLED_PLUGINS = "1";
+    ({ callGatewayTool } = await import("./tools/gateway.js"));
+    ({ createExecTool } = await import("./bash-tools.exec.js"));
+    ({ getExecApprovalApproverDmNoticeText } = await import("../infra/exec-approval-reply.js"));
+    ({ sendMessage } = await import("../infra/outbound/message.js"));
     vi.mocked(callGatewayTool).mockReset();
     vi.mocked(sendMessage).mockClear();
   });
@@ -1370,7 +1392,49 @@ describe("exec approvals", () => {
     ).rejects.toThrow("Cron runs cannot wait for interactive exec approval");
   });
 
-  it("keeps Telegram approvals in the initiating chat even when Discord DM approvals are also enabled", async () => {
+  it("returns an unavailable reply when discord exec approvals are disabled", async () => {
+    await writeOpenClawConfig({
+      channels: {
+        discord: {
+          enabled: true,
+          execApprovals: { enabled: false },
+        },
+      },
+    });
+
+    mockPendingApprovalRegistration();
+
+    const tool = createExecTool({
+      host: "gateway",
+      ask: "always",
+      approvalRunningNoticeMs: 0,
+      messageProvider: "discord",
+      accountId: "default",
+      currentChannelId: "1234567890",
+    });
+
+    const result = await withBundledChannels(async () =>
+      tool.execute("call-unavailable", {
+        command: "npm view diver name version description",
+      }),
+    );
+
+    expect(result.details.status).toBe("approval-unavailable");
+    expect(result.details).toMatchObject({
+      reason: "initiating-platform-disabled",
+      channel: "discord",
+      channelLabel: "Discord",
+      accountId: "default",
+      host: "gateway",
+    });
+    expect(getResultText(result)).toContain(
+      "native chat exec approvals are not configured on Discord",
+    );
+    expect(getResultText(result)).not.toContain("/approve");
+    expect(getResultText(result)).not.toContain("Pending command:");
+  });
+
+  it("keeps the Telegram unavailable reply when Discord DM approvals are not fully configured", async () => {
     await writeOpenClawConfig(
       {
         channels: {
@@ -1398,16 +1462,24 @@ describe("exec approvals", () => {
       currentChannelId: "-1003841603622",
     });
 
-    const result = await tool.execute("call-tg-unavailable", {
-      command: "npm view diver name version description",
-    });
+    const result = await withBundledChannels(async () =>
+      tool.execute("call-tg-unavailable", {
+        command: "npm view diver name version description",
+      }),
+    );
 
-    const details = expectPendingApprovalText(result, {
-      command: "npm view diver name version description",
+    expect(result.details.status).toBe("approval-unavailable");
+    expect(result.details).toMatchObject({
+      reason: "initiating-platform-disabled",
+      channel: "telegram",
+      channelLabel: "Telegram",
+      accountId: "default",
+      sentApproverDms: false,
       host: "gateway",
-      allowedDecisions: "allow-once|deny",
     });
-    expect(getResultText(result)).toContain(`/approve ${details.approvalSlug} allow-once`);
+    expect(getResultText(result)).toContain(
+      "native chat exec approvals are not configured on Telegram",
+    );
     expect(getResultText(result)).not.toContain(getExecApprovalApproverDmNoticeText());
   });
 });

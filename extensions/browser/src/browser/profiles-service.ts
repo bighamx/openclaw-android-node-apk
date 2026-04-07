@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
 import type { BrowserProfileConfig, OpenClawConfig } from "../config/config.js";
 import { loadConfig, writeConfigFile } from "../config/config.js";
 import { deriveDefaultBrowserCdpPortRange } from "../config/port-defaults.js";
@@ -83,8 +84,8 @@ export function createBrowserProfilesService(ctx: BrowserRouteContext) {
 
   const createProfile = async (params: CreateProfileParams): Promise<CreateProfileResult> => {
     const name = params.name.trim();
-    const rawCdpUrl = params.cdpUrl?.trim() || undefined;
-    const rawUserDataDir = params.userDataDir?.trim() || undefined;
+    const rawCdpUrl = normalizeOptionalString(params.cdpUrl);
+    const rawUserDataDir = normalizeOptionalString(params.userDataDir);
     const normalizedUserDataDir = rawUserDataDir ? resolveUserPath(rawUserDataDir) : undefined;
     const driver = params.driver === "existing-session" ? "existing-session" : undefined;
 

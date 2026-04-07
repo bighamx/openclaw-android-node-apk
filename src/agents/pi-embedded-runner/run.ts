@@ -10,6 +10,7 @@ import { sleepWithAbort } from "../../infra/backoff.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { enqueueCommandInLane } from "../../process/command-queue.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { sanitizeForLog } from "../../terminal/ansi.js";
 import { isMarkdownCapableMessageChannel } from "../../utils/message-channel.js";
 import { resolveOpenClawAgentDir } from "../agent-paths.js";
@@ -118,7 +119,7 @@ function backfillSessionKey(params: {
   sessionKey?: string;
   agentId?: string;
 }): string | undefined {
-  const trimmed = params.sessionKey?.trim() || undefined;
+  const trimmed = normalizeOptionalString(params.sessionKey);
   if (trimmed) {
     return trimmed;
   }
@@ -126,7 +127,7 @@ function backfillSessionKey(params: {
     return undefined;
   }
   try {
-    const resolved = params.agentId?.trim()
+    const resolved = normalizeOptionalString(params.agentId)
       ? resolveStoredSessionKeyForSessionId({
           cfg: params.config,
           sessionId: params.sessionId,
@@ -136,7 +137,7 @@ function backfillSessionKey(params: {
           cfg: params.config,
           sessionId: params.sessionId,
         });
-    return resolved.sessionKey?.trim() || undefined;
+    return normalizeOptionalString(resolved.sessionKey);
   } catch (err) {
     log.warn(
       `[backfillSessionKey] Failed to resolve sessionKey for sessionId=${redactRunIdentifier(sanitizeForLog(params.sessionId))}: ${formatErrorMessage(err)}`,

@@ -8,6 +8,7 @@ import { listAcpBindings } from "../../config/bindings.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { getSessionBindingService } from "../../infra/outbound/session-binding-service.js";
 import { DEFAULT_ACCOUNT_ID, isAcpSessionKey } from "../../routing/session-key.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 
 const acpResetTargetDeps = {
   getSessionBindingService,
@@ -31,16 +32,12 @@ export const __testing = {
   },
 };
 
-function normalizeText(value: string | undefined | null): string {
-  return value?.trim() ?? "";
-}
-
 function resolveResetTargetAccountId(params: {
   cfg: OpenClawConfig;
   channel: string;
   accountId?: string | null;
 }): string {
-  const explicit = normalizeText(params.accountId);
+  const explicit = normalizeOptionalString(params.accountId) ?? "";
   if (explicit) {
     return explicit;
   }
@@ -49,9 +46,7 @@ function resolveResetTargetAccountId(params: {
     params.cfg.channels as Record<string, { defaultAccount?: unknown } | undefined>
   )[params.channel];
   const configuredDefault = channelCfg?.defaultAccount;
-  return typeof configuredDefault === "string" && configuredDefault.trim()
-    ? configuredDefault.trim()
-    : DEFAULT_ACCOUNT_ID;
+  return normalizeOptionalString(configuredDefault) ?? DEFAULT_ACCOUNT_ID;
 }
 
 function resolveRawConfiguredAcpSessionKey(params: {

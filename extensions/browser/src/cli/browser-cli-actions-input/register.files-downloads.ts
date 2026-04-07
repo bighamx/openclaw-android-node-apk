@@ -109,9 +109,9 @@ export function registerBrowserFilesAndDownloadsCommands(
         path: "/hooks/file-chooser",
         body: {
           paths: normalizedPaths,
-          ref: opts.ref?.trim() || undefined,
-          inputRef: opts.inputRef?.trim() || undefined,
-          element: opts.element?.trim() || undefined,
+          ref: normalizeOptionalString(opts.ref),
+          inputRef: normalizeOptionalString(opts.inputRef),
+          element: normalizeOptionalString(opts.element),
           targetId,
           timeoutMs,
         },
@@ -137,7 +137,7 @@ export function registerBrowserFilesAndDownloadsCommands(
       await runDownloadCommand(cmd, opts, {
         path: "/wait/download",
         body: {
-          path: outPath?.trim() || undefined,
+          path: normalizeOptionalString(outPath),
         },
       });
     });
@@ -193,7 +193,7 @@ export function registerBrowserFilesAndDownloadsCommands(
         path: "/hooks/dialog",
         body: {
           accept,
-          promptText: opts.prompt?.trim() || undefined,
+          promptText: normalizeOptionalString(opts.prompt),
           targetId,
           timeoutMs,
         },

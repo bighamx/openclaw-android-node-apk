@@ -217,6 +217,63 @@ function createCompactionDiagId(): string {
   return `cmp-${Date.now().toString(36)}-${generateSecureToken(4)}`;
 }
 
+function prepareCompactionSessionAgent(params: {
+  session: { agent: { streamFn?: unknown } };
+  providerStreamFn: unknown;
+  shouldUseWebSocketTransport: boolean;
+  wsApiKey?: string;
+  sessionId: string;
+  signal: AbortSignal;
+  effectiveModel: ProviderRuntimeModel;
+  resolvedApiKey?: string;
+  authStorage: unknown;
+  config?: OpenClawConfig;
+  provider: string;
+  modelId: string;
+  thinkLevel: ThinkLevel;
+  sessionAgentId: string;
+  effectiveWorkspace: string;
+  agentDir: string;
+}) {
+  params.session.agent.streamFn = resolveEmbeddedAgentStreamFn({
+    currentStreamFn: resolveEmbeddedAgentBaseStreamFn({ session: params.session as never }),
+    providerStreamFn: params.providerStreamFn as never,
+    shouldUseWebSocketTransport: params.shouldUseWebSocketTransport,
+    wsApiKey: params.wsApiKey,
+    sessionId: params.sessionId,
+    signal: params.signal,
+    model: params.effectiveModel,
+    resolvedApiKey: params.resolvedApiKey,
+    authStorage: params.authStorage as never,
+  });
+  return applyExtraParamsToAgent(
+    params.session.agent as never,
+    params.config,
+    params.provider,
+    params.modelId,
+    undefined,
+    params.thinkLevel,
+    params.sessionAgentId,
+    params.effectiveWorkspace,
+    params.effectiveModel,
+    params.agentDir,
+  );
+}
+
+function resolveCompactionProviderStream(params: {
+  effectiveModel: ProviderRuntimeModel;
+  config?: OpenClawConfig;
+  agentDir: string;
+  effectiveWorkspace: string;
+}) {
+  return registerProviderStreamForModel({
+    model: params.effectiveModel,
+    cfg: params.config,
+    agentDir: params.agentDir,
+    workspaceDir: params.effectiveWorkspace,
+  });
+}
+
 function normalizeObservedTokenCount(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? Math.floor(value)
@@ -779,11 +836,11 @@ export async function compactEmbeddedPiSessionDirect(
         sandboxEnabled: !!sandbox?.enabled,
       });
 
-      const providerStreamFn = registerProviderStreamForModel({
-        model: effectiveModel,
-        cfg: params.config,
+      const providerStreamFn = resolveCompactionProviderStream({
+        effectiveModel,
+        config: params.config,
         agentDir,
-        workspaceDir: effectiveWorkspace,
+        effectiveWorkspace,
       });
       const shouldUseWebSocketTransport = shouldUseOpenAIWebSocketTransport({
         provider,
@@ -824,29 +881,24 @@ export async function compactEmbeddedPiSessionDirect(
           applySystemPromptOverrideToSession(session, buildSystemPromptOverride(thinkLevel)());
           // Compaction builds the same embedded system prompt, so it must flow
           // through the same transport/payload shaping stack as normal turns.
-          session.agent.streamFn = resolveEmbeddedAgentStreamFn({
-            currentStreamFn: resolveEmbeddedAgentBaseStreamFn({ session }),
+          prepareCompactionSessionAgent({
+            session,
             providerStreamFn,
             shouldUseWebSocketTransport,
             wsApiKey,
             sessionId: params.sessionId,
             signal: runAbortController.signal,
-            model: effectiveModel,
+            effectiveModel,
             resolvedApiKey: hasRuntimeAuthExchange ? undefined : apiKeyInfo?.apiKey,
             authStorage,
-          });
-          applyExtraParamsToAgent(
-            session.agent,
-            params.config,
+            config: params.config,
             provider,
             modelId,
-            undefined,
             thinkLevel,
             sessionAgentId,
             effectiveWorkspace,
-            effectiveModel,
             agentDir,
-          );
+          });
 
           const prior = await sanitizeSessionHistory({
             messages: session.messages,
@@ -1392,6 +1444,8 @@ export const __testing = {
   estimateTokensAfterCompaction,
   buildBeforeCompactionHookMetrics,
   hardenManualCompactionBoundary,
+  resolveCompactionProviderStream,
+  prepareCompactionSessionAgent,
   runBeforeCompactionHooks,
   runAfterCompactionHooks,
   runPostCompactionSideEffects,

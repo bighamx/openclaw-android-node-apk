@@ -1,4 +1,4 @@
-import { readStringValue } from "openclaw/plugin-sdk/text-runtime";
+import { normalizeOptionalString, readStringValue } from "openclaw/plugin-sdk/text-runtime";
 import type { ResolvedBrowserProfile } from "../config.js";
 import {
   DEFAULT_AI_SNAPSHOT_EFFICIENT_DEPTH,
@@ -68,8 +68,8 @@ export function resolveSnapshotPlan(params: {
   const compact = compactRaw ?? (mode === "efficient" ? true : undefined);
   const depth =
     depthRaw ?? (mode === "efficient" ? DEFAULT_AI_SNAPSHOT_EFFICIENT_DEPTH : undefined);
-  const selectorValue = toStringOrEmpty(params.query.selector).trim() || undefined;
-  const frameSelectorValue = toStringOrEmpty(params.query.frame).trim() || undefined;
+  const selectorValue = normalizeOptionalString(toStringOrEmpty(params.query.selector));
+  const frameSelectorValue = normalizeOptionalString(toStringOrEmpty(params.query.frame));
 
   return {
     format,

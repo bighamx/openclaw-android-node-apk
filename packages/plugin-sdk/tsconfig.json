@@ -12,6 +12,7 @@
   },
   "include": [
     "../../src/plugin-sdk/config-runtime.ts",
+    "../../src/plugin-sdk/index.ts",
     "../../src/plugin-sdk/lazy-value.ts",
     "../../src/plugin-sdk/oauth-utils.ts",
     "../../src/plugin-sdk/plugin-entry.ts",

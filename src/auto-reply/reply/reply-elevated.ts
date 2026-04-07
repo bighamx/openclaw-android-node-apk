@@ -1,6 +1,7 @@
 import { resolveAgentConfig } from "../../agents/agent-scope.js";
 import { getChannelPlugin, normalizeChannelId } from "../../channels/plugins/index.js";
 import type { AgentElevatedAllowFromConfig, OpenClawConfig } from "../../config/config.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { normalizeStringEntries } from "../../shared/string-normalization.js";
 import type { MsgContext } from "../templating.js";
 import {
@@ -77,21 +78,21 @@ function isApprovedElevatedSender(params: {
   const senderFromTokens = new Set<string>();
   const senderE164Tokens = new Set<string>();
 
-  if (params.ctx.SenderId?.trim()) {
+  if (normalizeOptionalString(params.ctx.SenderId)) {
     addFormattedTokens({
       formatAllowFrom: params.formatAllowFrom,
       values: [params.ctx.SenderId, stripSenderPrefix(params.ctx.SenderId)].filter(Boolean),
       tokens: senderIdTokens,
     });
   }
-  if (params.ctx.From?.trim()) {
+  if (normalizeOptionalString(params.ctx.From)) {
     addFormattedTokens({
       formatAllowFrom: params.formatAllowFrom,
       values: [params.ctx.From, stripSenderPrefix(params.ctx.From)].filter(Boolean),
       tokens: senderFromTokens,
     });
   }
-  if (params.ctx.SenderE164?.trim()) {
+  if (normalizeOptionalString(params.ctx.SenderE164)) {
     addFormattedTokens({
       formatAllowFrom: params.formatAllowFrom,
       values: [params.ctx.SenderE164],
