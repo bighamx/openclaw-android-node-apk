@@ -93,6 +93,8 @@ function configureTaskRegistryMaintenanceRuntimeForTest(params: {
     loadSessionStore: () => ({}),
     resolveStorePath: () => "",
     parseAgentSessionKey: () => null as ParsedAgentSessionKey | null,
+    isCronJobActive: () => false,
+    getAgentRunContext: () => undefined,
     deleteTaskRecordById: (taskId: string) => params.currentTasks.delete(taskId),
     ensureTaskRegistryReady: () => {},
     getTaskById: (taskId: string) => params.currentTasks.get(taskId),

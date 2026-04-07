@@ -1,3 +1,4 @@
+import { defaultQaModelForMode, isQaFastModeEnabled } from "../../model-selection.js";
 import { formatErrorMessage } from "./errors.js";
 import {
   type Bootstrap,
@@ -43,18 +44,22 @@ function defaultModelsForProviderMode(
   mode: RunnerSelection["providerMode"],
   bootstrap?: Bootstrap | null,
 ): Pick<RunnerSelection, "primaryModel" | "alternateModel" | "fastMode"> {
+  const preferredLiveModel = bootstrap?.runnerCatalog.real[0]?.key;
   if (mode === "live-openai") {
-    const preferred = bootstrap?.runnerCatalog.real[0]?.key;
+    const primaryModel = defaultQaModelForMode(mode, { preferredLiveModel });
+    const alternateModel = defaultQaModelForMode(mode, { alternate: true, preferredLiveModel });
     return {
-      primaryModel: preferred ?? "openai/gpt-5.4",
-      alternateModel: preferred ?? "openai/gpt-5.4",
-      fastMode: true,
+      primaryModel,
+      alternateModel,
+      fastMode: isQaFastModeEnabled({ primaryModel, alternateModel }),
     };
   }
+  const primaryModel = defaultQaModelForMode(mode);
+  const alternateModel = defaultQaModelForMode(mode, { alternate: true });
   return {
-    primaryModel: "mock-openai/gpt-5.4",
-    alternateModel: "mock-openai/gpt-5.4-alt",
-    fastMode: false,
+    primaryModel,
+    alternateModel,
+    fastMode: isQaFastModeEnabled({ primaryModel, alternateModel }),
   };
 }
 
@@ -320,7 +325,6 @@ export async function createQaLabApp(root: HTMLDivElement) {
           providerMode: state.runnerDraft.providerMode,
           primaryModel: state.runnerDraft.primaryModel,
           alternateModel: state.runnerDraft.alternateModel,
-          fastMode: state.runnerDraft.fastMode,
           scenarioIds: state.runnerDraft.scenarioIds,
         },
       );
@@ -531,19 +535,20 @@ export async function createQaLabApp(root: HTMLDivElement) {
         ...defaultModelsForProviderMode(mode, state.bootstrap),
       }));
     });
-    root.querySelector<HTMLInputElement>("#fast-mode")?.addEventListener("change", (e) => {
-      updateRunnerDraft((d) => ({ ...d, fastMode: (e.currentTarget as HTMLInputElement).checked }));
-    });
     root.querySelector<HTMLSelectElement>("#primary-model")?.addEventListener("change", (e) => {
+      const primaryModel = (e.currentTarget as HTMLSelectElement).value;
       updateRunnerDraft((d) => ({
         ...d,
-        primaryModel: (e.currentTarget as HTMLSelectElement).value,
+        primaryModel,
+        fastMode: isQaFastModeEnabled({ primaryModel, alternateModel: d.alternateModel }),
       }));
     });
     root.querySelector<HTMLSelectElement>("#alternate-model")?.addEventListener("change", (e) => {
+      const alternateModel = (e.currentTarget as HTMLSelectElement).value;
       updateRunnerDraft((d) => ({
         ...d,
-        alternateModel: (e.currentTarget as HTMLSelectElement).value,
+        alternateModel,
+        fastMode: isQaFastModeEnabled({ primaryModel: d.primaryModel, alternateModel }),
       }));
     });
 

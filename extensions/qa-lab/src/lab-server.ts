@@ -696,7 +696,6 @@ export async function startQaLabServer(params?: {
               providerMode: selection.providerMode,
               primaryModel: selection.primaryModel,
               alternateModel: selection.alternateModel,
-              fastMode: selection.fastMode,
               scenarioIds: selection.scenarioIds,
             });
             runnerSnapshot = {
