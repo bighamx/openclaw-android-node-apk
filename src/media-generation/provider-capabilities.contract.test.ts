@@ -3,7 +3,7 @@ import { listSupportedMusicGenerationModes } from "../music-generation/capabilit
 import {
   musicGenerationProviderContractRegistry,
   videoGenerationProviderContractRegistry,
-} from "../plugins/contracts/registry.js";
+} from "../plugins/contracts/media-provider-registry.js";
 import { listSupportedVideoGenerationModes } from "../video-generation/capabilities.js";
 
 describe("bundled media-generation provider capabilities", () => {

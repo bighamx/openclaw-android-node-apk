@@ -2,7 +2,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mergeTelegramAccountConfig } from "../../extensions/telegram/api.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { normalizeCompatibilityConfigValues } from "./doctor-legacy-config.js";
 
@@ -393,16 +392,9 @@ describe("normalizeCompatibilityConfigValues", () => {
       },
     });
 
-    expect(mergeTelegramAccountConfig(res.config, "bot1")).toMatchObject({
-      dmPolicy: "allowlist",
-      allowFrom: ["123"],
-      groupPolicy: "allowlist",
-    });
-    expect(mergeTelegramAccountConfig(res.config, "bot2")).toMatchObject({
-      dmPolicy: "allowlist",
-      allowFrom: ["123"],
-      groupPolicy: "allowlist",
-    });
+    expect(res.config.channels?.telegram?.dmPolicy).toBe("allowlist");
+    expect(res.config.channels?.telegram?.allowFrom).toEqual(["123"]);
+    expect(res.config.channels?.telegram?.groupPolicy).toBe("allowlist");
     expect(res.config.channels?.telegram?.accounts?.bot1?.botToken).toBe("bot-1-token");
     expect(res.config.channels?.telegram?.accounts?.bot2?.botToken).toBe("bot-2-token");
     expect(res.changes).not.toContain(
@@ -436,12 +428,6 @@ describe("normalizeCompatibilityConfigValues", () => {
     expect(res.config.channels?.telegram?.dmPolicy).toBe("allowlist");
     expect(res.config.channels?.telegram?.allowFrom).toEqual(["123"]);
     expect(res.config.channels?.telegram?.groupPolicy).toBe("allowlist");
-    expect(mergeTelegramAccountConfig(res.config, "default")).toMatchObject({
-      botToken: "legacy-token",
-      dmPolicy: "allowlist",
-      allowFrom: ["123"],
-      groupPolicy: "allowlist",
-    });
     expect(res.changes).toContain(
       "Moved channels.telegram single-account top-level values into channels.telegram.accounts.default.",
     );

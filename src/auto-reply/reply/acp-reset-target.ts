@@ -57,17 +57,17 @@ function resolveRawConfiguredAcpSessionKey(params: {
   parentConversationId?: string;
 }): string | undefined {
   for (const binding of acpResetTargetDeps.listAcpBindings(params.cfg)) {
-    const bindingChannel = normalizeText(binding.match.channel).toLowerCase();
+    const bindingChannel = (normalizeOptionalString(binding.match.channel) ?? "").toLowerCase();
     if (!bindingChannel || bindingChannel !== params.channel) {
       continue;
     }
 
-    const bindingAccountId = normalizeText(binding.match.accountId);
+    const bindingAccountId = normalizeOptionalString(binding.match.accountId) ?? "";
     if (bindingAccountId && bindingAccountId !== "*" && bindingAccountId !== params.accountId) {
       continue;
     }
 
-    const peerId = normalizeText(binding.match.peer?.id);
+    const peerId = normalizeOptionalString(binding.match.peer?.id) ?? "";
     const matchedConversationId =
       peerId === params.conversationId
         ? params.conversationId
@@ -106,13 +106,13 @@ export function resolveEffectiveResetTargetSessionKey(params: {
   skipConfiguredFallbackWhenActiveSessionNonAcp?: boolean;
   fallbackToActiveAcpWhenUnbound?: boolean;
 }): string | undefined {
-  const activeSessionKey = normalizeText(params.activeSessionKey);
+  const activeSessionKey = normalizeOptionalString(params.activeSessionKey);
   const activeAcpSessionKey =
     activeSessionKey && isAcpSessionKey(activeSessionKey) ? activeSessionKey : undefined;
   const activeIsNonAcp = Boolean(activeSessionKey) && !activeAcpSessionKey;
 
-  const channel = normalizeText(params.channel).toLowerCase();
-  const conversationId = normalizeText(params.conversationId);
+  const channel = (normalizeOptionalString(params.channel) ?? "").toLowerCase();
+  const conversationId = normalizeOptionalString(params.conversationId) ?? "";
   if (!channel || !conversationId) {
     return activeAcpSessionKey;
   }
@@ -121,7 +121,7 @@ export function resolveEffectiveResetTargetSessionKey(params: {
     channel,
     accountId: params.accountId,
   });
-  const parentConversationId = normalizeText(params.parentConversationId) || undefined;
+  const parentConversationId = normalizeOptionalString(params.parentConversationId) || undefined;
   const allowNonAcpBindingSessionKey = Boolean(params.allowNonAcpBindingSessionKey);
 
   const serviceBinding = acpResetTargetDeps.getSessionBindingService().resolveByConversation({

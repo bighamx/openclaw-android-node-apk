@@ -746,25 +746,29 @@ export async function dispatchReplyFromConfig(params: {
       message?: string;
     }) => {
       if (payload.status === "pending") {
-        if (normalizeOptionalString(payload.command)) {
-          return normalizeWorkingLabel(`awaiting approval: ${payload.command}`);
+        const command = normalizeOptionalString(payload.command);
+        if (command) {
+          return normalizeWorkingLabel(`awaiting approval: ${command}`);
         }
         return "awaiting approval";
       }
       if (payload.status === "unavailable") {
-        if (normalizeOptionalString(payload.message)) {
-          return normalizeWorkingLabel(payload.message);
+        const message = normalizeOptionalString(payload.message);
+        if (message) {
+          return normalizeWorkingLabel(message);
         }
         return "approval unavailable";
       }
       return "";
     };
     const summarizePatchLabel = (payload: { summary?: string; title?: string }) => {
-      if (normalizeOptionalString(payload.summary)) {
-        return normalizeWorkingLabel(payload.summary);
+      const summary = normalizeOptionalString(payload.summary);
+      if (summary) {
+        return normalizeWorkingLabel(summary);
       }
-      if (normalizeOptionalString(payload.title)) {
-        return normalizeWorkingLabel(payload.title);
+      const title = normalizeOptionalString(payload.title);
+      if (title) {
+        return normalizeWorkingLabel(title);
       }
       return "";
     };

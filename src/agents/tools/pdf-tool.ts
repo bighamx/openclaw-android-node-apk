@@ -6,7 +6,6 @@ import { loadWebMediaRaw } from "../../media/web-media.js";
 import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { resolveUserPath } from "../../utils.js";
 import { type ImageModelConfig } from "./image-tool.helpers.js";
-import { resolvePdfModelConfigForTool } from "./pdf-tool.model-config.js";
 import {
   applyImageModelConfigDefaults,
   buildTextToolResult,
@@ -21,8 +20,10 @@ import {
   coercePdfModelConfig,
   parsePageRange,
   providerSupportsNativePdf,
+  resolvePdfInputs,
   resolvePdfToolMaxTokens,
 } from "./pdf-tool.helpers.js";
+import { resolvePdfModelConfigForTool } from "./pdf-tool.model-config.js";
 import {
   createSandboxBridgeReadFile,
   discoverAuthStorage,
@@ -277,27 +278,7 @@ export function createPdfTool(options?: {
       const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
 
       // MARK: - Normalize pdf + pdfs input
-      const pdfCandidates: string[] = [];
-      if (typeof record.pdf === "string") {
-        pdfCandidates.push(record.pdf);
-      }
-      if (Array.isArray(record.pdfs)) {
-        pdfCandidates.push(...record.pdfs.filter((v): v is string => typeof v === "string"));
-      }
-
-      const seenPdfs = new Set<string>();
-      const pdfInputs: string[] = [];
-      for (const candidate of pdfCandidates) {
-        const trimmed = candidate.trim();
-        if (!trimmed || seenPdfs.has(trimmed)) {
-          continue;
-        }
-        seenPdfs.add(trimmed);
-        pdfInputs.push(trimmed);
-      }
-      if (pdfInputs.length === 0) {
-        throw new Error("pdf required: provide a path or URL to a PDF document");
-      }
+      const pdfInputs = resolvePdfInputs(record);
 
       // Enforce max PDFs cap
       if (pdfInputs.length > DEFAULT_MAX_PDFS) {

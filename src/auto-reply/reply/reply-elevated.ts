@@ -77,25 +77,32 @@ function isApprovedElevatedSender(params: {
   const senderIdTokens = new Set<string>();
   const senderFromTokens = new Set<string>();
   const senderE164Tokens = new Set<string>();
+  const senderId = normalizeOptionalString(params.ctx.SenderId);
+  const senderFrom = normalizeOptionalString(params.ctx.From);
+  const senderE164 = normalizeOptionalString(params.ctx.SenderE164);
 
-  if (normalizeOptionalString(params.ctx.SenderId)) {
+  if (senderId) {
     addFormattedTokens({
       formatAllowFrom: params.formatAllowFrom,
-      values: [params.ctx.SenderId, stripSenderPrefix(params.ctx.SenderId)].filter(Boolean),
+      values: [senderId, stripSenderPrefix(senderId)].filter((value): value is string =>
+        Boolean(value),
+      ),
       tokens: senderIdTokens,
     });
   }
-  if (normalizeOptionalString(params.ctx.From)) {
+  if (senderFrom) {
     addFormattedTokens({
       formatAllowFrom: params.formatAllowFrom,
-      values: [params.ctx.From, stripSenderPrefix(params.ctx.From)].filter(Boolean),
+      values: [senderFrom, stripSenderPrefix(senderFrom)].filter((value): value is string =>
+        Boolean(value),
+      ),
       tokens: senderFromTokens,
     });
   }
-  if (normalizeOptionalString(params.ctx.SenderE164)) {
+  if (senderE164) {
     addFormattedTokens({
       formatAllowFrom: params.formatAllowFrom,
-      values: [params.ctx.SenderE164],
+      values: [senderE164],
       tokens: senderE164Tokens,
     });
   }

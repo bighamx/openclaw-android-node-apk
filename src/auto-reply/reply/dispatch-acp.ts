@@ -85,10 +85,10 @@ function hasInboundMediaForAcp(ctx: FinalizedMsgContext): boolean {
   return Boolean(
     ctx.StickerMediaIncluded ||
     ctx.Sticker ||
-    ctx.MediaPath?.trim() ||
-    ctx.MediaUrl?.trim() ||
-    ctx.MediaPaths?.some((value) => value?.trim()) ||
-    ctx.MediaUrls?.some((value) => value?.trim()) ||
+    normalizeOptionalString(ctx.MediaPath) ||
+    normalizeOptionalString(ctx.MediaUrl) ||
+    ctx.MediaPaths?.some((value) => normalizeOptionalString(value)) ||
+    ctx.MediaUrls?.some((value) => normalizeOptionalString(value)) ||
     ctx.MediaTypes?.length,
   );
 }
