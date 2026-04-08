@@ -26,4 +26,5 @@ execution:
     setupPrompt: "Capability flip setup: acknowledge this setup so restart wake-up has a route."
     imagePrompt: "Capability flip image check: generate a QA lighthouse image in this turn right now. Do not acknowledge first, do not promise future work, and do not stop before using image_generate. Final reply must include the MEDIA path."
     imagePromptSnippet: "Capability flip image check"
+    deniedTool: image_generate
 ```

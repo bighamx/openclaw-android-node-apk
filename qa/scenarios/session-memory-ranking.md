@@ -23,7 +23,9 @@ execution:
   config:
     staleFact: ORBIT-9
     currentFact: ORBIT-10
+    transcriptId: qa-session-memory-ranking
     transcriptQuestion: "What is the current Project Nebula codename?"
     transcriptAnswer: "The current Project Nebula codename is ORBIT-10."
     prompt: "Session memory ranking check: what is the current Project Nebula codename? Use memory tools first. If durable notes conflict with newer indexed session transcripts, prefer the newer current fact."
+    promptSnippet: "Session memory ranking check"
 ```
