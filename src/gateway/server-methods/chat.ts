@@ -745,6 +745,10 @@ export function sanitizeChatHistoryMessages(messages: unknown[], maxChars: numbe
   let changed = false;
   const next: unknown[] = [];
   for (const message of messages) {
+    if (shouldDropAssistantHistoryMessage(message)) {
+      changed = true;
+      continue;
+    }
     const res = sanitizeChatHistoryMessage(message, maxChars);
     changed ||= res.changed;
     // Drop assistant commentary-only entries and exact control replies, but
