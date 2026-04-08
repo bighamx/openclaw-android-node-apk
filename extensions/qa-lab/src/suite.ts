@@ -1149,6 +1149,7 @@ export async function runQaSuite(params?: {
     providerMode,
     primaryModel,
     alternateModel,
+    fastMode,
     controlUiEnabled: true,
   });
   lab.setControlUi({

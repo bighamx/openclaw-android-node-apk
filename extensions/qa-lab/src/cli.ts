@@ -28,6 +28,19 @@ async function runQaSuite(opts: {
   await runtime.runQaSuiteCommand(opts);
 }
 
+async function runQaCharacterEval(opts: {
+  repoRoot?: string;
+  outputDir?: string;
+  model?: string[];
+  scenario?: string;
+  fast?: boolean;
+  judgeModel?: string;
+  judgeTimeoutMs?: number;
+}) {
+  const runtime = await loadQaLabCliRuntime();
+  await runtime.runQaCharacterEvalCommand(opts);
+}
+
 async function runQaManualLane(opts: {
   repoRoot?: string;
   providerMode?: QaProviderModeInput;
@@ -148,6 +161,31 @@ export function registerQaLabCli(program: Command) {
           fastMode: opts.fast,
           scenarioIds: opts.scenario,
         });
+      },
+    );
+
+  qa.command("character-eval")
+    .description("Run the character QA scenario across live models and write a judged report")
+    .option("--repo-root <path>", "Repository root to target when running from a neutral cwd")
+    .option("--output-dir <path>", "Character eval artifact directory")
+    .option("--model <ref>", "Provider/model ref to evaluate (repeatable)", collectString, [])
+    .option("--scenario <id>", "Character scenario id", "character-vibes-gollum")
+    .option("--fast", "Enable provider fast mode for candidate runs where supported", false)
+    .option("--judge-model <ref>", "Judge provider/model ref", "openai/gpt-5.4")
+    .option("--judge-timeout-ms <ms>", "Override judge wait timeout", (value: string) =>
+      Number(value),
+    )
+    .action(
+      async (opts: {
+        repoRoot?: string;
+        outputDir?: string;
+        model?: string[];
+        scenario?: string;
+        fast?: boolean;
+        judgeModel?: string;
+        judgeTimeoutMs?: number;
+      }) => {
+        await runQaCharacterEval(opts);
       },
     );
 

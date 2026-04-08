@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const {
   runQaManualLane,
   runQaSuite,
+  runQaCharacterEval,
   startQaLabServer,
   writeQaDockerHarnessFiles,
   buildQaDockerHarnessImage,
@@ -11,6 +12,7 @@ const {
 } = vi.hoisted(() => ({
   runQaManualLane: vi.fn(),
   runQaSuite: vi.fn(),
+  runQaCharacterEval: vi.fn(),
   startQaLabServer: vi.fn(),
   writeQaDockerHarnessFiles: vi.fn(),
   buildQaDockerHarnessImage: vi.fn(),
@@ -23,6 +25,10 @@ vi.mock("./manual-lane.runtime.js", () => ({
 
 vi.mock("./suite.js", () => ({
   runQaSuite,
+}));
+
+vi.mock("./character-eval.js", () => ({
+  runQaCharacterEval,
 }));
 
 vi.mock("./lab-server.js", () => ({
@@ -43,6 +49,7 @@ import {
   runQaDockerBuildImageCommand,
   runQaDockerScaffoldCommand,
   runQaDockerUpCommand,
+  runQaCharacterEvalCommand,
   runQaManualLaneCommand,
   runQaSuiteCommand,
 } from "./cli.runtime.js";
@@ -53,6 +60,7 @@ describe("qa cli runtime", () => {
   beforeEach(() => {
     stdoutWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     runQaSuite.mockReset();
+    runQaCharacterEval.mockReset();
     runQaManualLane.mockReset();
     startQaLabServer.mockReset();
     writeQaDockerHarnessFiles.mockReset();
@@ -62,6 +70,10 @@ describe("qa cli runtime", () => {
       watchUrl: "http://127.0.0.1:43124",
       reportPath: "/tmp/report.md",
       summaryPath: "/tmp/summary.json",
+    });
+    runQaCharacterEval.mockResolvedValue({
+      reportPath: "/tmp/character-report.md",
+      summaryPath: "/tmp/character-summary.json",
     });
     runQaManualLane.mockResolvedValue({
       model: "openai/gpt-5.4",
@@ -130,6 +142,28 @@ describe("qa cli runtime", () => {
         providerMode: "live-frontier",
       }),
     );
+  });
+
+  it("resolves character eval paths and passes model refs through", async () => {
+    await runQaCharacterEvalCommand({
+      repoRoot: "/tmp/openclaw-repo",
+      outputDir: ".artifacts/qa/character",
+      model: ["openai/gpt-5.4", "codex-cli/test-model"],
+      scenario: "character-vibes-gollum",
+      fast: true,
+      judgeModel: "openai/gpt-5.4",
+      judgeTimeoutMs: 180_000,
+    });
+
+    expect(runQaCharacterEval).toHaveBeenCalledWith({
+      repoRoot: path.resolve("/tmp/openclaw-repo"),
+      outputDir: path.resolve("/tmp/openclaw-repo", ".artifacts/qa/character"),
+      models: ["openai/gpt-5.4", "codex-cli/test-model"],
+      scenarioId: "character-vibes-gollum",
+      candidateFastMode: true,
+      judgeModel: "openai/gpt-5.4",
+      judgeTimeoutMs: 180_000,
+    });
   });
 
   it("passes the explicit repo root into manual runs", async () => {

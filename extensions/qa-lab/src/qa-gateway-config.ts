@@ -15,6 +15,8 @@ export const DEFAULT_QA_CONTROL_UI_ALLOWED_ORIGINS = Object.freeze([
   "http://localhost:43124",
 ]);
 
+export type QaThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "adaptive";
+
 export function mergeQaControlUiAllowedOrigins(extraOrigins?: string[]) {
   const normalizedExtra = (extraOrigins ?? [])
     .map((origin) => origin.trim())
@@ -37,7 +39,9 @@ export function buildQaGatewayConfig(params: {
   alternateModel?: string;
   imageGenerationModel?: string | null;
   enabledProviderIds?: string[];
+  enabledPluginIds?: string[];
   fastMode?: boolean;
+  thinkingDefault?: QaThinkingLevel;
 }): OpenClawConfig {
   const mockProviderBaseUrl = params.providerBaseUrl ?? "http://127.0.0.1:44080/v1";
   const mockOpenAiProvider: ModelProviderConfig = {
@@ -119,13 +123,23 @@ export function buildQaGatewayConfig(params: {
           ),
         ]
       : [];
+  const selectedPluginIds =
+    providerMode === "live-frontier"
+      ? [
+          ...new Set(
+            (params.enabledPluginIds?.length ?? 0) > 0
+              ? params.enabledPluginIds
+              : selectedProviderIds,
+          ),
+        ]
+      : [];
   const pluginEntries =
     providerMode === "live-frontier"
-      ? Object.fromEntries(selectedProviderIds.map((providerId) => [providerId, { enabled: true }]))
+      ? Object.fromEntries(selectedPluginIds.map((pluginId) => [pluginId, { enabled: true }]))
       : {};
   const allowedPlugins =
     providerMode === "live-frontier"
-      ? ["memory-core", ...selectedProviderIds, "qa-channel"]
+      ? ["memory-core", ...selectedPluginIds, "qa-channel"]
       : ["memory-core", "qa-channel"];
   const liveModelParams =
     providerMode === "live-frontier"
@@ -166,6 +180,7 @@ export function buildQaGatewayConfig(params: {
               },
             }
           : {}),
+        ...(params.thinkingDefault ? { thinkingDefault: params.thinkingDefault } : {}),
         memorySearch: {
           sync: {
             watch: true,

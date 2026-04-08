@@ -1,4 +1,5 @@
 import path from "node:path";
+import { runQaCharacterEval } from "./character-eval.js";
 import { buildQaDockerHarnessImage, writeQaDockerHarnessFiles } from "./docker-harness.js";
 import { runQaDockerUp } from "./docker-up.runtime.js";
 import { startQaLabServer } from "./lab-server.js";
@@ -92,6 +93,29 @@ export async function runQaSuiteCommand(opts: {
   process.stdout.write(`QA suite watch: ${result.watchUrl}\n`);
   process.stdout.write(`QA suite report: ${result.reportPath}\n`);
   process.stdout.write(`QA suite summary: ${result.summaryPath}\n`);
+}
+
+export async function runQaCharacterEvalCommand(opts: {
+  repoRoot?: string;
+  outputDir?: string;
+  model?: string[];
+  scenario?: string;
+  fast?: boolean;
+  judgeModel?: string;
+  judgeTimeoutMs?: number;
+}) {
+  const repoRoot = path.resolve(opts.repoRoot ?? process.cwd());
+  const result = await runQaCharacterEval({
+    repoRoot,
+    outputDir: opts.outputDir ? path.resolve(repoRoot, opts.outputDir) : undefined,
+    models: opts.model ?? [],
+    scenarioId: opts.scenario,
+    candidateFastMode: opts.fast,
+    judgeModel: opts.judgeModel,
+    judgeTimeoutMs: opts.judgeTimeoutMs,
+  });
+  process.stdout.write(`QA character eval report: ${result.reportPath}\n`);
+  process.stdout.write(`QA character eval summary: ${result.summaryPath}\n`);
 }
 
 export async function runQaManualLaneCommand(opts: {

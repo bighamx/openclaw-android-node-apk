@@ -15,6 +15,7 @@ Use this skill for `qa-lab` / `qa-channel` work. Repo-local QA only.
 - `qa/QA_KICKOFF_TASK.md`
 - `qa/seed-scenarios.json`
 - `extensions/qa-lab/src/suite.ts`
+- `extensions/qa-lab/src/character-eval.ts`
 
 ## Model policy
 
@@ -47,6 +48,54 @@ pnpm openclaw qa suite \
    - report: `.artifacts/qa-e2e/run-all-live-openai-<tag>/qa-suite-report.md`
 5. If the user wants to watch the live UI, find the current `openclaw-qa` listen port and report `http://127.0.0.1:<port>`.
 6. If a scenario fails, fix the product or harness root cause, then rerun the full lane.
+
+## Character evals
+
+Use `qa character-eval` for style/persona/vibe checks across multiple live models.
+
+```bash
+pnpm openclaw qa character-eval \
+  --model openai/gpt-5.4 \
+  --model anthropic/claude-opus-4-6 \
+  --model codex-cli/<codex-model> \
+  --judge-model openai/gpt-5.4 \
+  --output-dir .artifacts/qa-e2e/character-eval-<tag>
+```
+
+- Runs local QA gateway child processes, not Docker.
+- Defaults to candidate models `openai/gpt-5.4` and `anthropic/claude-opus-4-6` when no `--model` is passed.
+- Judge defaults to `openai/gpt-5.4`, fast mode on, `xhigh` thinking.
+- Report includes judge ranking, run stats, and full transcripts; do not include raw judge replies.
+- Scenario source should stay markdown-driven under `qa/scenarios/`.
+- For isolated character/persona evals, write the persona into `SOUL.md` and blank `IDENTITY.md` in the scenario flow. Use `SOUL.md + IDENTITY.md` only when intentionally testing how the normal OpenClaw identity combines with the character.
+- Keep prompts self-contained improv prompts. Avoid repo paths or file names unless the eval intentionally measures tool use; otherwise models may inspect files instead of chatting.
+
+## Codex CLI model lane
+
+Use model refs shaped like `codex-cli/<codex-model>` whenever QA should exercise Codex as a model backend.
+
+Examples:
+
+```bash
+pnpm openclaw qa suite \
+  --provider-mode live-frontier \
+  --model codex-cli/<codex-model> \
+  --alt-model codex-cli/<codex-model> \
+  --scenario <scenario-id> \
+  --output-dir .artifacts/qa-e2e/codex-<tag>
+```
+
+```bash
+pnpm openclaw qa manual \
+  --model codex-cli/<codex-model> \
+  --message "Reply exactly: CODEX_OK"
+```
+
+- Treat the concrete Codex model name as user/config input; do not hardcode it in source, docs examples, or scenarios.
+- Live QA preserves `CODEX_HOME` so Codex CLI auth/config works while keeping `HOME` and `OPENCLAW_HOME` sandboxed.
+- Mock QA should scrub `CODEX_HOME`.
+- If Codex returns fallback/auth text every turn, first check `CODEX_HOME`, `~/.profile`, and gateway child logs before changing scenario assertions.
+- For model comparison, include `codex-cli/<codex-model>` as another candidate in `qa character-eval`; the report should label it as an opaque model name.
 
 ## Repo facts
 

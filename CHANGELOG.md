@@ -15,6 +15,8 @@ Docs: https://docs.openclaw.ai
 - Control UI: guard stale session-history reloads during fast session switches so the selected session and rendered transcript stay in sync. (#62975) Thanks @scoootscooob.
 - Agents/failover: classify Z.ai vendor code `1311` as billing and `1113` as auth, including long wrapped `1311` payloads, so these errors stop falling through to generic failover handling. (#49552) Thanks @1bcMax.
 - npm packaging: mirror bundled Slack, Telegram, Discord, and Feishu channel runtime deps at the root and harden published-install verification so fresh installs fail fast on manifest drift instead of missing-module crashes. (#63065) Thanks @scoootscooob.
+- Agents/timeouts: make the LLM idle timeout inherit `agents.defaults.timeoutSeconds` when configured, disable the unconfigured idle watchdog for cron runs, and point idle-timeout errors at `agents.defaults.llm.idleTimeoutSeconds`. Thanks @drvoss.
+- npm packaging: derive required root runtime mirrors from bundled plugin manifests and built root chunks, then install packed release tarballs without the repo `node_modules` so release checks catch missing plugin deps before publish.
 
 ## 2026.4.8
 
@@ -130,6 +132,7 @@ Docs: https://docs.openclaw.ai
 - Agents/model resolution: keep explicit-model runtime comparisons on the configured workspace plugin registry, so workspace-installed providers do not silently fall back to stale explicit metadata during runtime model lookup.
 - Providers/Z.AI: default onboarding and endpoint detection to GLM-5.1 instead of GLM-5. (#61998) Thanks @serg0x.
 - Reply execution: prefer the active runtime snapshot over stale queued reply config during embedded reply and follow-up execution so SecretRef-backed reply turns stop crashing after secrets have already resolved. (#62693) Thanks @mbelinky.
+- Android/manual connect: allow blank port input only for TLS manual gateway endpoints so standard HTTPS Tailscale hosts default to `443` without silently changing cleartext manual connects. (#63134) Thanks @Tyler-RNG.
 
 ## 2026.4.5
 

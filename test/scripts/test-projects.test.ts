@@ -195,27 +195,38 @@ describe("scripts/test-projects changed-target routing", () => {
 
 describe("scripts/test-projects full-suite sharding", () => {
   it("splits untargeted runs into fixed shard configs", () => {
+    const previousParallel = process.env.OPENCLAW_TEST_PROJECTS_PARALLEL;
     delete process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS;
     delete process.env.OPENCLAW_TEST_SKIP_FULL_EXTENSIONS_SHARD;
-
-    expect(buildFullSuiteVitestRunPlans([], process.cwd()).map((plan) => plan.config)).toEqual([
-      "vitest.full-core-unit-fast.config.ts",
-      "vitest.full-core-unit-src.config.ts",
-      "vitest.full-core-unit-security.config.ts",
-      "vitest.full-core-unit-ui.config.ts",
-      "vitest.full-core-unit-support.config.ts",
-      "vitest.full-core-support-boundary.config.ts",
-      "vitest.full-core-contracts.config.ts",
-      "vitest.full-core-bundled.config.ts",
-      "vitest.full-core-runtime.config.ts",
-      "vitest.full-agentic.config.ts",
-      "vitest.full-auto-reply.config.ts",
-      "vitest.full-extensions.config.ts",
-    ]);
+    delete process.env.OPENCLAW_TEST_PROJECTS_PARALLEL;
+    try {
+      expect(buildFullSuiteVitestRunPlans([], process.cwd()).map((plan) => plan.config)).toEqual([
+        "vitest.full-core-unit-fast.config.ts",
+        "vitest.full-core-unit-src.config.ts",
+        "vitest.full-core-unit-security.config.ts",
+        "vitest.full-core-unit-ui.config.ts",
+        "vitest.full-core-unit-support.config.ts",
+        "vitest.full-core-support-boundary.config.ts",
+        "vitest.full-core-contracts.config.ts",
+        "vitest.full-core-bundled.config.ts",
+        "vitest.full-core-runtime.config.ts",
+        "vitest.full-agentic.config.ts",
+        "vitest.full-auto-reply.config.ts",
+        "vitest.full-extensions.config.ts",
+      ]);
+    } finally {
+      if (previousParallel === undefined) {
+        delete process.env.OPENCLAW_TEST_PROJECTS_PARALLEL;
+      } else {
+        process.env.OPENCLAW_TEST_PROJECTS_PARALLEL = previousParallel;
+      }
+    }
   });
 
   it("can skip the aggregate extension shard when CI runs dedicated extension shards", () => {
     const previous = process.env.OPENCLAW_TEST_SKIP_FULL_EXTENSIONS_SHARD;
+    const previousParallel = process.env.OPENCLAW_TEST_PROJECTS_PARALLEL;
+    delete process.env.OPENCLAW_TEST_PROJECTS_PARALLEL;
     process.env.OPENCLAW_TEST_SKIP_FULL_EXTENSIONS_SHARD = "1";
     try {
       const configs = buildFullSuiteVitestRunPlans([], process.cwd()).map((plan) => plan.config);
@@ -227,6 +238,11 @@ describe("scripts/test-projects full-suite sharding", () => {
         delete process.env.OPENCLAW_TEST_SKIP_FULL_EXTENSIONS_SHARD;
       } else {
         process.env.OPENCLAW_TEST_SKIP_FULL_EXTENSIONS_SHARD = previous;
+      }
+      if (previousParallel === undefined) {
+        delete process.env.OPENCLAW_TEST_PROJECTS_PARALLEL;
+      } else {
+        process.env.OPENCLAW_TEST_PROJECTS_PARALLEL = previousParallel;
       }
     }
   });

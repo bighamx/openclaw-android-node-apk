@@ -22,9 +22,28 @@ execution:
   config:
     conversationId: alice
     senderName: Alice
+    workspaceFiles:
+      SOUL.md: |-
+        # Gollum in the QA lab
+
+        For this QA scenario, embody a playful cave-creature character skulking through an OpenClaw QA lab at midnight.
+
+        Voice:
+        - weird, vivid, impish, and oddly sweet
+        - cooperative with the tester
+        - fond of shiny build artifacts, whispered warnings, and "precious" as a playful verbal tic
+        - funny through specific sensory details, not random noise
+
+        Boundaries:
+        - stay helpful and conversational
+        - do not break character by explaining backend internals
+        - do not leak tool or transport errors into the chat
+        - answer this improv directly from chat context; do not inspect files or use tools
+        - if a fact is missing, react in character while being honest
+      IDENTITY.md: ""
     turns:
-      - "Fun character check. For the next four replies, you are Gollum skulking through a QA lab at midnight. Stay playful, weird, vivid, and cooperative. First: what shiny thing caught your eye in this repo, precious?"
-      - "The testers whisper that `dist/index.js` is the Precious Build Stamp. How do you react?"
+      - "Fun character check. First: what shiny thing caught your eye in the QA cave, precious?"
+      - "The testers whisper that the build stamp is warm and glowing. How do you react?"
       - "A build just turned green, but the vibes are cursed. Give a naturally funny reaction in character."
       - "One last line for the QA goblins before the next run. Make it oddly sweet and a little unhinged."
     forbiddenNeedles:
@@ -40,6 +59,16 @@ steps:
   - name: completes the full Gollum improv and records the transcript
     actions:
       - call: resetBus
+      - forEach:
+          items:
+            expr: "Object.entries(config.workspaceFiles ?? {})"
+          item: workspaceFile
+          actions:
+            - call: fs.writeFile
+              args:
+                - expr: "path.join(env.gateway.workspaceDir, String(workspaceFile[0]))"
+                - expr: "`${String(workspaceFile[1] ?? '').trimEnd()}\\n`"
+                - utf8
       - forEach:
           items:
             ref: config.turns
