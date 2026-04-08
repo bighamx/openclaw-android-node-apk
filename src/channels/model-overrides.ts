@@ -144,6 +144,32 @@ function buildFeishuParentOverrideCandidates(rawId: string | undefined): string[
   return [];
 }
 
+function resolveDirectChannelModelMatch(params: {
+  providerEntries: Record<string, string>;
+  groupId?: string | null;
+}): { model: string; matchKey?: string; matchSource?: ChannelMatchSource } | null {
+  const directKeys = buildChannelKeyCandidates(params.groupId);
+  if (directKeys.length === 0) {
+    return null;
+  }
+  const match = resolveChannelEntryMatchWithFallback({
+    entries: params.providerEntries,
+    keys: directKeys,
+    parentKeys: [],
+    wildcardKey: "*",
+    normalizeKey: (value) => normalizeOptionalLowercaseString(value) ?? "",
+  });
+  const raw = match.entry ?? match.wildcardEntry;
+  if (typeof raw !== "string") {
+    return null;
+  }
+  const model = normalizeOptionalString(raw);
+  if (!model) {
+    return null;
+  }
+  return { model, matchKey: match.matchKey, matchSource: match.matchSource };
+}
+
 export function resolveChannelModelOverride(
   params: ChannelModelOverrideParams,
 ): ChannelModelOverride | null {
@@ -160,6 +186,18 @@ export function resolveChannelModelOverride(
   const providerEntries = resolveProviderEntry(modelByChannel, channel);
   if (!providerEntries) {
     return null;
+  }
+  const directMatch = resolveDirectChannelModelMatch({
+    providerEntries,
+    groupId: params.groupId,
+  });
+  if (directMatch) {
+    return {
+      channel: normalizeMessageChannel(channel) ?? normalizeOptionalLowercaseString(channel) ?? "",
+      model: directMatch.model,
+      matchKey: directMatch.matchKey,
+      matchSource: directMatch.matchSource,
+    };
   }
 
   const { keys, parentKeys } = buildChannelCandidates(params);
