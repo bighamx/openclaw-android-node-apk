@@ -131,6 +131,8 @@ describe("models-config provider auth provenance", () => {
   it("resolves plugin-owned synthetic auth through the provider hook", () => {
     mockedResolveProviderSyntheticAuthWithPlugin.mockReturnValue({
       apiKey: "xai-plugin-key",
+      mode: "api-key",
+      source: "test plugin",
     });
     const auth = createProviderAuthResolver(
       {} as NodeJS.ProcessEnv,

@@ -1,6 +1,6 @@
 {
   "name": "openclaw",
-  "version": "2026.4.6",
+  "version": "2026.4.7",
   "description": "Multi-channel AI gateway with extensible messaging integrations",
   "keywords": [],
   "homepage": "https://github.com/openclaw/openclaw#readme",
@@ -28,6 +28,7 @@
     "assets/",
     "dist/",
     "!dist/**/*.map",
+    "!dist/plugin-sdk/.tsbuildinfo",
     "docs/",
     "!docs/.generated/**",
     "!docs/.i18n/zh-CN.tm.jsonl",

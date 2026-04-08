@@ -32,7 +32,9 @@ const testModel = {
 describe("summarizeWithFallback", () => {
   beforeEach(() => {
     piCodingAgentMocks.generateSummary.mockReset();
-    piCodingAgentMocks.generateSummary.mockRejectedValue(new Error("Summarization failed"));
+    piCodingAgentMocks.generateSummary.mockRejectedValue(
+      new Error("Summarization failed: fetch failed"),
+    );
     piCodingAgentMocks.estimateTokens.mockReset();
     piCodingAgentMocks.estimateTokens.mockImplementation(() => 100);
   });
