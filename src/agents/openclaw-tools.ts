@@ -1,12 +1,14 @@
 import type { OpenClawConfig } from "../config/config.js";
 import { callGateway } from "../gateway/call.js";
 import { getActiveRuntimeWebToolsMetadata } from "../secrets/runtime.js";
-import { normalizeOptionalLowercaseString } from "../shared/string-coerce.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
 import type { GatewayMessageChannel } from "../utils/message-channel.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentId } from "./agent-scope.js";
 import { resolveOpenClawPluginToolsForOptions } from "./openclaw-plugin-tools.js";
-import { collectPresentOpenClawTools } from "./openclaw-tools.registration.js";
+import {
+  collectPresentOpenClawTools,
+  isUpdatePlanToolEnabledForOpenClawTools,
+} from "./openclaw-tools.registration.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
 import type { SpawnedToolContext } from "./spawned-context.js";
 import type { ToolFsPolicy } from "./tool-fs-policy.js";
@@ -44,19 +46,6 @@ const defaultOpenClawToolsDeps: OpenClawToolsDeps = {
 };
 
 let openClawToolsDeps: OpenClawToolsDeps = defaultOpenClawToolsDeps;
-
-function isOpenAIProvider(provider?: string): boolean {
-  const normalized = normalizeOptionalLowercaseString(provider);
-  return normalized === "openai" || normalized === "openai-codex";
-}
-
-function isUpdatePlanToolEnabled(config: OpenClawConfig | undefined, provider?: string): boolean {
-  const configured = config?.tools?.experimental?.planTool;
-  if (configured !== undefined) {
-    return configured;
-  }
-  return isOpenAIProvider(provider);
-}
 
 export function createOpenClawTools(
   options?: {
@@ -245,7 +234,7 @@ export function createOpenClawTools(
       agentSessionKey: options?.agentSessionKey,
       requesterAgentIdOverride: options?.requesterAgentIdOverride,
     }),
-    ...(isUpdatePlanToolEnabled(resolvedConfig, options?.modelProvider)
+    ...(isUpdatePlanToolEnabledForOpenClawTools(resolvedConfig, options?.modelProvider)
       ? [createUpdatePlanTool()]
       : []),
     createSessionsListTool({
