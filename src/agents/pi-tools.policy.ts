@@ -1,13 +1,14 @@
 import { getChannelPlugin } from "../channels/plugins/index.js";
-import {
-  resolveSessionConversationRef,
-  resolveSessionParentSessionKey,
-} from "../channels/plugins/session-conversation.js";
+import { resolveSessionConversation } from "../channels/plugins/session-conversation.js";
 import { DEFAULT_SUBAGENT_MAX_SPAWN_DEPTH } from "../config/agent-limits.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveChannelGroupToolsPolicy } from "../config/group-policy.js";
 import type { AgentToolsConfig } from "../config/types.tools.js";
 import { normalizeAgentId } from "../routing/session-key.js";
+import {
+  parseRawSessionConversationRef,
+  parseThreadSessionSuffix,
+} from "../sessions/session-key-utils.js";
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalLowercaseString,
@@ -143,18 +144,27 @@ function resolveGroupContextFromSessionKey(sessionKey?: string | null): {
   if (!raw) {
     return {};
   }
-  const resolvedConversation = resolveSessionConversationRef(raw);
-  if (resolvedConversation) {
-    const groupId = resolvedConversation.baseConversationId;
-    if (!groupId) {
-      return {};
+  const { baseSessionKey, threadId } = parseThreadSessionSuffix(raw);
+  const conversationKey = threadId ? baseSessionKey : raw;
+  const conversation = parseRawSessionConversationRef(conversationKey);
+  if (conversation) {
+    if (/:(?:sender|thread|topic):/iu.test(conversation.rawId)) {
+      const resolvedConversation = resolveSessionConversation({
+        channel: conversation.channel,
+        kind: conversation.kind,
+        rawId: conversation.rawId,
+      });
+      const groupId = resolvedConversation?.baseConversationId;
+      if (groupId) {
+        return {
+          channel: conversation.channel,
+          groupId,
+        };
+      }
     }
-    return {
-      channel: resolvedConversation.channel,
-      groupId,
-    };
+    return { channel: conversation.channel, groupId: conversation.rawId };
   }
-  const base = resolveSessionParentSessionKey(raw) ?? raw;
+  const base = conversationKey ?? raw;
   const parts = base.split(":").filter(Boolean);
   let body = parts[0] === "agent" ? parts.slice(2) : parts;
   if (body[0] === "subagent") {
