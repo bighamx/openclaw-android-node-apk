@@ -10,6 +10,7 @@ Docs: https://docs.openclaw.ai
 - macOS/Talk: add an experimental local MLX speech provider for Talk Mode, with explicit provider selection, local utterance playback, interruption handling, and system-voice fallback. (#63539) Thanks @ImLukeF.
 - Docs i18n: chunk raw doc translation, reject truncated tagged outputs, avoid ambiguous body-only wrapper unwrapping, and recover from terminated Pi translation sessions without changing the default `openai/gpt-5.4` path. (#62969, #63808) Thanks @hxy91819.
 - QA/testing: add a `--runner multipass` lane for `openclaw qa suite` so repo-backed QA scenarios can run inside a disposable Linux VM and write back the usual report, summary, and VM logs. (#63426) Thanks @shakkernerd.
+- Gateway: split startup and runtime seams so gateway lifecycle sequencing, reload state, and shutdown behavior stay easier to maintain without changing observed behavior. (#63975) Thanks @gumadeiras.
 
 ### Fixes
 
@@ -60,6 +61,8 @@ Docs: https://docs.openclaw.ai
 - Gateway/thread routing: preserve Slack, Telegram, and Mattermost thread-child delivery targets so bound subagent completion messages land in the originating thread instead of top-level channels. (#54840) Thanks @yzzymt.
 - ACP/stream relay: pass parent delivery context to ACP stream relay system events so `streamTo="parent"` updates route to the correct thread or topic instead of falling back to the main DM. (#57056) Thanks @pingren.
 - Agents/sessions: preserve announce `threadId` when `sessions.list` fallback rehydrates agent-to-agent announce targets so final announce messages stay in the originating thread/topic. (#63506) Thanks @SnowSky1.
+- Browser/plugin SDK: route browser auth, profile, host-inspection, and doctor readiness helpers through browser plugin public facades so core compatibility helpers stop carrying duplicate runtime implementations. (#63957) Thanks @joshavant.
+
 ## 2026.4.9
 
 ### Changes
