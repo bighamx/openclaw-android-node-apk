@@ -161,6 +161,22 @@ describe("qa cli runtime", () => {
     );
   });
 
+  it("passes host suite concurrency through", async () => {
+    await runQaSuiteCommand({
+      repoRoot: "/tmp/openclaw-repo",
+      scenarioIds: ["channel-chat-baseline", "thread-follow-up"],
+      concurrency: 3,
+    });
+
+    expect(runQaSuiteFromRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoRoot: path.resolve("/tmp/openclaw-repo"),
+        scenarioIds: ["channel-chat-baseline", "thread-follow-up"],
+        concurrency: 3,
+      }),
+    );
+  });
+
   it("resolves character eval paths and passes model refs through", async () => {
     await runQaCharacterEvalCommand({
       repoRoot: "/tmp/openclaw-repo",
@@ -291,6 +307,7 @@ describe("qa cli runtime", () => {
       runner: "multipass",
       providerMode: "mock-openai",
       scenarioIds: ["channel-chat-baseline"],
+      concurrency: 3,
       image: "lts",
       cpus: 2,
       memory: "4G",
@@ -305,6 +322,7 @@ describe("qa cli runtime", () => {
       alternateModel: undefined,
       fastMode: undefined,
       scenarioIds: ["channel-chat-baseline"],
+      concurrency: 3,
       image: "lts",
       cpus: 2,
       memory: "4G",
