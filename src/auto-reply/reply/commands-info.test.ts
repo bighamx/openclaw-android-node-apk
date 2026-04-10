@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { MsgContext } from "../templating.js";
 import { handleContextCommand } from "./commands-context-command.js";
+import { handleStatusCommand } from "./commands-info.js";
+import { buildStatusReply } from "./commands-status.js";
 import type { HandleCommandsParams } from "./commands-types.js";
 import { handleWhoamiCommand } from "./commands-whoami.js";
 
@@ -9,6 +11,10 @@ const buildContextReplyMock = vi.hoisted(() => vi.fn());
 
 vi.mock("./commands-context-report.js", () => ({
   buildContextReply: buildContextReplyMock,
+}));
+
+vi.mock("./commands-status.js", () => ({
+  buildStatusReply: vi.fn(async () => ({ text: "status reply" })),
 }));
 
 function buildInfoParams(
@@ -89,6 +95,29 @@ describe("info command handlers", () => {
     expect(result?.reply?.text).toContain("AllowFrom: 12345");
   });
 
+  it("uses the canonical command sender identity for /whoami AllowFrom", async () => {
+    const params = buildInfoParams(
+      "/whoami",
+      {
+        commands: { text: true },
+        channels: { whatsapp: { allowFrom: ["*"] } },
+      } as OpenClawConfig,
+      {
+        SenderId: "123@lid",
+        SenderUsername: "TestUser",
+        SenderE164: "+15551234567",
+        ChatType: "direct",
+      },
+    );
+    params.command.senderId = "+15551234567";
+
+    const result = await handleWhoamiCommand(params, true);
+
+    expect(result?.shouldContinue).toBe(false);
+    expect(result?.reply?.text).toContain("User id: 123@lid");
+    expect(result?.reply?.text).toContain("AllowFrom: +15551234567");
+  });
+
   it("returns expected details for /context commands", async () => {
     const cfg = {
       commands: { text: true },
@@ -110,5 +139,33 @@ describe("info command handlers", () => {
         expect(result?.reply?.text).toContain(expectedText);
       }
     }
+  });
+
+  it("prefers the persisted session parent when routing /status context", async () => {
+    const params = buildInfoParams(
+      "/status",
+      {
+        commands: { text: true },
+        channels: { whatsapp: { allowFrom: ["*"] } },
+      } as OpenClawConfig,
+      {
+        ParentSessionKey: undefined,
+      },
+    );
+    params.sessionEntry = {
+      sessionId: "session-1",
+      updatedAt: Date.now(),
+      parentSessionKey: "discord:group:parent-room",
+    } as HandleCommandsParams["sessionEntry"];
+
+    const statusResult = await handleStatusCommand(params, true);
+
+    expect(statusResult?.shouldContinue).toBe(false);
+
+    expect(vi.mocked(buildStatusReply)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parentSessionKey: "discord:group:parent-room",
+      }),
+    );
   });
 });
