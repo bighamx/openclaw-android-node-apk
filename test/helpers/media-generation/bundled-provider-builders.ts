@@ -1,4 +1,5 @@
 import type {
+  ImageGenerationProviderPlugin,
   MusicGenerationProviderPlugin,
   OpenClawPluginApi,
   VideoGenerationProviderPlugin,
@@ -20,6 +21,11 @@ export type BundledVideoProviderEntry = {
 export type BundledMusicProviderEntry = {
   pluginId: string;
   provider: MusicGenerationProviderPlugin;
+};
+
+export type BundledImageProviderEntry = {
+  pluginId: string;
+  provider: ImageGenerationProviderPlugin;
 };
 
 const BUNDLED_VIDEO_PROVIDER_PLUGIN_IDS = [
@@ -46,8 +52,12 @@ function loadBundledPluginEntry(pluginId: string): BundledPluginEntryModule {
   });
 }
 
+export function loadBundledProviderPlugin(pluginId: string): BundledPluginEntryModule["default"] {
+  return loadBundledPluginEntry(pluginId).default;
+}
+
 async function registerBundledMediaPlugin(pluginId: string) {
-  const { default: plugin } = loadBundledPluginEntry(pluginId);
+  const plugin = loadBundledProviderPlugin(pluginId);
   return await registerProviderPlugin({
     plugin,
     id: pluginId,

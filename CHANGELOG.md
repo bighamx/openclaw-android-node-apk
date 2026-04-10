@@ -6,13 +6,14 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
-- Memory/Active Memory: add a new optional Active Memory plugin that gives OpenClaw a dedicated memory sub-agent right before the main reply, so ongoing chats can automatically pull in relevant preferences, context, and past details without making users remember to manually say "remember this" or "search memory" first. Includes configurable message/recent/full context modes, live `/verbose` inspection, advanced prompt/thinking overrides for tuning, and opt-in transcript persistence for debugging. (#63286)
+- Memory/Active Memory: add a new optional Active Memory plugin that gives OpenClaw a dedicated memory sub-agent right before the main reply, so ongoing chats can automatically pull in relevant preferences, context, and past details without making users remember to manually say "remember this" or "search memory" first. Includes configurable message/recent/full context modes, live `/verbose` inspection, advanced prompt/thinking overrides for tuning, and opt-in transcript persistence for debugging. Docs: https://docs.openclaw.ai/concepts/active-memory. (#63286) Thanks @Takhoffman.
 - macOS/Talk: add an experimental local MLX speech provider for Talk Mode, with explicit provider selection, local utterance playback, interruption handling, and system-voice fallback. (#63539) Thanks @ImLukeF.
 - CLI/exec policy: add a local `openclaw exec-policy` command with `show`, `preset`, and `set` subcommands for synchronizing requested `tools.exec.*` config with the local exec approvals file, plus follow-up hardening for node-host rejection, rollback safety, and sync conflict detection. (#64050)
 - Gateway: add a `commands.list` RPC so remote gateway clients can discover runtime-native, text, skill, and plugin commands with surface-aware naming and serialized argument metadata. (#62656) Thanks @samzong.
 - Models/providers: add per-provider `models.providers.*.request.allowPrivateNetwork` for trusted self-hosted OpenAI-compatible endpoints, keep the opt-in scoped to model request surfaces, and refresh cached WebSocket managers when request transport overrides change. (#63671) Thanks @qas.
 - QA/testing: add a `--runner multipass` lane for `openclaw qa suite` so repo-backed QA scenarios can run inside a disposable Linux VM and write back the usual report, summary, and VM logs. (#63426) Thanks @shakkernerd.
 - Docs i18n: chunk raw doc translation, reject truncated tagged outputs, avoid ambiguous body-only wrapper unwrapping, and recover from terminated Pi translation sessions without changing the default `openai/gpt-5.4` path. (#62969, #63808) Thanks @hxy91819.
+- Control UI/dreaming: simplify the Scene and Diary surfaces, preserve unknown phase state for partial status payloads, and stabilize waiting-entry recency ordering so Dreaming status and review lists stay clear and deterministic. (#64035) Thanks @davemorin.
 
 ### Fixes
 
@@ -26,6 +27,10 @@ Docs: https://docs.openclaw.ai
 - Windows/exec: settle supervisor waits from child exit state after stdout and stderr drain even when `close` never arrives, so CLI commands stop hanging or dying with forced `SIGKILL` on Windows. (#64072) Thanks @obviyus.
 - Browser/sandbox: prevent sandbox browser CDP startup hangs by recreating containers when the browser security hash changes and by waiting on the correct sandbox browser lifecycle. (#62873) Thanks @Syysean.
 - iMessage/self-chat: distinguish normal DM outbound rows from true self-chat using `destination_caller_id` plus chat participants, while preserving multi-handle self-chat aliases so outbound DM replies stop looping back as inbound messages. (#61619) Thanks @neeravmakwana.
+- QQBot/streaming: make block streaming configurable per QQ bot account via `streaming.mode` (`"partial"` | `"off"`, default `"partial"`) instead of hardcoding it off, so responses can be delivered incrementally. (#63746)
+- QQBot/config: allow extra fields in `channels.qqbot` and `channels.qqbot.accounts.*` so extended qqbot builds can add new config options without gateway startup failing on schema validation. (#64075) Thanks @WideLee.
+- Dreaming/gateway: require `operator.admin` for persistent `/dreaming on|off` changes and treat missing gateway client scopes as unprivileged instead of silently allowing config writes. (#63872) Thanks @mbelinky.
+- Matrix/multi-account: keep room-level `account` scoping, inherited room overrides, and implicit account selection consistent across top-level default auth, named accounts, and cached-credential env setups. (#58449) thanks @Daanvdplas and @gumadeiras.
 - Gateway/pairing: prefer explicit QR bootstrap auth over earlier Tailscale auth classification so iOS `/pair qr` silent bootstrap pairing does not fall through to `pairing required`. (#59232) Thanks @ngutman.
 - Browser/control: auto-generate browser-control auth tokens for `none` and `trusted-proxy` modes, and route browser auth/profile/doctor helpers through the public browser plugin facades. (#63280, #63957) Thanks @pgondhi987.
 - Browser/act: centralize `/act` request normalization and execution dispatch while adding stable machine-readable route-level error codes for invalid requests, selector misuse, evaluate-disabled gating, target mismatch, and existing-session unsupported actions. (#63977) Thanks @joshavant.
@@ -69,6 +74,20 @@ Docs: https://docs.openclaw.ai
 - UI/compaction: keep the compaction indicator in a retry-pending state until the run actually finishes, so the UI does not show `Context compacted` before compaction actually finishes. (#55132) Thanks @mpz4life.
 - Cron/tool schemas: keep cron tool schemas strict-model-friendly while still preserving `failureAlert=false`, nullable `agentId`/`sessionKey`, and flattened add/update recovery for the newly exposed cron job fields. (#55043) Thanks @brunolorente.
 - Git metadata: read commit ids from packed refs as well as loose refs so version and status metadata stay accurate after repository maintenance. (#63943)
+- Gateway: keep `commands.list` skill entries categorized under tools and include provider-aware plugin `nativeName` metadata even when `scope=text`, so remote clients can group skills correctly and map text-surface plugin commands back to native aliases.
+- TUI: reset footer activity to idle when switching sessions so a stale streaming indicator cannot persist after the selection changes. (#63988) Thanks @neeravmakwana.
+- iMessage: treat `sender === chat_identifier` as self-chat only when `destination_caller_id` is present and matches the sender, fixing DM outbound rows that omit destination from being run through self-chat echo handling. (#63980) Thanks @neeravmakwana.
+- Cron/Telegram: collapse isolated announce delivery to the final assistant-visible text only for Telegram targets, while preserving existing multi-message direct delivery semantics for other channels. (#63228) Thanks @welfo-beo.
+- Gateway/thread routing: preserve Slack, Telegram, and Mattermost thread-child delivery targets so bound subagent completion messages land in the originating thread instead of top-level channels. (#54840) Thanks @yzzymt.
+- ACP/stream relay: pass parent delivery context to ACP stream relay system events so `streamTo="parent"` updates route to the correct thread or topic instead of falling back to the main DM. (#57056) Thanks @pingren.
+- Agents/sessions: preserve announce `threadId` when `sessions.list` fallback rehydrates agent-to-agent announce targets so final announce messages stay in the originating thread/topic. (#63506) Thanks @SnowSky1.
+- iMessage/self-chat: remember ambiguous `sender === chat_identifier` outbound rows with missing `destination_caller_id` in self-chat dedupe state so the later reflected inbound copy still drops instead of re-entering inbound handling when the echo cache misses. Thanks @neeravmakwana.
+- Claude CLI: stop marking spawned Claude Code runs as host-managed so they keep using normal CLI subscription behavior. (#64023) Thanks @Alex-Alaniz.
+- Agents/failover: classify OpenRouter `404 No endpoints found for <model>` responses as `model_not_found` so fallback chains continue past retired OpenRouter candidates. (#61472) Thanks @MonkeyLeeT.
+- Browser/plugin SDK: route browser auth, profile, host-inspection, and doctor readiness helpers through browser plugin public facades so core compatibility helpers stop carrying duplicate runtime implementations. (#63957) Thanks @joshavant.
+- Agents/failover: allow cooldown probes for `timeout` (including network outage classifications) so the primary model can recover after failover without a gateway restart. (#63996) Thanks @neeravmakwana.
+- iMessage (imsg): strip an accidental protobuf length-delimited UTF-8 field wrapper from inbound `text` and `reply_to_text` when it fully consumes the field, fixing leading garbage before the real message. (#63868) Thanks @neeravmakwana.
+- Gateway/pairing: fail closed for paired device records that have no device tokens, and reject pairing approvals whose requested scopes do not match the requested device roles.
 
 ## 2026.4.9
 
