@@ -95,6 +95,7 @@ Docs: https://docs.openclaw.ai
 - Agents/BTW: strip replayed tool blocks, hidden reasoning, and malformed image payloads from `/btw` side-question context so Bedrock no-tools side questions keep working after tool-use turns. (#64225) Thanks @ngutman.
 - Commands/btw: keep tool-less side questions from sending injected empty `tools` arrays on strict OpenAI-compatible providers, so `/btw` continues working after prior tool-call history. (#64219) Thanks @ngutman.
 - Agents/Bedrock: let `/btw` side questions use `auth: "aws-sdk"` without a static API key so Bedrock IAM and instance-role sessions stop failing before the side question runs. (#64218) Thanks @SnowSky1.
+- Feishu: route `/btw` side questions and `/stop` onto bounded out-of-band lanes so BTW no longer waits behind a busy normal chat turn while ordinary same-chat traffic stays FIFO. (#64324) Thanks @ngutman.
 - Agents/failover: detect llama.cpp slot context overflows as context-overflow errors so compaction can retry self-hosted OpenAI-compatible runs instead of surfacing the raw upstream 400. (#64196) Thanks @alexander-applyinnovations.
 - Claude CLI/skills: pass eligible OpenClaw skills into CLI runs, including native Claude Code skill resolution via a temporary plugin plus per-run skill env/API key injection. (#62686, #62723) Thanks @zomars.
 - Discord: keep generated auto-thread names working with reasoning models by giving title generation enough output budget for thinking plus visible title text. (#64172) Thanks @hanamizuki.
@@ -107,6 +108,8 @@ Docs: https://docs.openclaw.ai
 - Config/plugins: use plugin-owned command alias metadata when `plugins.allow` contains runtime command names like `dreaming`, and point users at the owning plugin instead of stale plugin-not-found guidance. (#64242) Thanks @feiskyer.
 - Agents/Gemini: strip orphaned `required` entries from Gemini tool schemas so provider validation no longer rejects tools after schema cleanup or union flattening. (#64284) Thanks @xxxxxmax.
 - Assistant text: strip Qwen-style XML tool call payloads from visible replies so web and channel messages no longer show raw `<tool_call><function=...>` output. (#64214) Thanks @MoerAI.
+- Daemon/gateway: prevent systemd restart storms on configuration errors by exiting with `EX_CONFIG` and adding generated unit restart-prevention guards. (#63913) Thanks @neo1027144-creator.
+- Agents/exec: prevent gateway crash ("Agent listener invoked outside active run") when a subagent exec tool produces stdout/stderr after the agent run has ended or been aborted. (#62821) Thanks @openperf.
 
 ## 2026.4.9
 
