@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadBundledPluginPublicSurfaceModuleSync } from "../plugin-sdk/facade-loader.js";
@@ -74,16 +75,34 @@ export function resolveBundledPluginPublicModulePath(params: {
   );
 }
 
+function resolveVitestSourceModulePath(targetPath: string): string {
+  if (!targetPath.endsWith(".js")) {
+    return targetPath;
+  }
+  const sourcePath = `${targetPath.slice(0, -".js".length)}.ts`;
+  return pathExists(sourcePath) ? sourcePath : targetPath;
+}
+
+function pathExists(filePath: string): boolean {
+  try {
+    return Boolean(filePath) && path.isAbsolute(filePath) && fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
 export function resolveRelativeBundledPluginPublicModuleId(params: {
   fromModuleUrl: string;
   pluginId: string;
   artifactBasename: string;
 }): string {
   const fromFilePath = fileURLToPath(params.fromModuleUrl);
-  const targetPath = resolveBundledPluginPublicModulePath({
-    pluginId: params.pluginId,
-    artifactBasename: params.artifactBasename,
-  });
+  const targetPath = resolveVitestSourceModulePath(
+    resolveBundledPluginPublicModulePath({
+      pluginId: params.pluginId,
+      artifactBasename: params.artifactBasename,
+    }),
+  );
   const relativePath = path
     .relative(path.dirname(fromFilePath), targetPath)
     .replaceAll(path.sep, "/");

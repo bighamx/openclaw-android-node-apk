@@ -2,6 +2,7 @@ import path from "node:path";
 import { runQaCharacterEval, type QaCharacterModelOptions } from "./character-eval.js";
 import { buildQaDockerHarnessImage, writeQaDockerHarnessFiles } from "./docker-harness.js";
 import { runQaDockerUp } from "./docker-up.runtime.js";
+import type { QaCliBackendAuthMode } from "./gateway-child.js";
 import { startQaLabServer } from "./lab-server.js";
 import { runQaManualLane } from "./manual-lane.runtime.js";
 import { startQaMockOpenAiServer } from "./mock-openai-server.js";
@@ -94,6 +95,17 @@ function parseQaPositiveIntegerOption(label: string, value: number | undefined) 
     throw new Error(`${label} must be a positive integer`);
   }
   return Math.floor(value);
+}
+
+function parseQaCliBackendAuthMode(value: string | undefined): QaCliBackendAuthMode | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+  if (normalized === "auto" || normalized === "api-key" || normalized === "subscription") {
+    return normalized;
+  }
+  throw new Error("--cli-auth-mode must be one of auto, api-key, subscription");
 }
 
 function parseQaModelSpecs(label: string, entries: readonly string[] | undefined) {
@@ -199,6 +211,7 @@ export async function runQaSuiteCommand(opts: {
   primaryModel?: string;
   alternateModel?: string;
   fastMode?: boolean;
+  cliAuthMode?: string;
   scenarioIds?: string[];
   concurrency?: number;
   image?: string;
@@ -212,6 +225,7 @@ export async function runQaSuiteCommand(opts: {
     throw new Error(`--runner must be one of host or multipass, got "${opts.runner}".`);
   }
   const providerMode = normalizeQaProviderMode(opts.providerMode);
+  const claudeCliAuthMode = parseQaCliBackendAuthMode(opts.cliAuthMode);
   if (
     runner === "host" &&
     (opts.image !== undefined ||
@@ -220,6 +234,9 @@ export async function runQaSuiteCommand(opts: {
       opts.disk !== undefined)
   ) {
     throw new Error("--image, --cpus, --memory, and --disk require --runner multipass.");
+  }
+  if (runner === "multipass" && opts.cliAuthMode !== undefined) {
+    throw new Error("--cli-auth-mode requires --runner host.");
   }
   if (runner === "multipass") {
     const result = await runQaMultipass({
@@ -252,6 +269,7 @@ export async function runQaSuiteCommand(opts: {
     primaryModel: opts.primaryModel,
     alternateModel: opts.alternateModel,
     fastMode: opts.fastMode,
+    ...(claudeCliAuthMode ? { claudeCliAuthMode } : {}),
     scenarioIds: opts.scenarioIds,
     ...(opts.concurrency !== undefined
       ? { concurrency: parseQaPositiveIntegerOption("--concurrency", opts.concurrency) }

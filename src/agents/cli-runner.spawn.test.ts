@@ -689,6 +689,34 @@ describe("runCliAgent spawn path", () => {
     expect(input.env?.SAFE_CLEAR).toBeUndefined();
   });
 
+  it("can preserve selected clearEnv keys for live CLI backend probes", async () => {
+    try {
+      process.env.OPENCLAW_LIVE_CLI_BACKEND_PRESERVE_ENV = '["SAFE_CLEAR"]';
+      process.env.SAFE_CLEAR = "from-base";
+      mockSuccessfulCliRun();
+      await executePreparedCliRun(
+        buildPreparedCliRunContext({
+          provider: "codex-cli",
+          model: "gpt-5.4",
+          runId: "run-clear-env-preserve",
+          backend: {
+            clearEnv: ["SAFE_CLEAR", "SAFE_DROP"],
+          },
+        }),
+        "thread-123",
+      );
+
+      const input = supervisorSpawnMock.mock.calls[0]?.[0] as {
+        env?: Record<string, string | undefined>;
+      };
+      expect(input.env?.SAFE_CLEAR).toBe("from-base");
+      expect(input.env?.SAFE_DROP).toBeUndefined();
+    } finally {
+      delete process.env.OPENCLAW_LIVE_CLI_BACKEND_PRESERVE_ENV;
+      delete process.env.SAFE_CLEAR;
+    }
+  });
+
   it("keeps explicit backend env overrides even when clearEnv drops inherited values", async () => {
     process.env.SAFE_OVERRIDE = "from-base";
     mockSuccessfulCliRun();

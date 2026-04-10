@@ -32,8 +32,13 @@ const FULL_SUITE_CONFIG_WEIGHT = new Map([
   ["test/vitest/vitest.gateway-methods.config.ts", 177],
   ["test/vitest/vitest.commands.config.ts", 175],
   ["test/vitest/vitest.agents.config.ts", 170],
+  ["test/vitest/vitest.extension-voice-call.config.ts", 169],
   ["test/vitest/vitest.extensions.config.ts", 168],
+  ["test/vitest/vitest.extension-channels.config.ts", 167],
+  ["test/vitest/vitest.runtime-config.config.ts", 166],
+  ["test/vitest/vitest.contracts.config.ts", 165],
   ["test/vitest/vitest.tasks.config.ts", 165],
+  ["test/vitest/vitest.channels.config.ts", 164],
   ["test/vitest/vitest.unit-fast.config.ts", 160],
   ["test/vitest/vitest.auto-reply-reply.config.ts", 155],
   ["test/vitest/vitest.infra.config.ts", 145],
@@ -41,14 +46,13 @@ const FULL_SUITE_CONFIG_WEIGHT = new Map([
   ["test/vitest/vitest.cron.config.ts", 135],
   ["test/vitest/vitest.wizard.config.ts", 130],
   ["test/vitest/vitest.unit-src.config.ts", 125],
-  ["test/vitest/vitest.extension-channels.config.ts", 100],
-  ["test/vitest/vitest.extension-matrix.config.ts", 98],
+  ["test/vitest/vitest.extension-matrix.config.ts", 100],
   ["test/vitest/vitest.extension-providers.config.ts", 96],
   ["test/vitest/vitest.extension-telegram.config.ts", 94],
   ["test/vitest/vitest.extension-whatsapp.config.ts", 92],
   ["test/vitest/vitest.auto-reply-core.config.ts", 90],
   ["test/vitest/vitest.cli.config.ts", 86],
-  ["test/vitest/vitest.channels.config.ts", 84],
+  ["test/vitest/vitest.media.config.ts", 84],
   ["test/vitest/vitest.plugins.config.ts", 82],
   ["test/vitest/vitest.bundled.config.ts", 80],
   ["test/vitest/vitest.commands-light.config.ts", 48],
@@ -61,7 +65,6 @@ const FULL_SUITE_CONFIG_WEIGHT = new Map([
   ["test/vitest/vitest.tooling.config.ts", 32],
   ["test/vitest/vitest.unit-security.config.ts", 30],
   ["test/vitest/vitest.unit-support.config.ts", 28],
-  ["test/vitest/vitest.contracts.config.ts", 26],
   ["test/vitest/vitest.extension-zalo.config.ts", 24],
   ["test/vitest/vitest.extension-bluebubbles.config.ts", 22],
   ["test/vitest/vitest.extension-irc.config.ts", 20],
@@ -72,7 +75,6 @@ const FULL_SUITE_CONFIG_WEIGHT = new Map([
   ["test/vitest/vitest.extension-diffs.config.ts", 8],
   ["test/vitest/vitest.extension-memory.config.ts", 6],
   ["test/vitest/vitest.extension-msteams.config.ts", 4],
-  ["test/vitest/vitest.extension-voice-call.config.ts", 2],
 ]);
 const releaseLockOnce = () => {
   if (lockReleased) {
@@ -218,6 +220,9 @@ async function main() {
         `[test] running ${parallelSpecs.length} Vitest shards with parallelism ${concurrency}`,
       );
       const parallelExitCode = await runVitestSpecsParallel(parallelSpecs, concurrency);
+      console.error(
+        `[test] completed ${parallelSpecs.length} Vitest shards; Vitest summaries above are per-shard, not aggregate totals.`,
+      );
       releaseLockOnce();
       if (parallelExitCode !== 0) {
         process.exit(parallelExitCode);

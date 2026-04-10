@@ -177,6 +177,37 @@ describe("qa cli runtime", () => {
     );
   });
 
+  it("passes host suite CLI auth mode through", async () => {
+    await runQaSuiteCommand({
+      repoRoot: "/tmp/openclaw-repo",
+      providerMode: "live-frontier",
+      primaryModel: "claude-cli/claude-sonnet-4-6",
+      alternateModel: "claude-cli/claude-sonnet-4-6",
+      cliAuthMode: "subscription",
+      scenarioIds: ["claude-cli-provider-capabilities-subscription"],
+    });
+
+    expect(runQaSuiteFromRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoRoot: path.resolve("/tmp/openclaw-repo"),
+        providerMode: "live-frontier",
+        primaryModel: "claude-cli/claude-sonnet-4-6",
+        alternateModel: "claude-cli/claude-sonnet-4-6",
+        claudeCliAuthMode: "subscription",
+        scenarioIds: ["claude-cli-provider-capabilities-subscription"],
+      }),
+    );
+  });
+
+  it("rejects unknown suite CLI auth modes", async () => {
+    await expect(
+      runQaSuiteCommand({
+        repoRoot: "/tmp/openclaw-repo",
+        cliAuthMode: "magic",
+      }),
+    ).rejects.toThrow("--cli-auth-mode must be one of auto, api-key, subscription");
+  });
+
   it("resolves character eval paths and passes model refs through", async () => {
     await runQaCharacterEvalCommand({
       repoRoot: "/tmp/openclaw-repo",
