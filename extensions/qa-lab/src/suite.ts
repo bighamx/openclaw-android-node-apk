@@ -68,12 +68,20 @@ type QaSuiteEnvironment = {
   alternateModel: string;
 };
 
-async function startQaLabServerRuntime(
-  params?: QaLabServerStartParams,
-): Promise<QaLabServerHandle> {
-  const { startQaLabServer } = await import("./lab-server.js");
-  return await startQaLabServer(params);
-}
+export type QaSuiteStartLabFn = (params?: QaLabServerStartParams) => Promise<QaLabServerHandle>;
+
+export type QaSuiteRunParams = {
+  repoRoot?: string;
+  outputDir?: string;
+  providerMode?: QaProviderMode | "live-openai";
+  primaryModel?: string;
+  alternateModel?: string;
+  fastMode?: boolean;
+  thinkingDefault?: QaThinkingLevel;
+  scenarioIds?: string[];
+  lab?: QaLabServerHandle;
+  startLab?: QaSuiteStartLabFn;
+};
 
 const _QA_IMAGE_UNDERSTANDING_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAAAAklEQVR4AewaftIAAAK4SURBVO3BAQEAMAwCIG//znsQgXfJBZjUALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsBpjVALMaYFYDzGqAWQ0wqwFmNcCsl9wFmNQAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwGmNUAsxpgVgPMaoBZDTCrAWY1wKwP4TIF+7ciPkoAAAAASUVORK5CYII=";
@@ -1188,17 +1196,7 @@ async function runScenarioDefinition(
   });
 }
 
-export async function runQaSuite(params?: {
-  repoRoot?: string;
-  outputDir?: string;
-  providerMode?: QaProviderMode | "live-openai";
-  primaryModel?: string;
-  alternateModel?: string;
-  fastMode?: boolean;
-  thinkingDefault?: QaThinkingLevel;
-  scenarioIds?: string[];
-  lab?: QaLabServerHandle;
-}) {
+export async function runQaSuite(params?: QaSuiteRunParams) {
   const startedAt = new Date();
   const repoRoot = path.resolve(params?.repoRoot ?? process.cwd());
   const providerMode = normalizeQaProviderMode(params?.providerMode ?? "mock-openai");
@@ -1217,12 +1215,15 @@ export async function runQaSuite(params?: {
   const ownsLab = !params?.lab;
   const lab =
     params?.lab ??
-    (await startQaLabServerRuntime({
+    (await params?.startLab?.({
       repoRoot,
       host: "127.0.0.1",
       port: 0,
       embeddedGateway: "disabled",
     }));
+  if (!lab) {
+    throw new Error("QA suite requires lab or startLab runtime");
+  }
   const mock =
     providerMode === "mock-openai"
       ? await startQaMockOpenAiServer({

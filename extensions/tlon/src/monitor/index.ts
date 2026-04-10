@@ -1,5 +1,6 @@
-import type { ReplyPayload, RuntimeEnv } from "../../api.js";
-import { createLoggerBackedRuntime } from "../../api.js";
+import type { ReplyPayload } from "openclaw/plugin-sdk/reply-runtime";
+import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime";
+import { createLoggerBackedRuntime } from "../../runtime-api.js";
 import { getTlonRuntime } from "../runtime.js";
 import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
 import { normalizeShip, parseChannelNest } from "../targets.js";
@@ -561,11 +562,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           // Use settings store value if set, otherwise fall back to file config
           const showSignature = effectiveShowModelSig;
           if (showSignature) {
-            const extPayload = payload as ReplyPayload & {
+            const extPayload = payload as {
               metadata?: { model?: string };
               model?: string;
             };
-            const extRoute = route as typeof route & { model?: string };
+            const extRoute = route;
             const defaultModel = cfg.agents?.defaults?.model;
             const modelInfo =
               extPayload.metadata?.model ||

@@ -13,7 +13,7 @@ import {
   type QaProviderMode,
   type QaProviderModeInput,
 } from "./run-config.js";
-import { runQaSuite } from "./suite.js";
+import { runQaSuiteFromRuntime } from "./suite-launch.runtime.js";
 
 type InterruptibleServer = {
   baseUrl: string;
@@ -241,7 +241,7 @@ export async function runQaSuiteCommand(opts: {
     process.stdout.write(`QA Multipass bootstrap log: ${result.bootstrapLogPath}\n`);
     return;
   }
-  const result = await runQaSuite({
+  const result = await runQaSuiteFromRuntime({
     repoRoot,
     outputDir: opts.outputDir ? path.resolve(repoRoot, opts.outputDir) : undefined,
     providerMode,

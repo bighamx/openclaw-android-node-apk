@@ -318,14 +318,18 @@ describe("drainPendingDeliveries for WhatsApp reconnect", () => {
       }
     });
 
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValueOnce(1_000);
     await enqueueDelivery(
       { channel: "demo-channel-a", to: "+1000", payloads: [{ text: "blocker" }] },
       tmpDir,
     );
+    nowSpy.mockReturnValueOnce(2_000);
     await enqueueDelivery(
       { channel: "whatsapp", to: "+1555", payloads: [{ text: "hi" }], accountId: "acct1" },
       tmpDir,
     );
+    nowSpy.mockRestore();
 
     const startupRecovery = recoverPendingDeliveries({
       cfg: stubCfg,

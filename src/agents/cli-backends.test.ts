@@ -96,6 +96,7 @@ const NORMALIZED_CLAUDE_FALLBACK_RESUME_ARGS = [
 beforeAll(async () => {
   vi.doUnmock("../plugins/setup-registry.js");
   vi.doUnmock("../plugins/cli-backends.runtime.js");
+  vi.resetModules();
   ({ createEmptyPluginRegistry } = await import("../plugins/registry.js"));
   ({ resetPluginRuntimeStateForTest, setActivePluginRegistry } =
     await import("../plugins/runtime.js"));

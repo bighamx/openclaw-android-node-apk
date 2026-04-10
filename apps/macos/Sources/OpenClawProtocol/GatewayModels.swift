@@ -4272,6 +4272,7 @@ public struct ChatEvent: Codable, Sendable {
     public let state: AnyCodable
     public let message: AnyCodable?
     public let errormessage: String?
+    public let errorkind: AnyCodable?
     public let usage: AnyCodable?
     public let stopreason: String?
 
@@ -4282,6 +4283,7 @@ public struct ChatEvent: Codable, Sendable {
         state: AnyCodable,
         message: AnyCodable?,
         errormessage: String?,
+        errorkind: AnyCodable?,
         usage: AnyCodable?,
         stopreason: String?)
     {
@@ -4291,6 +4293,7 @@ public struct ChatEvent: Codable, Sendable {
         self.state = state
         self.message = message
         self.errormessage = errormessage
+        self.errorkind = errorkind
         self.usage = usage
         self.stopreason = stopreason
     }
@@ -4302,6 +4305,7 @@ public struct ChatEvent: Codable, Sendable {
         case state
         case message
         case errormessage = "errorMessage"
+        case errorkind = "errorKind"
         case usage
         case stopreason = "stopReason"
     }
