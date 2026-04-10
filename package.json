@@ -545,6 +545,10 @@
       "types": "./dist/plugin-sdk/channel-inbound.d.ts",
       "default": "./dist/plugin-sdk/channel-inbound.js"
     },
+    "./plugin-sdk/channel-inbound-roots": {
+      "types": "./dist/plugin-sdk/channel-inbound-roots.d.ts",
+      "default": "./dist/plugin-sdk/channel-inbound-roots.js"
+    },
     "./plugin-sdk/channel-lifecycle": {
       "types": "./dist/plugin-sdk/channel-lifecycle.d.ts",
       "default": "./dist/plugin-sdk/channel-lifecycle.js"
