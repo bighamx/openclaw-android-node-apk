@@ -105,8 +105,13 @@ describe("msteams thread parent context injection", () => {
       textLimit: 4000,
       mediaMaxBytes: 1024 * 1024,
       conversationStore: {
+        get: vi.fn(async () => null),
         upsert: vi.fn(async () => undefined),
-      } as unknown as MSTeamsMessageHandlerDeps["conversationStore"],
+        list: vi.fn(async () => []),
+        remove: vi.fn(async () => false),
+        findPreferredDmByUserId: vi.fn(async () => null),
+        findByUserId: vi.fn(async () => null),
+      } satisfies MSTeamsMessageHandlerDeps["conversationStore"],
       pollStore: {
         recordVote: vi.fn(async () => null),
       } as unknown as MSTeamsMessageHandlerDeps["pollStore"],
