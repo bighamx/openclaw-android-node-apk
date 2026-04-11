@@ -190,6 +190,53 @@ describe("handleInlineActions", () => {
     );
   });
 
+  it("prefers the target session entry when routing inline commands into handleCommands", async () => {
+    const typing = createTypingController();
+
+    handleCommandsMock.mockResolvedValue({ shouldContinue: false, reply: { text: "done" } });
+
+    const ctx = buildTestCtx({
+      Body: "/status",
+      CommandBody: "/status",
+    });
+
+    const result = await handleInlineActions(
+      createHandleInlineActionsInput({
+        ctx,
+        typing,
+        cleanedBody: "/status",
+        command: {
+          isAuthorizedSender: true,
+          rawBodyNormalized: "/status",
+          commandBodyNormalized: "/status",
+        },
+        overrides: {
+          allowTextCommands: true,
+          cfg: { commands: { text: true } },
+          sessionEntry: {
+            sessionId: "wrapper-session",
+            updatedAt: Date.now(),
+          } as SessionEntry,
+          sessionStore: {
+            "s:main": {
+              sessionId: "target-session",
+              updatedAt: Date.now(),
+            } as SessionEntry,
+          },
+        },
+      }),
+    );
+
+    expect(result).toEqual({ kind: "reply", reply: { text: "done" } });
+    expect(handleCommandsMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionEntry: expect.objectContaining({
+          sessionId: "target-session",
+        }),
+      }),
+    );
+  });
+
   it("does not run command handlers after replying to an inline status-only turn", async () => {
     const typing = createTypingController();
     const ctx = buildTestCtx({
@@ -417,6 +464,43 @@ describe("handleInlineActions", () => {
     expect(sessionStore["s:main"]?.abortCutoffMessageSid).toBeUndefined();
     expect(sessionStore["s:main"]?.abortCutoffTimestamp).toBeUndefined();
     expect(handleCommandsMock).not.toHaveBeenCalled();
+  });
+
+  it("prefers the target session entry for inline /stop cutoff checks", async () => {
+    const typing = createTypingController();
+    const wrapperSessionEntry: SessionEntry = {
+      sessionId: "wrapper-session",
+      updatedAt: Date.now(),
+      abortCutoffMessageSid: "40",
+      abortedLastRun: true,
+    };
+    const targetSessionEntry: SessionEntry = {
+      sessionId: "target-session",
+      updatedAt: Date.now(),
+      abortCutoffMessageSid: "42",
+      abortedLastRun: true,
+    };
+    const ctx = buildTestCtx({
+      Body: "old queued message",
+      CommandBody: "old queued message",
+      MessageSid: "41",
+    });
+
+    await expectInlineActionSkipped({
+      ctx,
+      typing,
+      cleanedBody: "old queued message",
+      command: {
+        rawBodyNormalized: "old queued message",
+        commandBodyNormalized: "old queued message",
+      },
+      overrides: {
+        sessionEntry: wrapperSessionEntry,
+        sessionStore: {
+          "s:main": targetSessionEntry,
+        },
+      },
+    });
   });
 
   it("rewrites Claude bundle markdown commands into a native agent prompt", async () => {
