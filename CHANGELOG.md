@@ -9,6 +9,7 @@ Docs: https://docs.openclaw.ai
 ### Fixes
 
 - WhatsApp: honor the configured default account when the active listener helper is used without an explicit account id, so named default accounts do not get registered under `default`. (#53918) Thanks @yhyatt.
+- QA/packaging: stop packaged CLI startup and completion cache generation from reading repo-only QA scenario markdown by routing QA command registration through a narrow facade. (#64648) Thanks @obviyus.
 
 ## 2026.4.10
 
@@ -31,6 +32,7 @@ Docs: https://docs.openclaw.ai
 - Agents: add an opt-in strict-agentic embedded Pi execution contract for GPT-5-family runs so plan-only or filler turns keep acting until they hit a real blocker. (#64241) Thanks @100yenadmin.
 - Agents/OpenAI: add provider-owned OpenAI/Codex tool schema compatibility and surface embedded-run replay/liveness state for long-running runs. (#64300) Thanks @100yenadmin.
 - Docs i18n: chunk raw doc translation, reject truncated tagged outputs, avoid ambiguous body-only wrapper unwrapping, and recover from terminated Pi translation sessions without changing the default `openai/gpt-5.4` path. (#62969, #63808) Thanks @hxy91819.
+- Dreaming/memory-wiki: add ChatGPT import ingestion plus new `Imported Insights` and `Memory Palace` diary subtabs so Dreaming can inspect imported source chats, compiled wiki pages, and full source pages directly from the UI. (#64505)
 
 ### Fixes
 
