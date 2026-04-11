@@ -720,6 +720,7 @@ export async function startQaGatewayChild(params: {
   repoRoot: string;
   providerBaseUrl?: string;
   qaBusBaseUrl: string;
+  includeQaChannel?: boolean;
   controlUiAllowedOrigins?: string[];
   providerMode?: "mock-openai" | "live-frontier";
   primaryModel?: string;
@@ -780,6 +781,7 @@ export async function startQaGatewayChild(params: {
     gatewayToken,
     providerBaseUrl: params.providerBaseUrl,
     qaBusBaseUrl: params.qaBusBaseUrl,
+    includeQaChannel: params.includeQaChannel,
     workspaceDir,
     controlUiRoot: resolveQaControlUiRoot({
       repoRoot: params.repoRoot,
@@ -945,9 +947,10 @@ export async function startQaGatewayChild(params: {
     async call(
       method: string,
       rpcParams?: unknown,
-      opts?: { expectFinal?: boolean; timeoutMs?: number },
+      opts?: { expectFinal?: boolean; timeoutMs?: number; retryOnRestart?: boolean },
     ) {
       const timeoutMs = opts?.timeoutMs ?? 20_000;
+      const retryOnRestart = opts?.retryOnRestart !== false;
       let lastDetails = "";
       for (let attempt = 1; attempt <= 3; attempt += 1) {
         try {
@@ -958,7 +961,7 @@ export async function startQaGatewayChild(params: {
         } catch (error) {
           const details = formatErrorMessage(error);
           lastDetails = details;
-          if (attempt >= 3 || !isRetryableGatewayCallError(details)) {
+          if (attempt >= 3 || !retryOnRestart || !isRetryableGatewayCallError(details)) {
             throw new Error(`${details}\nGateway logs:\n${logs()}`, { cause: error });
           }
           await waitForGatewayReady({
