@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { noteChromeMcpBrowserReadiness } from "./doctor-browser.js";
 
-describe("doctor browser readiness", () => {
+describe("browser doctor readiness", () => {
   it("does nothing when Chrome MCP is not configured", async () => {
     const noteFn = vi.fn();
     await noteChromeMcpBrowserReadiness(
