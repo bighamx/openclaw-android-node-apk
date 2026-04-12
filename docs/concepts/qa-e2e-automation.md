@@ -120,7 +120,18 @@ Seed assets live in `qa/`:
 - `qa/scenarios/*.md`
 
 These are intentionally in git so the QA plan is visible to both humans and the
-agent. The baseline list should stay broad enough to cover:
+agent.
+
+`qa-lab` should stay a generic markdown runner. Each scenario markdown file is
+the source of truth for one test run and should define:
+
+- scenario metadata
+- docs and code refs
+- optional plugin requirements
+- optional gateway config patch
+- the executable `qa-flow`
+
+The baseline list should stay broad enough to cover:
 
 - DM and channel chat
 - thread behavior
@@ -141,9 +152,9 @@ instead of adding a transport-specific QA runner.
 
 At the architecture level, the split is:
 
-- `qa-lab` owns scenario execution, worker concurrency, artifact writing, and reporting.
+- `qa-lab` owns generic scenario execution, worker concurrency, artifact writing, and reporting.
 - the transport adapter owns gateway config, readiness, inbound and outbound observation, transport actions, and normalized transport state.
-- scenarios stay markdown-first under `qa/scenarios/`.
+- markdown scenario files under `qa/scenarios/` define the test run; `qa-lab` provides the reusable runtime surface that executes them.
 
 Maintainer-facing adoption guidance for new channel adapters lives in
 [Testing](/help/testing#adding-a-channel-to-qa).

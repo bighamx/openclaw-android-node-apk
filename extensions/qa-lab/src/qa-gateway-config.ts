@@ -162,24 +162,23 @@ export function buildQaGatewayConfig(params: {
               : selectedProviderIds,
           ),
         ]
-      : [];
+      : [
+          ...new Set(
+            (params.enabledPluginIds ?? [])
+              .map((pluginId) => pluginId.trim())
+              .filter((pluginId) => pluginId.length > 0),
+          ),
+        ];
   const transportPluginIds = [...new Set(params.transportPluginIds ?? [])]
     .map((pluginId) => pluginId.trim())
     .filter((pluginId) => pluginId.length > 0);
-  const pluginEntries =
-    providerMode === "live-frontier"
-      ? Object.fromEntries(selectedPluginIds.map((pluginId) => [pluginId, { enabled: true }]))
-      : {};
+  const pluginEntries = Object.fromEntries(
+    selectedPluginIds.map((pluginId) => [pluginId, { enabled: true }]),
+  );
   const transportPluginEntries = Object.fromEntries(
     transportPluginIds.map((pluginId) => [pluginId, { enabled: true }]),
   );
-  const allowedPlugins = [
-    ...new Set(
-      providerMode === "live-frontier"
-        ? ["memory-core", ...selectedPluginIds, ...transportPluginIds]
-        : ["memory-core", ...transportPluginIds],
-    ),
-  ];
+  const allowedPlugins = [...new Set(["memory-core", ...selectedPluginIds, ...transportPluginIds])];
   const liveModelParams =
     providerMode === "live-frontier"
       ? (modelRef: string) => ({

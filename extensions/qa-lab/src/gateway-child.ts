@@ -836,6 +836,7 @@ export async function startQaGatewayChild(params: {
   thinkingDefault?: QaThinkingLevel;
   claudeCliAuthMode?: QaCliBackendAuthMode;
   controlUiEnabled?: boolean;
+  enabledPluginIds?: string[];
   mutateConfig?: (cfg: OpenClawConfig) => OpenClawConfig;
 }) {
   const tempRoot = await fs.mkdtemp(
@@ -873,14 +874,17 @@ export async function startQaGatewayChild(params: {
   const liveProviderConfigs = await readQaLiveProviderConfigOverrides({
     providerIds: liveProviderIds,
   });
-  const enabledPluginIds =
+  const liveOwnerPluginIds =
     liveProviderIds.length > 0
       ? await resolveQaOwnerPluginIdsForProviderIds({
           repoRoot: params.repoRoot,
           providerIds: liveProviderIds,
           providerConfigs: liveProviderConfigs,
         })
-      : undefined;
+      : [];
+  const enabledPluginIds = [
+    ...new Set([...(liveOwnerPluginIds ?? []), ...(params.enabledPluginIds ?? [])]),
+  ];
   const buildGatewayConfig = (gatewayPort: number) =>
     buildQaGatewayConfig({
       bind: "loopback",

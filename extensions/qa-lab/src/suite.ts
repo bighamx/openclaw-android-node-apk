@@ -59,6 +59,7 @@ import { renderQaMarkdownReport, type QaReportCheck, type QaReportScenario } fro
 import { qaChannelPlugin, type QaBusMessage } from "./runtime-api.js";
 import { readQaBootstrapScenarioCatalog } from "./scenario-catalog.js";
 import { runScenarioFlow } from "./scenario-flow-runner.js";
+import { createQaScenarioRuntimeApi } from "./scenario-runtime-api.js";
 
 type QaSuiteStep = {
   name: string;
@@ -259,6 +260,57 @@ function selectQaSuiteScenarios(params: {
       claudeCliAuthMode: params.claudeCliAuthMode,
     }),
   );
+}
+
+function collectQaSuitePluginIds(
+  scenarios: ReturnType<typeof readQaBootstrapScenarioCatalog>["scenarios"],
+) {
+  return [
+    ...new Set(
+      scenarios.flatMap((scenario) =>
+        Array.isArray(scenario.plugins)
+          ? scenario.plugins
+              .map((pluginId) => pluginId.trim())
+              .filter((pluginId) => pluginId.length > 0)
+          : [],
+      ),
+    ),
+  ];
+}
+
+function isQaPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function applyQaMergePatch(base: unknown, patch: unknown): unknown {
+  if (!isQaPlainObject(patch)) {
+    return patch;
+  }
+  const result = isQaPlainObject(base) ? { ...base } : {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) {
+      delete result[key];
+      continue;
+    }
+    result[key] = isQaPlainObject(value) ? applyQaMergePatch(result[key], value) : value;
+  }
+  return result;
+}
+
+function collectQaSuiteGatewayConfigPatch(
+  scenarios: ReturnType<typeof readQaBootstrapScenarioCatalog>["scenarios"],
+): Record<string, unknown> | undefined {
+  let merged: Record<string, unknown> | undefined;
+  for (const scenario of scenarios) {
+    if (!isQaPlainObject(scenario.gatewayConfigPatch)) {
+      continue;
+    }
+    merged = applyQaMergePatch(merged ?? {}, scenario.gatewayConfigPatch) as Record<
+      string,
+      unknown
+    >;
+  }
+  return merged;
 }
 
 function liveTurnTimeoutMs(env: QaSuiteEnvironment, fallbackMs: number) {
@@ -1158,171 +1210,81 @@ async function handleQaAction(params: {
   return extractQaToolPayload(result as Parameters<typeof extractQaToolPayload>[0]);
 }
 
-type QaScenarioFlowApi = {
-  env: QaSuiteEnvironment;
-  lab: QaSuiteEnvironment["lab"];
-  state: QaTransportState;
-  scenario: ReturnType<typeof readQaBootstrapScenarioCatalog>["scenarios"][number];
-  config: Record<string, unknown>;
-  fs: typeof fs;
-  path: typeof path;
-  sleep: typeof sleep;
-  randomUUID: typeof randomUUID;
-  runScenario: typeof runScenario;
-  waitForCondition: typeof waitForCondition;
-  waitForOutboundMessage: typeof waitForOutboundMessage;
-  waitForTransportOutboundMessage: typeof waitForTransportOutboundMessage;
-  waitForChannelOutboundMessage: typeof waitForChannelOutboundMessage;
-  waitForNoOutbound: typeof waitForNoOutbound;
-  waitForNoTransportOutbound: typeof waitForNoTransportOutbound;
-  recentOutboundSummary: typeof recentOutboundSummary;
-  formatConversationTranscript: typeof formatConversationTranscript;
-  readTransportTranscript: typeof readTransportTranscript;
-  formatTransportTranscript: typeof formatTransportTranscript;
-  fetchJson: typeof fetchJson;
-  waitForGatewayHealthy: typeof waitForGatewayHealthy;
-  waitForTransportReady: typeof waitForTransportReady;
-  waitForChannelReady: typeof waitForTransportReady;
-  waitForQaChannelReady: typeof waitForQaChannelReady;
-  waitForConfigRestartSettle: typeof waitForConfigRestartSettle;
-  patchConfig: typeof patchConfig;
-  applyConfig: typeof applyConfig;
-  readConfigSnapshot: typeof readConfigSnapshot;
-  createSession: typeof createSession;
-  readEffectiveTools: typeof readEffectiveTools;
-  readSkillStatus: typeof readSkillStatus;
-  readRawQaSessionStore: typeof readRawQaSessionStore;
-  runQaCli: typeof runQaCli;
-  extractMediaPathFromText: typeof extractMediaPathFromText;
-  resolveGeneratedImagePath: typeof resolveGeneratedImagePath;
-  startAgentRun: typeof startAgentRun;
-  waitForAgentRun: typeof waitForAgentRun;
-  listCronJobs: typeof listCronJobs;
-  waitForCronRunCompletion: typeof waitForCronRunCompletion;
-  readDoctorMemoryStatus: typeof readDoctorMemoryStatus;
-  forceMemoryIndex: typeof forceMemoryIndex;
-  findSkill: typeof findSkill;
-  writeWorkspaceSkill: typeof writeWorkspaceSkill;
-  callPluginToolsMcp: typeof callPluginToolsMcp;
-  runAgentPrompt: typeof runAgentPrompt;
-  ensureImageGenerationConfigured: typeof ensureImageGenerationConfigured;
-  handleQaAction: typeof handleQaAction;
-  extractQaToolPayload: typeof extractQaToolPayload;
-  formatMemoryDreamingDay: typeof formatMemoryDreamingDay;
-  resolveSessionTranscriptsDirForAgent: typeof resolveSessionTranscriptsDirForAgent;
-  buildAgentSessionKey: typeof buildAgentSessionKey;
-  normalizeLowercaseStringOrEmpty: typeof normalizeLowercaseStringOrEmpty;
-  formatErrorMessage: typeof formatErrorMessage;
-  liveTurnTimeoutMs: typeof liveTurnTimeoutMs;
-  resolveQaLiveTurnTimeoutMs: typeof resolveQaLiveTurnTimeoutMs;
-  splitModelRef: typeof splitModelRef;
-  qaChannelPlugin: typeof qaChannelPlugin;
-  hasDiscoveryLabels: typeof hasDiscoveryLabels;
-  reportsDiscoveryScopeLeak: typeof reportsDiscoveryScopeLeak;
-  reportsMissingDiscoveryFiles: typeof reportsMissingDiscoveryFiles;
-  hasModelSwitchContinuityEvidence: typeof hasModelSwitchContinuityEvidence;
-  imageUnderstandingPngBase64: string;
-  imageUnderstandingLargePngBase64: string;
-  imageUnderstandingValidPngBase64: string;
-  getTransportSnapshot: () => ReturnType<QaTransportState["getSnapshot"]>;
-  resetTransport: () => Promise<void>;
-  injectInboundMessage: QaTransportState["addInboundMessage"];
-  injectOutboundMessage: QaTransportState["addOutboundMessage"];
-  readTransportMessage: QaTransportState["readMessage"];
-  resetBus: () => Promise<void>;
-  reset: () => Promise<void>;
-};
-
 function createScenarioFlowApi(
   env: QaSuiteEnvironment,
   scenario: ReturnType<typeof readQaBootstrapScenarioCatalog>["scenarios"][number],
-): QaScenarioFlowApi {
-  return {
+) {
+  return createQaScenarioRuntimeApi({
     env,
-    lab: env.lab,
-    state: env.transport.state,
     scenario,
-    config: scenario.execution.config ?? {},
-    fs,
-    path,
-    sleep,
-    randomUUID,
-    runScenario,
-    waitForCondition: env.transport.capabilities.waitForCondition,
-    waitForOutboundMessage,
-    waitForTransportOutboundMessage,
-    waitForChannelOutboundMessage,
-    waitForNoOutbound,
-    waitForNoTransportOutbound,
-    recentOutboundSummary,
-    formatConversationTranscript,
-    readTransportTranscript,
-    formatTransportTranscript,
-    fetchJson,
-    waitForGatewayHealthy,
-    waitForTransportReady,
-    waitForChannelReady: waitForTransportReady,
-    waitForQaChannelReady,
-    waitForConfigRestartSettle,
-    patchConfig,
-    applyConfig,
-    readConfigSnapshot,
-    createSession,
-    readEffectiveTools,
-    readSkillStatus,
-    readRawQaSessionStore,
-    runQaCli,
-    extractMediaPathFromText,
-    resolveGeneratedImagePath,
-    startAgentRun,
-    waitForAgentRun,
-    listCronJobs,
-    waitForCronRunCompletion,
-    readDoctorMemoryStatus,
-    forceMemoryIndex,
-    findSkill,
-    writeWorkspaceSkill,
-    callPluginToolsMcp,
-    runAgentPrompt,
-    ensureImageGenerationConfigured,
-    handleQaAction,
-    extractQaToolPayload,
-    formatMemoryDreamingDay,
-    resolveSessionTranscriptsDirForAgent,
-    buildAgentSessionKey,
-    normalizeLowercaseStringOrEmpty,
-    formatErrorMessage,
-    liveTurnTimeoutMs,
-    resolveQaLiveTurnTimeoutMs,
-    splitModelRef,
-    qaChannelPlugin,
-    hasDiscoveryLabels,
-    reportsDiscoveryScopeLeak,
-    reportsMissingDiscoveryFiles,
-    hasModelSwitchContinuityEvidence,
-    imageUnderstandingPngBase64: _QA_IMAGE_UNDERSTANDING_PNG_BASE64,
-    imageUnderstandingLargePngBase64: _QA_IMAGE_UNDERSTANDING_LARGE_PNG_BASE64,
-    imageUnderstandingValidPngBase64: QA_IMAGE_UNDERSTANDING_VALID_PNG_BASE64,
-    getTransportSnapshot: env.transport.capabilities.getNormalizedMessageState,
-    resetTransport: async () => {
-      await env.transport.capabilities.resetNormalizedMessageState();
-      await sleep(100);
+    deps: {
+      fs,
+      path,
+      sleep,
+      randomUUID,
+      runScenario,
+      waitForOutboundMessage,
+      waitForTransportOutboundMessage,
+      waitForChannelOutboundMessage,
+      waitForNoOutbound,
+      waitForNoTransportOutbound,
+      recentOutboundSummary,
+      formatConversationTranscript,
+      readTransportTranscript,
+      formatTransportTranscript,
+      fetchJson,
+      waitForGatewayHealthy,
+      waitForTransportReady,
+      waitForQaChannelReady,
+      waitForConfigRestartSettle,
+      patchConfig,
+      applyConfig,
+      readConfigSnapshot,
+      createSession,
+      readEffectiveTools,
+      readSkillStatus,
+      readRawQaSessionStore,
+      runQaCli,
+      extractMediaPathFromText,
+      resolveGeneratedImagePath,
+      startAgentRun,
+      waitForAgentRun,
+      listCronJobs,
+      waitForCronRunCompletion,
+      readDoctorMemoryStatus,
+      forceMemoryIndex,
+      findSkill,
+      writeWorkspaceSkill,
+      callPluginToolsMcp,
+      runAgentPrompt,
+      ensureImageGenerationConfigured,
+      handleQaAction,
+      extractQaToolPayload,
+      formatMemoryDreamingDay,
+      resolveSessionTranscriptsDirForAgent,
+      buildAgentSessionKey,
+      normalizeLowercaseStringOrEmpty,
+      formatErrorMessage,
+      liveTurnTimeoutMs,
+      resolveQaLiveTurnTimeoutMs,
+      splitModelRef,
+      qaChannelPlugin,
+      hasDiscoveryLabels,
+      reportsDiscoveryScopeLeak,
+      reportsMissingDiscoveryFiles,
+      hasModelSwitchContinuityEvidence,
     },
-    injectInboundMessage: env.transport.capabilities.sendInboundMessage,
-    injectOutboundMessage: env.transport.capabilities.injectOutboundMessage,
-    readTransportMessage: env.transport.capabilities.readNormalizedMessage,
-    resetBus: async () => {
-      await env.transport.capabilities.resetNormalizedMessageState();
-      await sleep(100);
+    constants: {
+      imageUnderstandingPngBase64: _QA_IMAGE_UNDERSTANDING_PNG_BASE64,
+      imageUnderstandingLargePngBase64: _QA_IMAGE_UNDERSTANDING_LARGE_PNG_BASE64,
+      imageUnderstandingValidPngBase64: QA_IMAGE_UNDERSTANDING_VALID_PNG_BASE64,
     },
-    reset: async () => {
-      await env.transport.capabilities.resetNormalizedMessageState();
-      await sleep(100);
-    },
-  };
+  });
 }
 
 export const qaSuiteTesting = {
+  collectQaSuiteGatewayConfigPatch,
+  collectQaSuitePluginIds,
   createScenarioWaitForCondition,
   findFailureOutboundMessage,
   getGatewayRetryAfterMs,
@@ -1415,7 +1377,7 @@ async function writeQaSuiteArtifacts(params: {
 export async function runQaSuite(params?: QaSuiteRunParams): Promise<QaSuiteResult> {
   const startedAt = new Date();
   const repoRoot = path.resolve(params?.repoRoot ?? process.cwd());
-  const providerMode = normalizeQaProviderMode(params?.providerMode ?? "mock-openai");
+  const providerMode = normalizeQaProviderMode(params?.providerMode ?? "live-frontier");
   const transportId = normalizeQaTransportId(params?.transportId);
   const primaryModel = params?.primaryModel ?? defaultQaModelForMode(providerMode);
   const alternateModel =
@@ -1433,6 +1395,8 @@ export async function runQaSuite(params?: QaSuiteRunParams): Promise<QaSuiteResu
     primaryModel,
     claudeCliAuthMode: params?.claudeCliAuthMode,
   });
+  const enabledPluginIds = collectQaSuitePluginIds(selectedCatalogScenarios);
+  const gatewayConfigPatch = collectQaSuiteGatewayConfigPatch(selectedCatalogScenarios);
   const concurrency = normalizeQaSuiteConcurrency(
     params?.concurrency,
     selectedCatalogScenarios.length,
@@ -1629,6 +1593,10 @@ export async function runQaSuite(params?: QaSuiteRunParams): Promise<QaSuiteResu
     thinkingDefault: params?.thinkingDefault,
     claudeCliAuthMode: params?.claudeCliAuthMode,
     controlUiEnabled: params?.controlUiEnabled ?? true,
+    enabledPluginIds,
+    mutateConfig: gatewayConfigPatch
+      ? (cfg) => applyQaMergePatch(cfg, gatewayConfigPatch) as OpenClawConfig
+      : undefined,
   });
   lab.setControlUi({
     controlUiProxyTarget: gateway.baseUrl,

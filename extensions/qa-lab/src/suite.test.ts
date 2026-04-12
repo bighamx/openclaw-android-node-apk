@@ -9,6 +9,8 @@ describe("qa suite failure reply handling", () => {
   const makeScenario = (
     id: string,
     config?: Record<string, unknown>,
+    plugins?: string[],
+    gatewayConfigPatch?: Record<string, unknown>,
   ): Parameters<typeof qaSuiteTesting.selectQaSuiteScenarios>[0]["scenarios"][number] =>
     ({
       id,
@@ -16,6 +18,8 @@ describe("qa suite failure reply handling", () => {
       surface: "test",
       objective: "test",
       successCriteria: ["test"],
+      plugins,
+      gatewayConfigPatch,
       sourcePath: `qa/scenarios/${id}.md`,
       execution: {
         kind: "flow",
@@ -127,6 +131,72 @@ describe("qa suite failure reply handling", () => {
         })
         .map((scenario) => scenario.id),
     ).toEqual(["anthropic-only"]);
+  });
+
+  it("collects unique scenario-declared bundled plugins in encounter order", () => {
+    const scenarios = [
+      makeScenario("generic", undefined, ["active-memory", "memory-wiki"]),
+      makeScenario("other", undefined, ["memory-wiki", "openai"]),
+      makeScenario("plain"),
+    ];
+
+    expect(qaSuiteTesting.collectQaSuitePluginIds(scenarios)).toEqual([
+      "active-memory",
+      "memory-wiki",
+      "openai",
+    ]);
+  });
+
+  it("merge-patches scenario startup config in encounter order", () => {
+    const scenarios = [
+      makeScenario("active-memory", undefined, ["active-memory"], {
+        plugins: {
+          entries: {
+            "active-memory": {
+              config: {
+                enabled: true,
+                agents: ["qa"],
+              },
+            },
+          },
+        },
+      }),
+      makeScenario("live-defaults", undefined, undefined, {
+        agents: {
+          defaults: {
+            thinkingDefault: "minimal",
+          },
+        },
+        plugins: {
+          entries: {
+            "active-memory": {
+              config: {
+                transcriptDir: "qa-memory-e2e",
+              },
+            },
+          },
+        },
+      }),
+    ];
+
+    expect(qaSuiteTesting.collectQaSuiteGatewayConfigPatch(scenarios)).toEqual({
+      agents: {
+        defaults: {
+          thinkingDefault: "minimal",
+        },
+      },
+      plugins: {
+        entries: {
+          "active-memory": {
+            config: {
+              enabled: true,
+              agents: ["qa"],
+              transcriptDir: "qa-memory-e2e",
+            },
+          },
+        },
+      },
+    });
   });
 
   it("filters provider-specific scenarios from an implicit live lane", () => {

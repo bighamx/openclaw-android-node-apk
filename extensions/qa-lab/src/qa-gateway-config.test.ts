@@ -82,6 +82,21 @@ describe("buildQaGatewayConfig", () => {
     expect(cfg.channels?.["qa-channel"]).toBeUndefined();
   });
 
+  it("can stage extra bundled plugins in the mock lane", () => {
+    const cfg = buildQaGatewayConfig({
+      bind: "loopback",
+      gatewayPort: 18789,
+      gatewayToken: "token",
+      providerBaseUrl: "http://127.0.0.1:44080/v1",
+      workspaceDir: "/tmp/qa-workspace",
+      enabledPluginIds: ["active-memory"],
+      ...createQaChannelTransportParams(),
+    });
+
+    expect(cfg.plugins?.allow).toEqual(["memory-core", "active-memory", "qa-channel"]);
+    expect(cfg.plugins?.entries?.["active-memory"]).toEqual({ enabled: true });
+  });
+
   it("uses built-in provider wiring in frontier live mode", () => {
     const cfg = buildQaGatewayConfig({
       bind: "loopback",

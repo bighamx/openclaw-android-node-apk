@@ -345,7 +345,7 @@ export function createQaMultipassPlan(params: {
   const outputDir = params.outputDir ?? createQaMultipassOutputDir(params.repoRoot);
   const scenarioIds = [...new Set(params.scenarioIds ?? [])];
   const transportId = params.transportId?.trim() || "qa-channel";
-  const providerMode = params.providerMode ?? "mock-openai";
+  const providerMode = params.providerMode ?? "live-frontier";
   const forwardedEnv = providerMode === "live-frontier" ? resolveForwardedLiveEnv() : {};
   const hostCodexHomePath = forwardedEnv.CODEX_HOME;
   const liveProviderConfig =
