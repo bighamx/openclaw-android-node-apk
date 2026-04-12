@@ -891,14 +891,16 @@ describe("doctor config flow", () => {
       channels: {
         discord: {
           streamMode?: string;
-          streaming?: {
-            mode?: string;
-          };
+          streaming?:
+            | {
+                mode?: string;
+              }
+            | boolean;
           lifecycle?: unknown;
         };
       };
     };
-    expect(cfg.channels.discord.streaming?.mode).toBe("partial");
+    expect(cfg.channels.discord.streaming).toBe(true);
     expect(cfg.channels.discord.streamMode).toBeUndefined();
     expect(cfg.channels.discord.lifecycle).toEqual({
       enabled: true,

@@ -783,9 +783,6 @@ async function runPostCorePluginUpdate(params: {
 async function continuePostCoreUpdateInFreshProcess(params: {
   root: string;
   channel: "stable" | "beta" | "dev";
-  root: string;
-  channel: "stable" | "beta" | "dev";
-  opts: UpdateCommandOptions;
   opts: UpdateCommandOptions;
 }): Promise<boolean> {
   const entryPath = path.join(params.root, "dist", "entry.js");
@@ -1170,7 +1167,6 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
     pluginsUpdatedInFreshProcess = await continuePostCoreUpdateInFreshProcess({
       root: postUpdateRoot,
       channel,
-      resultMode: result.mode,
       opts,
     });
   }

@@ -54,6 +54,19 @@ describe("short-term promotion", () => {
     return notePath;
   }
 
+  async function writeDailyMemoryNoteInSubdir(
+    workspaceDir: string,
+    subdir: string,
+    date: string,
+    lines: string[],
+  ): Promise<string> {
+    const dir = path.join(workspaceDir, "memory", subdir);
+    await fs.mkdir(dir, { recursive: true });
+    const notePath = path.join(dir, `${date}.md`);
+    await fs.writeFile(notePath, `${lines.join("\n")}\n`, "utf-8");
+    return notePath;
+  }
+
   it("detects short-term daily memory paths", () => {
     expect(isShortTermMemoryPath("memory/2026-04-03.md")).toBe(true);
     expect(isShortTermMemoryPath("2026-04-03.md")).toBe(true);
@@ -61,6 +74,133 @@ describe("short-term promotion", () => {
     expect(isShortTermMemoryPath("notes/2026-04-03.md")).toBe(false);
     expect(isShortTermMemoryPath("MEMORY.md")).toBe(false);
     expect(isShortTermMemoryPath("memory/network.md")).toBe(false);
+    expect(isShortTermMemoryPath("memory/daily/2026-04-03.md")).toBe(true);
+    expect(isShortTermMemoryPath("memory/daily notes/2026-04-03.md")).toBe(true);
+    expect(isShortTermMemoryPath("memory/日记/2026-04-03.md")).toBe(true);
+    expect(isShortTermMemoryPath("memory/notes/2026-04-03.md")).toBe(true);
+    expect(isShortTermMemoryPath("memory/nested/deep/2026-04-03.md")).toBe(true);
+    expect(isShortTermMemoryPath("memory/dreaming/2026-04-03.md")).toBe(false);
+    expect(isShortTermMemoryPath("memory/dreaming/deep/2026-04-03.md")).toBe(false);
+    expect(isShortTermMemoryPath("../../vault/memory/dreaming/deep/2026-04-03.md")).toBe(false);
+    expect(isShortTermMemoryPath("notes/daily/2026-04-03.md")).toBe(false);
+  });
+
+  it("records short-term recall for notes stored in a memory/ subdirectory", async () => {
+    await withTempWorkspace(async (workspaceDir) => {
+      const notePath = await writeDailyMemoryNoteInSubdir(workspaceDir, "daily", "2026-04-03", [
+        "Subdirectory recall integration test note.",
+      ]);
+      const relativePath = path.relative(workspaceDir, notePath).replaceAll("\\", "/");
+      await recordShortTermRecalls({
+        workspaceDir,
+        query: "test query",
+        results: [
+          {
+            path: relativePath,
+            source: "memory",
+            startLine: 1,
+            endLine: 1,
+            score: 0.9,
+            snippet: "Subdirectory recall integration test note.",
+          },
+        ],
+      });
+      const storePath = resolveShortTermRecallStorePath(workspaceDir);
+      const raw = await fs.readFile(storePath, "utf-8");
+      const store = JSON.parse(raw) as Record<string, unknown>;
+      expect(Object.keys(store).length).toBeGreaterThan(0);
+    });
+  });
+
+  it("records short-term recall for notes stored in spaced and Unicode memory subdirectories", async () => {
+    await withTempWorkspace(async (workspaceDir) => {
+      const spacedPath = await writeDailyMemoryNoteInSubdir(
+        workspaceDir,
+        "daily notes",
+        "2026-04-03",
+        ["Spaced subdirectory recall integration test note."],
+      );
+      const unicodePath = await writeDailyMemoryNoteInSubdir(workspaceDir, "日记", "2026-04-04", [
+        "Unicode subdirectory recall integration test note.",
+      ]);
+
+      await recordShortTermRecalls({
+        workspaceDir,
+        query: "nested subdir query",
+        results: [
+          {
+            path: path.relative(workspaceDir, spacedPath).replaceAll("\\", "/"),
+            source: "memory",
+            startLine: 1,
+            endLine: 1,
+            score: 0.9,
+            snippet: "Spaced subdirectory recall integration test note.",
+          },
+          {
+            path: path.relative(workspaceDir, unicodePath).replaceAll("\\", "/"),
+            source: "memory",
+            startLine: 1,
+            endLine: 1,
+            score: 0.85,
+            snippet: "Unicode subdirectory recall integration test note.",
+          },
+        ],
+      });
+
+      const raw = await fs.readFile(resolveShortTermRecallStorePath(workspaceDir), "utf-8");
+      expect(raw).toContain("memory/daily notes/2026-04-03.md");
+      expect(raw).toContain("memory/日记/2026-04-04.md");
+    });
+  });
+
+  it("ignores dream report paths when recording short-term recalls", async () => {
+    await withTempWorkspace(async (workspaceDir) => {
+      await recordShortTermRecalls({
+        workspaceDir,
+        query: "dream recall",
+        results: [
+          {
+            path: "memory/dreaming/deep/2026-04-03.md",
+            source: "memory",
+            startLine: 1,
+            endLine: 1,
+            score: 0.9,
+            snippet: "Auto-generated dream report should not seed promotions.",
+          },
+        ],
+      });
+
+      await expect(
+        fs.readFile(resolveShortTermRecallStorePath(workspaceDir), "utf-8"),
+      ).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    });
+  });
+
+  it("ignores prefixed dream report paths when recording short-term recalls", async () => {
+    await withTempWorkspace(async (workspaceDir) => {
+      await recordShortTermRecalls({
+        workspaceDir,
+        query: "prefixed dream recall",
+        results: [
+          {
+            path: "../../vault/memory/dreaming/deep/2026-04-03.md",
+            source: "memory",
+            startLine: 1,
+            endLine: 1,
+            score: 0.9,
+            snippet: "External dream report should not seed promotions.",
+          },
+        ],
+      });
+
+      await expect(
+        fs.readFile(resolveShortTermRecallStorePath(workspaceDir), "utf-8"),
+      ).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    });
   });
 
   it("records recalls and ranks candidates with weighted scores", async () => {
