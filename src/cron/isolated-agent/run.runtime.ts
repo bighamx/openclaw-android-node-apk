@@ -6,7 +6,6 @@ export {
   resolveDefaultAgentId,
   resolveAgentSkillsFilter,
 } from "../../agents/agent-scope.js";
-export { resolveSessionAuthProfileOverride } from "../../agents/auth-profiles/session-override.js";
 export { setCliSessionId } from "../../agents/cli-session.js";
 export { lookupContextTokens } from "../../agents/context.js";
 export { resolveCronStyleNow } from "../../agents/current-time.js";

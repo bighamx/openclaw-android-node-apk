@@ -98,7 +98,6 @@ vi.mock("./run.runtime.js", () => ({
   resolveAgentWorkspaceDir: vi.fn().mockReturnValue("/tmp/workspace"),
   resolveDefaultAgentId: vi.fn().mockReturnValue("default"),
   resolveAgentSkillsFilter: resolveAgentSkillsFilterMock,
-  resolveSessionAuthProfileOverride: resolveSessionAuthProfileOverrideMock,
   lookupContextTokens: lookupContextTokensMock,
   resolveCronStyleNow: resolveCronStyleNowMock,
   DEFAULT_CONTEXT_TOKENS: 128000,
@@ -151,6 +150,10 @@ vi.mock("./run-execution.runtime.js", () => ({
   resolveSessionTranscriptPath: resolveSessionTranscriptPathMock,
   registerAgentRunContext: registerAgentRunContextMock,
   logWarn: (...args: unknown[]) => logWarnMock(...args),
+}));
+
+vi.mock("./run-auth-profile.runtime.js", () => ({
+  resolveSessionAuthProfileOverride: resolveSessionAuthProfileOverrideMock,
 }));
 
 vi.mock("../../agents/cli-runner.runtime.js", () => ({
