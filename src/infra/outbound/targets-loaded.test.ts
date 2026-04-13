@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   getLoadedChannelPlugin: vi.fn(),
 }));
 
-vi.mock("../../channels/plugins/registry-read.js", () => ({
+vi.mock("../../channels/plugins/registry-loaded-read.js", () => ({
   getLoadedChannelPluginForRead: mocks.getLoadedChannelPlugin,
 }));
 
@@ -44,5 +44,11 @@ describe("tryResolveLoadedOutboundTarget", () => {
         mode: "implicit",
       }),
     ).toEqual({ ok: true, to: "123456789" });
+  });
+
+  it("trims channel ids before reading the loaded registry", () => {
+    tryResolveLoadedOutboundTarget({ channel: " telegram " as never, to: "123" });
+
+    expect(mocks.getLoadedChannelPlugin).toHaveBeenCalledWith("telegram");
   });
 });
