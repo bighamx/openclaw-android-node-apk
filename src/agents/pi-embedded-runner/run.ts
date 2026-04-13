@@ -1587,6 +1587,7 @@ export async function runEmbeddedPiAgent(
           const nextPlanningOnlyRetryInstruction = resolvePlanningOnlyRetryInstruction({
             provider,
             modelId,
+            prompt: params.prompt,
             aborted,
             timedOut,
             attempt,

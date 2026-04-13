@@ -149,6 +149,11 @@ export type ConfigWriteOptions = {
    * even if schema/default normalization reintroduces them.
    */
   unsetPaths?: string[][];
+  /**
+   * Internal fast path for callers that already hold a fresh config snapshot.
+   * Avoids rereading the full config just to prepare an immediate write.
+   */
+  baseSnapshot?: ConfigFileSnapshot;
 };
 
 export type ReadConfigFileSnapshotForWriteResult = {
@@ -1408,7 +1413,7 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
   ): Promise<{ persistedHash: string }> {
     clearConfigCache();
     let persistCandidate: unknown = cfg;
-    const { snapshot } = await readConfigFileSnapshotInternal();
+    const snapshot = options.baseSnapshot ?? (await readConfigFileSnapshotInternal()).snapshot;
     let envRefMap: Map<string, string> | null = null;
     let changedPaths: Set<string> | null = null;
     if (snapshot.valid && snapshot.exists) {
