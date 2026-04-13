@@ -112,9 +112,6 @@ importers:
       '@slack/web-api':
         specifier: ^7.15.0
         version: 7.15.0
-      '@whiskeysockets/baileys':
-        specifier: 7.0.0-rc.9
-        version: 7.0.0-rc.9
       ajv:
         specifier: ^8.18.0
         version: 8.18.0
