@@ -40,16 +40,8 @@ jobs:
           # 使用 || true 防止有冲突时脚本直接退出
           git merge upstream/main --no-commit --no-ff || true
           
-          # --- 自动清理: 删除原仓库里不必要的工作流文件 (不论是否有冲突) ---
-          UNWANTED_WFS=".github/workflows/auto-response.yml .github/workflows/ci.yml .github/workflows/docker-release.yml .github/workflows/install-smoke.yml .github/workflows/labeler.yml .github/workflows/stale.yml"
-          for unwanted in $UNWANTED_WFS; do
-            git rm -f "$unwanted" 2>/dev/null || true
-          done
-          
-          # 删除其他所有未在白名单的 workflows
-          if ls .github/workflows/*.yml 1> /dev/null 2>&1; then
-            ls .github/workflows/*.yml | grep -v 'android-build.yml\|sync-upstream.yml' | xargs -I {} git rm -f {} 2>/dev/null || true
-          fi
+# --- 自动清理: 仅保留 android-build.yml 和 sync-upstream.yml ---
+          find .github/workflows -type f -name "*.yml" | grep -vE 'android-build.yml|sync-upstream.yml' | xargs -r git rm -f 2>/dev/null || true
           
           # 检查是否有冲突未解决 (U状态的文件)
           if git ls-files -u | grep -q "^"; then
