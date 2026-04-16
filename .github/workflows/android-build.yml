@@ -88,7 +88,7 @@ jobs:
           fi
 
           src_name=$(basename "$src_apk")
-          version_name=$(printf '%s\n' "$src_name" | sed -E 's/^openclaw-([0-9.]+)-thirdParty-release\.apk$/\1/')
+          version_name=$(printf '%s\n' "$src_name" | sed -E 's/^openclaw-(.+)-thirdParty-release\.apk$/\1/')
           if [ "$version_name" = "$src_name" ]; then
             echo "Could not derive version name from APK filename: $src_name"
             exit 1
