@@ -40,7 +40,7 @@ jobs:
           # 使用 || true 防止有冲突时脚本直接退出
           git merge upstream/main --no-commit --no-ff || true
           
-# --- 自动清理: 仅保留 android-build.yml 和 sync-upstream.yml ---
+          # --- 自动清理: 仅保留 android-build.yml 和 sync-upstream.yml ---
           find .github/workflows -type f -name "*.yml" | grep -vE 'android-build.yml|sync-upstream.yml' | xargs -r git rm -f 2>/dev/null || true
           
           # 检查是否有冲突未解决 (U状态的文件)
