@@ -75,9 +75,12 @@ describe("control UI routing", () => {
     expect(window.location.pathname).toBe("/openclaw/sessions");
   });
 
-  it("updates the URL when clicking nav items", async () => {
+  it("keeps chat navigation links visible and updates the URL when clicked", async () => {
     const app = mountApp("/chat");
     await app.updateComplete;
+
+    const dreamsLink = app.querySelector<HTMLAnchorElement>('a.nav-item[href="/dreaming"]');
+    expect(dreamsLink).not.toBeNull();
 
     const link = app.querySelector<HTMLAnchorElement>('a.nav-item[href="/channels"]');
     expect(link).not.toBeNull();
@@ -86,14 +89,6 @@ describe("control UI routing", () => {
     await app.updateComplete;
     expect(app.tab).toBe("channels");
     expect(window.location.pathname).toBe("/channels");
-  });
-
-  it("keeps dreams navigation visible even when dreaming is disabled", async () => {
-    const app = mountApp("/chat");
-    await app.updateComplete;
-
-    const dreamsLink = app.querySelector<HTMLAnchorElement>('a.nav-item[href="/dreaming"]');
-    expect(dreamsLink).not.toBeNull();
   });
 
   it("renders the dreaming view on the /dreaming route", async () => {
@@ -162,9 +157,11 @@ describe("control UI routing", () => {
     expect(app.querySelector(".dreams__lobster")).not.toBeNull();
   });
 
-  it("renders the refreshed desktop navigation shell and collapsed state", async () => {
+  it("renders responsive navigation shell, drawer, and collapsed states", async () => {
     const app = mountApp("/chat");
     await app.updateComplete;
+
+    expect(window.matchMedia("(max-width: 768px)").matches).toBe(true);
 
     expect(app.querySelector(".topnav-shell")).not.toBeNull();
     expect(app.querySelector(".topnav-shell__content")).not.toBeNull();
@@ -185,6 +182,72 @@ describe("control UI routing", () => {
     expect(app.querySelector(".sidebar-resizer")).toBeNull();
     const shell = app.querySelector<HTMLElement>(".shell");
     expect(shell?.style.getPropertyValue("--shell-nav-width")).toBe("");
+
+    const split = app.querySelector(".chat-split-container");
+    expect(split).not.toBeNull();
+    if (split) {
+      expect(getComputedStyle(split).position).not.toBe("fixed");
+      split.classList.add("chat-split-container--open");
+      await app.updateComplete;
+      expect(split.classList.contains("chat-split-container--open")).toBe(true);
+    }
+
+    const chatMain = app.querySelector(".chat-main");
+    expect(chatMain).not.toBeNull();
+    if (chatMain) {
+      expect(getComputedStyle(chatMain).display).not.toBe("none");
+    }
+
+    const topShell = app.querySelector<HTMLElement>(".topnav-shell");
+    const content = app.querySelector<HTMLElement>(".topnav-shell__content");
+    expect(topShell).not.toBeNull();
+    expect(content).not.toBeNull();
+    if (!topShell || !content) {
+      return;
+    }
+
+    expect(topShell.classList.contains("topnav-shell")).toBe(true);
+    expect(content.classList.contains("topnav-shell__content")).toBe(true);
+    expect(topShell.querySelector(".topbar-nav-toggle")).not.toBeNull();
+    expect(topShell.children[1]).toBe(content);
+    expect(topShell.querySelector(".topnav-shell__actions")).not.toBeNull();
+
+    const toggle = app.querySelector<HTMLElement>(".topbar-nav-toggle");
+    const actions = app.querySelector<HTMLElement>(".topnav-shell__actions");
+    expect(toggle).not.toBeNull();
+    expect(actions).not.toBeNull();
+    if (!toggle || !actions || !shell) {
+      return;
+    }
+
+    expect(toggle.classList.contains("topbar-nav-toggle")).toBe(true);
+    expect(actions.classList.contains("topnav-shell__actions")).toBe(true);
+    expect(topShell.firstElementChild).toBe(toggle);
+    expect(topShell.querySelector(".topbar-nav-toggle")).toBe(toggle);
+    expect(actions.querySelector(".topbar-search")).not.toBeNull();
+    expect(toggle.getAttribute("aria-label")).toBeTruthy();
+
+    const nav = app.querySelector<HTMLElement>(".shell-nav");
+    expect(nav).not.toBeNull();
+    if (!nav) {
+      return;
+    }
+
+    expect(shell.classList.contains("shell--nav-drawer-open")).toBe(false);
+    toggle.click();
+    await app.updateComplete;
+
+    expect(shell.classList.contains("shell--nav-drawer-open")).toBe(true);
+    expect(nav.classList.contains("shell-nav")).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    const link = app.querySelector<HTMLAnchorElement>('a.nav-item[href="/channels"]');
+    expect(link).not.toBeNull();
+    link?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+
+    await app.updateComplete;
+    expect(app.tab).toBe("channels");
+    expect(shell.classList.contains("shell--nav-drawer-open")).toBe(false);
 
     app.applySettings({ ...app.settings, navCollapsed: true });
     await app.updateComplete;
@@ -225,126 +288,6 @@ describe("control UI routing", () => {
     expect(app.sessionKey).toBe("agent:main:subagent:task-123");
     expect(window.location.pathname).toBe("/chat");
     expect(window.location.search).toBe("?session=agent%3Amain%3Asubagent%3Atask-123");
-  });
-
-  it("keeps chat and nav usable on narrow viewports", async () => {
-    const app = mountApp("/chat");
-    await app.updateComplete;
-
-    expect(window.matchMedia("(max-width: 768px)").matches).toBe(true);
-
-    const split = app.querySelector(".chat-split-container");
-    expect(split).not.toBeNull();
-    if (split) {
-      expect(getComputedStyle(split).position).not.toBe("fixed");
-    }
-
-    const chatMain = app.querySelector(".chat-main");
-    expect(chatMain).not.toBeNull();
-    if (chatMain) {
-      expect(getComputedStyle(chatMain).display).not.toBe("none");
-    }
-
-    if (split) {
-      split.classList.add("chat-split-container--open");
-      await app.updateComplete;
-      expect(split.classList.contains("chat-split-container--open")).toBe(true);
-    }
-    if (chatMain) {
-      expect(chatMain).not.toBeNull();
-    }
-  });
-
-  it("stacks the refreshed top navigation for narrow viewports", async () => {
-    const app = mountApp("/chat");
-    await app.updateComplete;
-
-    expect(window.matchMedia("(max-width: 768px)").matches).toBe(true);
-
-    const shell = app.querySelector<HTMLElement>(".topnav-shell");
-    const content = app.querySelector<HTMLElement>(".topnav-shell__content");
-    expect(shell).not.toBeNull();
-    expect(content).not.toBeNull();
-    if (!shell || !content) {
-      return;
-    }
-
-    expect(shell.classList.contains("topnav-shell")).toBe(true);
-    expect(content.classList.contains("topnav-shell__content")).toBe(true);
-    expect(shell.querySelector(".topbar-nav-toggle")).not.toBeNull();
-    expect(shell.children[1]).toBe(content);
-    expect(shell.querySelector(".topnav-shell__actions")).not.toBeNull();
-  });
-
-  it("keeps the mobile topbar nav toggle visible beside the search row", async () => {
-    const app = mountApp("/chat");
-    await app.updateComplete;
-
-    expect(window.matchMedia("(max-width: 768px)").matches).toBe(true);
-
-    const shell = app.querySelector<HTMLElement>(".topnav-shell");
-    const toggle = app.querySelector<HTMLElement>(".topbar-nav-toggle");
-    const actions = app.querySelector<HTMLElement>(".topnav-shell__actions");
-    expect(shell).not.toBeNull();
-    expect(toggle).not.toBeNull();
-    expect(actions).not.toBeNull();
-    if (!shell || !toggle || !actions) {
-      return;
-    }
-
-    expect(toggle.classList.contains("topbar-nav-toggle")).toBe(true);
-    expect(actions.classList.contains("topnav-shell__actions")).toBe(true);
-    expect(shell.firstElementChild).toBe(toggle);
-    expect(shell.querySelector(".topbar-nav-toggle")).toBe(toggle);
-    expect(actions.querySelector(".topbar-search")).not.toBeNull();
-    expect(toggle.getAttribute("aria-label")).toBeTruthy();
-  });
-
-  it("opens the mobile sidenav as a drawer from the topbar toggle", async () => {
-    const app = mountApp("/chat");
-    await app.updateComplete;
-
-    expect(window.matchMedia("(max-width: 768px)").matches).toBe(true);
-
-    const toggle = app.querySelector<HTMLButtonElement>(".topbar-nav-toggle");
-    const shell = app.querySelector<HTMLElement>(".shell");
-    const nav = app.querySelector<HTMLElement>(".shell-nav");
-    expect(toggle).not.toBeNull();
-    expect(shell).not.toBeNull();
-    expect(nav).not.toBeNull();
-    if (!toggle || !shell || !nav) {
-      return;
-    }
-
-    expect(shell.classList.contains("shell--nav-drawer-open")).toBe(false);
-    toggle.click();
-    await app.updateComplete;
-
-    expect(shell.classList.contains("shell--nav-drawer-open")).toBe(true);
-    expect(nav.classList.contains("shell-nav")).toBe(true);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  });
-
-  it("closes the mobile sidenav drawer after navigation", async () => {
-    const app = mountApp("/chat");
-    await app.updateComplete;
-
-    expect(window.matchMedia("(max-width: 768px)").matches).toBe(true);
-
-    const toggle = app.querySelector<HTMLButtonElement>(".topbar-nav-toggle");
-    expect(toggle).not.toBeNull();
-    toggle?.click();
-    await app.updateComplete;
-
-    const link = app.querySelector<HTMLAnchorElement>('a.nav-item[href="/channels"]');
-    const shell = app.querySelector<HTMLElement>(".shell");
-    expect(link).not.toBeNull();
-    expect(shell?.classList.contains("shell--nav-drawer-open")).toBe(true);
-    link?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
-
-    await app.updateComplete;
-    expect(app.tab).toBe("channels");
-    expect(shell?.classList.contains("shell--nav-drawer-open")).toBe(false);
   });
 
   it("auto-scrolls chat history to the latest message", async () => {
@@ -442,23 +385,15 @@ describe("control UI routing", () => {
     expect(container.scrollTop).toBe(targetScrollTop);
   });
 
-  it("hydrates token from query params and strips them", async () => {
-    const app = mountApp("/ui/overview?token=abc123");
+  it("hydrates safe query params and strips unsafe credentials from the URL", async () => {
+    const app = mountApp("/ui/overview?token=abc123&password=sekret");
     await app.updateComplete;
 
     expect(app.settings.token).toBe("abc123");
+    expect(app.password).toBe("");
     expect(JSON.parse(localStorage.getItem("openclaw.control.settings.v1") ?? "{}").token).toBe(
       undefined,
     );
-    expect(window.location.pathname).toBe("/ui/overview");
-    expect(window.location.search).toBe("");
-  });
-
-  it("strips password URL params without importing them", async () => {
-    const app = mountApp("/ui/overview?password=sekret");
-    await app.updateComplete;
-
-    expect(app.password).toBe("");
     expect(window.location.pathname).toBe("/ui/overview");
     expect(window.location.search).toBe("");
   });
@@ -482,7 +417,7 @@ describe("control UI routing", () => {
     expect(window.location.hash).toBe("");
   });
 
-  it("hydrates token from URL hash and strips it", async () => {
+  it("hydrates token from URL hash, strips it, and clears it after gateway changes", async () => {
     const app = mountApp("/ui/overview#token=abc123");
     await app.updateComplete;
 
@@ -492,11 +427,6 @@ describe("control UI routing", () => {
     );
     expect(window.location.pathname).toBe("/ui/overview");
     expect(window.location.hash).toBe("");
-  });
-
-  it("clears the current token when the gateway URL changes", async () => {
-    const app = mountApp("/ui/overview#token=abc123");
-    await app.updateComplete;
 
     const gatewayUrlInput = app.querySelector<HTMLInputElement>(
       'input[placeholder="ws://100.x.y.z:18789"]',
