@@ -68,7 +68,6 @@ export function resolveOpenAICompletionsCompatDefaults(
     knownProviderFamily === "mistral" ||
     (isDefaultRoute && isDefaultRouteProvider(provider, "chutes"));
   const isOllamaCompatProvider = provider === "ollama";
-
   return {
     supportsStore:
       !isNonStandard && knownProviderFamily !== "mistral" && !usesExplicitProxyLikeEndpoint,

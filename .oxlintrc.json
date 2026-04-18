@@ -12,10 +12,11 @@
     "eslint/no-await-in-loop": "off",
     "eslint/no-new": "error",
     "eslint/no-shadow": "off",
+    "eslint/no-warning-comments": "error",
     "eslint/no-unmodified-loop-condition": "error",
     "eslint-plugin-unicorn/prefer-set-size": "error",
     "oxc/no-accumulating-spread": "error",
-    "oxc/no-async-endpoint-handlers": "off",
+    "oxc/no-async-endpoint-handlers": "error",
     "oxc/no-map-spread": "off",
     "typescript/consistent-return": "error",
     "typescript/no-explicit-any": "error",
@@ -51,6 +52,12 @@
     "**/node_modules/**"
   ],
   "overrides": [
+    {
+      "files": ["src/security/**"],
+      "rules": {
+        "eslint/no-warning-comments": "off"
+      }
+    },
     {
       "files": [
         "**/*.test.ts",

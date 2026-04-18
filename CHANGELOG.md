@@ -2,6 +2,14 @@
 
 Docs: https://docs.openclaw.ai
 
+## Unreleased
+
+### Changes
+
+### Fixes
+
+- Agents/channels: route cross-agent subagent spawns through the target agent's bound channel account while preserving peer and workspace/role-scoped bindings, so child sessions no longer inherit the caller's account in shared rooms, workspaces, or multi-account setups. (#67508) Thanks @lukeboyett and @gumadeiras.
+
 ## 2026.4.18
 
 ### Changes
@@ -68,6 +76,9 @@ Docs: https://docs.openclaw.ai
 - Slack/threads: log failed thread starter and history fetches at verbose level while preserving best-effort fallback behavior, so missing Slack thread context is diagnosable without interrupting inbound handling. (#68594) Thanks @martingarramon.
 - Gateway/restart: keep stale-gateway cleanup from terminating the current process's parent or ancestors, so plugin sidecars like WeChat no longer kill the active gateway and trigger an infinite supervisor restart loop. Fixes #68451. (#68517) Thanks @openperf.
 - Gateway/auth: reject gateway auth credentials that match published example placeholders at startup and secret reload, and keep cloud install snippets from publishing copy-paste gateway/keyring secrets. (#68404) Thanks @coygeek.
+- CLI/update: preserve macOS restart helper launchctl failures in the update restart log without letting log setup block the restart path. (#68492) Thanks @hclsys.
+- Slack/threads: keep file-only root messages as starter context so first thread replies can still hydrate starter media. (#68594) Thanks @martingarramon.
+- Google/Antigravity: resolve forward-compatible Gemini 3.1 Pro custom-tools and Flash variants from the bundled Google plugin templates, so `google-antigravity/gemini-3.1-pro-preview-customtools` no longer falls through to an unknown-model error. Fixes #35512.
 
 ## 2026.4.15
 
