@@ -514,14 +514,15 @@ describe("matrix monitor handler pairing account scope", () => {
 
   it("strips the Matrix self user id before room slash command detection", async () => {
     const hasControlCommand = vi.fn((text?: string) => text === "/new");
-    const { handler, recordInboundSession } = createMatrixHandlerTestHarness({
-      cfg: { commands: { useAccessGroups: false } },
-      isDirectMessage: false,
-      mentionRegexes: [],
-      shouldHandleTextCommands: () => true,
-      hasControlCommand,
-      getMemberDisplayName: async () => "sender",
-    });
+    const { handler, finalizeInboundContext, recordInboundSession } =
+      createMatrixHandlerTestHarness({
+        cfg: { commands: { useAccessGroups: false } },
+        isDirectMessage: false,
+        mentionRegexes: [],
+        shouldHandleTextCommands: () => true,
+        hasControlCommand,
+        getMemberDisplayName: async () => "sender",
+      });
 
     await handler(
       "!room:example.org",
@@ -532,6 +533,14 @@ describe("matrix monitor handler pairing account scope", () => {
     );
 
     expect(hasControlCommand).toHaveBeenCalledWith("/new", expect.anything());
+    expect(finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        RawBody: "@bot:example.org /new",
+        CommandBody: "/new",
+        BodyForAgent: "@bot:example.org /new",
+        BodyForCommands: "/new",
+      }),
+    );
     expect(recordInboundSession).toHaveBeenCalled();
   });
 

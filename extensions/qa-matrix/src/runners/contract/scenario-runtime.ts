@@ -46,6 +46,7 @@ import {
   runRestartResumeScenario,
 } from "./scenario-runtime-restart.js";
 import {
+  runAllowlistHotReloadScenario,
   runBlockStreamingScenario,
   runMatrixQaCanary,
   runMembershipLossScenario,
@@ -285,6 +286,8 @@ export async function runMatrixQaScenario(
         token,
       });
     }
+    case "matrix-allowlist-hot-reload":
+      return await runAllowlistHotReloadScenario(context);
     case "matrix-multi-actor-ordering":
       return await runMultiActorOrderingScenario(context);
     case "matrix-inbound-edit-ignored":

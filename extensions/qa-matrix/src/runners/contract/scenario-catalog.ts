@@ -48,6 +48,7 @@ export type MatrixQaScenarioId =
   | "matrix-mention-metadata-spoof-block"
   | "matrix-observer-allowlist-override"
   | "matrix-allowlist-block"
+  | "matrix-allowlist-hot-reload"
   | "matrix-multi-actor-ordering"
   | "matrix-inbound-edit-ignored"
   | "matrix-inbound-edit-no-duplicate-trigger"
@@ -476,6 +477,14 @@ export const MATRIX_QA_SCENARIOS: MatrixQaScenarioDefinition[] = [
     standardId: "allowlist-block",
     timeoutMs: 8_000,
     title: "Matrix sender allowlist blocks observer replies",
+  },
+  {
+    id: "matrix-allowlist-hot-reload",
+    timeoutMs: 60_000,
+    title: "Matrix group sender allowlist removals hot-reload without gateway restart",
+    configOverrides: {
+      groupAllowRoles: ["driver", "observer"],
+    },
   },
   {
     id: "matrix-multi-actor-ordering",

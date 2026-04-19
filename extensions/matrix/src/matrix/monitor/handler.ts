@@ -935,8 +935,8 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           surface: "matrix",
         });
         const useAccessGroups = cfg.commands?.useAccessGroups !== false;
-        // Keep this scoped to command precheck so mention/history/body semantics
-        // continue to see the original Matrix message.
+        // Keep mention stripping on the command-only path so history and agent
+        // prompt text continue to see the original Matrix message.
         const commandCheckText = stripMatrixMentionPrefix({
           text: mentionPrecheckText,
           userId: selfUserId,
@@ -1076,6 +1076,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           await commitInboundEventIfClaimed();
           return undefined;
         }
+        const commandBodyText = hasControlCommandInMessage ? commandCheckText : bodyText;
         const senderName = await getSenderName();
         if (_configuredBinding) {
           const { ensureConfiguredAcpBindingReady } = await loadAcpBindingRuntime();
@@ -1123,6 +1124,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
           inboundHistory,
           senderName,
           bodyText,
+          commandBodyText,
           media,
           locationPayload,
           messageId: _messageId,
@@ -1176,6 +1178,7 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
         inboundHistory,
         senderName,
         bodyText,
+        commandBodyText,
         media,
         locationPayload,
         messageId: _messageId,
@@ -1294,7 +1297,9 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
       const ctxPayload = core.channel.reply.finalizeInboundContext({
         Body: body,
         RawBody: bodyText,
-        CommandBody: bodyText,
+        CommandBody: commandBodyText,
+        BodyForAgent: bodyText,
+        BodyForCommands: commandBodyText,
         InboundHistory: inboundHistory && inboundHistory.length > 0 ? inboundHistory : undefined,
         From: isDirectMessage ? `matrix:${senderId}` : `matrix:channel:${roomId}`,
         To: `room:${roomId}`,

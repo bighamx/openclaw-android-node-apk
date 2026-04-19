@@ -35,6 +35,7 @@ import {
 
 const MATRIX_SUBAGENT_MISSING_HOOK_ERROR =
   "thread=true is unavailable because no channel plugin registered subagent_spawning hooks.";
+const MATRIX_QA_HOT_RELOAD_RESTART_DELAY_MS = 300_000;
 
 function matrixQaScenarioContext(): MatrixQaScenarioContext {
   return {
@@ -110,6 +111,7 @@ describe("matrix live qa scenarios", () => {
       "matrix-mention-metadata-spoof-block",
       "matrix-observer-allowlist-override",
       "matrix-allowlist-block",
+      "matrix-allowlist-hot-reload",
       "matrix-multi-actor-ordering",
       "matrix-inbound-edit-ignored",
       "matrix-inbound-edit-no-duplicate-trigger",
@@ -557,6 +559,118 @@ describe("matrix live qa scenarios", () => {
     });
     expect(waitForOptionalRoomEvent).toHaveBeenCalledWith(
       expect.objectContaining({
+        roomId: "!main:matrix-qa.test",
+      }),
+    );
+  });
+
+  it("hot-reloads group allowlist removals inside one running Matrix gateway", async () => {
+    const patchGatewayConfig = vi.fn(async () => {});
+    const primeRoom = vi.fn().mockResolvedValue("sync-start");
+    const sendTextMessage = vi
+      .fn()
+      .mockResolvedValueOnce("$group-accepted")
+      .mockResolvedValueOnce("$group-removed");
+    const waitForOptionalRoomEvent = vi.fn().mockImplementation(async (params) => ({
+      matched: false,
+      since: `${params.roomId}:no-reply`,
+    }));
+    const waitForRoomEvent = vi.fn().mockImplementation(async (params) => {
+      const sentBody = String(sendTextMessage.mock.calls.at(-1)?.[0]?.body ?? "");
+      const token = sentBody
+        .replace("@sut:matrix-qa.test reply with only this exact marker: ", "")
+        .replace("reply with only this exact marker: ", "");
+      return {
+        event: {
+          kind: "message",
+          roomId: params.roomId,
+          eventId: "$group-reply",
+          sender: "@sut:matrix-qa.test",
+          type: "m.room.message",
+          body: token,
+        },
+        since: `${params.roomId}:reply`,
+      };
+    });
+
+    createMatrixQaClient.mockReturnValue({
+      primeRoom,
+      sendTextMessage,
+      waitForOptionalRoomEvent,
+      waitForRoomEvent,
+    });
+
+    const scenario = MATRIX_QA_SCENARIOS.find(
+      (entry) => entry.id === "matrix-allowlist-hot-reload",
+    );
+    expect(scenario).toBeDefined();
+
+    await expect(
+      runMatrixQaScenario(scenario!, {
+        ...matrixQaScenarioContext(),
+        patchGatewayConfig,
+        topology: {
+          defaultRoomId: "!main:matrix-qa.test",
+          defaultRoomKey: "main",
+          rooms: [
+            {
+              key: "main",
+              kind: "group",
+              memberRoles: ["driver", "observer", "sut"],
+              memberUserIds: [
+                "@driver:matrix-qa.test",
+                "@observer:matrix-qa.test",
+                "@sut:matrix-qa.test",
+              ],
+              name: "Main",
+              requireMention: true,
+              roomId: "!main:matrix-qa.test",
+            },
+          ],
+        },
+      }),
+    ).resolves.toMatchObject({
+      artifacts: {
+        secondDriverEventId: "$group-removed",
+        firstReply: {
+          eventId: "$group-reply",
+          tokenMatched: true,
+        },
+      },
+    });
+
+    expect(patchGatewayConfig).toHaveBeenCalledWith(
+      {
+        channels: {
+          matrix: {
+            accounts: {
+              sut: {
+                groupAllowFrom: ["@driver:matrix-qa.test"],
+              },
+            },
+          },
+        },
+        gateway: {
+          reload: {
+            mode: "off",
+          },
+        },
+      },
+      {
+        restartDelayMs: MATRIX_QA_HOT_RELOAD_RESTART_DELAY_MS,
+      },
+    );
+    expect(sendTextMessage).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        mentionUserIds: ["@sut:matrix-qa.test"],
+        roomId: "!main:matrix-qa.test",
+      }),
+    );
+    expect(sendTextMessage).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        mentionUserIds: ["@sut:matrix-qa.test"],
         roomId: "!main:matrix-qa.test",
       }),
     );
