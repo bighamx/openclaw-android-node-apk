@@ -112,14 +112,6 @@ function writeFakeRuntimeBin(binDir: string, binName: string) {
   }
 }
 
-function withFakeRuntimeBin<T>(params: { binName: string; run: () => T }): T {
-  return withFakeRuntimeBins({
-    binNames: [params.binName],
-    tmpPrefix: `openclaw-${params.binName}-bin-`,
-    run: params.run,
-  });
-}
-
 function withFakeRuntimeBins<T>(params: {
   binNames: string[];
   tmpPrefix?: string;
@@ -144,6 +136,20 @@ function withFakeRuntimeBins<T>(params: {
       process.env.PATH = oldPath;
     }
   }
+}
+
+function uniqueRuntimeBinNames(
+  cases: ReadonlyArray<Pick<RuntimeFixture, "binName" | "binNames">>,
+): string[] {
+  return [
+    ...new Set(
+      cases.flatMap(
+        (runtimeCase) =>
+          runtimeCase.binNames ??
+          (runtimeCase.binName ? [runtimeCase.binName] : ["bunx", "pnpm", "npm", "npx", "tsx"]),
+      ),
+    ),
+  ];
 }
 
 function resolveNativeBinaryFixturePath(): string {
@@ -221,6 +227,14 @@ const DENIED_RUNTIME_APPROVAL = {
   ok: false,
   message: "SYSTEM_RUN_DENIED: approval cannot safely bind this interpreter/runtime command",
 } as const;
+
+function runNamedCase(name: string, run: () => void) {
+  try {
+    run();
+  } catch (error) {
+    throw new Error(`case failed: ${name}`, { cause: error });
+  }
+}
 
 function expectRuntimeApprovalDenied(command: string[], cwd: string) {
   const prepared = buildSystemRunApprovalPlan({ command, cwd });
@@ -473,63 +487,67 @@ describe("hardenApprovedExecutionPaths", () => {
     },
   ];
 
-  it.runIf(process.platform !== "win32").each(cases)("$name", (testCase) => {
-    const tmp = createFixtureDir("openclaw-approval-hardening-");
-    const oldPath = process.env.PATH;
-    let pathToken: PathTokenSetup | null = null;
-    if (testCase.withPathToken) {
-      const binDir = path.join(tmp, "bin");
-      fs.mkdirSync(binDir, { recursive: true });
-      const link = path.join(binDir, "poccmd");
-      fs.symlinkSync("/bin/echo", link);
-      pathToken = { expected: fs.realpathSync(link) };
-      process.env.PATH = `${binDir}${path.delimiter}${oldPath ?? ""}`;
-    }
-    try {
-      if (testCase.mode === "build-plan") {
-        const prepared = buildSystemRunApprovalPlan({
-          command: testCase.argv,
-          cwd: tmp,
-        });
-        expect(prepared.ok).toBe(true);
-        if (!prepared.ok) {
-          throw new Error("unreachable");
+  it.runIf(process.platform !== "win32")("handles approval hardening cases", () => {
+    for (const testCase of cases) {
+      runNamedCase(testCase.name, () => {
+        const tmp = createFixtureDir("openclaw-approval-hardening-");
+        const oldPath = process.env.PATH;
+        let pathToken: PathTokenSetup | null = null;
+        if (testCase.withPathToken) {
+          const binDir = path.join(tmp, "bin");
+          fs.mkdirSync(binDir, { recursive: true });
+          const link = path.join(binDir, "poccmd");
+          fs.symlinkSync("/bin/echo", link);
+          pathToken = { expected: fs.realpathSync(link) };
+          process.env.PATH = `${binDir}${path.delimiter}${oldPath ?? ""}`;
         }
-        expect(prepared.plan.argv).toEqual(testCase.expectedArgv({ pathToken }));
-        if (testCase.expectedCmdText) {
-          expect(prepared.plan.commandText).toBe(testCase.expectedCmdText);
-        }
-        if (testCase.checkRawCommandMatchesArgv) {
-          expect(prepared.plan.commandText).toBe(formatExecCommand(prepared.plan.argv));
-        }
-        if ("expectedCommandPreview" in testCase) {
-          expect(prepared.plan.commandPreview ?? null).toBe(testCase.expectedCommandPreview);
-        }
-        return;
-      }
+        try {
+          if (testCase.mode === "build-plan") {
+            const prepared = buildSystemRunApprovalPlan({
+              command: testCase.argv,
+              cwd: tmp,
+            });
+            expect(prepared.ok).toBe(true);
+            if (!prepared.ok) {
+              throw new Error("unreachable");
+            }
+            expect(prepared.plan.argv).toEqual(testCase.expectedArgv({ pathToken }));
+            if (testCase.expectedCmdText) {
+              expect(prepared.plan.commandText).toBe(testCase.expectedCmdText);
+            }
+            if (testCase.checkRawCommandMatchesArgv) {
+              expect(prepared.plan.commandText).toBe(formatExecCommand(prepared.plan.argv));
+            }
+            if ("expectedCommandPreview" in testCase) {
+              expect(prepared.plan.commandPreview ?? null).toBe(testCase.expectedCommandPreview);
+            }
+            return;
+          }
 
-      const hardened = hardenApprovedExecutionPaths({
-        approvedByAsk: true,
-        argv: testCase.argv,
-        shellCommand: testCase.shellCommand ?? null,
-        cwd: tmp,
-      });
-      expect(hardened.ok).toBe(true);
-      if (!hardened.ok) {
-        throw new Error("unreachable");
-      }
-      expect(hardened.argv).toEqual(testCase.expectedArgv({ pathToken }));
-      if (typeof testCase.expectedArgvChanged === "boolean") {
-        expect(hardened.argvChanged).toBe(testCase.expectedArgvChanged);
-      }
-    } finally {
-      if (testCase.withPathToken) {
-        if (oldPath === undefined) {
-          delete process.env.PATH;
-        } else {
-          process.env.PATH = oldPath;
+          const hardened = hardenApprovedExecutionPaths({
+            approvedByAsk: true,
+            argv: testCase.argv,
+            shellCommand: testCase.shellCommand ?? null,
+            cwd: tmp,
+          });
+          expect(hardened.ok).toBe(true);
+          if (!hardened.ok) {
+            throw new Error("unreachable");
+          }
+          expect(hardened.argv).toEqual(testCase.expectedArgv({ pathToken }));
+          if (typeof testCase.expectedArgvChanged === "boolean") {
+            expect(hardened.argvChanged).toBe(testCase.expectedArgvChanged);
+          }
+        } finally {
+          if (testCase.withPathToken) {
+            if (oldPath === undefined) {
+              delete process.env.PATH;
+            } else {
+              process.env.PATH = oldPath;
+            }
+          }
         }
-      }
+      });
     }
   });
 
@@ -776,39 +794,30 @@ describe("hardenApprovedExecutionPaths", () => {
     },
   ];
 
-  it.each(mutableOperandCases)(
-    "captures mutable $name operands in approval plans",
-    (runtimeCase) => {
-      if (runtimeCase.skipOnWin32 && process.platform === "win32") {
-        return;
-      }
-      const binNames =
-        runtimeCase.binNames ??
-        (runtimeCase.binName ? [runtimeCase.binName] : ["bunx", "pnpm", "npm", "npx", "tsx"]);
-      withFakeRuntimeBins({
-        binNames,
-        run: () => {
-          withScriptOperandPlanFixture(
-            {
-              tmpPrefix: "openclaw-approval-script-plan-",
-              fixture: runtimeCase,
-              afterWrite: (fixture, tmp) => {
-                const executablePath = fixture.command[0];
-                if (executablePath?.endsWith("pnpm.js")) {
-                  const shimPath = path.join(tmp, "pnpm.js");
-                  fs.writeFileSync(shimPath, "#!/usr/bin/env node\nconsole.log('shim')\n");
-                  fs.chmodSync(shimPath, 0o755);
-                }
-              },
-            },
-            (fixture, tmp) => {
-              expectMutableFileOperandApprovalPlan(fixture, tmp);
-            },
-          );
-        },
-      });
-    },
-  );
+  it("captures mutable runtime operands in approval plans", () => {
+    const tmp = createFixtureDir("openclaw-approval-script-plan-");
+    withFakeRuntimeBins({
+      binNames: uniqueRuntimeBinNames(mutableOperandCases),
+      run: () => {
+        for (const runtimeCase of mutableOperandCases) {
+          runNamedCase(runtimeCase.name, () => {
+            if (runtimeCase.skipOnWin32 && process.platform === "win32") {
+              return;
+            }
+            const fixture = createScriptOperandFixture(tmp, runtimeCase);
+            writeScriptOperandFixture(fixture);
+            const executablePath = fixture.command[0];
+            if (executablePath?.endsWith("pnpm.js")) {
+              const shimPath = path.join(tmp, "pnpm.js");
+              fs.writeFileSync(shimPath, "#!/usr/bin/env node\nconsole.log('shim')\n");
+              fs.chmodSync(shimPath, 0o755);
+            }
+            expectMutableFileOperandApprovalPlan(fixture, tmp);
+          });
+        }
+      },
+    });
+  });
 
   it("captures mutable shell script operands in approval plans", () => {
     withScriptOperandPlanFixture(
@@ -980,13 +989,17 @@ describe("hardenApprovedExecutionPaths", () => {
     }
   });
 
-  it.each(unsafeRuntimeInvocationCases)("$name", (testCase) => {
-    withFakeRuntimeBin({
-      binName: testCase.binName,
+  it("rejects unsafe runtime invocation forms", () => {
+    withFakeRuntimeBins({
+      binNames: [...new Set(unsafeRuntimeInvocationCases.map((testCase) => testCase.binName))],
       run: () => {
-        const tmp = createFixtureDir(testCase.tmpPrefix);
-        testCase.setup?.(tmp);
-        expectRuntimeApprovalDenied(testCase.command, tmp);
+        for (const testCase of unsafeRuntimeInvocationCases) {
+          runNamedCase(testCase.name, () => {
+            const tmp = createFixtureDir(testCase.tmpPrefix);
+            testCase.setup?.(tmp);
+            expectRuntimeApprovalDenied(testCase.command, tmp);
+          });
+        }
       },
     });
   });

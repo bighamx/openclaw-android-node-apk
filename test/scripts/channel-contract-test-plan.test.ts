@@ -16,34 +16,23 @@ function listContractTests(rootDir = "src/channels/plugins/contracts"): string[]
 
 describe("scripts/lib/channel-contract-test-plan.mjs", () => {
   it("splits channel contracts into focused shards", () => {
+    const suffixes = ["a", "b", "c", "d", "e", "f", "g", "h"];
+
     expect(
       createChannelContractTestShards().map((shard) => ({
         checkName: shard.checkName,
         runtime: shard.runtime,
         task: shard.task,
       })),
-    ).toEqual([
-      {
-        checkName: "checks-fast-contracts-channels-registry-a",
-        runtime: "node",
-        task: "contracts-channels",
-      },
-      {
-        checkName: "checks-fast-contracts-channels-registry-b",
-        runtime: "node",
-        task: "contracts-channels",
-      },
-      {
-        checkName: "checks-fast-contracts-channels-core-a",
-        runtime: "node",
-        task: "contracts-channels",
-      },
-      {
-        checkName: "checks-fast-contracts-channels-core-b",
-        runtime: "node",
-        task: "contracts-channels",
-      },
-    ]);
+    ).toEqual(
+      ["registry", "core"].flatMap((family) =>
+        suffixes.map((suffix) => ({
+          checkName: `checks-fast-contracts-channels-${family}-${suffix}`,
+          runtime: "node",
+          task: "contracts-channels",
+        })),
+      ),
+    );
   });
 
   it("covers every channel contract test exactly once", () => {
