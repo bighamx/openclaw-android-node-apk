@@ -82,6 +82,7 @@ function createScopedCommandTestPlugin(params: {
     signalNumber?: string;
   }) => Record<string, unknown>;
   clearBaseFields: string[];
+  singleAccountKeysToMove?: readonly string[];
   onAccountConfigChanged?: NonNullable<ChannelPlugin["lifecycle"]>["onAccountConfigChanged"];
   onAccountRemoved?: NonNullable<ChannelPlugin["lifecycle"]>["onAccountRemoved"];
   collectStatusIssues?: NonNullable<NonNullable<ChannelPlugin["status"]>["collectStatusIssues"]>;
@@ -102,16 +103,21 @@ function createScopedCommandTestPlugin(params: {
       resolveAllowFrom: () => [],
       formatAllowFrom: (allowFrom) => allowFrom.map(String),
     }),
-    setup: createPatchedAccountSetupAdapter({
-      channelKey: params.id,
-      buildPatch: (input) =>
-        params.buildPatch({
-          token: input.token,
-          botToken: input.botToken,
-          appToken: input.appToken,
-          signalNumber: input.signalNumber,
-        }),
-    }),
+    setup: {
+      ...createPatchedAccountSetupAdapter({
+        channelKey: params.id,
+        buildPatch: (input) =>
+          params.buildPatch({
+            token: input.token,
+            botToken: input.botToken,
+            appToken: input.appToken,
+            signalNumber: input.signalNumber,
+          }),
+      }),
+      ...(params.singleAccountKeysToMove
+        ? { singleAccountKeysToMove: params.singleAccountKeysToMove }
+        : {}),
+    },
     lifecycle:
       params.onAccountConfigChanged || params.onAccountRemoved
         ? {
@@ -140,6 +146,7 @@ function createTelegramCommandTestPlugin(): ChannelPlugin {
     label: "Telegram",
     buildPatch: ({ token }) => (token ? { botToken: token } : {}),
     clearBaseFields: ["botToken", "name", "dmPolicy", "allowFrom", "groupPolicy", "streaming"],
+    singleAccountKeysToMove: ["streaming"],
     onAccountConfigChanged: async ({ prevCfg, nextCfg, accountId }) => {
       const prevTelegram = resolveTelegramAccount(prevCfg, accountId);
       const nextTelegram = resolveTelegramAccount(nextCfg, accountId);
