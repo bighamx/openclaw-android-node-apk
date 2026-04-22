@@ -467,11 +467,10 @@ describe("collectPackUnpackedSizeErrors", () => {
 });
 
 describe("createPackedBundledPluginPostinstallEnv", () => {
-  it("enables eager bundled dependency repair for packed channel entry smoke", () => {
+  it("keeps packed postinstall on the lazy bundled dependency path", () => {
     expect(createPackedBundledPluginPostinstallEnv({ PATH: "/usr/bin" })).toEqual({
       PATH: "/usr/bin",
       OPENCLAW_DISABLE_BUNDLED_ENTRY_SOURCE_FALLBACK: "1",
-      OPENCLAW_EAGER_BUNDLED_PLUGIN_DEPS: "1",
     });
   });
 });

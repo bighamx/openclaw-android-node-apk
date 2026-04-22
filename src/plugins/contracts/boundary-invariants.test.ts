@@ -7,6 +7,45 @@ const SRC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const REPO_ROOT = resolve(SRC_ROOT, "..");
 const sourceCache = new Map<string, string>();
 const tsFilesCache = new Map<string, string[]>();
+const BUNDLED_TYPED_HOOK_REGISTRATION_FILES = [
+  "extensions/acpx/index.ts",
+  "extensions/active-memory/index.ts",
+  "extensions/diffs/src/plugin.ts",
+  "extensions/discord/subagent-hooks-api.ts",
+  "extensions/feishu/subagent-hooks-api.ts",
+  "extensions/matrix/subagent-hooks-api.ts",
+  "extensions/memory-core/src/dreaming.ts",
+  "extensions/memory-lancedb/index.ts",
+  "extensions/skill-workshop/index.ts",
+  "extensions/thread-ownership/index.ts",
+] as const;
+const BUNDLED_TYPED_HOOK_REGISTRATION_GUARDS = {
+  "extensions/acpx/index.ts": ["reply_dispatch"],
+  "extensions/active-memory/index.ts": ["before_prompt_build"],
+  "extensions/diffs/src/plugin.ts": ["before_prompt_build"],
+  "extensions/discord/subagent-hooks-api.ts": [
+    "subagent_delivery_target",
+    "subagent_ended",
+    "subagent_spawning",
+  ],
+  "extensions/feishu/subagent-hooks-api.ts": [
+    "subagent_delivery_target",
+    "subagent_ended",
+    "subagent_spawning",
+  ],
+  "extensions/matrix/subagent-hooks-api.ts": [
+    "subagent_delivery_target",
+    "subagent_ended",
+    "subagent_spawning",
+  ],
+  "extensions/memory-core/src/dreaming.ts": ["before_agent_reply", "gateway_start"],
+  "extensions/memory-lancedb/index.ts": ["agent_end", "before_prompt_build"],
+  "extensions/skill-workshop/index.ts": ["agent_end", "before_prompt_build"],
+  "extensions/thread-ownership/index.ts": ["message_received", "message_sending"],
+} as const satisfies Record<
+  (typeof BUNDLED_TYPED_HOOK_REGISTRATION_FILES)[number],
+  readonly string[]
+>;
 
 type FileFilter = {
   excludeTests?: boolean;
@@ -74,6 +113,13 @@ function collectBundledExtensionImports(source: string): string[] {
     .filter((specifier): specifier is string => typeof specifier === "string");
 }
 
+function collectTypedHookNames(source: string): string[] {
+  return [...source.matchAll(/\bapi\.on\(\s*"([^"]+)"/gu)]
+    .map((match) => match[1])
+    .filter((hookName): hookName is string => typeof hookName === "string")
+    .toSorted();
+}
+
 describe("plugin contract boundary invariants", () => {
   it("keeps bundled-capability-metadata confined to contract/test inventory", () => {
     const files = listTsFiles("src");
@@ -136,6 +182,35 @@ describe("plugin contract boundary invariants", () => {
       const source = readRepoSource(file);
       return /extensions\/\$\{|\.\.\/\.\.\/\.\.\/\.\.\/extensions\//u.test(source);
     });
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps bundled plugin production code off legacy before_agent_start hooks", () => {
+    const files = listTsFiles("extensions", { excludeTests: true });
+    const offenders = files.filter((file) => readRepoSource(file).includes("before_agent_start"));
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps bundled plugin typed hook registrations on an explicit allowlist", () => {
+    const files = listTsFiles("extensions", { excludeTests: true });
+    const hookRegistrationFiles = files.filter((file) => /\bapi\.on\(/u.test(readRepoSource(file)));
+    expect(hookRegistrationFiles).toEqual(BUNDLED_TYPED_HOOK_REGISTRATION_FILES);
+  });
+
+  it("keeps bundled plugin typed hook names on an explicit allowlist", () => {
+    expect(
+      Object.fromEntries(
+        BUNDLED_TYPED_HOOK_REGISTRATION_FILES.map((file) => [
+          file,
+          collectTypedHookNames(readRepoSource(file)),
+        ]),
+      ),
+    ).toEqual(BUNDLED_TYPED_HOOK_REGISTRATION_GUARDS);
+  });
+
+  it("keeps bundled plugin production code off raw registerHook calls", () => {
+    const files = listTsFiles("extensions", { excludeTests: true });
+    const offenders = files.filter((file) => /\bregisterHook\(/u.test(readRepoSource(file)));
     expect(offenders).toEqual([]);
   });
 });
