@@ -211,6 +211,23 @@ The ONLY exception is trivial checks with zero external dependencies
    `blacksmith testbox download --id <ID> coverage/ ./coverage/`
 7. Once green, commit and push.
 
+## OpenClaw full test suite
+
+For OpenClaw, use the repo package manager and the measured stable full-suite
+profile below. It keeps six Vitest project shards active while limiting each
+shard to one worker to avoid worker OOMs on Testbox:
+
+    blacksmith testbox run --id <ID> "env NODE_OPTIONS=--max-old-space-size=4096 OPENCLAW_TEST_PROJECTS_PARALLEL=6 OPENCLAW_VITEST_MAX_WORKERS=1 pnpm test"
+
+Observed full-suite time on Blacksmith Testbox is about 3-4 minutes:
+
+- 173-180s on a warmed box
+- 219s on a fresh 32-vCPU box
+
+When validating before commit/push, run `pnpm check:changed` first when
+appropriate, then the full suite with the profile above if broad confidence is
+needed.
+
 ## Examples
 
     blacksmith testbox warmup ci-check-testbox.yml
