@@ -135,7 +135,7 @@ function createTelegramCommandTestPlugin(): ChannelPlugin {
     accountId?: string | null,
   ) => resolveScopedAccount(cfg, "telegram", accountId) as { botToken?: string };
 
-  return createScopedCommandTestPlugin({
+  const plugin = createScopedCommandTestPlugin({
     id: "telegram",
     label: "Telegram",
     buildPatch: ({ token }) => (token ? { botToken: token } : {}),
@@ -195,6 +195,14 @@ function createTelegramCommandTestPlugin(): ChannelPlugin {
         return issues;
       }),
   });
+  return {
+    ...plugin,
+    setup: {
+      ...plugin.setup!,
+      namedAccountPromotionKeys: ["botToken", "tokenFile"],
+      singleAccountKeysToMove: ["streaming"],
+    },
+  };
 }
 
 function createMinimalChannelsCommandRegistryForTests(): ReturnType<typeof createTestRegistry> {
