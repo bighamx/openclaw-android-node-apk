@@ -3,6 +3,26 @@ import { appendFileSync } from "node:fs";
 
 /** @typedef {{ runNode: boolean; runMacos: boolean; runAndroid: boolean; runWindows: boolean; runSkillsPython: boolean; runChangedSmoke: boolean; runControlUiI18n: boolean }} ChangedScope */
 
+const FULL_SCOPE = {
+  runNode: true,
+  runMacos: true,
+  runAndroid: true,
+  runWindows: true,
+  runSkillsPython: true,
+  runChangedSmoke: true,
+  runControlUiI18n: true,
+};
+
+const EMPTY_SCOPE = {
+  runNode: false,
+  runMacos: false,
+  runAndroid: false,
+  runWindows: false,
+  runSkillsPython: false,
+  runChangedSmoke: false,
+  runControlUiI18n: false,
+};
+
 const DOCS_PATH_RE = /^(docs\/|.*\.mdx?$)/;
 const SKILLS_PYTHON_SCOPE_RE = /^(skills\/|pyproject\.toml$)/;
 const INSTALL_SMOKE_WORKFLOW_SCOPE_RE = /^\.github\/workflows\/install-smoke\.yml$/;
@@ -183,27 +203,11 @@ if (isDirectRun()) {
   try {
     const changedPaths = listChangedPaths(args.base, args.head);
     if (changedPaths.length === 0) {
-      writeGitHubOutput({
-        runNode: true,
-        runMacos: true,
-        runAndroid: true,
-        runWindows: true,
-        runSkillsPython: true,
-        runChangedSmoke: true,
-        runControlUiI18n: true,
-      });
+      writeGitHubOutput(EMPTY_SCOPE);
       process.exit(0);
     }
     writeGitHubOutput(detectChangedScope(changedPaths));
   } catch {
-    writeGitHubOutput({
-      runNode: true,
-      runMacos: true,
-      runAndroid: true,
-      runWindows: true,
-      runSkillsPython: true,
-      runChangedSmoke: true,
-      runControlUiI18n: true,
-    });
+    writeGitHubOutput(FULL_SCOPE);
   }
 }
