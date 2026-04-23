@@ -84,11 +84,7 @@
 <li>Config/includes: write through single-file top-level includes for isolated OpenClaw-owned mutations, so <code>plugins install</code> and <code>plugins update</code> update an included <code>plugins.json5</code> file instead of flattening modular <code>$include</code> configs. Fixes #41050 and #66048.</li>
 <li>Config/reload: plan gateway reloads from source-authored config instead of runtime-materialized snapshots, so plugin update writes no longer trigger false restarts from derived provider/plugin config paths. Fixes #68732.</li>
 <li>Plugins/update: skip npm plugin reinstall/config rewrites when the installed version and recorded artifact identity already match the registry target, let bare npm package names resolve back to tracked install records, and point already-installed <code>plugins install</code> attempts at <code>plugins update</code> / <code>--force</code> instead of a hook-pack fallback. Fixes #46955, #67957, and #68073.</li>
-<li>Agents/MCP: keep <code>mcp.servers</code> and bundle MCP tools available in Pi embedded</li>
-</ul>
-  <code>coding</code> and <code>messaging</code> sessions while preserving <code>minimal</code> profile and
-  <code>tools.deny: ["bundle-mcp"]</code> opt-out behavior. Fixes #68875 and #68818.
-<ul>
+<li>Agents/MCP: keep <code>mcp.servers</code> and bundle MCP tools available in Pi embedded <code>coding</code> and <code>messaging</code> sessions while preserving <code>minimal</code> profile and <code>tools.deny: ["bundle-mcp"]</code> opt-out behavior. Fixes #68875 and #68818.</li>
 <li>Plugins/startup: tolerate transient bundled-channel catalog/metadata drift while auto-enabling configured plugins, so CLI and gateway startup no longer crash when a channel id is known but its display metadata is unavailable.</li>
 <li>CLI/Claude: report CLI-backed reply runs as streaming while Claude/Codex CLI turns are still in flight, so WebChat keeps visible response state until the backend finishes. Fixes #70125.</li>
 <li>Slack/streaming: fall back to normal Slack replies for Slack Connect streams rejected before the SDK flushes its local buffer, so short replies no longer disappear or report success before Slack acknowledges delivery. Fixes #70295. (#70370) Thanks @mvanhorn.</li>

@@ -51,6 +51,21 @@ The Codex harness only claims `codex/*` model refs. Existing `openai/*`,
 `openai-codex/*`, Anthropic, Gemini, xAI, local, and custom provider refs keep
 their normal paths.
 
+Harness selection is not a live session control. When an embedded turn runs,
+OpenClaw records the selected harness id on that session and keeps using it for
+later turns in the same session id. Change `embeddedHarness` config or
+`OPENCLAW_AGENT_RUNTIME` when you want future sessions to use another harness;
+use `/new` or `/reset` to start a fresh session before switching an existing
+conversation between PI and Codex. This avoids replaying one transcript through
+two incompatible native session systems.
+
+Legacy sessions created before harness pins are treated as PI-pinned once they
+have transcript history. Use `/new` or `/reset` to opt that conversation into
+Codex after changing config.
+
+`/status` shows the effective non-PI harness next to `Fast`, for example
+`Fast · codex`. The default PI harness is omitted.
+
 ## Requirements
 
 - OpenClaw with the bundled `codex` plugin available.
@@ -218,7 +233,8 @@ auto-selection:
 
 Use normal session commands to switch agents and models. `/new` creates a fresh
 OpenClaw session and the Codex harness creates or resumes its sidecar app-server
-thread as needed. `/reset` clears the OpenClaw session binding for that thread.
+thread as needed. `/reset` clears the OpenClaw session binding for that thread
+and lets the next turn resolve the harness from current config again.
 
 ## Model discovery
 
