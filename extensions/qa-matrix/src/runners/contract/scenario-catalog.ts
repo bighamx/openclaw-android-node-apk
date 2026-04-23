@@ -87,6 +87,7 @@ export const MATRIX_QA_RESTART_ROOM_KEY = "restart";
 export const MATRIX_QA_SECONDARY_ROOM_KEY = "secondary";
 
 const MATRIX_QA_LIVE_MODEL_TIMEOUT_MS = 120_000;
+const MATRIX_QA_IMAGE_GENERATION_TIMEOUT_MS = 180_000;
 const MATRIX_QA_E2EE_REPLY_TIMEOUT_MS = 150_000;
 const MATRIX_QA_E2EE_MEDIA_TIMEOUT_MS = 180_000;
 
@@ -311,7 +312,7 @@ export const MATRIX_QA_SCENARIOS: MatrixQaScenarioDefinition[] = [
   },
   {
     id: "matrix-room-generated-image-delivery",
-    timeoutMs: 60_000,
+    timeoutMs: MATRIX_QA_IMAGE_GENERATION_TIMEOUT_MS,
     title: "Matrix generated images deliver as real image attachments while streaming",
     topology: MATRIX_QA_MEDIA_ROOM_TOPOLOGY,
     configOverrides: {

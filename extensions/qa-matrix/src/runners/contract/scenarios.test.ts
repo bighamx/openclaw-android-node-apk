@@ -169,6 +169,9 @@ describe("matrix live qa scenarios", () => {
     expect(scenarios.get("matrix-subagent-thread-spawn")?.timeoutMs).toBeGreaterThanOrEqual(
       120_000,
     );
+    expect(scenarios.get("matrix-room-generated-image-delivery")?.timeoutMs).toBeGreaterThanOrEqual(
+      180_000,
+    );
     expect(scenarios.get("matrix-e2ee-restart-resume")?.timeoutMs).toBeGreaterThanOrEqual(150_000);
     expect(scenarios.get("matrix-e2ee-artifact-redaction")?.timeoutMs).toBeGreaterThanOrEqual(
       150_000,
@@ -1356,7 +1359,12 @@ describe("matrix live qa scenarios", () => {
     });
 
     expect(sendTextMessage).toHaveBeenCalledWith({
-      body: expect.stringContaining("Use sessions_spawn for this QA check"),
+      body: expect.stringContaining("Call sessions_spawn now for this QA check"),
+      mentionUserIds: ["@sut:matrix-qa.test"],
+      roomId: "!main:matrix-qa.test",
+    });
+    expect(sendTextMessage).toHaveBeenCalledWith({
+      body: expect.stringContaining("runTimeoutSeconds=60"),
       mentionUserIds: ["@sut:matrix-qa.test"],
       roomId: "!main:matrix-qa.test",
     });
