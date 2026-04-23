@@ -1,5 +1,5 @@
-import { resolveAckReaction } from "openclaw/plugin-sdk/agent-runtime";
 import {
+  resolveAckReaction,
   shouldAckReaction as shouldAckReactionGate,
   type AckReactionScope,
 } from "openclaw/plugin-sdk/channel-feedback";
@@ -12,9 +12,9 @@ import {
   resolveEnvelopeFormatOptions,
   resolveInboundMentionDecision,
 } from "openclaw/plugin-sdk/channel-inbound";
-import { resolveControlCommandGate } from "openclaw/plugin-sdk/command-auth";
-import { hasControlCommand } from "openclaw/plugin-sdk/command-auth";
-import { shouldHandleTextCommands } from "openclaw/plugin-sdk/command-auth";
+import { hasControlCommand } from "openclaw/plugin-sdk/command-detection";
+import { resolveControlCommandGate } from "openclaw/plugin-sdk/command-gating";
+import { shouldHandleTextCommands } from "openclaw/plugin-sdk/command-surface";
 import {
   resolveRuntimeConversationBindingRoute,
   type RuntimeConversationBindingRouteResult,
