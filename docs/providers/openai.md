@@ -183,14 +183,18 @@ Choose your preferred auth method and follow the setup steps.
 ## Image generation
 
 The bundled `openai` plugin registers image generation through the `image_generate` tool.
+It supports both OpenAI API-key image generation and Codex OAuth image
+generation through the same `openai/gpt-image-2` model ref.
 
-| Capability                | Value                              |
-| ------------------------- | ---------------------------------- |
-| Default model             | `openai/gpt-image-2`               |
-| Max images per request    | 4                                  |
-| Edit mode                 | Enabled (up to 5 reference images) |
-| Size overrides            | Supported, including 2K/4K sizes   |
-| Aspect ratio / resolution | Not forwarded to OpenAI Images API |
+| Capability                | OpenAI API key                     | Codex OAuth                          |
+| ------------------------- | ---------------------------------- | ------------------------------------ |
+| Model ref                 | `openai/gpt-image-2`               | `openai/gpt-image-2`                 |
+| Auth                      | `OPENAI_API_KEY`                   | OpenAI Codex OAuth sign-in           |
+| Transport                 | OpenAI Images API                  | Codex Responses backend              |
+| Max images per request    | 4                                  | 4                                    |
+| Edit mode                 | Enabled (up to 5 reference images) | Enabled (up to 5 reference images)   |
+| Size overrides            | Supported, including 2K/4K sizes   | Supported, including 2K/4K sizes     |
+| Aspect ratio / resolution | Not forwarded to OpenAI Images API | Mapped to a supported size when safe |
 
 ```json5
 {
@@ -210,21 +214,15 @@ See [Image Generation](/tools/image-generation) for shared tool parameters, prov
 editing. `gpt-image-1` remains usable as an explicit model override, but new
 OpenAI image workflows should use `openai/gpt-image-2`.
 
-The `openai-codex` provider also exposes `gpt-image-2` for image generation and
-reference-image editing through OpenAI Codex OAuth. Use
-`openai-codex/gpt-image-2` when the agent is signed in with Codex OAuth but does
-not have an `OPENAI_API_KEY`.
+For Codex OAuth installs, keep the same `openai/gpt-image-2` ref. If no
+`OPENAI_API_KEY` is available, OpenClaw resolves the stored OAuth access token
+for the `openai-codex` auth profile and sends image requests through the Codex
+Responses backend, so this path works without the public OpenAI Images API key.
 
 Generate:
 
 ```
 /tool image_generate model=openai/gpt-image-2 prompt="A polished launch poster for OpenClaw on macOS" size=3840x2160 count=1
-```
-
-Generate with Codex OAuth:
-
-```
-/tool image_generate model=openai-codex/gpt-image-2 prompt="A polished launch poster for OpenClaw on macOS" size=3840x2160 count=1
 ```
 
 Edit:

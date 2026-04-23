@@ -1,5 +1,5 @@
 ---
-summary: "Generate and edit images using configured providers (OpenAI, Google Gemini, fal, MiniMax, ComfyUI, Vydra, xAI)"
+summary: "Generate and edit images using configured providers (OpenAI, OpenAI Codex OAuth, Google Gemini, fal, MiniMax, ComfyUI, Vydra, xAI)"
 read_when:
   - Generating images via the agent
   - Configuring image generation providers and models
@@ -10,12 +10,12 @@ title: "Image generation"
 The `image_generate` tool lets the agent create and edit images using your configured providers. Generated images are delivered automatically as media attachments in the agent's reply.
 
 <Note>
-The tool only appears when at least one image generation provider is available. If you don't see `image_generate` in your agent's tools, configure `agents.defaults.imageGenerationModel` or set up a provider API key.
+The tool only appears when at least one image generation provider is available. If you don't see `image_generate` in your agent's tools, configure `agents.defaults.imageGenerationModel`, set up a provider API key, or sign in with OpenAI Codex OAuth.
 </Note>
 
 ## Quick start
 
-1. Set an API key for at least one provider (for example `OPENAI_API_KEY` or `GEMINI_API_KEY`).
+1. Set an API key for at least one provider (for example `OPENAI_API_KEY` or `GEMINI_API_KEY`) or sign in with OpenAI Codex OAuth.
 2. Optionally set your preferred model:
 
 ```json5
@@ -30,22 +30,25 @@ The tool only appears when at least one image generation provider is available. 
 }
 ```
 
-3. Ask the agent: _"Generate an image of a friendly lobster mascot."_
+Codex OAuth uses the same `openai/gpt-image-2` model ref. If no `OPENAI_API_KEY`
+is available, OpenClaw resolves the existing `openai-codex` OAuth profile and
+sends the image request through the Codex Responses backend.
+
+3. Ask the agent: _"Generate an image of a friendly robot mascot."_
 
 The agent calls `image_generate` automatically. No tool allow-listing needed — it's enabled by default when a provider is available.
 
 ## Supported providers
 
-| Provider     | Default model                    | Edit support                       | API key                                               |
-| ------------ | -------------------------------- | ---------------------------------- | ----------------------------------------------------- |
-| OpenAI       | `gpt-image-2`                    | Yes (up to 4 images)               | `OPENAI_API_KEY`                                      |
-| OpenAI Codex | `gpt-image-2`                    | Yes (up to 4 images)               | OpenAI Codex OAuth                                    |
-| Google       | `gemini-3.1-flash-image-preview` | Yes                                | `GEMINI_API_KEY` or `GOOGLE_API_KEY`                  |
-| fal          | `fal-ai/flux/dev`                | Yes                                | `FAL_KEY`                                             |
-| MiniMax      | `image-01`                       | Yes (subject reference)            | `MINIMAX_API_KEY` or MiniMax OAuth (`minimax-portal`) |
-| ComfyUI      | `workflow`                       | Yes (1 image, workflow-configured) | `COMFY_API_KEY` or `COMFY_CLOUD_API_KEY` for cloud    |
-| Vydra        | `grok-imagine`                   | No                                 | `VYDRA_API_KEY`                                       |
-| xAI          | `grok-imagine-image`             | Yes (up to 5 images)               | `XAI_API_KEY`                                         |
+| Provider | Default model                    | Edit support                       | Auth                                                  |
+| -------- | -------------------------------- | ---------------------------------- | ----------------------------------------------------- |
+| OpenAI   | `gpt-image-2`                    | Yes (up to 4 images)               | `OPENAI_API_KEY` or OpenAI Codex OAuth                |
+| Google   | `gemini-3.1-flash-image-preview` | Yes                                | `GEMINI_API_KEY` or `GOOGLE_API_KEY`                  |
+| fal      | `fal-ai/flux/dev`                | Yes                                | `FAL_KEY`                                             |
+| MiniMax  | `image-01`                       | Yes (subject reference)            | `MINIMAX_API_KEY` or MiniMax OAuth (`minimax-portal`) |
+| ComfyUI  | `workflow`                       | Yes (1 image, workflow-configured) | `COMFY_API_KEY` or `COMFY_CLOUD_API_KEY` for cloud    |
+| Vydra    | `grok-imagine`                   | No                                 | `VYDRA_API_KEY`                                       |
+| xAI      | `grok-imagine-image`             | Yes (up to 5 images)               | `XAI_API_KEY`                                         |
 
 Use `action: "list"` to inspect available providers and models at runtime:
 
@@ -125,7 +128,10 @@ OpenAI, Google, and xAI support up to 5 reference images via the `images` parame
 
 ### OpenAI `gpt-image-2`
 
-OpenAI image generation defaults to `openai/gpt-image-2`. The older
+OpenAI image generation defaults to `openai/gpt-image-2`. It uses
+`OPENAI_API_KEY` when available. If no API key is configured, OpenClaw reuses the
+same `openai-codex` OAuth profile used by Codex subscription chat models and
+sends the image request through the Codex Responses backend. The older
 `openai/gpt-image-1` model can still be selected explicitly, but new OpenAI
 image-generation and image-editing requests should use `gpt-image-2`.
 
