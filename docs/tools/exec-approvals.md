@@ -304,73 +304,65 @@ allowlist entries for their non-stdin workflows. For `grep` in safe-bin mode,
 provide the pattern with `-e`/`--regexp`; positional pattern form is rejected
 so file operands cannot be smuggled as ambiguous positionals.
 
-<AccordionGroup>
-  <Accordion title="Argv validation and denied flags">
-    Validation is deterministic from argv shape only (no host filesystem
-    existence checks), which prevents file-existence oracle behavior from
-    allow/deny differences. File-oriented options are denied for default safe
-    bins; long options are validated fail-closed (unknown flags and ambiguous
-    abbreviations are rejected).
+### Argv validation and denied flags
 
-    Denied flags by safe-bin profile:
+Validation is deterministic from argv shape only (no host filesystem existence
+checks), which prevents file-existence oracle behavior from allow/deny
+differences. File-oriented options are denied for default safe bins; long
+options are validated fail-closed (unknown flags and ambiguous abbreviations are
+rejected).
 
-    [//]: # "SAFE_BIN_DENIED_FLAGS:START"
+Denied flags by safe-bin profile:
 
-    - `grep`: `--dereference-recursive`, `--directories`, `--exclude-from`, `--file`, `--recursive`, `-R`, `-d`, `-f`, `-r`
-    - `jq`: `--argfile`, `--from-file`, `--library-path`, `--rawfile`, `--slurpfile`, `-L`, `-f`
-    - `sort`: `--compress-program`, `--files0-from`, `--output`, `--random-source`, `--temporary-directory`, `-T`, `-o`
-    - `wc`: `--files0-from`
+[//]: # "SAFE_BIN_DENIED_FLAGS:START"
 
-    [//]: # "SAFE_BIN_DENIED_FLAGS:END"
+- `grep`: `--dereference-recursive`, `--directories`, `--exclude-from`, `--file`, `--recursive`, `-R`, `-d`, `-f`, `-r`
+- `jq`: `--argfile`, `--from-file`, `--library-path`, `--rawfile`, `--slurpfile`, `-L`, `-f`
+- `sort`: `--compress-program`, `--files0-from`, `--output`, `--random-source`, `--temporary-directory`, `-T`, `-o`
+- `wc`: `--files0-from`
 
-    Safe bins also force argv tokens to be treated as **literal text** at
-    execution time (no globbing and no `$VARS` expansion) for stdin-only
-    segments, so patterns like `*` or `$HOME/...` cannot be used to smuggle
-    file reads.
+[//]: # "SAFE_BIN_DENIED_FLAGS:END"
 
-  </Accordion>
+Safe bins also force argv tokens to be treated as **literal text** at execution
+time (no globbing and no `$VARS` expansion) for stdin-only segments, so patterns
+like `*` or `$HOME/...` cannot be used to smuggle file reads.
 
-  <Accordion title="Trusted binary directories">
-    Safe bins must resolve from trusted binary directories (system defaults
-    plus optional `tools.exec.safeBinTrustedDirs`). `PATH` entries are never
-    auto-trusted. Default trusted directories are intentionally minimal:
-    `/bin`, `/usr/bin`. If your safe-bin executable lives in
-    package-manager/user paths (for example `/opt/homebrew/bin`,
-    `/usr/local/bin`, `/opt/local/bin`, `/snap/bin`), add them explicitly to
-    `tools.exec.safeBinTrustedDirs`.
-  </Accordion>
+### Trusted binary directories
 
-  <Accordion title="Shell chaining, wrappers, and multiplexers">
-    Shell chaining (`&&`, `||`, `;`) is allowed when every top-level segment
-    satisfies the allowlist (including safe bins or skill auto-allow).
-    Redirections remain unsupported in allowlist mode. Command substitution
-    (`$()` / backticks) is rejected during allowlist parsing, including inside
-    double quotes; use single quotes if you need literal `$()` text.
+Safe bins must resolve from trusted binary directories (system defaults plus
+optional `tools.exec.safeBinTrustedDirs`). `PATH` entries are never auto-trusted.
+Default trusted directories are intentionally minimal: `/bin`, `/usr/bin`. If
+your safe-bin executable lives in package-manager/user paths (for example
+`/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin`, `/snap/bin`), add them
+explicitly to `tools.exec.safeBinTrustedDirs`.
 
-    On macOS companion-app approvals, raw shell text containing shell control
-    or expansion syntax (`&&`, `||`, `;`, `|`, `` ` ``, `$`, `<`, `>`, `(`,
-    `)`) is treated as an allowlist miss unless the shell binary itself is
-    allowlisted.
+### Shell chaining, wrappers, and multiplexers
 
-    For shell wrappers (`bash|sh|zsh ... -c/-lc`), request-scoped env
-    overrides are reduced to a small explicit allowlist (`TERM`, `LANG`,
-    `LC_*`, `COLORTERM`, `NO_COLOR`, `FORCE_COLOR`).
+Shell chaining (`&&`, `||`, `;`) is allowed when every top-level segment
+satisfies the allowlist (including safe bins or skill auto-allow). Redirections
+remain unsupported in allowlist mode. Command substitution (`$()` / backticks) is
+rejected during allowlist parsing, including inside double quotes; use single
+quotes if you need literal `$()` text.
 
-    For `allow-always` decisions in allowlist mode, known dispatch wrappers
-    (`env`, `nice`, `nohup`, `stdbuf`, `timeout`) persist the inner executable
-    path instead of the wrapper path. Shell multiplexers (`busybox`, `toybox`)
-    are unwrapped for shell applets (`sh`, `ash`, etc.) the same way. If a
-    wrapper or multiplexer cannot be safely unwrapped, no allowlist entry is
-    persisted automatically.
+On macOS companion-app approvals, raw shell text containing shell control or
+expansion syntax (`&&`, `||`, `;`, `|`, `` ` ``, `$`, `<`, `>`, `(`, `)`) is
+treated as an allowlist miss unless the shell binary itself is allowlisted.
 
-    If you allowlist interpreters like `python3` or `node`, prefer
-    `tools.exec.strictInlineEval=true` so inline eval still requires an
-    explicit approval. In strict mode, `allow-always` can still persist benign
-    interpreter/script invocations, but inline-eval carriers are not persisted
-    automatically.
+For shell wrappers (`bash|sh|zsh ... -c/-lc`), request-scoped env overrides are
+reduced to a small explicit allowlist (`TERM`, `LANG`, `LC_*`, `COLORTERM`,
+`NO_COLOR`, `FORCE_COLOR`).
 
-  </Accordion>
-</AccordionGroup>
+For `allow-always` decisions in allowlist mode, known dispatch wrappers (`env`,
+`nice`, `nohup`, `stdbuf`, `timeout`) persist the inner executable path instead
+of the wrapper path. Shell multiplexers (`busybox`, `toybox`) are unwrapped for
+shell applets (`sh`, `ash`, etc.) the same way. If a wrapper or multiplexer
+cannot be safely unwrapped, no allowlist entry is persisted automatically.
+
+If you allowlist interpreters like `python3` or `node`, prefer
+`tools.exec.strictInlineEval=true` so inline eval still requires an explicit
+approval. In strict mode, `allow-always` can still persist benign
+interpreter/script invocations, but inline-eval carriers are not persisted
+automatically.
 
 ### Safe bins versus allowlist
 
