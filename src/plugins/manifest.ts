@@ -194,7 +194,13 @@ export type PluginManifest = {
    * config diagnostics before runtime loads.
    */
   commandAliases?: PluginManifestCommandAlias[];
-  /** Cheap provider-auth env lookup without booting plugin runtime. */
+  /**
+   * Cheap provider-auth env lookup without booting plugin runtime.
+   *
+   * @deprecated Prefer setup.providers[].envVars for generic setup/status env
+   * metadata. This field remains supported through the provider env-var
+   * compatibility adapter during the deprecation window.
+   */
   providerAuthEnvVars?: Record<string, string[]>;
   /** Provider ids that should reuse another provider id for auth lookup. */
   providerAuthAliases?: Record<string, string>;
@@ -248,6 +254,7 @@ export type PluginManifestContracts = {
   imageGenerationProviders?: string[];
   videoGenerationProviders?: string[];
   musicGenerationProviders?: string[];
+  webContentExtractors?: string[];
   webFetchProviders?: string[];
   webSearchProviders?: string[];
   tools?: string[];
@@ -439,6 +446,7 @@ function normalizeManifestContracts(value: unknown): PluginManifestContracts | u
   const imageGenerationProviders = normalizeTrimmedStringList(value.imageGenerationProviders);
   const videoGenerationProviders = normalizeTrimmedStringList(value.videoGenerationProviders);
   const musicGenerationProviders = normalizeTrimmedStringList(value.musicGenerationProviders);
+  const webContentExtractors = normalizeTrimmedStringList(value.webContentExtractors);
   const webFetchProviders = normalizeTrimmedStringList(value.webFetchProviders);
   const webSearchProviders = normalizeTrimmedStringList(value.webSearchProviders);
   const tools = normalizeTrimmedStringList(value.tools);
@@ -454,6 +462,7 @@ function normalizeManifestContracts(value: unknown): PluginManifestContracts | u
     ...(imageGenerationProviders.length > 0 ? { imageGenerationProviders } : {}),
     ...(videoGenerationProviders.length > 0 ? { videoGenerationProviders } : {}),
     ...(musicGenerationProviders.length > 0 ? { musicGenerationProviders } : {}),
+    ...(webContentExtractors.length > 0 ? { webContentExtractors } : {}),
     ...(webFetchProviders.length > 0 ? { webFetchProviders } : {}),
     ...(webSearchProviders.length > 0 ? { webSearchProviders } : {}),
     ...(tools.length > 0 ? { tools } : {}),
