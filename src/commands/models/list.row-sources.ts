@@ -18,12 +18,42 @@ type AllModelRowSources = {
 
 export function modelRowSourcesRequireRegistry(params: {
   all?: boolean;
+  providerFilter?: string;
   useProviderCatalogFastPath: boolean;
 }): boolean {
-  return !(params.all && params.useProviderCatalogFastPath);
+  if (!params.all) {
+    return false;
+  }
+  if (params.providerFilter && params.useProviderCatalogFastPath) {
+    return false;
+  }
+  return true;
 }
 
 export async function appendAllModelRowSources(params: AllModelRowSources): Promise<void> {
+  if (params.context.filter.provider && params.useProviderCatalogFastPath) {
+    let seenKeys = new Set<string>();
+    appendConfiguredProviderRows({
+      rows: params.rows,
+      context: params.context,
+      seenKeys,
+    });
+    const catalogRows = await appendProviderCatalogRows({
+      rows: params.rows,
+      context: params.context,
+      seenKeys,
+      staticOnly: true,
+    });
+    if (catalogRows === 0) {
+      seenKeys = appendDiscoveredRows({
+        rows: params.rows,
+        models: params.modelRegistry?.getAll() ?? [],
+        context: params.context,
+      });
+    }
+    return;
+  }
+
   const seenKeys = appendDiscoveredRows({
     rows: params.rows,
     models: params.modelRegistry?.getAll() ?? [],
@@ -36,7 +66,7 @@ export async function appendAllModelRowSources(params: AllModelRowSources): Prom
     seenKeys,
   });
 
-  if (params.modelRegistry) {
+  if (params.modelRegistry && !params.context.filter.provider) {
     await appendCatalogSupplementRows({
       rows: params.rows,
       modelRegistry: params.modelRegistry,
@@ -46,13 +76,11 @@ export async function appendAllModelRowSources(params: AllModelRowSources): Prom
     return;
   }
 
-  if (params.useProviderCatalogFastPath) {
-    await appendProviderCatalogRows({
-      rows: params.rows,
-      context: params.context,
-      seenKeys,
-    });
-  }
+  await appendProviderCatalogRows({
+    rows: params.rows,
+    context: params.context,
+    seenKeys,
+  });
 }
 
 export function appendConfiguredModelRowSources(params: {
