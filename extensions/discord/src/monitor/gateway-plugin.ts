@@ -12,12 +12,15 @@ import {
 } from "openclaw/plugin-sdk/proxy-capture";
 import { danger } from "openclaw/plugin-sdk/runtime-env";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
+import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 import * as undici from "undici";
 import * as ws from "ws";
 import { validateDiscordProxyUrl } from "../proxy-fetch.js";
+import { DISCORD_GATEWAY_TRANSPORT_ACTIVITY_EVENT } from "./gateway-handle.js";
 
 const DISCORD_GATEWAY_BOT_URL = "https://discord.com/api/v10/gateway/bot";
+const DISCORD_API_HOST = "discord.com";
 const DEFAULT_DISCORD_GATEWAY_URL = "wss://gateway.discord.gg/";
 const DISCORD_GATEWAY_INFO_TIMEOUT_MS = 10_000;
 
@@ -38,6 +41,25 @@ type CarbonGatewayRegistrationState = {
   ws?: unknown;
   isConnecting?: boolean;
 };
+
+function resolveFetchInputUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (input instanceof URL) {
+    return input.toString();
+  }
+  return input.url;
+}
+
+async function materializeGuardedResponse(response: Response): Promise<Response> {
+  const body = await response.arrayBuffer();
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
 
 function assignCarbonGatewayClient(
   plugin: carbonGateway.GatewayPlugin,
@@ -346,6 +368,12 @@ function createGatewayPlugin(params: {
       // already our proxy path and behaves predictably for lifecycle cleanup.
       const WebSocketCtor = params.testing?.webSocketCtor ?? ws.default;
       const socket = new WebSocketCtor(url, params.wsAgent ? { agent: params.wsAgent } : undefined);
+      const emitTransportActivity = () => {
+        if ((this as unknown as { ws?: unknown }).ws !== socket) {
+          return;
+        }
+        this.emitter.emit(DISCORD_GATEWAY_TRANSPORT_ACTIVITY_EVENT, { at: Date.now() });
+      };
       captureWsEvent({
         url,
         direction: "local",
@@ -354,6 +382,7 @@ function createGatewayPlugin(params: {
         meta: { subsystem: "discord-gateway" },
       });
       socket.on?.("message", (data: unknown) => {
+        emitTransportActivity();
         captureWsEvent({
           url,
           direction: "inbound",
@@ -398,6 +427,38 @@ function createGatewayPlugin(params: {
   return new SafeGatewayPlugin();
 }
 
+async function fetchDiscordGatewayMetadataDirect(
+  input: string,
+  init?: DiscordGatewayFetchInit,
+  capture?: false | { flowId: string; meta: Record<string, unknown> },
+): Promise<Response> {
+  const guarded = await fetchWithSsrFGuard({
+    url: resolveFetchInputUrl(input),
+    init: init as RequestInit,
+    policy: { allowedHostnames: [DISCORD_API_HOST] },
+    capture: false,
+    auditContext: "discord.gateway.metadata",
+  });
+  let response: Response;
+  try {
+    response = await materializeGuardedResponse(guarded.response);
+  } finally {
+    await guarded.release();
+  }
+  if (capture) {
+    captureHttpExchange({
+      url: input,
+      method: (init?.method as string | undefined) ?? "GET",
+      requestHeaders: init?.headers as Headers | Record<string, string> | undefined,
+      requestBody: (init as RequestInit & { body?: BodyInit | null })?.body ?? null,
+      response,
+      flowId: capture.flowId,
+      meta: capture.meta,
+    });
+  }
+  return response;
+}
+
 export function waitForDiscordGatewayPluginRegistration(
   plugin: unknown,
 ): Promise<void> | undefined {
@@ -434,19 +495,16 @@ export function createDiscordGatewayPlugin(params: {
     return createGatewayPlugin({
       options,
       fetchImpl: async (input, init) => {
-        const response = await fetch(input, init as RequestInit);
-        if (!debugProxySettings.enabled) {
-          captureHttpExchange({
-            url: input,
-            method: (init?.method as string | undefined) ?? "GET",
-            requestHeaders: init?.headers as Headers | Record<string, string> | undefined,
-            requestBody: (init as RequestInit & { body?: BodyInit | null })?.body ?? null,
-            response,
-            flowId: randomUUID(),
-            meta: { subsystem: "discord-gateway-metadata" },
-          });
-        }
-        return response;
+        return await fetchDiscordGatewayMetadataDirect(
+          input,
+          init,
+          debugProxySettings.enabled
+            ? false
+            : {
+                flowId: randomUUID(),
+                meta: { subsystem: "discord-gateway-metadata" },
+              },
+        );
       },
       runtime: params.runtime,
       testing: params.__testing
@@ -500,7 +558,7 @@ export function createDiscordGatewayPlugin(params: {
     params.runtime.error?.(danger(`discord: invalid gateway proxy: ${String(err)}`));
     return createGatewayPlugin({
       options,
-      fetchImpl: (input, init) => fetch(input, init as RequestInit),
+      fetchImpl: (input, init) => fetchDiscordGatewayMetadataDirect(input, init, false),
       runtime: params.runtime,
       testing: params.__testing
         ? {

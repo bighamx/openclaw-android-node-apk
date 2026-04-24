@@ -1,7 +1,13 @@
 export type BrowserTransport = "cdp" | "chrome-mcp";
 
 export type BrowserTab = {
+  /** Best handle for agents to pass back as targetId: label, then tabId, then raw targetId. */
+  suggestedTargetId?: string;
   targetId: string;
+  /** Stable, human-friendly tab handle for this profile runtime (for example t1). */
+  tabId?: string;
+  /** Optional user-assigned tab label. */
+  label?: string;
   title: string;
   url: string;
   wsUrl?: string;
