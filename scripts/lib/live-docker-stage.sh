@@ -5,21 +5,7 @@ openclaw_live_stage_source_tree() {
   local stage_mode="${OPENCLAW_LIVE_DOCKER_SOURCE_STAGE_MODE:-copy}"
 
   if [ "$stage_mode" = "symlink" ]; then
-    mkdir -p "$dest_dir"
-    local entry
-    while IFS= read -r -d "" entry; do
-      entry="${entry#./}"
-      case "$entry" in
-        .git | node_modules | dist | .pnpm-store | .tmp | .tmp-precommit-venv | .worktrees | __openclaw_vitest__ | relay.sock)
-          continue
-          ;;
-        *.sock)
-          continue
-          ;;
-      esac
-      ln -s "/src/$entry" "$dest_dir/$entry"
-    done < <(cd /src && find . -mindepth 1 -maxdepth 1 -print0)
-    return 0
+    echo "OPENCLAW_LIVE_DOCKER_SOURCE_STAGE_MODE=symlink is disabled; using copy staging." >&2
   fi
 
   set +e
@@ -55,13 +41,25 @@ openclaw_live_stage_source_tree() {
 openclaw_live_link_runtime_tree() {
   local dest_dir="${1:?destination directory required}"
 
-  ln -s /app/node_modules "$dest_dir/node_modules"
+  if [ ! -e "$dest_dir/node_modules" ]; then
+    ln -s /app/node_modules "$dest_dir/node_modules"
+  fi
   ln -s /app/dist "$dest_dir/dist"
   if [ -d /app/dist-runtime/extensions ]; then
     export OPENCLAW_BUNDLED_PLUGINS_DIR=/app/dist-runtime/extensions
   elif [ -d /app/dist/extensions ]; then
     export OPENCLAW_BUNDLED_PLUGINS_DIR=/app/dist/extensions
   fi
+}
+
+openclaw_live_stage_node_modules() {
+  local dest_dir="${1:?destination directory required}"
+  local target_dir="$dest_dir/node_modules"
+
+  mkdir -p "$target_dir"
+  cp -aRs /app/node_modules/. "$target_dir"
+  rm -rf "$target_dir/.vite-temp"
+  mkdir -p "$target_dir/.vite-temp"
 }
 
 openclaw_live_stage_state_dir() {
