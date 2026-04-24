@@ -23,6 +23,7 @@ import { startNodeRealtimeAudioBridge } from "./src/realtime-node.js";
 import { startCommandRealtimeAudioBridge } from "./src/realtime.js";
 import { normalizeMeetUrl } from "./src/runtime.js";
 import type { GoogleMeetRuntime } from "./src/runtime.js";
+import { CREATE_MEET_FROM_BROWSER_SCRIPT } from "./src/transports/chrome.js";
 import { buildMeetDtmfSequence, normalizeDialInNumber } from "./src/transports/twilio.js";
 
 const voiceCallMocks = vi.hoisted(() => ({
@@ -71,6 +72,39 @@ function captureStdout() {
     output: () => output,
     restore: () => writeSpy.mockRestore(),
   };
+}
+
+async function runCreateMeetBrowserScript(params: { buttonText: string }) {
+  const location = {
+    href: "https://meet.google.com/new",
+    hostname: "meet.google.com",
+  };
+  const button = {
+    disabled: false,
+    innerText: params.buttonText,
+    textContent: params.buttonText,
+    getAttribute: (name: string) => (name === "aria-label" ? params.buttonText : null),
+    click: vi.fn(() => {
+      location.href = "https://meet.google.com/abc-defg-hij";
+    }),
+  };
+  const document = {
+    title: "Meet",
+    body: {
+      innerText: "Do you want people to hear you in the meeting?",
+      textContent: "Do you want people to hear you in the meeting?",
+    },
+    querySelectorAll: (selector: string) => (selector === "button" ? [button] : []),
+  };
+  vi.stubGlobal("document", document);
+  vi.stubGlobal("location", location);
+  const fn = (0, eval)(`(${CREATE_MEET_FROM_BROWSER_SCRIPT})`) as () => Promise<{
+    meetingUri?: string;
+    manualActionReason?: string;
+    notes?: string[];
+    retryAfterMs?: number;
+  }>;
+  return { button, result: await fn() };
 }
 
 type TestBridgeProcess = {
@@ -842,6 +876,27 @@ describe("google-meet plugin", () => {
       }),
     );
   });
+
+  it.each([
+    ["Use microphone", "Accepted Meet microphone prompt with browser automation."],
+    [
+      "Continue without microphone",
+      "Continued through Meet microphone prompt with browser automation.",
+    ],
+  ])(
+    "uses browser automation for Meet's %s choice during browser creation",
+    async (buttonText, note) => {
+      const { button, result } = await runCreateMeetBrowserScript({ buttonText });
+
+      expect(result).toMatchObject({
+        retryAfterMs: 1000,
+        notes: [note],
+      });
+      expect(button.click).toHaveBeenCalledTimes(1);
+      expect(result.meetingUri).toBeUndefined();
+      expect(result.manualActionReason).toBeUndefined();
+    },
+  );
 
   it("launches Chrome after the BlackHole check", async () => {
     const originalPlatform = process.platform;

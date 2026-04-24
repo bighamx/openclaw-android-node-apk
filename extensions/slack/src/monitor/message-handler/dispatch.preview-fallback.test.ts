@@ -28,6 +28,8 @@ class TestSlackStreamNotDeliveredError extends Error {
   }
 }
 let mockedNativeStreaming = false;
+let mockedBlockStreamingEnabled: boolean | undefined = false;
+let capturedReplyOptions: { disableBlockStreaming?: boolean } | undefined;
 let mockedDispatchSequence: Array<{
   kind: "tool" | "block" | "final";
   payload: { text: string; isError?: boolean; mediaUrl?: string; mediaUrls?: string[] };
@@ -129,7 +131,7 @@ vi.mock("openclaw/plugin-sdk/channel-reply-pipeline", () => ({
 }));
 
 vi.mock("openclaw/plugin-sdk/channel-streaming", () => ({
-  resolveChannelStreamingBlockEnabled: () => false,
+  resolveChannelStreamingBlockEnabled: () => mockedBlockStreamingEnabled,
   resolveChannelStreamingNativeTransport: () => mockedNativeStreaming,
   resolveChannelStreamingPreviewToolProgress: () => true,
 }));
@@ -266,6 +268,7 @@ vi.mock("../reply.runtime.js", () => ({
     markDispatchIdle: () => {},
   }),
   dispatchInboundMessage: async (params: {
+    replyOptions?: { disableBlockStreaming?: boolean };
     dispatcher: {
       deliver: (
         payload: { text: string; isError?: boolean; mediaUrl?: string; mediaUrls?: string[] },
@@ -273,6 +276,7 @@ vi.mock("../reply.runtime.js", () => ({
       ) => Promise<void>;
     };
   }) => {
+    capturedReplyOptions = params.replyOptions;
     for (const entry of mockedDispatchSequence) {
       await params.dispatcher.deliver(entry.payload, { kind: entry.kind });
     }
@@ -305,6 +309,8 @@ describe("dispatchPreparedSlackMessage preview fallback", () => {
     startSlackStreamMock.mockReset();
     stopSlackStreamMock.mockReset();
     mockedNativeStreaming = false;
+    mockedBlockStreamingEnabled = false;
+    capturedReplyOptions = undefined;
     mockedDispatchSequence = [{ kind: "final", payload: { text: FINAL_REPLY_TEXT } }];
 
     createSlackDraftStreamMock.mockReturnValue(createDraftStreamStub());
@@ -331,6 +337,14 @@ describe("dispatchPreparedSlackMessage preview fallback", () => {
         replies: [expect.objectContaining({ text: FINAL_REPLY_TEXT })],
       }),
     );
+  });
+
+  it("suppresses block streaming when Slack draft preview streaming is active", async () => {
+    mockedBlockStreamingEnabled = true;
+
+    await dispatchPreparedSlackMessage(createPreparedSlackMessage());
+
+    expect(capturedReplyOptions?.disableBlockStreaming).toBe(true);
   });
 
   it("keeps same-content tool and final payloads distinct after preview fallback", async () => {
@@ -409,7 +423,7 @@ describe("dispatchPreparedSlackMessage preview fallback", () => {
     expect(deliverRepliesMock).toHaveBeenCalledTimes(1);
   });
 
-  it("posts pending native stream text when finalize fails before the SDK buffer flushes", async () => {
+  it("routes pending native stream text through chunked sender when finalize fails before the SDK buffer flushes", async () => {
     mockedNativeStreaming = true;
     const session = {
       channel: "C123",
@@ -425,17 +439,18 @@ describe("dispatchPreparedSlackMessage preview fallback", () => {
 
     await dispatchPreparedSlackMessage(createPreparedSlackMessage());
 
-    expect(deliverRepliesMock).not.toHaveBeenCalled();
-    expect(postMessageMock).toHaveBeenCalledTimes(1);
-    expect(postMessageMock).toHaveBeenCalledWith({
-      channel: "C123",
-      thread_ts: THREAD_TS,
-      text: FINAL_REPLY_TEXT,
-    });
+    expect(postMessageMock).not.toHaveBeenCalled();
+    expect(deliverRepliesMock).toHaveBeenCalledTimes(1);
+    expect(deliverRepliesMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replyThreadTs: THREAD_TS,
+        replies: [expect.objectContaining({ text: FINAL_REPLY_TEXT })],
+      }),
+    );
     expect(session.stopped).toBe(true);
   });
 
-  it("posts all pending native stream text when an append flush fails", async () => {
+  it("routes all pending native stream text through chunked sender when an append flush fails", async () => {
     mockedNativeStreaming = true;
     mockedDispatchSequence = [
       { kind: "block", payload: { text: "first buffered" } },
@@ -456,13 +471,87 @@ describe("dispatchPreparedSlackMessage preview fallback", () => {
 
     await dispatchPreparedSlackMessage(createPreparedSlackMessage());
 
-    expect(deliverRepliesMock).not.toHaveBeenCalled();
-    expect(postMessageMock).toHaveBeenCalledTimes(1);
-    expect(postMessageMock).toHaveBeenCalledWith({
-      channel: "C123",
-      thread_ts: THREAD_TS,
-      text: "first buffered\nsecond flushes",
-    });
+    expect(postMessageMock).not.toHaveBeenCalled();
+    expect(deliverRepliesMock).toHaveBeenCalledTimes(1);
+    expect(deliverRepliesMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replyThreadTs: THREAD_TS,
+        replies: [expect.objectContaining({ text: "first buffered\nsecond flushes" })],
+      }),
+    );
     expect(stopSlackStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("forwards oversized pending stream text to the chunked sender intact (chunking is the sender's responsibility)", async () => {
+    mockedNativeStreaming = true;
+    // SLACK_TEXT_LIMIT mocks to 4000; use > 1 message worth of content.
+    const oversized = "x".repeat(8500);
+    const session = {
+      channel: "C123",
+      threadTs: THREAD_TS,
+      stopped: false,
+      delivered: false,
+      pendingText: oversized,
+    };
+    startSlackStreamMock.mockResolvedValueOnce(session);
+    stopSlackStreamMock.mockRejectedValueOnce(
+      new TestSlackStreamNotDeliveredError(oversized, "team_not_found"),
+    );
+
+    await dispatchPreparedSlackMessage(createPreparedSlackMessage());
+
+    expect(postMessageMock).not.toHaveBeenCalled();
+    expect(deliverRepliesMock).toHaveBeenCalledTimes(1);
+    expect(deliverRepliesMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replyThreadTs: THREAD_TS,
+        textLimit: 4000,
+        replies: [expect.objectContaining({ text: oversized })],
+      }),
+    );
+    expect(session.stopped).toBe(true);
+  });
+
+  it("routes full pendingText (earlier buffered + failing chunk) through chunked sender on non-benign append failure", async () => {
+    mockedNativeStreaming = true;
+    mockedDispatchSequence = [
+      { kind: "block", payload: { text: "first buffered" } },
+      { kind: "final", payload: { text: "second payload" } },
+    ];
+    const session = {
+      channel: "C123",
+      threadTs: THREAD_TS,
+      stopped: false,
+      delivered: false,
+      pendingText: "first buffered",
+    };
+    startSlackStreamMock.mockResolvedValueOnce(session);
+    // Non-benign error (plain Error, NOT SlackStreamNotDeliveredError).
+    // appendSlackStream mutates pendingText BEFORE throwing so the full
+    // buffer (earlier chunk + current chunk) must be preserved and routed
+    // through the chunked fallback - not dropped or partially re-sent.
+    appendSlackStreamMock.mockImplementationOnce(async () => {
+      session.pendingText += "\nsecond payload";
+      throw new Error("network socket closed");
+    });
+
+    await dispatchPreparedSlackMessage(createPreparedSlackMessage());
+
+    // Chunked fallback sent the FULL pendingText, not just the failing
+    // payload (so the earlier buffered chunk is not dropped).
+    expect(deliverRepliesMock).toHaveBeenCalledTimes(1);
+    expect(deliverRepliesMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replyThreadTs: THREAD_TS,
+        replies: [expect.objectContaining({ text: "first buffered\nsecond payload" })],
+      }),
+    );
+    // Session was marked fallback-delivered by deliverPendingStreamFallback,
+    // so finalize skips stopSlackStream.
+    expect(session.pendingText).toBe("");
+    expect(session.stopped).toBe(true);
+    expect(stopSlackStreamMock).not.toHaveBeenCalled();
+    // No raw postMessage path was invoked.
+    expect(postMessageMock).not.toHaveBeenCalled();
   });
 });
