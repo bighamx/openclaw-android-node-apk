@@ -119,6 +119,10 @@ openclaw googlemeet create --no-join
   the OpenClaw Chrome profile on the node to already be signed in to Google.
   Browser automation handles Meet's own first-run microphone prompt; that prompt
   is not treated as a Google login failure.
+  Join and create flows also try to reuse an existing Meet tab before opening a
+  new one. Matching ignores harmless URL query strings such as `authuser`, so an
+  agent retry should focus the already-open meeting instead of creating a second
+  Chrome tab.
 
 The command/tool output includes a `source` field (`api` or `browser`) so agents
 can explain which path was used. `create` joins the new meeting by default and
@@ -140,6 +144,14 @@ then share the returned `meetingUri`.
 For an observe-only/browser-control join, set `"mode": "transcribe"`. That does
 not start the duplex realtime model bridge, so it will not talk back into the
 meeting.
+
+During realtime sessions, `google_meet` status includes browser and audio bridge
+health such as `inCall`, `manualActionRequired`, `providerConnected`,
+`realtimeReady`, `audioInputActive`, `audioOutputActive`, last input/output
+timestamps, byte counters, and bridge closed state. If a safe Meet page prompt
+appears, browser automation handles it when it can. Login, host admission, and
+browser/OS permission prompts are reported as manual action with a reason and
+message for the agent to relay.
 
 Chrome joins as the signed-in Chrome profile. In Meet, pick `BlackHole 2ch` for
 the microphone/speaker path used by OpenClaw. For clean duplex audio, use
@@ -499,6 +511,30 @@ Example JSON output from the browser fallback:
   }
 }
 ```
+
+If the browser fallback hits Google login or a Meet permission blocker before it
+can create the URL, the Gateway method returns a failed response and the
+`google_meet` tool returns structured details instead of a plain string:
+
+```json
+{
+  "source": "browser",
+  "error": "google-login-required: Sign in to Google in the OpenClaw browser profile, then retry meeting creation.",
+  "manualActionRequired": true,
+  "manualActionReason": "google-login-required",
+  "manualActionMessage": "Sign in to Google in the OpenClaw browser profile, then retry meeting creation.",
+  "browser": {
+    "nodeId": "ba0f4e4bc...",
+    "targetId": "tab-1",
+    "browserUrl": "https://accounts.google.com/signin",
+    "browserTitle": "Sign in - Google Accounts"
+  }
+}
+```
+
+When an agent sees `manualActionRequired: true`, it should report the
+`manualActionMessage` plus the browser node/tab context and stop opening new
+Meet tabs until the operator completes the browser step.
 
 Example JSON output from API create:
 
@@ -876,6 +912,10 @@ to the pinned Chrome node browser. Confirm:
 - For browser fallback: retries reuse an existing `https://meet.google.com/new`
   or Google account prompt tab before opening a new tab. If an agent times out,
   retry the tool call rather than manually opening another Meet tab.
+- For browser fallback: if the tool returns `manualActionRequired: true`, use
+  the returned `browser.nodeId`, `browser.targetId`, `browserUrl`, and
+  `manualActionMessage` to guide the operator. Do not retry in a loop until that
+  action is complete.
 - For browser fallback: if Meet shows "Do you want people to hear you in the
   meeting?", leave the tab open. OpenClaw should click **Use microphone** or, for
   create-only fallback, **Continue without microphone** through browser
@@ -888,7 +928,7 @@ Check the realtime path:
 
 ```bash
 openclaw googlemeet setup
-openclaw googlemeet status
+openclaw googlemeet doctor
 ```
 
 Use `mode: "realtime"` for listen/talk-back. `mode: "transcribe"` intentionally
@@ -902,6 +942,25 @@ Also verify:
 - `rec` and `play` exist on the Chrome host.
 - Meet microphone and speaker are routed through the virtual audio path used by
   OpenClaw.
+
+`googlemeet doctor [session-id]` prints the session, node, in-call state,
+manual action reason, realtime provider connection, `realtimeReady`, audio
+input/output activity, last audio timestamps, byte counters, and browser URL.
+Use `googlemeet status [session-id]` when you need the raw JSON.
+
+If an agent timed out and you can see a Meet tab already open, inspect that tab
+without opening another one:
+
+```bash
+openclaw googlemeet recover-tab
+openclaw googlemeet recover-tab https://meet.google.com/abc-defg-hij
+```
+
+The equivalent tool action is `recover_current_tab`. It focuses and inspects an
+existing Meet tab on the configured Chrome node. It does not open a new tab or
+create a new session; it reports the current blocker, such as login, admission,
+permissions, or audio-choice state. The CLI command talks to the configured
+Gateway, so the Gateway must be running and the Chrome node must be connected.
 
 ### Twilio setup checks fail
 
@@ -922,6 +981,21 @@ Then restart or reload the Gateway and run:
 
 ```bash
 openclaw googlemeet setup
+openclaw voicecall setup
+openclaw voicecall smoke
+```
+
+`voicecall smoke` is readiness-only by default. To dry-run a specific number:
+
+```bash
+openclaw voicecall smoke --to "+15555550123"
+```
+
+Only add `--yes` when you intentionally want to place a live outbound notify
+call:
+
+```bash
+openclaw voicecall smoke --to "+15555550123" --yes
 ```
 
 ### Twilio call starts but never enters the meeting

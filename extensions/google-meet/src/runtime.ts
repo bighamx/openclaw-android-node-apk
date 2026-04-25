@@ -5,9 +5,13 @@ import type { PluginRuntime, RuntimeLogger } from "openclaw/plugin-sdk/plugin-ru
 import { normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
 import type { GoogleMeetConfig, GoogleMeetMode, GoogleMeetTransport } from "./config.js";
 import { addGoogleMeetSetupCheck, getGoogleMeetSetupStatus } from "./setup.js";
-import { resolveChromeNodeInfo } from "./transports/chrome-browser-proxy.js";
+import { isSameMeetUrlForReuse, resolveChromeNodeInfo } from "./transports/chrome-browser-proxy.js";
 import { createMeetWithBrowserProxyOnNode } from "./transports/chrome-create.js";
-import { launchChromeMeet, launchChromeMeetOnNode } from "./transports/chrome.js";
+import {
+  launchChromeMeet,
+  launchChromeMeetOnNode,
+  recoverCurrentMeetTabOnNode,
+} from "./transports/chrome.js";
 import { buildMeetDtmfSequence, normalizeDialInNumber } from "./transports/twilio.js";
 import type {
   GoogleMeetChromeHealth,
@@ -119,6 +123,14 @@ export class GoogleMeetRuntime {
     });
   }
 
+  async recoverCurrentTab(request: { url?: string } = {}) {
+    return recoverCurrentMeetTabOnNode({
+      runtime: this.params.runtime,
+      config: this.params.config,
+      url: request.url ? normalizeMeetUrl(request.url) : undefined,
+    });
+  }
+
   async join(request: GoogleMeetJoinRequest): Promise<GoogleMeetJoinResult> {
     const url = normalizeMeetUrl(request.url);
     const transport = resolveTransport(request.transport, this.params.config);
@@ -126,7 +138,7 @@ export class GoogleMeetRuntime {
     const reusable = this.list().find(
       (session) =>
         session.state === "active" &&
-        session.url === url &&
+        isSameMeetUrlForReuse(session.url, url) &&
         session.transport === transport &&
         session.mode === mode,
     );
