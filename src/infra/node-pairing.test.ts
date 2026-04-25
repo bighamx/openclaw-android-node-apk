@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { withTempDir } from "../test-helpers/temp-dir.js";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { createSuiteTempRootTracker } from "../test-helpers/temp-dir.js";
 import {
   approveNodePairing,
   getPairedNode,
@@ -30,11 +30,21 @@ async function setupPairedNode(baseDir: string): Promise<string> {
   return paired.token;
 }
 
+const tempDirs = createSuiteTempRootTracker({ prefix: "openclaw-node-pairing-" });
+
 async function withNodePairingDir<T>(run: (baseDir: string) => Promise<T>): Promise<T> {
-  return await withTempDir({ prefix: "openclaw-node-pairing-" }, run);
+  return await run(await tempDirs.make("case"));
 }
 
 describe("node pairing tokens", () => {
+  beforeAll(async () => {
+    await tempDirs.setup();
+  });
+
+  afterAll(async () => {
+    await tempDirs.cleanup();
+  });
+
   test("reuses existing pending requests for the same node", async () => {
     await withNodePairingDir(async (baseDir) => {
       const first = await requestNodePairing(
@@ -97,17 +107,12 @@ describe("node pairing tokens", () => {
     });
   });
 
-  test("generates base64url node tokens with 256-bit entropy output length", async () => {
+  test("generates base64url node tokens and rejects mismatches", async () => {
     await withNodePairingDir(async (baseDir) => {
       const token = await setupPairedNode(baseDir);
+
       expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
       expect(Buffer.from(token, "base64url")).toHaveLength(32);
-    });
-  });
-
-  test("verifies token and rejects mismatches", async () => {
-    await withNodePairingDir(async (baseDir) => {
-      const token = await setupPairedNode(baseDir);
       await expect(verifyNodeToken("node-1", token, baseDir)).resolves.toEqual({
         ok: true,
         node: expect.objectContaining({ nodeId: "node-1" }),
@@ -115,12 +120,7 @@ describe("node pairing tokens", () => {
       await expect(verifyNodeToken("node-1", "x".repeat(token.length), baseDir)).resolves.toEqual({
         ok: false,
       });
-    });
-  });
 
-  test("treats multibyte same-length token input as mismatch without throwing", async () => {
-    await withNodePairingDir(async (baseDir) => {
-      const token = await setupPairedNode(baseDir);
       const multibyteToken = "é".repeat(token.length);
       expect(Buffer.from(multibyteToken).length).not.toBe(Buffer.from(token).length);
 
