@@ -55,6 +55,9 @@ const GEN_AI_LATEST_EXPERIMENTAL_OPT_IN = "gen_ai_latest_experimental";
 const GEN_AI_TOKEN_USAGE_BUCKETS = [
   1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864,
 ];
+const GEN_AI_OPERATION_DURATION_BUCKETS = [
+  0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92,
+];
 
 type OtelContentCapturePolicy = {
   inputMessages: boolean;
@@ -174,17 +177,41 @@ function genAiOperationName(
   return "chat";
 }
 
+function positiveFiniteNumber(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function assignPositiveNumberAttr(
+  attrs: Record<string, string | number>,
+  key: string,
+  value: number | undefined,
+): void {
+  const normalized = positiveFiniteNumber(value);
+  if (normalized !== undefined) {
+    attrs[key] = normalized;
+  }
+}
+
+function assignGenAiSpanIdentityAttrs(
+  attrs: Record<string, string | number | boolean>,
+  input: { api?: string; model?: string; provider?: string },
+): void {
+  if (emitLatestGenAiSemconv()) {
+    attrs["gen_ai.provider.name"] = lowCardinalityAttr(input.provider);
+  } else {
+    attrs["gen_ai.system"] = lowCardinalityAttr(input.provider);
+  }
+  if (input.model) {
+    attrs["gen_ai.request.model"] = lowCardinalityAttr(input.model);
+  }
+  attrs["gen_ai.operation.name"] = genAiOperationName(input.api);
+}
+
 function assignGenAiModelCallAttrs(
   attrs: Record<string, string | number | boolean>,
   evt: ModelCallLifecycleDiagnosticEvent,
 ): void {
-  if (emitLatestGenAiSemconv()) {
-    attrs["gen_ai.provider.name"] = evt.provider;
-  } else {
-    attrs["gen_ai.system"] = evt.provider;
-  }
-  attrs["gen_ai.request.model"] = evt.model;
-  attrs["gen_ai.operation.name"] = genAiOperationName(evt.api);
+  assignGenAiSpanIdentityAttrs(attrs, evt);
 }
 
 function addUpstreamRequestIdSpanEvent(
@@ -585,6 +612,16 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
           explicitBucketBoundaries: GEN_AI_TOKEN_USAGE_BUCKETS,
         },
       });
+      const genAiOperationDurationHistogram = meter.createHistogram(
+        "gen_ai.client.operation.duration",
+        {
+          unit: "s",
+          description: "GenAI client operation duration",
+          advice: {
+            explicitBucketBoundaries: GEN_AI_OPERATION_DURATION_BUCKETS,
+          },
+        },
+      );
       const costCounter = meter.createCounter("openclaw.cost.usd", {
         unit: "1",
         description: "Estimated model cost (USD)",
@@ -867,7 +904,7 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
         const genAiAttrs: Record<string, string> = {
           "gen_ai.operation.name": "chat",
           "gen_ai.provider.name": lowCardinalityAttr(evt.provider),
-          ...(evt.model ? { "gen_ai.request.model": lowCardinalityAttr(evt.model) } : {}),
+          "gen_ai.request.model": lowCardinalityAttr(evt.model),
         };
 
         const usage = evt.usage;
@@ -920,6 +957,9 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
         if (!tracesEnabled) {
           return;
         }
+        const genAiInputTokens =
+          usage.promptTokens ??
+          (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
         const spanAttrs: Record<string, string | number> = {
           ...attrs,
           "openclaw.tokens.input": usage.input ?? 0,
@@ -928,6 +968,19 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
           "openclaw.tokens.cache_write": usage.cacheWrite ?? 0,
           "openclaw.tokens.total": usage.total ?? 0,
         };
+        assignGenAiSpanIdentityAttrs(spanAttrs, evt);
+        assignPositiveNumberAttr(spanAttrs, "gen_ai.usage.input_tokens", genAiInputTokens);
+        assignPositiveNumberAttr(spanAttrs, "gen_ai.usage.output_tokens", usage.output);
+        assignPositiveNumberAttr(
+          spanAttrs,
+          "gen_ai.usage.cache_read.input_tokens",
+          usage.cacheRead,
+        );
+        assignPositiveNumberAttr(
+          spanAttrs,
+          "gen_ai.usage.cache_creation.input_tokens",
+          usage.cacheWrite,
+        );
 
         const span = spanWithDuration("openclaw.model.usage", spanAttrs, evt.durationMs, {
           parentContext: contextForTrustedDiagnosticSpanParent(evt, metadata),
@@ -1307,12 +1360,25 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
         "openclaw.api": lowCardinalityAttr(evt.api),
         "openclaw.transport": lowCardinalityAttr(evt.transport),
       });
+      const genAiModelCallMetricAttrs = (
+        evt: ModelCallLifecycleDiagnosticEvent,
+        errorType?: string,
+      ) => ({
+        "gen_ai.operation.name": genAiOperationName(evt.api),
+        "gen_ai.provider.name": lowCardinalityAttr(evt.provider),
+        "gen_ai.request.model": lowCardinalityAttr(evt.model),
+        ...(errorType ? { "error.type": errorType } : {}),
+      });
 
       const recordModelCallCompleted = (
         evt: Extract<DiagnosticEventPayload, { type: "model.call.completed" }>,
         metadata: DiagnosticEventMetadata,
       ) => {
         modelCallDurationHistogram.record(evt.durationMs, modelCallMetricAttrs(evt));
+        genAiOperationDurationHistogram.record(
+          evt.durationMs / 1000,
+          genAiModelCallMetricAttrs(evt),
+        );
         if (!tracesEnabled) {
           return;
         }
@@ -1344,18 +1410,23 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
         evt: Extract<DiagnosticEventPayload, { type: "model.call.error" }>,
         metadata: DiagnosticEventMetadata,
       ) => {
+        const errorType = lowCardinalityAttr(evt.errorCategory, "other");
         modelCallDurationHistogram.record(evt.durationMs, {
           ...modelCallMetricAttrs(evt),
-          "openclaw.errorCategory": lowCardinalityAttr(evt.errorCategory, "other"),
+          "openclaw.errorCategory": errorType,
         });
+        genAiOperationDurationHistogram.record(
+          evt.durationMs / 1000,
+          genAiModelCallMetricAttrs(evt, errorType),
+        );
         if (!tracesEnabled) {
           return;
         }
         const spanAttrs: Record<string, string | number | boolean> = {
           "openclaw.provider": evt.provider,
           "openclaw.model": evt.model,
-          "openclaw.errorCategory": lowCardinalityAttr(evt.errorCategory, "other"),
-          "error.type": lowCardinalityAttr(evt.errorCategory, "other"),
+          "openclaw.errorCategory": errorType,
+          "error.type": errorType,
         };
         assignGenAiModelCallAttrs(spanAttrs, evt);
         if (evt.api) {

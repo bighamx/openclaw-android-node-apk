@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { PluginInstallRecord } from "../config/types.plugins.js";
 import {
   loadPluginInstallRecords,
   loadPluginInstallRecordsSync,
@@ -122,12 +123,12 @@ describe("plugin install ledger store", () => {
   });
 
   it("updates and removes records without mutating caller state", async () => {
-    const records = {
+    const records: Record<string, PluginInstallRecord> = {
       keep: {
         source: "npm",
         spec: "keep@1.0.0",
       },
-    };
+    } satisfies Record<string, PluginInstallRecord>;
     const withInstall = recordPluginInstallInRecords(records, {
       pluginId: "demo",
       source: "npm",
