@@ -60,6 +60,7 @@ describe("browser config", () => {
     expect(resolveProfile(resolved, "chrome-relay")).toBe(null);
     expect(resolved.remoteCdpTimeoutMs).toBe(1500);
     expect(resolved.remoteCdpHandshakeTimeoutMs).toBe(3000);
+    expect(resolved.actionTimeoutMs).toBe(60_000);
     expect(resolved.tabCleanup).toEqual({
       enabled: true,
       idleMinutes: 120,
@@ -119,9 +120,11 @@ describe("browser config", () => {
     const resolved = resolveBrowserConfig({
       remoteCdpTimeoutMs: 2200,
       remoteCdpHandshakeTimeoutMs: 5000,
+      actionTimeoutMs: 45_000,
     });
     expect(resolved.remoteCdpTimeoutMs).toBe(2200);
     expect(resolved.remoteCdpHandshakeTimeoutMs).toBe(5000);
+    expect(resolved.actionTimeoutMs).toBe(45_000);
   });
 
   it("supports custom browser tab cleanup policy", () => {
@@ -163,6 +166,39 @@ describe("browser config", () => {
     });
 
     expect(resolved.executablePath).toBeUndefined();
+  });
+
+  it("expands a bare ~ executablePath to the OS home directory", () => {
+    const resolved = resolveBrowserConfig({
+      executablePath: "~",
+    });
+
+    expect(resolved.executablePath).toBe(path.resolve(os.homedir()));
+  });
+
+  // Windows-only: on POSIX path.resolve treats `\` as a literal character,
+  // so "~\foo" cannot resolve to "$HOME/foo". The helper's regex still matches
+  // a leading `~\` on every platform; we only assert the resolved form where
+  // the OS path module agrees.
+  (process.platform === "win32" ? it : it.skip)(
+    "expands a Windows-style ~\\ executablePath to the OS home directory",
+    () => {
+      const resolved = resolveBrowserConfig({
+        executablePath: "~\\AppData\\Local\\Chromium\\chrome.exe",
+      });
+
+      expect(resolved.executablePath).toBe(
+        path.resolve(os.homedir(), "AppData/Local/Chromium/chrome.exe"),
+      );
+    },
+  );
+
+  it("does not expand executablePath values where ~ is not the home prefix", () => {
+    const resolved = resolveBrowserConfig({
+      executablePath: "/opt/~chromium/chrome",
+    });
+
+    expect(resolved.executablePath).toBe("/opt/~chromium/chrome");
   });
 
   it("normalizes invalid browser tab cleanup numbers to defaults", () => {
