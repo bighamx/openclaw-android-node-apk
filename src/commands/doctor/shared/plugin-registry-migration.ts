@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import {
+  loadPluginInstallRecords,
+  writePersistedPluginInstallLedger,
+} from "../../../plugins/install-ledger-store.js";
+import {
   inspectPersistedInstalledPluginIndex,
+  readPersistedInstalledPluginIndexSync,
   resolveInstalledPluginIndexStorePath,
   writePersistedInstalledPluginIndex,
   type InstalledPluginIndexStoreInspection,
@@ -75,12 +80,15 @@ export function preflightPluginRegistryInstallMigration(
   }
   const pathExists = params.existsSync ?? fs.existsSync;
   if (!force && pathExists(filePath)) {
-    return {
-      action: "skip-existing",
-      filePath,
-      force,
-      deprecationWarnings,
-    };
+    const currentRegistry = readPersistedInstalledPluginIndexSync(params);
+    if (currentRegistry) {
+      return {
+        action: "skip-existing",
+        filePath,
+        force,
+        deprecationWarnings,
+      };
+    }
   }
   return {
     action: "migrate",
@@ -118,6 +126,7 @@ export async function migratePluginRegistryForInstall(
   }
 
   const config = await readMigrationConfig(params);
+  const installRecords = await loadPluginInstallRecords({ ...params, config });
   const migrationParams = {
     ...params,
     config,
@@ -132,6 +141,9 @@ export async function migratePluginRegistryForInstall(
     refreshReason: "migration",
     plugins: listEnabledInstalledPluginRecords(candidateIndex, config),
   };
+  if (Object.keys(installRecords).length > 0) {
+    await writePersistedPluginInstallLedger(installRecords, params);
+  }
   await writePersistedInstalledPluginIndex(current, params);
   return {
     status: "migrated",
