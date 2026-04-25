@@ -33,6 +33,8 @@ openclaw browser --browser-profile openclaw open https://example.com
 openclaw browser --browser-profile openclaw snapshot
 ```
 
+Agents can run the same readiness check with `browser({ action: "doctor" })`.
+
 ## Quick troubleshooting
 
 If `start` fails with `not reachable after start`, troubleshoot CDP readiness first. If `start` and `tabs` succeed but `open` or `navigate` fails, the browser control plane is healthy and the failure is usually navigation SSRF policy.
@@ -40,6 +42,7 @@ If `start` fails with `not reachable after start`, troubleshoot CDP readiness fi
 Minimal sequence:
 
 ```bash
+openclaw browser --browser-profile openclaw doctor
 openclaw browser --browser-profile openclaw start
 openclaw browser --browser-profile openclaw tabs
 openclaw browser --browser-profile openclaw open https://example.com
@@ -51,6 +54,7 @@ Detailed guidance: [Browser troubleshooting](/tools/browser#cdp-startup-failure-
 
 ```bash
 openclaw browser status
+openclaw browser doctor
 openclaw browser start
 openclaw browser stop
 openclaw browser --browser-profile openclaw reset-profile
@@ -132,6 +136,7 @@ Snapshot:
 
 ```bash
 openclaw browser snapshot
+openclaw browser snapshot --urls
 ```
 
 Screenshot:
@@ -140,6 +145,7 @@ Screenshot:
 openclaw browser screenshot
 openclaw browser screenshot --full-page
 openclaw browser screenshot --ref e12
+openclaw browser screenshot --labels
 ```
 
 Notes:
@@ -148,6 +154,10 @@ Notes:
   or `--element`.
 - `existing-session` / `user` profiles support page screenshots and `--ref`
   screenshots from snapshot output, but not CSS `--element` screenshots.
+- `--labels` overlays current snapshot refs on the screenshot.
+- `snapshot --urls` appends discovered link destinations to AI snapshots so
+  agents can choose direct navigation targets instead of guessing from link
+  text alone.
 
 Navigate/click/type (ref-based UI automation):
 

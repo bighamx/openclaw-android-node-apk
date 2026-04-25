@@ -209,19 +209,21 @@ function withRoleRefsFallback<T extends { refs?: "aria" | "role" }>(
 export async function executeTabsAction(params: {
   baseUrl?: string;
   profile?: string;
+  timeoutMs?: number;
   proxyRequest: BrowserProxyRequest | null;
 }): Promise<AgentToolResult<unknown>> {
-  const { baseUrl, profile, proxyRequest } = params;
+  const { baseUrl, profile, timeoutMs, proxyRequest } = params;
   if (proxyRequest) {
     const result = await proxyRequest({
       method: "GET",
       path: "/tabs",
       profile,
+      timeoutMs,
     });
     const tabs = (result as { tabs?: unknown[] }).tabs ?? [];
     return formatTabsToolResult(tabs);
   }
-  const tabs = await browserToolActionDeps.browserTabs(baseUrl, { profile });
+  const tabs = await browserToolActionDeps.browserTabs(baseUrl, { profile, timeoutMs });
   return formatTabsToolResult(tabs);
 }
 
@@ -234,16 +236,16 @@ export async function executeSnapshotAction(params: {
   const { input, baseUrl, profile, proxyRequest } = params;
   const snapshotDefaults = browserToolActionDeps.loadConfig().browser?.snapshotDefaults;
   const format: "ai" | "aria" | undefined =
-    input.snapshotFormat === "ai" || input.snapshotFormat === "aria"
-      ? input.snapshotFormat
-      : undefined;
+    input.snapshotFormat === "ai" ? "ai" : input.snapshotFormat === "aria" ? "aria" : undefined;
+  const formatExplicit = format !== undefined;
   const mode: "efficient" | undefined =
     input.mode === "efficient"
       ? "efficient"
-      : format !== "aria" && snapshotDefaults?.mode === "efficient"
+      : !formatExplicit && format !== "aria" && snapshotDefaults?.mode === "efficient"
         ? "efficient"
         : undefined;
   const labels = typeof input.labels === "boolean" ? input.labels : undefined;
+  const urls = typeof input.urls === "boolean" ? input.urls : undefined;
   const refs: "aria" | "role" | undefined =
     input.refs === "aria" || input.refs === "role" ? input.refs : undefined;
   const hasMaxChars = Object.hasOwn(input, "maxChars");
@@ -282,6 +284,7 @@ export async function executeSnapshotAction(params: {
     selector,
     frame,
     labels,
+    urls,
     mode,
   };
   let refsFallback: "role" | undefined;

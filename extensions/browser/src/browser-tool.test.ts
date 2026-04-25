@@ -2,6 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const browserClientMocks = vi.hoisted(() => ({
   browserCloseTab: vi.fn(async (..._args: unknown[]) => ({})),
+  browserDoctor: vi.fn(async (..._args: unknown[]) => ({
+    ok: true,
+    profile: "openclaw",
+    transport: "cdp",
+    checks: [],
+    status: {
+      enabled: true,
+      running: true,
+      pid: 1,
+      cdpPort: 18792,
+      cdpUrl: "http://127.0.0.1:18792",
+    },
+  })),
   browserFocusTab: vi.fn(async (..._args: unknown[]) => ({})),
   browserOpenTab: vi.fn(async (..._args: unknown[]) => ({})),
   browserProfiles: vi.fn(
@@ -242,6 +255,7 @@ function resetBrowserToolMocks() {
     browserArmDialog: browserActionsMocks.browserArmDialog as never,
     browserArmFileChooser: browserActionsMocks.browserArmFileChooser as never,
     browserCloseTab: browserClientMocks.browserCloseTab as never,
+    browserDoctor: browserClientMocks.browserDoctor as never,
     browserFocusTab: browserClientMocks.browserFocusTab as never,
     browserNavigate: browserActionsMocks.browserNavigate as never,
     browserOpenTab: browserClientMocks.browserOpenTab as never,
@@ -365,7 +379,69 @@ describe("browser tool snapshot maxChars", () => {
     const tool = createBrowserTool();
     await tool.execute?.("call-1", { action: "profiles" });
 
-    expect(browserClientMocks.browserProfiles).toHaveBeenCalledWith(undefined);
+    expect(browserClientMocks.browserProfiles).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ timeoutMs: undefined }),
+    );
+  });
+
+  it("uses a longer default timeout for existing-session profile status through node proxy", async () => {
+    mockSingleBrowserProxyNode();
+    setResolvedBrowserProfiles({
+      user: { driver: "existing-session", attachOnly: true, color: "#00AA00" },
+    });
+    const tool = createBrowserTool();
+    await tool.execute?.("call-1", { action: "status", profile: "user", target: "node" });
+
+    expect(gatewayMocks.callGatewayTool).toHaveBeenCalledWith(
+      "node.invoke",
+      { timeoutMs: 50_000 },
+      expect.objectContaining({
+        params: expect.objectContaining({
+          method: "GET",
+          path: "/",
+          profile: "user",
+          timeoutMs: 45_000,
+        }),
+      }),
+    );
+  });
+
+  it("passes top-level timeoutMs through to existing-session open", async () => {
+    setResolvedBrowserProfiles({
+      user: { driver: "existing-session", attachOnly: true, color: "#00AA00" },
+    });
+    const tool = createBrowserTool();
+    await tool.execute?.("call-1", {
+      action: "open",
+      profile: "user",
+      url: "https://example.com",
+      timeoutMs: 60_000,
+    });
+
+    expect(browserClientMocks.browserOpenTab).toHaveBeenCalledWith(
+      undefined,
+      "https://example.com",
+      expect.objectContaining({ profile: "user", timeoutMs: 60_000 }),
+    );
+  });
+
+  it("passes top-level timeoutMs through to close without targetId", async () => {
+    setResolvedBrowserProfiles({
+      user: { driver: "existing-session", attachOnly: true, color: "#00AA00" },
+    });
+    const tool = createBrowserTool();
+    await tool.execute?.("call-1", {
+      action: "close",
+      profile: "user",
+      timeoutMs: 60_000,
+    });
+
+    expect(browserActionsMocks.browserAct).toHaveBeenCalledWith(
+      undefined,
+      { kind: "close" },
+      expect.objectContaining({ profile: "user", timeoutMs: 60_000 }),
+    );
   });
 
   it("passes refs mode through to browser snapshot", async () => {
@@ -390,7 +466,8 @@ describe("browser tool snapshot maxChars", () => {
     configMocks.loadConfig.mockReturnValue({
       browser: { snapshotDefaults: { mode: "efficient" } },
     });
-    await runSnapshotToolCall({ snapshotFormat: "ai" });
+    const tool = createBrowserTool();
+    await tool.execute?.("call-1", { action: "snapshot", target: "host" });
 
     expect(browserClientMocks.browserSnapshot).toHaveBeenCalledWith(
       undefined,
@@ -398,6 +475,19 @@ describe("browser tool snapshot maxChars", () => {
         mode: "efficient",
       }),
     );
+  });
+
+  it("does not apply config snapshot defaults to explicit ai snapshots", async () => {
+    configMocks.loadConfig.mockReturnValue({
+      browser: { snapshotDefaults: { mode: "efficient" } },
+    });
+    await runSnapshotToolCall({ snapshotFormat: "ai" });
+
+    expect(browserClientMocks.browserSnapshot).toHaveBeenCalled();
+    const opts = browserClientMocks.browserSnapshot.mock.calls.at(-1)?.[1] as
+      | { mode?: string }
+      | undefined;
+    expect(opts?.mode).toBeUndefined();
   });
 
   it("does not apply config snapshot defaults to aria snapshots", async () => {
@@ -510,6 +600,116 @@ describe("browser tool snapshot maxChars", () => {
     expect(browserClientMocks.browserStatus).not.toHaveBeenCalled();
   });
 
+  it("returns a browser doctor report on host", async () => {
+    const tool = createBrowserTool();
+    await tool.execute?.("call-1", { action: "doctor" });
+
+    expect(browserClientMocks.browserDoctor).toHaveBeenCalledWith(undefined, {
+      profile: undefined,
+    });
+  });
+
+  it("routes browser doctor through the node proxy", async () => {
+    mockSingleBrowserProxyNode();
+    const tool = createBrowserTool();
+    await tool.execute?.("call-1", { action: "doctor", target: "node" });
+
+    expect(gatewayMocks.callGatewayTool).toHaveBeenCalledWith(
+      "node.invoke",
+      { timeoutMs: 25000 },
+      expect.objectContaining({
+        nodeId: "node-1",
+        command: "browser.proxy",
+        params: expect.objectContaining({
+          method: "GET",
+          path: "/doctor",
+          timeoutMs: 20000,
+        }),
+      }),
+    );
+    expect(browserClientMocks.browserDoctor).not.toHaveBeenCalled();
+  });
+
+  it("passes screenshot timeoutMs to the host browser client", async () => {
+    const tool = createBrowserTool();
+    await tool.execute?.("call-1", {
+      action: "screenshot",
+      target: "host",
+      targetId: "tab-1",
+      timeoutMs: 12_345,
+    });
+
+    expect(browserActionsMocks.browserScreenshotAction).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({
+        targetId: "tab-1",
+        timeoutMs: 12_345,
+      }),
+    );
+  });
+
+  it("passes screenshot timeoutMs through the node browser proxy", async () => {
+    mockSingleBrowserProxyNode();
+    gatewayMocks.callGatewayTool.mockResolvedValueOnce({
+      ok: true,
+      payload: {
+        result: { ok: true, path: "/tmp/test.png" },
+      },
+    });
+    const tool = createBrowserTool();
+    await tool.execute?.("call-1", {
+      action: "screenshot",
+      target: "node",
+      targetId: "tab-1",
+      timeoutMs: 12_345,
+    });
+
+    expect(gatewayMocks.callGatewayTool).toHaveBeenCalledWith(
+      "node.invoke",
+      { timeoutMs: 17_345 },
+      expect.objectContaining({
+        params: expect.objectContaining({
+          method: "POST",
+          path: "/screenshot",
+          timeoutMs: 12_345,
+          body: expect.objectContaining({
+            targetId: "tab-1",
+            timeoutMs: 12_345,
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("uses the screenshot default timeout for node browser proxy requests", async () => {
+    mockSingleBrowserProxyNode();
+    gatewayMocks.callGatewayTool.mockResolvedValueOnce({
+      ok: true,
+      payload: {
+        result: { ok: true, path: "/tmp/test.png" },
+      },
+    });
+    const tool = createBrowserTool();
+    await tool.execute?.("call-1", {
+      action: "screenshot",
+      target: "node",
+      targetId: "tab-1",
+    });
+
+    expect(gatewayMocks.callGatewayTool).toHaveBeenCalledWith(
+      "node.invoke",
+      { timeoutMs: 25_000 },
+      expect.objectContaining({
+        params: expect.objectContaining({
+          timeoutMs: 20_000,
+          body: expect.objectContaining({
+            timeoutMs: 20_000,
+          }),
+        }),
+      }),
+    );
+  });
+
   it("falls back to role refs when a node snapshot cannot provide aria refs", async () => {
     mockSingleBrowserProxyNode();
     gatewayMocks.callGatewayTool
@@ -612,7 +812,7 @@ describe("browser tool snapshot maxChars", () => {
 
     expect(gatewayMocks.callGatewayTool).toHaveBeenCalledWith(
       "node.invoke",
-      { timeoutMs: 25000 },
+      { timeoutMs: 50_000 },
       expect.objectContaining({
         nodeId: "node-1",
         command: "browser.proxy",
@@ -620,7 +820,7 @@ describe("browser tool snapshot maxChars", () => {
           profile: "user",
           path: "/",
           method: "GET",
-          timeoutMs: 20000,
+          timeoutMs: 45_000,
         }),
       }),
     );
@@ -671,7 +871,7 @@ describe("browser tool snapshot maxChars", () => {
 
     expect(gatewayMocks.callGatewayTool).toHaveBeenCalledWith(
       "node.invoke",
-      { timeoutMs: 25000 },
+      { timeoutMs: 50_000 },
       expect.objectContaining({
         nodeId: "node-1",
         command: "browser.proxy",
@@ -679,6 +879,7 @@ describe("browser tool snapshot maxChars", () => {
           profile: "user",
           path: "/",
           method: "GET",
+          timeoutMs: 45_000,
         }),
       }),
     );
@@ -695,7 +896,7 @@ describe("browser tool snapshot maxChars", () => {
 
     expect(gatewayMocks.callGatewayTool).toHaveBeenCalledWith(
       "node.invoke",
-      { timeoutMs: 25000 },
+      { timeoutMs: 50_000 },
       expect.objectContaining({
         nodeId: "node-1",
         command: "browser.proxy",
@@ -703,6 +904,7 @@ describe("browser tool snapshot maxChars", () => {
           profile: "user",
           path: "/",
           method: "GET",
+          timeoutMs: 45_000,
         }),
       }),
     );

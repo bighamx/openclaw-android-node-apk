@@ -316,7 +316,7 @@ Time format in system prompt. Default: `auto` (OS preference).
       },
       params: { cacheRetention: "long" }, // global default provider params
       embeddedHarness: {
-        runtime: "auto", // auto | pi | registered harness id, e.g. codex
+        runtime: "pi", // pi | auto | registered harness id, e.g. codex
         fallback: "pi", // pi | none
       },
       pdfMaxBytesMb: 10,
@@ -369,16 +369,17 @@ Time format in system prompt. Default: `auto` (OS preference).
   - For direct OpenAI Responses models, server-side compaction is enabled automatically. Use `params.responsesServerCompaction: false` to stop injecting `context_management`, or `params.responsesCompactThreshold` to override the threshold. See [OpenAI server-side compaction](/providers/openai#server-side-compaction-responses-api).
 - `params`: global default provider parameters applied to all models. Set at `agents.defaults.params` (e.g. `{ cacheRetention: "long" }`).
 - `params` merge precedence (config): `agents.defaults.params` (global base) is overridden by `agents.defaults.models["provider/model"].params` (per-model), then `agents.list[].params` (matching agent id) overrides by key. See [Prompt Caching](/reference/prompt-caching) for details.
-- `embeddedHarness`: default low-level embedded agent runtime policy. Use `runtime: "auto"` to let registered plugin harnesses claim supported models, `runtime: "pi"` to force the built-in PI harness, or a registered harness id such as `runtime: "codex"`. Automatic PI fallback defaults to `"pi"` only in `auto` mode. Explicit plugin runtimes such as `codex` default to `"none"` unless you set `fallback: "pi"`. New Codex harness configs should keep model refs canonical as `openai/*` and select the harness here rather than using legacy `codex/*` model refs.
+- `embeddedHarness`: default low-level embedded agent runtime policy. Omitted runtime defaults to OpenClaw Pi. Use `runtime: "pi"` to force the built-in PI harness, `runtime: "auto"` to let registered plugin harnesses claim supported models, or a registered harness id such as `runtime: "codex"`. Set `fallback: "none"` to disable automatic PI fallback. Explicit plugin runtimes such as `codex` fail closed by default unless you set `fallback: "pi"` in the same override scope. Keep model refs canonical as `provider/model`; select Codex, Claude CLI, Gemini CLI, and other execution backends through runtime config instead of legacy runtime provider prefixes. See [Agent runtimes](/concepts/agent-runtimes) for how this differs from provider/model selection.
 - Config writers that mutate these fields (for example `/models set`, `/models set-image`, and fallback add/remove commands) save canonical object form and preserve existing fallback lists when possible.
 - `maxConcurrent`: max parallel agent runs across sessions (each session still serialized). Default: 4.
 
 ### `agents.defaults.embeddedHarness`
 
 `embeddedHarness` controls which low-level executor runs embedded agent turns.
-Most deployments should keep the default `{ runtime: "auto", fallback: "pi" }`.
+Most deployments should keep the default OpenClaw Pi runtime.
 Use it when a trusted plugin provides a native harness, such as the bundled
-Codex app-server harness.
+Codex app-server harness. For the mental model, see
+[Agent runtimes](/concepts/agent-runtimes).
 
 ```json5
 {
@@ -943,7 +944,7 @@ scripts/sandbox-browser-setup.sh   # optional browser image
 - `model`: string form overrides `primary` only; object form `{ primary, fallbacks }` overrides both (`[]` disables global fallbacks). Cron jobs that only override `primary` still inherit default fallbacks unless you set `fallbacks: []`.
 - `params`: per-agent stream params merged over the selected model entry in `agents.defaults.models`. Use this for agent-specific overrides like `cacheRetention`, `temperature`, or `maxTokens` without duplicating the whole model catalog.
 - `skills`: optional per-agent skill allowlist. If omitted, the agent inherits `agents.defaults.skills` when set; an explicit list replaces defaults instead of merging, and `[]` means no skills.
-- `thinkingDefault`: optional per-agent default thinking level (`off | minimal | low | medium | high | xhigh | adaptive | max`). Overrides `agents.defaults.thinkingDefault` for this agent when no per-message or session override is set.
+- `thinkingDefault`: optional per-agent default thinking level (`off | minimal | low | medium | high | xhigh | adaptive | max`). Overrides `agents.defaults.thinkingDefault` for this agent when no per-message or session override is set. The selected provider/model profile controls which values are valid; for Google Gemini, `adaptive` keeps provider-owned dynamic thinking (`thinkingLevel` omitted on Gemini 3/3.1, `thinkingBudget: -1` on Gemini 2.5).
 - `reasoningDefault`: optional per-agent default reasoning visibility (`on | off | stream`). Applies when no per-message or session reasoning override is set.
 - `fastModeDefault`: optional per-agent default for fast mode (`true | false`). Applies when no per-message or session fast-mode override is set.
 - `embeddedHarness`: optional per-agent low-level harness policy override. Use `{ runtime: "codex" }` to make one agent Codex-only while other agents keep the default PI fallback in `auto` mode.

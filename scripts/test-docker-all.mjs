@@ -21,9 +21,9 @@ const OPENWEBUI_TIMEOUT_MS = 20 * 60 * 1000;
 const BUNDLED_UPDATE_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_RESOURCE_LIMITS = {
   docker: DEFAULT_PARALLELISM,
-  live: 4,
-  npm: 4,
-  service: 5,
+  live: 6,
+  npm: 8,
+  service: 7,
 };
 
 const bundledChannelLaneCommand =
@@ -162,6 +162,10 @@ const lanes = [
     { resources: ["service"], weight: 3 },
   ),
   serviceLane("gateway-network", "OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:gateway-network"),
+  serviceLane(
+    "agents-delete-shared-workspace",
+    "OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:agents-delete-shared-workspace",
+  ),
   serviceLane("mcp-channels", "OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:mcp-channels", {
     resources: ["npm"],
     weight: 3,
