@@ -169,8 +169,8 @@ or npm install metadata. Those belong in your plugin code and `package.json`.
 
 Each `providerAuthChoices` entry describes one onboarding or auth choice.
 OpenClaw reads this before provider runtime loads.
-Provider setup flow prefers these manifest choices, then falls back to runtime
-wizard metadata and install-catalog choices for compatibility.
+Provider setup lists use these manifest choices, descriptor-derived setup
+choices, and install-catalog metadata without loading provider runtime.
 
 | Field                 | Required | Type                                            | What it means                                                                                            |
 | --------------------- | -------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -524,6 +524,12 @@ Non-bundled plugins that declare `channels[]` should also declare matching
 cold-path config schema, setup, and Control UI surfaces cannot know the
 channel-owned option shape until plugin runtime executes.
 
+`channelConfigs.<channel-id>.commands.nativeCommandsAutoEnabled` and
+`nativeSkillsAutoEnabled` can declare static `auto` defaults for command config
+checks that run before channel runtime loads. Bundled channels can also publish
+the same defaults through `package.json#openclaw.channel.commands` alongside
+their other package-owned channel catalog metadata.
+
 ```json
 {
   "channelConfigs": {
@@ -543,6 +549,10 @@ channel-owned option shape until plugin runtime executes.
       },
       "label": "Matrix",
       "description": "Matrix homeserver connection",
+      "commands": {
+        "nativeCommandsAutoEnabled": true,
+        "nativeSkillsAutoEnabled": true
+      },
       "preferOver": ["matrix-legacy"]
     }
   }
@@ -557,6 +567,7 @@ Each channel entry can include:
 | `uiHints`     | `Record<string, object>` | Optional UI labels/placeholders/sensitive hints for that channel config section.          |
 | `label`       | `string`                 | Channel label merged into picker and inspect surfaces when runtime metadata is not ready. |
 | `description` | `string`                 | Short channel description for inspect and catalog surfaces.                               |
+| `commands`    | `object`                 | Static native command and native skill auto-defaults for pre-runtime config checks.       |
 | `preferOver`  | `string[]`               | Legacy or lower-priority plugin ids this channel should outrank in selection surfaces.    |
 
 ### Replacing another channel plugin
@@ -749,6 +760,13 @@ the installed plugin manifest. Providers with live `/models` discovery should
 write refreshed rows through the explicit model catalog cache path instead of
 making normal listing or onboarding call provider APIs.
 
+Provider Index entries may also carry installable-plugin metadata for providers
+whose plugin has moved out of core or is otherwise not installed yet. This
+metadata mirrors the channel catalog pattern: package name, npm install spec,
+expected integrity, and cheap auth-choice labels are enough to show an
+installable setup option. Once the plugin is installed, its manifest wins and
+the Provider Index entry is ignored for that provider.
+
 Legacy top-level capability keys are deprecated. Use `openclaw doctor --fix` to
 move `speechProviders`, `realtimeTranscriptionProviders`,
 `realtimeVoiceProviders`, `mediaUnderstandingProviders`,
@@ -785,6 +803,7 @@ Important examples:
 | `openclaw.setupEntry`                                             | Lightweight setup-only entrypoint used during onboarding, deferred channel startup, and read-only channel status/SecretRef discovery. Must stay inside the plugin package directory. |
 | `openclaw.runtimeSetupEntry`                                      | Declares the built JavaScript setup entrypoint for installed packages. Must stay inside the plugin package directory.                                                                |
 | `openclaw.channel`                                                | Cheap channel catalog metadata like labels, docs paths, aliases, and selection copy.                                                                                                 |
+| `openclaw.channel.commands`                                       | Static native command and native skill auto-default metadata used by config, audit, and command-list surfaces before channel runtime loads.                                          |
 | `openclaw.channel.configuredState`                                | Lightweight configured-state checker metadata that can answer "does env-only setup already exist?" without loading the full channel runtime.                                         |
 | `openclaw.channel.persistedAuthState`                             | Lightweight persisted-auth checker metadata that can answer "is anything already signed in?" without loading the full channel runtime.                                               |
 | `openclaw.install.npmSpec` / `openclaw.install.localPath`         | Install/update hints for bundled and externally published plugins.                                                                                                                   |
