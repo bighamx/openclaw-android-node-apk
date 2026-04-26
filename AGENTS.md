@@ -29,6 +29,7 @@ Telegraph style. Root rules only. Read scoped `AGENTS.md` before subtree work.
 - Extension prod code: no core `src/**`, `src/plugin-sdk-internal/**`, other extension `src/**`, or relative outside package.
 - Core/tests: no deep plugin internals (`extensions/*/src/**`, `onboard.js`). Use `api.ts`, SDK facade, generic contracts.
 - Extension-owned behavior stays extension-owned: repair, detection, onboarding, auth/provider defaults, provider tools/settings.
+- Owner boundary: fix owner-specific behavior in the owner module. Shared/core gets generic seams only; no owner ids, dependency strings, defaults, migrations, or recovery policy. If a bug names an extension or its dependency, start in that extension and add a generic core seam only when multiple owners need it.
 - Legacy config repair: doctor/fix paths, not startup/load-time core migrations.
 - Core test asserting extension-specific behavior: move to owner extension or generic contract test.
 - New seams: backwards-compatible, documented, versioned. Third-party plugins exist.
@@ -119,6 +120,7 @@ Telegraph style. Root rules only. Read scoped `AGENTS.md` before subtree work.
 ## Tests
 
 - Vitest. Colocated `*.test.ts`; e2e `*.e2e.test.ts`; example models `sonnet-4.6`, `gpt-5.4`.
+- Avoid brittle tests that grep workflow/docs strings for operator policy. Prefer executable behavior, parsed config/schema checks, or live run proof; put release/CI policy reminders in AGENTS/docs instead.
 - Clean timers/env/globals/mocks/sockets/temp dirs/module state; `--isolate=false` safe.
 - Hot tests: avoid per-test `vi.resetModules()` + heavy imports. Measure with `pnpm test:perf:imports <file>` / `pnpm test:perf:hotspots --limit N`.
 - Seam depth: pure helper/contract unit tests; one integration smoke per boundary.
@@ -134,7 +136,7 @@ Telegraph style. Root rules only. Read scoped `AGENTS.md` before subtree work.
 
 - Docs change with behavior/API. Use docs list/read_when hints; docs links per `docs/AGENTS.md`.
 - Changelog user-facing only; pure test/internal usually no entry.
-- Changelog placement: active version `### Changes`/`### Fixes`; every added entry must include at least one `Thanks @author` attribution, using credited GitHub username(s). Never add `Thanks @steipete`.
+- Changelog placement: active version `### Changes`/`### Fixes`; every added entry must include at least one `Thanks @author` attribution, using credited GitHub username(s). Never add `Thanks @steipete` or `Thanks @codex`.
 - Changelog bullets are always single-line. No wrapping/continuation across multiple lines. Long entries stay on one long line so dedupe, PR-ref, and credit-audit tooling work and so the visual style stays uniform.
 
 ## Git

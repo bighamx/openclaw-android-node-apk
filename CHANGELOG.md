@@ -6,6 +6,8 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Codex harness: normalize cached input tokens before session/context accounting so prompt cache reads are not double-counted in `/status`, `session_status`, or persisted `sessionEntry.totalTokens`. Fixes #69298. Thanks @richardmqq.
+- Hooks/session-memory: use the host local timezone for memory filenames, fallback timestamp slugs, and markdown headers instead of UTC dates. Fixes #46703. (#46721) Thanks @Astro-Han.
 - Feishu: extract quoted/replied interactive-card text across schema 1.0, schema 2.0, i18n, template-variable, and post-format fallback shapes without carrying broad generated/config churn from related parser experiments. (#38776, #60383, #42218, #45936) Thanks @lishuaigit, @lskun, @just2gooo, and @Br1an67.
 - Exec approvals: accept a symlinked `OPENCLAW_HOME` as the trusted approvals root while still rejecting symlinked `.openclaw` path components below it. (#64663) Thanks @FunJim.
 - Logging: add top-level `hostname`, flattened `message`, and available `agent_id`, `session_id`, and `channel` fields to file-log JSONL records for multi-agent filtering without removing existing structured log arguments. Fixes #51075. Thanks @stevengonsalvez.
@@ -47,6 +49,7 @@ Docs: https://docs.openclaw.ai
 - Onboarding/models: keep skip-auth and provider-scoped model picker prompts off the full global model catalog path, and cache provider catalog hook resolution so setup no longer stalls after auth on large plugin registries. Thanks @shakkernerd.
 - Gateway/Bonjour: suppress known @homebridge/ciao cancellation and network assertion failures through scoped process handlers so malformed mDNS packets or restricted VPS networking disable/restart Bonjour instead of crashing the gateway. Fixes #67578. Thanks @zenassist26-create.
 - Discord: keep late clicks on already-resolved exec approval buttons quiet when elevated mode auto-resolved the request, while still surfacing real approval submission failures. Fixes #66906. Thanks @rlerikse.
+- Telegram: send a fresh final message for long-lived preview-streamed replies so the visible Telegram timestamp reflects completion time instead of the preview creation time. Thanks @rubencu.
 
 ## 2026.4.25
 
