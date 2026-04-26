@@ -1,6 +1,6 @@
 {
   "name": "openclaw",
-  "version": "2026.4.25",
+  "version": "2026.4.26",
   "description": "Multi-channel AI gateway with extensible messaging integrations",
   "keywords": [],
   "homepage": "https://github.com/openclaw/openclaw#readme",
@@ -29,6 +29,7 @@
     "dist/",
     "!dist/**/*.map",
     "!dist/plugin-sdk/.tsbuildinfo",
+    "!dist/extensions/*/.openclaw-install-stage*/**",
     "!dist/extensions/*/.openclaw-runtime-deps-*/**",
     "!dist/extensions/*/.openclaw-runtime-deps-stamp.json",
     "!dist/extensions/node_modules/**",
@@ -44,6 +45,7 @@
     "!dist/qa-runtime-*.js",
     "docs/",
     "!docs/.generated/**",
+    "patches/",
     "skills/",
     "scripts/npm-runner.mjs",
     "scripts/preinstall-package-manager-warning.mjs",

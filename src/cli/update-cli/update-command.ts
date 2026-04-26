@@ -37,6 +37,7 @@ import {
   canResolveRegistryVersionForPackageTarget,
   createGlobalInstallEnv,
   cleanupGlobalRenameDirs,
+  globalInstallFallbackArgs,
   globalInstallArgs,
   resolveExpectedInstalledVersionFromSpec,
   resolveGlobalInstallTarget,
@@ -407,6 +408,21 @@ async function runPackageInstallUpdate(params: {
   });
 
   const steps = [updateStep];
+  let finalInstallStep = updateStep;
+  if (updateStep.exitCode !== 0) {
+    const fallbackArgv = globalInstallFallbackArgs(installTarget, installSpec);
+    if (fallbackArgv) {
+      const fallbackStep = await runUpdateStep({
+        name: "global update (omit optional)",
+        argv: fallbackArgv,
+        env: installEnv,
+        timeoutMs: params.timeoutMs,
+        progress: params.progress,
+      });
+      steps.push(fallbackStep);
+      finalInstallStep = fallbackStep;
+    }
+  }
   let afterVersion = beforeVersion;
 
   const verifiedPackageRoot =
@@ -439,7 +455,7 @@ async function runPackageInstallUpdate(params: {
     if (entryPath) {
       const doctorStep = await runUpdateStep({
         name: `${CLI_NAME} doctor`,
-        argv: [resolveNodeRunner(), entryPath, "doctor", "--non-interactive"],
+        argv: [resolveNodeRunner(), entryPath, "doctor", "--non-interactive", "--fix"],
         env: {
           ...process.env,
           OPENCLAW_UPDATE_IN_PROGRESS: "1",
@@ -451,7 +467,10 @@ async function runPackageInstallUpdate(params: {
     }
   }
 
-  const failedStep = steps.find((step) => step.exitCode !== 0);
+  const failedStep =
+    finalInstallStep.exitCode !== 0
+      ? finalInstallStep
+      : (steps.find((step) => step !== updateStep && step.exitCode !== 0) ?? null);
   return {
     status: failedStep ? "error" : "ok",
     mode: manager,
@@ -1006,13 +1025,16 @@ async function continuePostCoreUpdateInFreshProcess(params: {
       });
     });
 
-    if (exitCode !== 0) {
-      defaultRuntime.exit(exitCode);
-      throw new Error(`post-update process exited with code ${exitCode}`);
-    }
     const pluginUpdate = resultPath
       ? await readPostCorePluginUpdateResultFile(resultPath)
       : undefined;
+    if (exitCode !== 0) {
+      if (pluginUpdate) {
+        return { resumed: true, pluginUpdate };
+      }
+      defaultRuntime.exit(exitCode);
+      throw new Error(`post-update process exited with code ${exitCode}`);
+    }
     return { resumed: true, ...(pluginUpdate ? { pluginUpdate } : {}) };
   } finally {
     if (resultDir) {
@@ -1074,6 +1096,10 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
         };
         defaultRuntime.writeJson(result);
       }
+    }
+    if (pluginUpdate.status === "error") {
+      defaultRuntime.exit(1);
+      return;
     }
     return;
   }
@@ -1434,6 +1460,28 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
     });
   }
 
+  const resultWithPostUpdate: UpdateRunResult = postCorePluginUpdate
+    ? {
+        ...result,
+        status: postCorePluginUpdate.status === "error" ? "error" : result.status,
+        ...(postCorePluginUpdate.status === "error" ? { reason: "post-update-plugins" } : {}),
+        postUpdate: {
+          ...result.postUpdate,
+          plugins: postCorePluginUpdate,
+        },
+      }
+    : result;
+
+  if (postCorePluginUpdate?.status === "error") {
+    if (opts.json) {
+      defaultRuntime.writeJson(resultWithPostUpdate);
+    } else {
+      defaultRuntime.error(theme.error("Update failed during plugin post-update sync."));
+    }
+    defaultRuntime.exit(1);
+    return;
+  }
+
   let restartScriptPath: string | null = null;
   let refreshGatewayServiceEnv = false;
   const gatewayPort = resolveGatewayPort(
@@ -1469,7 +1517,7 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
 
     const restartOk = await maybeRestartService({
       shouldRestart,
-      result,
+      result: resultWithPostUpdate,
       opts,
       refreshServiceEnv: refreshGatewayServiceEnv,
       gatewayPort,
@@ -1485,9 +1533,6 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
   if (!opts.json) {
     defaultRuntime.log(theme.muted(pickUpdateQuip()));
   } else {
-    defaultRuntime.writeJson({
-      ...result,
-      ...(postCorePluginUpdate ? { postUpdate: { plugins: postCorePluginUpdate } } : {}),
-    });
+    defaultRuntime.writeJson(resultWithPostUpdate);
   }
 }
