@@ -166,6 +166,24 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                 description:
                   "Collector endpoint URL used for OpenTelemetry export transport, including scheme and port. Use a reachable, trusted collector endpoint and monitor ingestion errors after rollout.",
               },
+              tracesEndpoint: {
+                type: "string",
+                title: "OpenTelemetry Traces Endpoint",
+                description:
+                  "Signal-specific OTLP/HTTP trace endpoint. When set, this overrides diagnostics.otel.endpoint and OTEL_EXPORTER_OTLP_ENDPOINT for trace export only.",
+              },
+              metricsEndpoint: {
+                type: "string",
+                title: "OpenTelemetry Metrics Endpoint",
+                description:
+                  "Signal-specific OTLP/HTTP metrics endpoint. When set, this overrides diagnostics.otel.endpoint and OTEL_EXPORTER_OTLP_ENDPOINT for metrics export only.",
+              },
+              logsEndpoint: {
+                type: "string",
+                title: "OpenTelemetry Logs Endpoint",
+                description:
+                  "Signal-specific OTLP/HTTP logs endpoint. When set, this overrides diagnostics.otel.endpoint and OTEL_EXPORTER_OTLP_ENDPOINT for log export only.",
+              },
               protocol: {
                 anyOf: [
                   {
@@ -6509,6 +6527,177 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                       type: "integer",
                       minimum: 0,
                       maximum: 9007199254740991,
+                    },
+                  },
+                  additionalProperties: false,
+                },
+                tts: {
+                  type: "object",
+                  properties: {
+                    auto: {
+                      type: "string",
+                      enum: ["off", "always", "inbound", "tagged"],
+                    },
+                    enabled: {
+                      type: "boolean",
+                    },
+                    mode: {
+                      type: "string",
+                      enum: ["final", "all"],
+                    },
+                    provider: {
+                      type: "string",
+                      minLength: 1,
+                    },
+                    summaryModel: {
+                      type: "string",
+                    },
+                    modelOverrides: {
+                      type: "object",
+                      properties: {
+                        enabled: {
+                          type: "boolean",
+                        },
+                        allowText: {
+                          type: "boolean",
+                        },
+                        allowProvider: {
+                          type: "boolean",
+                        },
+                        allowVoice: {
+                          type: "boolean",
+                        },
+                        allowModelId: {
+                          type: "boolean",
+                        },
+                        allowVoiceSettings: {
+                          type: "boolean",
+                        },
+                        allowNormalization: {
+                          type: "boolean",
+                        },
+                        allowSeed: {
+                          type: "boolean",
+                        },
+                      },
+                      additionalProperties: false,
+                    },
+                    providers: {
+                      type: "object",
+                      propertyNames: {
+                        type: "string",
+                      },
+                      additionalProperties: {
+                        type: "object",
+                        properties: {
+                          apiKey: {
+                            anyOf: [
+                              {
+                                type: "string",
+                              },
+                              {
+                                oneOf: [
+                                  {
+                                    type: "object",
+                                    properties: {
+                                      source: {
+                                        type: "string",
+                                        const: "env",
+                                      },
+                                      provider: {
+                                        type: "string",
+                                        pattern: "^[a-z][a-z0-9_-]{0,63}$",
+                                      },
+                                      id: {
+                                        type: "string",
+                                        pattern: "^[A-Z][A-Z0-9_]{0,127}$",
+                                      },
+                                    },
+                                    required: ["source", "provider", "id"],
+                                    additionalProperties: false,
+                                  },
+                                  {
+                                    type: "object",
+                                    properties: {
+                                      source: {
+                                        type: "string",
+                                        const: "file",
+                                      },
+                                      provider: {
+                                        type: "string",
+                                        pattern: "^[a-z][a-z0-9_-]{0,63}$",
+                                      },
+                                      id: {
+                                        type: "string",
+                                      },
+                                    },
+                                    required: ["source", "provider", "id"],
+                                    additionalProperties: false,
+                                  },
+                                  {
+                                    type: "object",
+                                    properties: {
+                                      source: {
+                                        type: "string",
+                                        const: "exec",
+                                      },
+                                      provider: {
+                                        type: "string",
+                                        pattern: "^[a-z][a-z0-9_-]{0,63}$",
+                                      },
+                                      id: {
+                                        type: "string",
+                                      },
+                                    },
+                                    required: ["source", "provider", "id"],
+                                    additionalProperties: false,
+                                  },
+                                ],
+                              },
+                            ],
+                          },
+                        },
+                        additionalProperties: {
+                          anyOf: [
+                            {
+                              type: "string",
+                            },
+                            {
+                              type: "number",
+                            },
+                            {
+                              type: "boolean",
+                            },
+                            {
+                              type: "null",
+                            },
+                            {
+                              type: "array",
+                              items: {},
+                            },
+                            {
+                              type: "object",
+                              propertyNames: {
+                                type: "string",
+                              },
+                              additionalProperties: {},
+                            },
+                          ],
+                        },
+                      },
+                    },
+                    prefsPath: {
+                      type: "string",
+                    },
+                    maxTextLength: {
+                      type: "integer",
+                      minimum: 1,
+                      maximum: 9007199254740991,
+                    },
+                    timeoutMs: {
+                      type: "integer",
+                      minimum: 1000,
+                      maximum: 120000,
                     },
                   },
                   additionalProperties: false,
@@ -22974,7 +23163,7 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                       type: "boolean",
                       title: "Allow Conversation Access Hooks",
                       description:
-                        "Controls whether this plugin may read raw conversation content from typed hooks such as `llm_input`, `llm_output`, and `agent_end`. Non-bundled plugins must opt in explicitly.",
+                        "Controls whether this plugin may read raw conversation content from typed hooks such as `llm_input`, `llm_output`, `before_agent_finalize`, and `agent_end`. Non-bundled plugins must opt in explicitly.",
                     },
                   },
                   additionalProperties: false,
@@ -23022,164 +23211,6 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
             title: "Plugin Entries",
             description:
               "Per-plugin settings keyed by plugin ID including enablement and plugin-specific runtime configuration payloads. Use this for scoped plugin tuning without changing global loader policy.",
-          },
-          installs: {
-            type: "object",
-            propertyNames: {
-              type: "string",
-            },
-            additionalProperties: {
-              type: "object",
-              properties: {
-                source: {
-                  anyOf: [
-                    {
-                      anyOf: [
-                        {
-                          type: "string",
-                          const: "npm",
-                        },
-                        {
-                          type: "string",
-                          const: "archive",
-                        },
-                        {
-                          type: "string",
-                          const: "path",
-                        },
-                        {
-                          type: "string",
-                          const: "clawhub",
-                        },
-                      ],
-                    },
-                    {
-                      type: "string",
-                      const: "marketplace",
-                    },
-                  ],
-                  title: "Plugin Install Source",
-                  description: 'Install source ("npm", "archive", or "path").',
-                },
-                spec: {
-                  type: "string",
-                  title: "Plugin Install Spec",
-                  description: "Original npm spec used for install (if source is npm).",
-                },
-                sourcePath: {
-                  type: "string",
-                  title: "Plugin Install Source Path",
-                  description: "Original archive/path used for install (if any).",
-                },
-                installPath: {
-                  type: "string",
-                  title: "Plugin Install Path",
-                  description: "Resolved install directory for the installed plugin bundle.",
-                },
-                version: {
-                  type: "string",
-                  title: "Plugin Install Version",
-                  description: "Version recorded at install time (if available).",
-                },
-                resolvedName: {
-                  type: "string",
-                  title: "Plugin Resolved Package Name",
-                  description: "Resolved npm package name from the fetched artifact.",
-                },
-                resolvedVersion: {
-                  type: "string",
-                  title: "Plugin Resolved Package Version",
-                  description:
-                    "Resolved npm package version from the fetched artifact (useful for non-pinned specs).",
-                },
-                resolvedSpec: {
-                  type: "string",
-                  title: "Plugin Resolved Package Spec",
-                  description:
-                    "Resolved exact npm spec (<name>@<version>) from the fetched artifact.",
-                },
-                integrity: {
-                  type: "string",
-                  title: "Plugin Resolved Integrity",
-                  description:
-                    "Resolved npm dist integrity hash for the fetched artifact (if reported by npm).",
-                },
-                shasum: {
-                  type: "string",
-                  title: "Plugin Resolved Shasum",
-                  description:
-                    "Resolved npm dist shasum for the fetched artifact (if reported by npm).",
-                },
-                resolvedAt: {
-                  type: "string",
-                  title: "Plugin Resolution Time",
-                  description:
-                    "ISO timestamp when npm package metadata was last resolved for this install record.",
-                },
-                installedAt: {
-                  type: "string",
-                  title: "Plugin Install Time",
-                  description: "ISO timestamp of last install/update.",
-                },
-                clawhubUrl: {
-                  type: "string",
-                },
-                clawhubPackage: {
-                  type: "string",
-                },
-                clawhubFamily: {
-                  anyOf: [
-                    {
-                      type: "string",
-                      const: "code-plugin",
-                    },
-                    {
-                      type: "string",
-                      const: "bundle-plugin",
-                    },
-                  ],
-                },
-                clawhubChannel: {
-                  anyOf: [
-                    {
-                      type: "string",
-                      const: "official",
-                    },
-                    {
-                      type: "string",
-                      const: "community",
-                    },
-                    {
-                      type: "string",
-                      const: "private",
-                    },
-                  ],
-                },
-                marketplaceName: {
-                  type: "string",
-                  title: "Plugin Marketplace Name",
-                  description:
-                    "Marketplace display name recorded for marketplace-backed plugin installs (if available).",
-                },
-                marketplaceSource: {
-                  type: "string",
-                  title: "Plugin Marketplace Source",
-                  description:
-                    "Original marketplace source used to resolve the install (for example a repo path or Git URL).",
-                },
-                marketplacePlugin: {
-                  type: "string",
-                  title: "Plugin Marketplace Plugin",
-                  description:
-                    "Plugin entry name inside the source marketplace, used for later updates.",
-                },
-              },
-              required: ["source"],
-              additionalProperties: false,
-            },
-            title: "Plugin Install Records",
-            description:
-              "Deprecated compatibility fallback for legacy CLI-managed install metadata. New plugin installs use the state-managed `plugins/installs.json` ledger.",
           },
         },
         additionalProperties: false,
@@ -23609,6 +23640,21 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
     "diagnostics.otel.endpoint": {
       label: "OpenTelemetry Endpoint",
       help: "Collector endpoint URL used for OpenTelemetry export transport, including scheme and port. Use a reachable, trusted collector endpoint and monitor ingestion errors after rollout.",
+      tags: ["observability"],
+    },
+    "diagnostics.otel.tracesEndpoint": {
+      label: "OpenTelemetry Traces Endpoint",
+      help: "Signal-specific OTLP/HTTP trace endpoint. When set, this overrides diagnostics.otel.endpoint and OTEL_EXPORTER_OTLP_ENDPOINT for trace export only.",
+      tags: ["observability"],
+    },
+    "diagnostics.otel.metricsEndpoint": {
+      label: "OpenTelemetry Metrics Endpoint",
+      help: "Signal-specific OTLP/HTTP metrics endpoint. When set, this overrides diagnostics.otel.endpoint and OTEL_EXPORTER_OTLP_ENDPOINT for metrics export only.",
+      tags: ["observability"],
+    },
+    "diagnostics.otel.logsEndpoint": {
+      label: "OpenTelemetry Logs Endpoint",
+      help: "Signal-specific OTLP/HTTP logs endpoint. When set, this overrides diagnostics.otel.endpoint and OTEL_EXPORTER_OTLP_ENDPOINT for log export only.",
       tags: ["observability"],
     },
     "diagnostics.otel.protocol": {
@@ -27649,7 +27695,7 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
     },
     "plugins.entries.*.hooks.allowConversationAccess": {
       label: "Allow Conversation Access Hooks",
-      help: "Controls whether this plugin may read raw conversation content from typed hooks such as `llm_input`, `llm_output`, and `agent_end`. Non-bundled plugins must opt in explicitly.",
+      help: "Controls whether this plugin may read raw conversation content from typed hooks such as `llm_input`, `llm_output`, `before_agent_finalize`, and `agent_end`. Non-bundled plugins must opt in explicitly.",
       tags: ["access"],
     },
     "plugins.entries.*.hooks.allowPromptInjection": {
@@ -27687,86 +27733,6 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
       help: "Plugin-defined configuration payload interpreted by that plugin's own schema and validation rules. Use only documented fields from the plugin to prevent ignored or invalid settings.",
       tags: ["advanced"],
     },
-    "plugins.installs": {
-      label: "Plugin Install Records",
-      help: "Deprecated compatibility fallback for legacy CLI-managed install metadata. New plugin installs use the state-managed `plugins/installs.json` ledger.",
-      tags: ["advanced"],
-    },
-    "plugins.installs.*.source": {
-      label: "Plugin Install Source",
-      help: 'Install source ("npm", "archive", or "path").',
-      tags: ["advanced"],
-    },
-    "plugins.installs.*.spec": {
-      label: "Plugin Install Spec",
-      help: "Original npm spec used for install (if source is npm).",
-      tags: ["advanced"],
-    },
-    "plugins.installs.*.sourcePath": {
-      label: "Plugin Install Source Path",
-      help: "Original archive/path used for install (if any).",
-      tags: ["storage"],
-    },
-    "plugins.installs.*.installPath": {
-      label: "Plugin Install Path",
-      help: "Resolved install directory for the installed plugin bundle.",
-      tags: ["storage"],
-    },
-    "plugins.installs.*.version": {
-      label: "Plugin Install Version",
-      help: "Version recorded at install time (if available).",
-      tags: ["advanced"],
-    },
-    "plugins.installs.*.resolvedName": {
-      label: "Plugin Resolved Package Name",
-      help: "Resolved npm package name from the fetched artifact.",
-      tags: ["advanced"],
-    },
-    "plugins.installs.*.resolvedVersion": {
-      label: "Plugin Resolved Package Version",
-      help: "Resolved npm package version from the fetched artifact (useful for non-pinned specs).",
-      tags: ["advanced"],
-    },
-    "plugins.installs.*.resolvedSpec": {
-      label: "Plugin Resolved Package Spec",
-      help: "Resolved exact npm spec (<name>@<version>) from the fetched artifact.",
-      tags: ["advanced"],
-    },
-    "plugins.installs.*.integrity": {
-      label: "Plugin Resolved Integrity",
-      help: "Resolved npm dist integrity hash for the fetched artifact (if reported by npm).",
-      tags: ["advanced"],
-    },
-    "plugins.installs.*.shasum": {
-      label: "Plugin Resolved Shasum",
-      help: "Resolved npm dist shasum for the fetched artifact (if reported by npm).",
-      tags: ["advanced"],
-    },
-    "plugins.installs.*.resolvedAt": {
-      label: "Plugin Resolution Time",
-      help: "ISO timestamp when npm package metadata was last resolved for this install record.",
-      tags: ["advanced"],
-    },
-    "plugins.installs.*.installedAt": {
-      label: "Plugin Install Time",
-      help: "ISO timestamp of last install/update.",
-      tags: ["advanced"],
-    },
-    "plugins.installs.*.marketplaceName": {
-      label: "Plugin Marketplace Name",
-      help: "Marketplace display name recorded for marketplace-backed plugin installs (if available).",
-      tags: ["advanced"],
-    },
-    "plugins.installs.*.marketplaceSource": {
-      label: "Plugin Marketplace Source",
-      help: "Original marketplace source used to resolve the install (for example a repo path or Git URL).",
-      tags: ["advanced"],
-    },
-    "plugins.installs.*.marketplacePlugin": {
-      label: "Plugin Marketplace Plugin",
-      help: "Plugin entry name inside the source marketplace, used for later updates.",
-      tags: ["advanced"],
-    },
     "models.providers.*.headers.*": {
       sensitive: true,
       tags: ["security", "models"],
@@ -27790,6 +27756,10 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
     "agents.list[].memorySearch.remote.apiKey": {
       sensitive: true,
       tags: ["security", "auth"],
+    },
+    "agents.list[].tts.providers.*.apiKey": {
+      sensitive: true,
+      tags: ["security", "auth", "media"],
     },
     "agents.list[].sandbox.ssh.identityData": {
       sensitive: true,

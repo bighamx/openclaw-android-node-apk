@@ -360,7 +360,6 @@ const TARGET_KEYS = [
   "plugins.entries.*.apiKey",
   "plugins.entries.*.env",
   "plugins.entries.*.config",
-  "plugins.installs",
   "auth",
   "auth.cooldowns",
   "models",
@@ -535,10 +534,13 @@ const FINAL_BACKLOG_TARGET_KEYS = [
   "diagnostics.otel.endpoint",
   "diagnostics.otel.flushIntervalMs",
   "diagnostics.otel.headers",
+  "diagnostics.otel.logsEndpoint",
   "diagnostics.otel.logs",
+  "diagnostics.otel.metricsEndpoint",
   "diagnostics.otel.metrics",
   "diagnostics.otel.sampleRate",
   "diagnostics.otel.serviceName",
+  "diagnostics.otel.tracesEndpoint",
   "diagnostics.otel.traces",
   "gateway.remote.password",
   "gateway.remote.token",
@@ -769,6 +771,7 @@ describe("config help copy quality", () => {
     const pluginConversationPolicy = FIELD_HELP["plugins.entries.*.hooks.allowConversationAccess"];
     expect(pluginConversationPolicy.includes("llm_input")).toBe(true);
     expect(pluginConversationPolicy.includes("llm_output")).toBe(true);
+    expect(pluginConversationPolicy.includes("before_agent_finalize")).toBe(true);
     expect(pluginConversationPolicy.includes("agent_end")).toBe(true);
   });
 
