@@ -50,7 +50,8 @@ Telegraph style. Root rules only. Read scoped `AGENTS.md` before subtree work.
 - Extension tests: `pnpm test:extensions`, `pnpm test extensions`, `pnpm test extensions/<id>`.
 - Targeted tests: `pnpm test <path-or-filter> [vitest args...]`; never raw `vitest`.
 - Typecheck: `tsgo` lanes only (`pnpm tsgo*`, `pnpm check:test-types`); do not add `tsc --noEmit`, `typecheck`, `check:types`.
-- Format/lint: `pnpm format:check`/`pnpm format`; `pnpm lint*` lanes.
+- Formatting: use `oxfmt`, not Prettier. Prefer `pnpm format:check` / `pnpm format`; for targeted files use `pnpm exec oxfmt --check --threads=1 <files...>` or `pnpm exec oxfmt --write --threads=1 <files...>`.
+- Linting: use repo wrappers (`pnpm lint:*`, `scripts/run-oxlint.mjs`); do not invoke generic JS formatters/lints unless a repo script uses them.
 - Heavy checks: `OPENCLAW_LOCAL_CHECK=1`, mode `OPENCLAW_LOCAL_CHECK_MODE=throttled|full`; CI/shared use `OPENCLAW_LOCAL_CHECK=0`.
 - Local first. Use repo `pnpm` lanes before Blacksmith/Testbox. Remote only for parity-only failures, secrets/services, or explicit ask.
 
