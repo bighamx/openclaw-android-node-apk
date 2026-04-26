@@ -19,6 +19,7 @@ import { resolveGatewayInstallEntrypoint } from "../../daemon/gateway-entrypoint
 import { resolveGatewayRestartLogPath } from "../../daemon/restart-logs.js";
 import { resolveGatewayService } from "../../daemon/service.js";
 import { createLowDiskSpaceWarning } from "../../infra/disk-space.js";
+import { runGlobalPackageUpdateSteps } from "../../infra/package-update-steps.js";
 import { nodeVersionSatisfiesEngine } from "../../infra/runtime-guard.js";
 import {
   channelToNpmTag,
@@ -33,13 +34,10 @@ import {
   checkUpdateStatus,
 } from "../../infra/update-check.js";
 import {
-  collectInstalledGlobalPackageErrors,
   canResolveRegistryVersionForPackageTarget,
   createGlobalInstallEnv,
   cleanupGlobalRenameDirs,
-  globalInstallFallbackArgs,
   globalInstallArgs,
-  resolveExpectedInstalledVersionFromSpec,
   resolveGlobalInstallTarget,
   resolveGlobalInstallSpec,
 } from "../../infra/update-global.js";
@@ -91,6 +89,7 @@ import { suppressDeprecations } from "./suppress-deprecations.js";
 
 const CLI_NAME = resolveCliName();
 const SERVICE_REFRESH_TIMEOUT_MS = 60_000;
+const DEFAULT_UPDATE_STEP_TIMEOUT_MS = 30 * 60_000;
 const POST_CORE_UPDATE_ENV = "OPENCLAW_UPDATE_POST_CORE";
 const POST_CORE_UPDATE_CHANNEL_ENV = "OPENCLAW_UPDATE_POST_CORE_CHANNEL";
 const POST_CORE_UPDATE_RESULT_PATH_ENV = "OPENCLAW_UPDATE_POST_CORE_RESULT_PATH";
@@ -399,86 +398,45 @@ async function runPackageInstallUpdate(params: {
     }
   }
 
-  const updateStep = await runUpdateStep({
-    name: "global update",
-    argv: globalInstallArgs(installTarget, installSpec),
-    env: installEnv,
+  const packageUpdate = await runGlobalPackageUpdateSteps({
+    installTarget,
+    installSpec,
+    packageName,
+    packageRoot: pkgRoot,
+    runCommand,
     timeoutMs: params.timeoutMs,
-    progress: params.progress,
+    ...(installEnv === undefined ? {} : { env: installEnv }),
+    runStep: (stepParams) =>
+      runUpdateStep({
+        ...stepParams,
+        progress: params.progress,
+      }),
+    postVerifyStep: async (verifiedPackageRoot) => {
+      const entryPath = await resolveGatewayInstallEntrypoint(verifiedPackageRoot);
+      if (entryPath) {
+        return await runUpdateStep({
+          name: `${CLI_NAME} doctor`,
+          argv: [resolveNodeRunner(), entryPath, "doctor", "--non-interactive", "--fix"],
+          env: {
+            ...process.env,
+            OPENCLAW_UPDATE_IN_PROGRESS: "1",
+          },
+          timeoutMs: params.timeoutMs,
+          progress: params.progress,
+        });
+      }
+      return null;
+    },
   });
 
-  const steps = [updateStep];
-  let finalInstallStep = updateStep;
-  if (updateStep.exitCode !== 0) {
-    const fallbackArgv = globalInstallFallbackArgs(installTarget, installSpec);
-    if (fallbackArgv) {
-      const fallbackStep = await runUpdateStep({
-        name: "global update (omit optional)",
-        argv: fallbackArgv,
-        env: installEnv,
-        timeoutMs: params.timeoutMs,
-        progress: params.progress,
-      });
-      steps.push(fallbackStep);
-      finalInstallStep = fallbackStep;
-    }
-  }
-  let afterVersion = beforeVersion;
-
-  const verifiedPackageRoot =
-    (
-      await resolveGlobalInstallTarget({
-        manager: installTarget,
-        runCommand,
-        timeoutMs: params.timeoutMs,
-      })
-    ).packageRoot ?? pkgRoot;
-  if (verifiedPackageRoot) {
-    afterVersion = await readPackageVersion(verifiedPackageRoot);
-    const expectedVersion = resolveExpectedInstalledVersionFromSpec(packageName, installSpec);
-    const verificationErrors = await collectInstalledGlobalPackageErrors({
-      packageRoot: verifiedPackageRoot,
-      expectedVersion,
-    });
-    if (verificationErrors.length > 0) {
-      steps.push({
-        name: "global install verify",
-        command: `verify ${verifiedPackageRoot}`,
-        cwd: verifiedPackageRoot,
-        durationMs: 0,
-        exitCode: 1,
-        stderrTail: verificationErrors.join("\n"),
-        stdoutTail: null,
-      });
-    }
-    const entryPath = await resolveGatewayInstallEntrypoint(verifiedPackageRoot);
-    if (entryPath) {
-      const doctorStep = await runUpdateStep({
-        name: `${CLI_NAME} doctor`,
-        argv: [resolveNodeRunner(), entryPath, "doctor", "--non-interactive", "--fix"],
-        env: {
-          ...process.env,
-          OPENCLAW_UPDATE_IN_PROGRESS: "1",
-        },
-        timeoutMs: params.timeoutMs,
-        progress: params.progress,
-      });
-      steps.push(doctorStep);
-    }
-  }
-
-  const failedStep =
-    finalInstallStep.exitCode !== 0
-      ? finalInstallStep
-      : (steps.find((step) => step !== updateStep && step.exitCode !== 0) ?? null);
   return {
-    status: failedStep ? "error" : "ok",
+    status: packageUpdate.failedStep ? "error" : "ok",
     mode: manager,
-    root: verifiedPackageRoot ?? params.root,
-    reason: failedStep ? failedStep.name : undefined,
+    root: packageUpdate.verifiedPackageRoot ?? params.root,
+    reason: packageUpdate.failedStep ? packageUpdate.failedStep.name : undefined,
     before: { version: beforeVersion },
-    after: { version: afterVersion },
-    steps,
+    after: { version: packageUpdate.afterVersion ?? beforeVersion },
+    steps: packageUpdate.steps,
     durationMs: Date.now() - params.startedAt,
   };
 }
@@ -498,7 +456,7 @@ async function runGitUpdate(params: {
   devTargetRef?: string;
 }): Promise<UpdateRunResult> {
   const updateRoot = params.switchToGit ? resolveGitInstallDir() : params.root;
-  const effectiveTimeout = params.timeoutMs ?? 20 * 60_000;
+  const effectiveTimeout = params.timeoutMs ?? DEFAULT_UPDATE_STEP_TIMEOUT_MS;
   const installEnv = await createGlobalInstallEnv();
 
   const cloneStep = params.switchToGit
@@ -580,6 +538,7 @@ async function updatePluginsAfterCoreUpdate(params: {
   channel: "stable" | "beta" | "dev";
   configSnapshot: Awaited<ReturnType<typeof readConfigFileSnapshot>>;
   opts: UpdateCommandOptions;
+  timeoutMs: number;
 }): Promise<PostCorePluginUpdateResult> {
   if (!params.configSnapshot.valid) {
     if (!params.opts.json) {
@@ -632,6 +591,7 @@ async function updatePluginsAfterCoreUpdate(params: {
 
   const npmResult = await updateNpmInstalledPlugins({
     config: pluginConfig,
+    timeoutMs: params.timeoutMs,
     skipIds: new Set(syncResult.summary.switchedToNpm),
     logger: pluginLogger,
     onIntegrityDrift: async (drift) => {
@@ -939,12 +899,14 @@ async function runPostCorePluginUpdate(params: {
   channel: "stable" | "beta" | "dev";
   configSnapshot: Awaited<ReturnType<typeof readConfigFileSnapshot>>;
   opts: UpdateCommandOptions;
+  timeoutMs: number;
 }): Promise<PostCorePluginUpdateResult> {
   return await updatePluginsAfterCoreUpdate({
     root: params.root,
     channel: params.channel,
     configSnapshot: params.configSnapshot,
     opts: params.opts,
+    timeoutMs: params.timeoutMs,
   });
 }
 
@@ -996,6 +958,9 @@ async function continuePostCoreUpdateInFreshProcess(params: {
   }
   if (params.opts.yes) {
     argv.push("--yes");
+  }
+  if (params.opts.timeout) {
+    argv.push("--timeout", params.opts.timeout);
   }
   const resultDir =
     params.opts.json === true
@@ -1061,6 +1026,7 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
   if (timeoutMs === null) {
     return;
   }
+  const updateStepTimeoutMs = timeoutMs ?? DEFAULT_UPDATE_STEP_TIMEOUT_MS;
 
   const root = await resolveUpdateRoot();
   if (postCoreUpdateResume) {
@@ -1079,6 +1045,7 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
       channel: postCoreUpdateChannel,
       configSnapshot: await readConfigFileSnapshot(),
       opts,
+      timeoutMs: updateStepTimeoutMs,
     });
     if (opts.json) {
       await writePostCorePluginUpdateResultFile(
@@ -1189,7 +1156,7 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
       mode = await resolveGlobalManager({
         root,
         installKind,
-        timeoutMs: timeoutMs ?? 20 * 60_000,
+        timeoutMs: updateStepTimeoutMs,
       });
     }
 
@@ -1314,7 +1281,7 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
           root,
           installKind,
           tag,
-          timeoutMs: timeoutMs ?? 20 * 60_000,
+          timeoutMs: updateStepTimeoutMs,
           startedAt,
           progress,
           jsonMode: Boolean(opts.json),
@@ -1457,6 +1424,7 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
       channel,
       configSnapshot: postUpdateConfigSnapshot,
       opts,
+      timeoutMs: updateStepTimeoutMs,
     });
   }
 
