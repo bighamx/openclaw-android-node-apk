@@ -7,28 +7,35 @@ import { extractPluginInstallRecordsFromInstalledPluginIndex } from "./installed
 import { loadPluginManifestRegistry, type PluginManifestRegistry } from "./manifest-registry.js";
 import { DEFAULT_PLUGIN_ENTRY_CANDIDATES } from "./manifest.js";
 
+function resolveInstalledPluginRootDir(record: InstalledPluginIndexRecord): string {
+  return record.rootDir || path.dirname(record.manifestPath || process.cwd());
+}
+
 function resolveFallbackPluginSource(record: InstalledPluginIndexRecord): string {
+  const rootDir = resolveInstalledPluginRootDir(record);
   for (const entry of DEFAULT_PLUGIN_ENTRY_CANDIDATES) {
-    const candidate = path.join(record.rootDir, entry);
+    const candidate = path.join(rootDir, entry);
     if (fs.existsSync(candidate)) {
       return candidate;
     }
   }
-  return path.join(record.rootDir, DEFAULT_PLUGIN_ENTRY_CANDIDATES[0]);
+  return path.join(rootDir, DEFAULT_PLUGIN_ENTRY_CANDIDATES[0]);
 }
 
 function toPluginCandidate(record: InstalledPluginIndexRecord): PluginCandidate {
+  const rootDir = resolveInstalledPluginRootDir(record);
   return {
     idHint: record.pluginId,
     source: record.source ?? resolveFallbackPluginSource(record),
     ...(record.setupSource ? { setupSource: record.setupSource } : {}),
-    rootDir: record.rootDir,
+    rootDir,
     origin: record.origin,
     ...(record.format ? { format: record.format } : {}),
     ...(record.bundleFormat ? { bundleFormat: record.bundleFormat } : {}),
     ...(record.packageName ? { packageName: record.packageName } : {}),
     ...(record.packageVersion ? { packageVersion: record.packageVersion } : {}),
-    packageDir: record.rootDir,
+    ...(record.packageChannel ? { packageManifest: { channel: record.packageChannel } } : {}),
+    packageDir: rootDir,
   };
 }
 
@@ -44,6 +51,12 @@ export function loadPluginManifestRegistryForInstalledIndex(params: {
     return { plugins: [], diagnostics: [] };
   }
   const pluginIdSet = params.pluginIds?.length ? new Set(params.pluginIds) : null;
+  const diagnostics = pluginIdSet
+    ? params.index.diagnostics.filter((diagnostic) => {
+        const pluginId = diagnostic.pluginId;
+        return !pluginId || pluginIdSet.has(pluginId);
+      })
+    : params.index.diagnostics;
   const candidates = params.index.plugins
     .filter((plugin) => params.includeDisabled || plugin.enabled)
     .filter((plugin) => !pluginIdSet || pluginIdSet.has(plugin.pluginId))
@@ -54,6 +67,7 @@ export function loadPluginManifestRegistryForInstalledIndex(params: {
     env: params.env,
     cache: false,
     candidates,
+    diagnostics: [...diagnostics],
     installRecords: extractPluginInstallRecordsFromInstalledPluginIndex(params.index),
   });
 }

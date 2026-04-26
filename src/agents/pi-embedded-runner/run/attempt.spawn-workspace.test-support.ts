@@ -658,7 +658,8 @@ vi.mock("./compaction-timeout.js", () => ({
 }));
 
 vi.mock("./history-image-prune.js", () => ({
-  pruneProcessedHistoryImages: <T>(messages: T) => messages,
+  installHistoryImagePruneContextTransform: () => () => {},
+  pruneProcessedHistoryImages: () => null,
 }));
 
 export type MutableSession = {
@@ -811,6 +812,14 @@ export function createDefaultEmbeddedSession(params?: {
     sendCustomMessage: async (message, options) => {
       if (options?.deliverAs === "nextTurn") {
         session.messages = [...session.messages, { role: "custom", timestamp: 1, ...message }];
+        return;
+      }
+      if (options?.triggerTurn) {
+        session.messages = [
+          ...session.messages,
+          { role: "custom", timestamp: 1, ...message },
+          { role: "assistant", content: "done", timestamp: 2 },
+        ];
       }
     },
     abort: async () => {},

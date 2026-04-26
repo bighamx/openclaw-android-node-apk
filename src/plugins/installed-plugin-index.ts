@@ -17,6 +17,7 @@ import {
   type PluginManifestRegistry,
 } from "./manifest-registry.js";
 import type { PluginDiagnostic } from "./manifest-types.js";
+import type { PluginPackageChannel } from "./manifest.js";
 import { safeRealpathSync } from "./path-safety.js";
 import { hasKind } from "./slots.js";
 
@@ -66,6 +67,11 @@ export type InstalledPluginInstallRecordInfo = Pick<
   | "marketplacePlugin"
 >;
 
+export type InstalledPluginPackageChannelInfo = Pick<
+  PluginPackageChannel,
+  "id" | "label" | "blurb" | "preferOver"
+>;
+
 export type InstalledPluginIndexRecord = {
   pluginId: string;
   packageName?: string;
@@ -82,6 +88,7 @@ export type InstalledPluginIndexRecord = {
    * install intent and must not be treated as the durable install record.
    */
   packageInstall?: PluginInstallSourceInfo;
+  packageChannel?: InstalledPluginPackageChannelInfo;
   manifestPath: string;
   manifestHash: string;
   format?: PluginManifestRecord["format"];
@@ -172,9 +179,11 @@ function sortUnique(values: readonly string[] | undefined): readonly string[] {
 }
 
 function hasRuntimeContractSurface(record: PluginManifestRecord): boolean {
+  const providers = record.providers ?? [];
+  const cliBackends = record.cliBackends ?? [];
   return Boolean(
-    record.providers.length > 0 ||
-    record.cliBackends.length > 0 ||
+    providers.length > 0 ||
+    cliBackends.length > 0 ||
     record.contracts?.speechProviders?.length ||
     record.contracts?.mediaUnderstandingProviders?.length ||
     record.contracts?.documentExtractors?.length ||
@@ -190,8 +199,9 @@ function hasRuntimeContractSurface(record: PluginManifestRecord): boolean {
 }
 
 function buildStartupInfo(record: PluginManifestRecord): InstalledPluginStartupInfo {
+  const channels = record.channels ?? [];
   return {
-    sidecar: record.channels.length === 0 && !hasRuntimeContractSurface(record),
+    sidecar: channels.length === 0 && !hasRuntimeContractSurface(record),
     memory: hasKind(record.kind, "memory"),
     deferConfiguredChannelFullLoadUntilAfterListen:
       record.startupDeferConfiguredChannelFullLoadUntilAfterListen === true,
@@ -274,6 +284,45 @@ function describePackageInstallSource(
   return describePluginInstallSource(install, {
     expectedPackageName: candidate?.packageName,
   });
+}
+
+function normalizeStringField(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized ? normalized : undefined;
+}
+
+function normalizeStringListField(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized = value
+    .flatMap((entry) => {
+      const normalizedEntry = normalizeStringField(entry);
+      return normalizedEntry ? [normalizedEntry] : [];
+    })
+    .filter((entry, index, all) => all.indexOf(entry) === index);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizePackageChannel(
+  channel: PluginPackageChannel | undefined,
+): InstalledPluginPackageChannelInfo | undefined {
+  const id = normalizeStringField(channel?.id);
+  if (!id) {
+    return undefined;
+  }
+  const label = normalizeStringField(channel?.label);
+  const blurb = normalizeStringField(channel?.blurb);
+  const preferOver = normalizeStringListField(channel?.preferOver);
+  return {
+    id,
+    ...(label ? { label } : {}),
+    ...(blurb ? { blurb } : {}),
+    ...(preferOver ? { preferOver } : {}),
+  };
 }
 
 function setInstallStringField<Key extends keyof Omit<InstalledPluginInstallRecordInfo, "source">>(
@@ -479,7 +528,8 @@ function buildInstalledPluginIndex(
   const { candidates, registry } = resolveRegistry(params);
   const candidateByRootDir = buildCandidateLookup(candidates);
   const normalizedConfig = normalizePluginsConfig(params.config?.plugins);
-  const diagnostics: PluginDiagnostic[] = [...registry.diagnostics];
+  const registryDiagnostics = registry.diagnostics ?? [];
+  const diagnostics: PluginDiagnostic[] = [...registryDiagnostics];
   const generatedAtMs = (params.now?.() ?? new Date()).getTime();
   const installRecords = normalizeInstallRecordMap(params.installRecords);
   const plugins = registry.plugins.map((record): InstalledPluginIndexRecord => {
@@ -487,6 +537,7 @@ function buildInstalledPluginIndex(
     const packageJsonPath = resolvePackageJsonPath(candidate);
     const installRecord = installRecords[record.id];
     const packageInstall = describePackageInstallSource(candidate);
+    const packageChannel = normalizePackageChannel(candidate?.packageManifest?.channel);
     const manifestHash =
       safeHashFile({
         filePath: record.manifestPath,
@@ -541,6 +592,9 @@ function buildInstalledPluginIndex(
     }
     if (packageInstall) {
       indexRecord.packageInstall = packageInstall;
+    }
+    if (packageChannel) {
+      indexRecord.packageChannel = packageChannel;
     }
     if (packageJson) {
       indexRecord.packageJson = packageJson;

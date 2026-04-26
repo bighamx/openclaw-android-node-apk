@@ -297,7 +297,10 @@ import {
   selectCompactionTimeoutSnapshot,
   shouldFlagCompactionTimeout,
 } from "./compaction-timeout.js";
-import { pruneProcessedHistoryImages } from "./history-image-prune.js";
+import {
+  installHistoryImagePruneContextTransform,
+  pruneProcessedHistoryImages,
+} from "./history-image-prune.js";
 import { detectAndLoadPromptImages } from "./images.js";
 import { buildAttemptReplayMetadata } from "./incomplete-turn.js";
 import { resolveLlmIdleTimeoutMs, streamWithIdleTimeout } from "./llm-idle-timeout.js";
@@ -1450,6 +1453,14 @@ export async function runEmbeddedAttempt(
             }),
         });
       }
+      const removeLoopContextGuard = removeToolResultContextGuard;
+      const removeHistoryImagePruneContextTransform = installHistoryImagePruneContextTransform(
+        activeSession.agent,
+      );
+      removeToolResultContextGuard = () => {
+        removeHistoryImagePruneContextTransform();
+        removeLoopContextGuard?.();
+      };
       const cacheTrace = createCacheTrace({
         cfg: params.config,
         env: process.env,
@@ -2216,9 +2227,11 @@ export async function runEmbeddedAttempt(
           trigger: params.trigger,
           channelId: params.messageChannel ?? params.messageProvider ?? undefined,
         };
+        const promptBuildMessages =
+          pruneProcessedHistoryImages(activeSession.messages) ?? activeSession.messages;
         const hookResult = await resolvePromptBuildHookResult({
           prompt: params.prompt,
-          messages: activeSession.messages,
+          messages: promptBuildMessages,
           hookCtx,
           hookRunner,
           legacyBeforeAgentStartResult: params.legacyBeforeAgentStartResult,
@@ -2362,14 +2375,6 @@ export async function runEmbeddedAttempt(
             : undefined;
 
         try {
-          // Idempotent cleanup: prune old image blocks to limit context
-          // growth. Only mutates turns older than a few assistant replies;
-          // the delay also reduces prompt-cache churn.
-          const didPruneImages = pruneProcessedHistoryImages(activeSession.messages);
-          if (didPruneImages) {
-            activeSession.agent.state.messages = activeSession.messages;
-          }
-
           const filteredMessages = filterHeartbeatPairs(
             activeSession.messages,
             heartbeatSummary?.ackMaxChars,
@@ -2384,6 +2389,17 @@ export async function runEmbeddedAttempt(
             effectivePrompt,
             transcriptPrompt: params.transcriptPrompt,
           });
+          const runtimeSystemContext = promptSubmission.runtimeSystemContext?.trim();
+          if (promptSubmission.runtimeOnly && runtimeSystemContext) {
+            const runtimeSystemPrompt = composeSystemPromptWithHookContext({
+              baseSystemPrompt: systemPromptText,
+              appendSystemContext: runtimeSystemContext,
+            });
+            if (runtimeSystemPrompt) {
+              applySystemPromptOverrideToSession(activeSession, runtimeSystemPrompt);
+              systemPromptText = runtimeSystemPrompt;
+            }
+          }
 
           // Detect and load images referenced in the visible prompt for vision-capable models.
           // Images are prompt-local only (pi-like behavior).
@@ -2421,6 +2437,7 @@ export async function runEmbeddedAttempt(
 
           if (
             !skipPromptSubmission &&
+            !promptSubmission.runtimeOnly &&
             !hasPromptSubmissionContent({
               prompt: promptSubmission.prompt,
               messages: activeSession.messages,
@@ -2614,19 +2631,23 @@ export async function runEmbeddedAttempt(
               messages: btwSnapshotMessages,
               inFlightPrompt: promptSubmission.prompt,
             });
-            await queueRuntimeContextForNextTurn({
-              session: activeSession,
-              runtimeContext: promptSubmission.runtimeContext,
-            });
-
-            // Only pass images option if there are actually images to pass
-            // This avoids potential issues with models that don't expect the images parameter
-            if (imageResult.images.length > 0) {
-              await abortable(
-                activeSession.prompt(promptSubmission.prompt, { images: imageResult.images }),
-              );
-            } else {
+            if (promptSubmission.runtimeOnly) {
               await abortable(activeSession.prompt(promptSubmission.prompt));
+            } else {
+              await queueRuntimeContextForNextTurn({
+                session: activeSession,
+                runtimeContext: promptSubmission.runtimeContext,
+              });
+
+              // Only pass images option if there are actually images to pass
+              // This avoids potential issues with models that don't expect the images parameter
+              if (imageResult.images.length > 0) {
+                await abortable(
+                  activeSession.prompt(promptSubmission.prompt, { images: imageResult.images }),
+                );
+              } else {
+                await abortable(activeSession.prompt(promptSubmission.prompt));
+              }
             }
           }
         } catch (err) {
