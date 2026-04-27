@@ -128,6 +128,7 @@ Telegraph style. Root rules only. Read scoped `AGENTS.md` before subtree work.
 - Prefer injection; if module mocking, mock narrow local `*.runtime.ts`, not broad barrels or `openclaw/plugin-sdk/*`.
 - Share fixtures/builders; delete duplicate assertions; assert behavior that can regress here.
 - Do not edit baseline/inventory/ignore/snapshot/expected-failure files to silence checks without explicit approval.
+- Do not run multiple independent `pnpm test`/Vitest commands concurrently in the same worktree. They can race on `node_modules/.experimental-vitest-cache` and fail with `ENOTEMPTY`. Use one grouped `pnpm test ...` invocation, run targeted lanes sequentially, or set distinct `OPENCLAW_VITEST_FS_MODULE_CACHE_PATH` values when true parallel Vitest processes are needed.
 - Test workers max 16. Memory pressure: `OPENCLAW_VITEST_MAX_WORKERS=1 pnpm test`.
 - Live: `OPENCLAW_LIVE_TEST=1 pnpm test:live`; verbose `OPENCLAW_LIVE_TEST_QUIET=0`.
 - Guide: `docs/help/testing.md`.
