@@ -9,10 +9,10 @@ import {
   colorize,
   defaultRuntime,
   formatErrorMessage,
+  getRuntimeConfig,
   getMemorySearchManager,
   isRich,
   listMemoryFiles,
-  loadConfig,
   normalizeExtraMemoryPaths,
   resolveCommandSecretRefsViaGateway,
   resolveDefaultAgentId,
@@ -92,7 +92,7 @@ function getMemoryCommandSecretTargetIds(): Set<string> {
 
 async function loadMemoryCommandConfig(commandName: string): Promise<LoadedMemoryCommandConfig> {
   const { resolvedConfig, diagnostics } = await resolveCommandSecretRefsViaGateway({
-    config: loadConfig(),
+    config: getRuntimeConfig(),
     commandName,
     targetIds: getMemoryCommandSecretTargetIds(),
   });

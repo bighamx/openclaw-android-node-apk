@@ -36,6 +36,7 @@ import {
   getOrCreateManagedCacheEntry,
   resolveSingletonManagedCache,
 } from "./manager-cache.js";
+import { closeMemoryDatabase } from "./manager-db.js";
 import { MemoryManagerEmbeddingOps } from "./manager-embedding-ops.js";
 import {
   resolveMemoryPrimaryProviderRequest,
@@ -694,6 +695,7 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
       },
       runSync: (nextParams) => this.runSync(nextParams),
       openDatabase: () => this.openDatabase(),
+      closeDatabase: (db) => closeMemoryDatabase(db),
       resetVectorState: () => this.resetVectorState(),
       ensureSchema: () => this.ensureSchema(),
       readMeta: () => this.readMeta() ?? undefined,
@@ -862,7 +864,7 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
       this.sessionUnsubscribe = null;
     }
     await awaitPendingManagerWork({ pendingSync, pendingProviderInit });
-    this.db.close();
+    closeMemoryDatabase(this.db);
     INDEX_CACHE.delete(this.cacheKey);
   }
 }

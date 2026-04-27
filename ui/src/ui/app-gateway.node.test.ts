@@ -76,6 +76,7 @@ vi.mock("./gateway.ts", async (importOriginal) => {
               type: "hello-ok",
               protocol: 3,
               snapshot: {},
+              auth: { role: "operator", scopes: [] },
             },
           );
         },
@@ -314,6 +315,7 @@ describe("connectGateway", () => {
       type: "hello-ok",
       protocol: 3,
       server: { version: "2.0.0" },
+      auth: { role: "operator", scopes: [] },
       snapshot: {},
     });
 
@@ -349,6 +351,7 @@ describe("connectGateway", () => {
       type: "hello-ok",
       protocol: 3,
       server: { version: "1.0.0" },
+      auth: { role: "operator", scopes: [] },
       snapshot: {},
     });
 
@@ -387,6 +390,7 @@ describe("connectGateway", () => {
       type: "hello-ok",
       protocol: 3,
       server: { version: "1.0.0" },
+      auth: { role: "operator", scopes: [] },
       snapshot: {},
     });
 
@@ -649,7 +653,7 @@ describe("connectGateway", () => {
     client.emitHello();
 
     expect(loadControlUiBootstrapConfigMock).toHaveBeenCalledTimes(1);
-    expect(loadControlUiBootstrapConfigMock).toHaveBeenCalledWith(host);
+    expect(loadControlUiBootstrapConfigMock).toHaveBeenCalledWith(host, { applyIdentity: false });
   });
 
   it("sends queued chat aborts after reconnect before clearing pending state", async () => {

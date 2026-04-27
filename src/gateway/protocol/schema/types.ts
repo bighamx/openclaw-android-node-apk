@@ -25,6 +25,7 @@ export type NodePairRequestParams = SchemaType<"NodePairRequestParams">;
 export type NodePairListParams = SchemaType<"NodePairListParams">;
 export type NodePairApproveParams = SchemaType<"NodePairApproveParams">;
 export type NodePairRejectParams = SchemaType<"NodePairRejectParams">;
+export type NodePairRemoveParams = SchemaType<"NodePairRemoveParams">;
 export type NodePairVerifyParams = SchemaType<"NodePairVerifyParams">;
 export type NodeRenameParams = SchemaType<"NodeRenameParams">;
 export type NodeListParams = SchemaType<"NodeListParams">;

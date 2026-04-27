@@ -431,6 +431,7 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
       applySnapshot(host, hello);
       void loadControlUiBootstrapConfig(
         host as unknown as Parameters<typeof loadControlUiBootstrapConfig>[0],
+        { applyIdentity: false },
       );
       // Process any pending abort from before the disconnect.
       if (host.pendingAbort) {

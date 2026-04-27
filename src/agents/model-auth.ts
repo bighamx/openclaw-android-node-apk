@@ -179,7 +179,10 @@ export function resolveUsableCustomProviderApiKey(params: {
     customProviderConfig.baseUrl &&
     isLocalBaseUrl(customProviderConfig.baseUrl)
   ) {
-    return { apiKey: CUSTOM_LOCAL_AUTH_MARKER, source: "models.json (local marker)" };
+    return {
+      apiKey: customProviderConfig.api === "ollama" ? customKey : CUSTOM_LOCAL_AUTH_MARKER,
+      source: "models.json (local marker)",
+    };
   }
   return null;
 }

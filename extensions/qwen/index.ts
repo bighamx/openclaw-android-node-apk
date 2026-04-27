@@ -47,6 +47,22 @@ function isQwen36PlusUnsupportedForConfig(params: {
   return isQwenCodingPlanBaseUrl(params.baseUrl ?? resolveConfiguredQwenBaseUrl(params.config));
 }
 
+function hasExactForeignApiOwner(params: {
+  provider: string;
+  config: { models?: { providers?: Record<string, { api?: string } | undefined> } } | undefined;
+}): boolean {
+  const providers = params.config?.models?.providers;
+  if (!providers) {
+    return false;
+  }
+  const provider = normalizeProviderId(params.provider);
+  const exact = Object.entries(providers).find(
+    ([providerId]) => normalizeProviderId(providerId) === provider,
+  )?.[1];
+  const api = normalizeProviderId(exact?.api ?? "");
+  return !!api && api !== PROVIDER_ID && api !== LEGACY_PROVIDER_ID;
+}
+
 export default defineSingleProviderPluginEntry({
   id: PROVIDER_ID,
   name: "Qwen Provider",
@@ -180,6 +196,7 @@ export default defineSingleProviderPluginEntry({
       const provider = normalizeProviderId(ctx.provider);
       if (
         (provider !== PROVIDER_ID && provider !== LEGACY_PROVIDER_ID) ||
+        hasExactForeignApiOwner({ provider: ctx.provider, config: ctx.config }) ||
         ctx.modelId !== QWEN_36_PLUS_MODEL_ID ||
         !isQwen36PlusUnsupportedForConfig({ config: ctx.config, baseUrl: ctx.baseUrl })
       ) {

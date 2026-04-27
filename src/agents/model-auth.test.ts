@@ -918,7 +918,7 @@ describe("resolveApiKeyForProvider – synthetic local auth for custom providers
 
     expect(auth).toMatchObject({
       apiKey: "ollama-local",
-      source: "models.providers.ollama-remote (synthetic local key)",
+      source: "models.json (local marker)",
       mode: "api-key",
     });
   });

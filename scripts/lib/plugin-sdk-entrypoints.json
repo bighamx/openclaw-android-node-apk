@@ -74,7 +74,6 @@
   "channel-secret-basic-runtime",
   "channel-secret-runtime",
   "channel-secret-tts-runtime",
-  "tts-runtime",
   "secret-ref-runtime",
   "secret-file-runtime",
   "security-runtime",

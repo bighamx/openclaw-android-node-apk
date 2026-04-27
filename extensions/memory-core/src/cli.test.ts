@@ -12,7 +12,7 @@ import {
 import { readShortTermRecallEntries, recordShortTermRecalls } from "./short-term-promotion.js";
 
 const getMemorySearchManager = vi.hoisted(() => vi.fn());
-const loadConfig = vi.hoisted(() => vi.fn(() => ({})));
+const getRuntimeConfig = vi.hoisted(() => vi.fn(() => ({})));
 const resolveDefaultAgentId = vi.hoisted(() => vi.fn(() => "main"));
 const resolveCommandSecretRefsViaGateway = vi.hoisted(() =>
   vi.fn(async ({ config }: { config: unknown }) => ({
@@ -34,7 +34,7 @@ vi.mock("./cli.host.runtime.js", async () => {
     getMemorySearchManager,
     isRich: runtimeCli.isRich,
     listMemoryFiles: runtimeFiles.listMemoryFiles,
-    loadConfig,
+    getRuntimeConfig,
     normalizeExtraMemoryPaths: runtimeFiles.normalizeExtraMemoryPaths,
     resolveCommandSecretRefsViaGateway,
     resolveDefaultAgentId,
@@ -73,7 +73,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   getMemorySearchManager.mockReset();
-  loadConfig.mockReset().mockReturnValue({});
+  getRuntimeConfig.mockReset().mockReturnValue({});
   resolveDefaultAgentId.mockReset().mockReturnValue("main");
   resolveCommandSecretRefsViaGateway.mockReset().mockImplementation(async ({ config }) => ({
     resolvedConfig: config,
@@ -247,7 +247,7 @@ describe("memory cli", () => {
   });
 
   it("resolves configured memory SecretRefs through gateway snapshot", async () => {
-    loadConfig.mockReturnValue({
+    getRuntimeConfig.mockReturnValue({
       agents: {
         defaults: {
           memorySearch: {
