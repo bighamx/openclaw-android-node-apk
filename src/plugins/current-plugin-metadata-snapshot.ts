@@ -1,9 +1,11 @@
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import {
+  clearCurrentPluginMetadataSnapshotState,
+  getCurrentPluginMetadataSnapshotState,
+  setCurrentPluginMetadataSnapshotState,
+} from "./current-plugin-metadata-state.js";
 import { resolveInstalledPluginIndexPolicyHash } from "./installed-plugin-index-policy.js";
-import type { PluginMetadataSnapshot } from "./plugin-metadata-snapshot.js";
-
-let currentPluginMetadataSnapshot: PluginMetadataSnapshot | undefined;
-let currentPluginMetadataSnapshotConfigFingerprint: string | undefined;
+import type { PluginMetadataSnapshot } from "./plugin-metadata-snapshot.types.js";
 
 function normalizeLoadPaths(config: OpenClawConfig | undefined): readonly string[] {
   const paths = config?.plugins?.load?.paths;
@@ -28,15 +30,14 @@ export function setCurrentPluginMetadataSnapshot(
   snapshot: PluginMetadataSnapshot | undefined,
   options: { config?: OpenClawConfig } = {},
 ): void {
-  currentPluginMetadataSnapshot = snapshot;
-  currentPluginMetadataSnapshotConfigFingerprint = snapshot
-    ? resolvePluginMetadataSnapshotConfigFingerprint(options.config)
-    : undefined;
+  setCurrentPluginMetadataSnapshotState(
+    snapshot,
+    snapshot ? resolvePluginMetadataSnapshotConfigFingerprint(options.config) : undefined,
+  );
 }
 
 export function clearCurrentPluginMetadataSnapshot(): void {
-  currentPluginMetadataSnapshot = undefined;
-  currentPluginMetadataSnapshotConfigFingerprint = undefined;
+  clearCurrentPluginMetadataSnapshotState();
 }
 
 export function getCurrentPluginMetadataSnapshot(
@@ -45,7 +46,8 @@ export function getCurrentPluginMetadataSnapshot(
     workspaceDir?: string;
   } = {},
 ): PluginMetadataSnapshot | undefined {
-  const snapshot = currentPluginMetadataSnapshot;
+  const { snapshot: rawSnapshot, configFingerprint } = getCurrentPluginMetadataSnapshotState();
+  const snapshot = rawSnapshot as PluginMetadataSnapshot | undefined;
   if (!snapshot) {
     return undefined;
   }
@@ -57,9 +59,8 @@ export function getCurrentPluginMetadataSnapshot(
   }
   if (
     params.config &&
-    currentPluginMetadataSnapshotConfigFingerprint &&
-    currentPluginMetadataSnapshotConfigFingerprint !==
-      resolvePluginMetadataSnapshotConfigFingerprint(params.config)
+    configFingerprint &&
+    configFingerprint !== resolvePluginMetadataSnapshotConfigFingerprint(params.config)
   ) {
     return undefined;
   }
