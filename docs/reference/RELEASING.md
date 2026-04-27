@@ -141,13 +141,12 @@ the maintainer-only release runbook.
   live Matrix profile and Telegram QA lane before release approval. The live
   lanes use the `qa-live-shared` environment; Telegram also uses Convex CI
   credential leases. Run the manual `QA-Lab - All Lanes` workflow with
-  `matrix_profile=all` when you want full Matrix transport, media, and E2EE
-  inventory; the workflow always shards that full Matrix selection in parallel.
-- Cross-OS install and upgrade runtime validation is dispatched from the
-  private caller workflow
-  `openclaw/releases-private/.github/workflows/openclaw-cross-os-release-checks.yml`,
-  which invokes the reusable public workflow
-  `.github/workflows/openclaw-cross-os-release-checks-reusable.yml`
+  `matrix_profile=all` and `matrix_shards=true` when you want full Matrix
+  transport, media, and E2EE inventory in parallel.
+- Cross-OS install and upgrade runtime validation is part of public
+  `OpenClaw Release Checks` and `Full Release Validation`, which call the
+  reusable workflow
+  `.github/workflows/openclaw-cross-os-release-checks-reusable.yml` directly
 - This split is intentional: keep the real npm release path short,
   deterministic, and artifact-focused, while slower live checks stay in their
   own lane so they do not stall or block publish
@@ -322,6 +321,8 @@ Release Docker coverage includes:
 - release-path Docker chunks: `core`, `package-update`, and
   `plugins-integrations`
 - OpenWebUI coverage inside the `plugins-integrations` chunk when requested
+- split bundled-channel dependency lanes inside `plugins-integrations` instead
+  of the serial all-in-one bundled-channel lane
 - live/E2E provider suites and Docker live model coverage when release checks
   include live suites
 
@@ -379,6 +380,15 @@ of the package/update coverage that previously required Parallels. Cross-OS
 release checks still matter for OS-specific onboarding, installer, and platform
 behavior, but package/update product validation should prefer Package
 Acceptance.
+
+Legacy package-acceptance leniency is intentionally time boxed. Packages through
+`2026.4.25` may use the compatibility path for metadata gaps already published
+to npm: private QA inventory entries missing from the tarball, missing
+`gateway install --wrapper`, missing patch files in the tarball-derived git
+fixture, missing persisted `update.channel`, legacy plugin install-record
+locations, missing marketplace install-record persistence, and config metadata
+migration during `plugins update`. Packages after `2026.4.25` must satisfy the
+modern package contracts; those same gaps fail release validation.
 
 Use broader Package Acceptance profiles when the release question is about an
 actual installable package:

@@ -1714,6 +1714,123 @@ module.exports = {
     expect(registry?.plugins.find((entry) => entry.id === "alpha")?.status).toBe("loaded");
   });
 
+  it("materializes plugin-owned root chunks in external runtime mirrors", () => {
+    const packageRoot = makeTempDir();
+    const stageDir = makeTempDir();
+    const bundledDir = path.join(packageRoot, "dist", "extensions");
+    const pluginRoot = path.join(bundledDir, "browser");
+    fs.mkdirSync(pluginRoot, { recursive: true });
+    fs.writeFileSync(
+      path.join(packageRoot, "package.json"),
+      JSON.stringify({ name: "openclaw", version: "2026.4.24", type: "module" }),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(packageRoot, "dist", "pw-ai.js"),
+      [
+        `//#region extensions/browser/src/pw-ai.ts`,
+        `import { marker } from "playwright-core";`,
+        `export { marker };`,
+        `//#endregion`,
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(pluginRoot, "index.js"),
+      [
+        `import { marker } from "../../pw-ai.js";`,
+        `export default {`,
+        `  id: "browser",`,
+        `  register(api) {`,
+        `    api.registerCommand({ name: "browser-marker", handler: () => marker });`,
+        `  },`,
+        `};`,
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(pluginRoot, "package.json"),
+      JSON.stringify(
+        {
+          name: "@openclaw/browser",
+          version: "1.0.0",
+          type: "module",
+          dependencies: {
+            "playwright-core": "1.0.0",
+          },
+          openclaw: { extensions: ["./index.js"] },
+        },
+        null,
+        2,
+      ),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(pluginRoot, "openclaw.plugin.json"),
+      JSON.stringify(
+        {
+          id: "browser",
+          enabledByDefault: true,
+          configSchema: EMPTY_PLUGIN_SCHEMA,
+        },
+        null,
+        2,
+      ),
+      "utf-8",
+    );
+    process.env.OPENCLAW_BUNDLED_PLUGINS_DIR = bundledDir;
+    process.env.OPENCLAW_PLUGIN_STAGE_DIR = stageDir;
+
+    let actualInstallRoot = "";
+    let stagedMirrorChunk = "";
+    const registry = loadOpenClawPlugins({
+      cache: false,
+      config: {
+        plugins: {
+          enabled: true,
+        },
+      },
+      bundledRuntimeDepsInstaller: ({ installRoot }) => {
+        actualInstallRoot = installRoot;
+        stagedMirrorChunk = path.join(installRoot, "dist", "pw-ai.js");
+        fs.mkdirSync(path.dirname(stagedMirrorChunk), { recursive: true });
+        fs.symlinkSync(path.join(packageRoot, "dist", "pw-ai.js"), stagedMirrorChunk, "file");
+        const depRoot = path.join(installRoot, "node_modules", "playwright-core");
+        fs.mkdirSync(depRoot, { recursive: true });
+        fs.writeFileSync(
+          path.join(depRoot, "package.json"),
+          JSON.stringify({
+            name: "playwright-core",
+            version: "1.0.0",
+            type: "module",
+            exports: "./index.js",
+          }),
+          "utf-8",
+        );
+        fs.writeFileSync(path.join(depRoot, "index.js"), "export const marker = 'stage-ok';\n");
+      },
+    });
+
+    expect(actualInstallRoot).not.toBe("");
+    expect(registry.plugins.find((entry) => entry.id === "browser")?.status).toBe("loaded");
+    expect(fs.lstatSync(stagedMirrorChunk).isSymbolicLink()).toBe(false);
+
+    process.env.OPENCLAW_BUNDLED_PLUGINS_DIR = path.join(actualInstallRoot, "dist", "extensions");
+    const reloadedRegistry = loadOpenClawPlugins({
+      cache: false,
+      config: {
+        plugins: {
+          enabled: true,
+        },
+      },
+    });
+
+    expect(reloadedRegistry.plugins.find((entry) => entry.id === "browser")?.status).toBe("loaded");
+    expect(fs.existsSync(stagedMirrorChunk)).toBe(true);
+  });
+
   it("loads bundled plugins with plugin-sdk imports from an external stage dir", () => {
     const packageRoot = makeTempDir();
     const stageDir = makeTempDir();
@@ -1914,6 +2031,17 @@ module.exports = {
     fs.mkdirSync(pluginRoot, { recursive: true });
     fs.mkdirSync(canonicalPluginRoot, { recursive: true });
     fs.writeFileSync(
+      path.join(packageRoot, "dist", "pw-ai.js"),
+      [
+        `//#region extensions/acpx/src/pw-ai.ts`,
+        `import runtimeDep from "external-runtime";`,
+        `export const marker = runtimeDep.marker;`,
+        `//#endregion`,
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
       path.join(pluginRoot, "index.js"),
       [
         `export * from ${JSON.stringify(canonicalEntryImport)};`,
@@ -1926,11 +2054,11 @@ module.exports = {
     fs.writeFileSync(
       path.join(canonicalPluginRoot, "index.js"),
       [
-        `import runtimeDep from "external-runtime";`,
+        `import { marker } from "../../pw-ai.js";`,
         `export default {`,
         `  id: "acpx",`,
         `  register(api) {`,
-        `    api.registerCommand({ name: "external-runtime", handler: () => runtimeDep.marker });`,
+        `    api.registerCommand({ name: "external-runtime", handler: () => marker });`,
         `  },`,
         `};`,
         "",
@@ -1970,6 +2098,7 @@ module.exports = {
       "utf-8",
     );
 
+    let actualInstallRoot = "";
     const registry = loadOpenClawPlugins({
       cache: false,
       config: {
@@ -1978,6 +2107,7 @@ module.exports = {
         },
       },
       bundledRuntimeDepsInstaller: ({ installRoot }) => {
+        actualInstallRoot = installRoot;
         const depRoot = path.join(installRoot, "node_modules", "external-runtime");
         fs.mkdirSync(depRoot, { recursive: true });
         fs.writeFileSync(
@@ -1999,6 +2129,10 @@ module.exports = {
     });
 
     expect(registry.plugins.find((entry) => entry.id === "acpx")?.status).toBe("loaded");
+    expect(fs.lstatSync(path.join(actualInstallRoot, "dist")).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(path.join(actualInstallRoot, "dist", "pw-ai.js")).isSymbolicLink()).toBe(
+      false,
+    );
   });
 
   it("loads source-checkout bundled runtime deps without mirroring the repo tree", () => {
@@ -7203,6 +7337,9 @@ export const runtimeValue = helperValue;`,
     try {
       expect(__testing.toSafeImportPath("C:\\Users\\alice\\plugin\\index.mjs")).toBe(
         "file:///C:/Users/alice/plugin/index.mjs",
+      );
+      expect(__testing.toSafeImportPath("C:\\Users\\alice\\plugin folder\\x#y.mjs")).toBe(
+        "file:///C:/Users/alice/plugin%20folder/x%23y.mjs",
       );
       expect(__testing.toSafeImportPath("\\\\server\\share\\plugin\\index.mjs")).toBe(
         "file://server/share/plugin/index.mjs",
