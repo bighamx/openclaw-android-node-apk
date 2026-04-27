@@ -3,6 +3,7 @@ import { saveJsonFile } from "../infra/json-file.js";
 import { readJsonFile, readJsonFileSync, writeJsonAtomic } from "../infra/json-files.js";
 import { isBlockedObjectKey } from "../infra/prototype-keys.js";
 import { safeParseWithSchema } from "../utils/zod-parse.js";
+import { clearCurrentPluginMetadataSnapshot } from "./current-plugin-metadata-snapshot.js";
 import {
   resolveInstalledPluginIndexStorePath,
   type InstalledPluginIndexStoreOptions,
@@ -171,6 +172,7 @@ export async function writePersistedInstalledPluginIndex(
       mode: 0o600,
     },
   );
+  clearCurrentPluginMetadataSnapshot();
   return filePath;
 }
 
@@ -180,6 +182,7 @@ export function writePersistedInstalledPluginIndexSync(
 ): string {
   const filePath = resolveInstalledPluginIndexStorePath(options);
   saveJsonFile(filePath, { ...index, warning: INSTALLED_PLUGIN_INDEX_WARNING });
+  clearCurrentPluginMetadataSnapshot();
   return filePath;
 }
 
