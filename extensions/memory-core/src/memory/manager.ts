@@ -62,6 +62,7 @@ const FTS_TABLE = "chunks_fts";
 const EMBEDDING_CACHE_TABLE = "embedding_cache";
 const MEMORY_INDEX_MANAGER_CACHE_KEY = Symbol.for("openclaw.memoryIndexManagerCache");
 const log = createSubsystemLogger("memory");
+type MemoryIndexManagerPurpose = "default" | "status" | "cli";
 
 const { cache: INDEX_CACHE, pending: INDEX_CACHE_PENDING } =
   resolveSingletonManagedCache<MemoryIndexManager>(MEMORY_INDEX_MANAGER_CACHE_KEY);
@@ -155,7 +156,7 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
   static async get(params: {
     cfg: OpenClawConfig;
     agentId: string;
-    purpose?: "default" | "status";
+    purpose?: MemoryIndexManagerPurpose;
   }): Promise<MemoryIndexManager | null> {
     const { cfg, agentId } = params;
     const settings = resolveMemorySearchConfig(cfg, agentId);
@@ -163,14 +164,15 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
       return null;
     }
     const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
-    const purpose = params.purpose === "status" ? "status" : "default";
+    const purpose =
+      params.purpose === "status" || params.purpose === "cli" ? params.purpose : "default";
     const key = `${agentId}:${workspaceDir}:${JSON.stringify(settings)}:${purpose}`;
-    const statusOnly = params.purpose === "status";
+    const transient = purpose === "status" || purpose === "cli";
     return await getOrCreateManagedCacheEntry({
       cache: INDEX_CACHE,
       pending: INDEX_CACHE_PENDING,
       key,
-      bypassCache: statusOnly,
+      bypassCache: transient,
       create: async () =>
         new MemoryIndexManager({
           cacheKey: key,
@@ -190,7 +192,7 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
     workspaceDir: string;
     settings: ResolvedMemorySearchConfig;
     providerResult?: EmbeddingProviderResult;
-    purpose?: "default" | "status";
+    purpose?: MemoryIndexManagerPurpose;
   }) {
     super();
     this.cacheKey = params.cacheKey;
@@ -221,15 +223,15 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
     if (meta?.vectorDims) {
       this.vector.dims = meta.vectorDims;
     }
-    const statusOnly = params.purpose === "status";
-    if (!statusOnly) {
+    const transient = params.purpose === "status" || params.purpose === "cli";
+    if (!transient) {
       this.ensureWatcher();
       this.ensureSessionListener();
       this.ensureIntervalSync();
     }
     this.dirty = resolveInitialMemoryDirty({
       hasMemorySource: this.sources.has("memory"),
-      statusOnly,
+      statusOnly: params.purpose === "status",
       hasIndexedMeta: Boolean(meta),
     });
     this.batch = this.resolveBatchConfig();

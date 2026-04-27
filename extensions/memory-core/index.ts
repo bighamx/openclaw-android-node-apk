@@ -1,3 +1,4 @@
+import { getRuntimeConfigSnapshot } from "openclaw/plugin-sdk/config-runtime";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { registerMemoryCli } from "./src/cli.js";
 import { registerDreamingCommand } from "./src/dreaming-command.js";
@@ -42,7 +43,8 @@ export default definePluginEntry({
     api.registerTool(
       (ctx) =>
         createMemorySearchTool({
-          config: ctx.config,
+          config: ctx.runtimeConfig ?? ctx.config,
+          getConfig: () => getRuntimeConfigSnapshot() ?? ctx.runtimeConfig ?? ctx.config,
           agentSessionKey: ctx.sessionKey,
           sandboxed: ctx.sandboxed,
         }),
@@ -52,7 +54,8 @@ export default definePluginEntry({
     api.registerTool(
       (ctx) =>
         createMemoryGetTool({
-          config: ctx.config,
+          config: ctx.runtimeConfig ?? ctx.config,
+          getConfig: () => getRuntimeConfigSnapshot() ?? ctx.runtimeConfig ?? ctx.config,
           agentSessionKey: ctx.sessionKey,
         }),
       { names: ["memory_get"] },

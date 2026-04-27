@@ -10,6 +10,7 @@ import {
   QWEN_DEFAULT_MODEL_REF,
 } from "./onboard.js";
 import { buildQwenProvider } from "./provider-catalog.js";
+import { wrapQwenProviderStream } from "./stream.js";
 import { buildQwenVideoGenerationProvider } from "./video-generation-provider.js";
 
 const PROVIDER_ID = "qwen";
@@ -165,6 +166,7 @@ export default defineSingleProviderPluginEntry({
     },
     applyNativeStreamingUsageCompat: ({ providerConfig }) =>
       applyQwenNativeStreamingUsageCompat(providerConfig),
+    wrapStreamFn: wrapQwenProviderStream,
     normalizeConfig: ({ providerConfig }) => {
       if (!isQwenCodingPlanBaseUrl(providerConfig.baseUrl)) {
         return undefined;

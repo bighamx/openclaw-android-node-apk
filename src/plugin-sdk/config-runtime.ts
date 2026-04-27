@@ -70,6 +70,7 @@ export { resolveMarkdownTableMode } from "../config/markdown-tables.js";
 export {
   resolveChannelGroupPolicy,
   resolveChannelGroupRequireMention,
+  resolveToolsBySender,
   type ChannelGroupPolicy,
 } from "../config/group-policy.js";
 export {
@@ -118,6 +119,10 @@ export type {
   GroupToolPolicyConfig,
   MarkdownConfig,
   MarkdownTableMode,
+  MSTeamsChannelConfig,
+  MSTeamsConfig,
+  MSTeamsReplyStyle,
+  MSTeamsTeamConfig,
   OpenClawConfig,
   ReplyToMode,
   SignalReactionNotificationMode,

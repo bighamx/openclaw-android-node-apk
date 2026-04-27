@@ -44,3 +44,4 @@ export { resolveRequestClientIp } from "../gateway/net.js";
 export { createAuthRateLimiter } from "../gateway/auth-rate-limit.js";
 export type { AuthRateLimiter, RateLimitConfig } from "../gateway/auth-rate-limit.js";
 export { normalizePluginHttpPath } from "../plugins/http-path.js";
+export { DEFAULT_WEBHOOK_MAX_BODY_BYTES } from "../infra/http-body.js";

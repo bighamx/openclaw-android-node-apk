@@ -558,6 +558,11 @@ describe("memory cli", () => {
 
     expectCliSync(sync);
     expect(probeEmbeddingAvailability).toHaveBeenCalled();
+    expect(getMemorySearchManager).toHaveBeenCalledWith({
+      cfg: {},
+      agentId: "main",
+      purpose: "cli",
+    });
     expect(close).toHaveBeenCalled();
   });
 
@@ -570,6 +575,11 @@ describe("memory cli", () => {
     await runMemoryCli(["index"]);
 
     expectCliSync(sync);
+    expect(getMemorySearchManager).toHaveBeenCalledWith({
+      cfg: {},
+      agentId: "main",
+      purpose: "cli",
+    });
     expect(close).toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith("Memory index updated (main).");
   });
@@ -784,6 +794,11 @@ describe("memory cli", () => {
       maxResults: undefined,
       minScore: undefined,
       sessionKey: "agent:main:cli:direct:memory-search",
+    });
+    expect(getMemorySearchManager).toHaveBeenCalledWith({
+      cfg: {},
+      agentId: "main",
+      purpose: "cli",
     });
     expect(log).toHaveBeenCalledWith("No matches.");
     expect(close).toHaveBeenCalled();

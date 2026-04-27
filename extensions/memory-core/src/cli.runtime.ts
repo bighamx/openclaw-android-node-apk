@@ -680,7 +680,7 @@ export async function runMemoryStatus(opts: MemoryCommandOptions) {
   }> = [];
 
   for (const agentId of agentIds) {
-    const managerPurpose = opts.index ? "default" : "status";
+    const managerPurpose = opts.index ? "cli" : "status";
     await withMemoryManagerForAgent({
       cfg,
       agentId,
@@ -1025,6 +1025,7 @@ export async function runMemoryIndex(opts: MemoryCommandOptions) {
     await withMemoryManagerForAgent({
       cfg,
       agentId,
+      purpose: "cli",
       run: async (manager) => {
         try {
           const syncFn = manager.sync ? manager.sync.bind(manager) : undefined;
@@ -1177,6 +1178,7 @@ export async function runMemorySearch(
   await withMemoryManagerForAgent({
     cfg,
     agentId,
+    purpose: "cli",
     run: async (manager) => {
       const sessionKey = buildCliMemorySearchSessionKey(agentId);
       let results: Awaited<ReturnType<typeof manager.search>>;

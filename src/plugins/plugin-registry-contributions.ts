@@ -12,13 +12,29 @@ import type {
   PluginManifestRecord,
   PluginManifestRegistry,
 } from "./manifest-registry.js";
-import type { PluginLookUpTable } from "./plugin-lookup-table.js";
 import type { PluginOrigin } from "./plugin-origin.types.js";
 import {
   loadPluginRegistrySnapshot,
   type LoadPluginRegistryParams,
   type PluginRegistrySnapshot,
 } from "./plugin-registry-snapshot.js";
+
+export type PluginLookUpTable = {
+  index: PluginRegistrySnapshot;
+  manifestRegistry: PluginManifestRegistry;
+  plugins: readonly PluginManifestRecord[];
+  normalizePluginId: (pluginId: string) => string;
+  owners: {
+    channels: ReadonlyMap<string, readonly string[]>;
+    channelConfigs: ReadonlyMap<string, readonly string[]>;
+    providers: ReadonlyMap<string, readonly string[]>;
+    modelCatalogProviders: ReadonlyMap<string, readonly string[]>;
+    cliBackends: ReadonlyMap<string, readonly string[]>;
+    setupProviders: ReadonlyMap<string, readonly string[]>;
+    commandAliases: ReadonlyMap<string, readonly string[]>;
+    contracts: ReadonlyMap<string, readonly string[]>;
+  };
+};
 
 export type PluginRegistryContributionOptions = LoadPluginRegistryParams & {
   includeDisabled?: boolean;
@@ -87,7 +103,7 @@ export type ResolveManifestContractPluginIdsByCompatibilityRuntimePathParams =
 
 export type PluginRegistryIdNormalizerOptions = {
   manifestRegistry?: PluginManifestRegistry;
-  lookUpTable?: PluginLookUpTable;
+  lookUpTable?: Pick<PluginLookUpTable, "manifestRegistry">;
 };
 
 function normalizeContributionId(value: string): string {

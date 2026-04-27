@@ -54,6 +54,7 @@ export function resolveOpenClawPluginToolsForOptions(params: {
     }),
     existingToolNames: params.existingToolNames ?? new Set<string>(),
     toolAllowlist: params.options?.pluginToolAllowlist,
+    allowGatewaySubagentBinding: params.options?.allowGatewaySubagentBinding,
   });
 
   return applyPluginToolDeliveryDefaults({

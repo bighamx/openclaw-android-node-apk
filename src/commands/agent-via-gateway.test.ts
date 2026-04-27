@@ -127,6 +127,21 @@ describe("agentCliCommand", () => {
     });
   });
 
+  it("passes model overrides through gateway requests", async () => {
+    await withTempStore(async () => {
+      mockGatewaySuccessReply();
+
+      await agentCliCommand({ message: "hi", to: "+1555", model: "ollama/qwen3.5:9b" }, runtime);
+
+      expect(callGateway).toHaveBeenCalledTimes(1);
+      expect(callGateway.mock.calls[0]?.[0]).toMatchObject({
+        params: {
+          model: "ollama/qwen3.5:9b",
+        },
+      });
+    });
+  });
+
   it("routes diagnostics to stderr before JSON gateway execution", async () => {
     await withTempStore(async () => {
       const response = {

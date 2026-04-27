@@ -380,6 +380,10 @@
     "target": "插件 SDK"
   },
   {
+    "source": "Plugins",
+    "target": "插件"
+  },
+  {
     "source": "Building plugins",
     "target": "构建插件"
   },
@@ -438,6 +442,22 @@
   {
     "source": "Migrate",
     "target": "迁移"
+  },
+  {
+    "source": "Migrating",
+    "target": "迁移"
+  },
+  {
+    "source": "Migrating from Hermes",
+    "target": "从 Hermes 迁移"
+  },
+  {
+    "source": "Migrating from Claude",
+    "target": "从 Claude 迁移"
+  },
+  {
+    "source": "Agent workspace",
+    "target": "Agent 工作区"
   },
   {
     "source": "Migration",

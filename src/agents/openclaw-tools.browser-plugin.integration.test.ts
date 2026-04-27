@@ -120,6 +120,26 @@ describe("createOpenClawTools browser plugin integration", () => {
     expect(details.workspaceOnly).toBe(true);
   });
 
+  it("forwards gateway subagent binding to plugin resolution", () => {
+    hoisted.resolvePluginTools.mockReturnValue([]);
+    const config = {
+      plugins: {
+        allow: ["browser"],
+      },
+    } as OpenClawConfig;
+
+    resolveOpenClawPluginToolsForOptions({
+      options: { config, allowGatewaySubagentBinding: true },
+      resolvedConfig: config,
+    });
+
+    expect(hoisted.resolvePluginTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allowGatewaySubagentBinding: true,
+      }),
+    );
+  });
+
   it("does not pass a stale active snapshot as plugin runtime config for a resolved run config", () => {
     const staleSourceConfig = {
       plugins: {
