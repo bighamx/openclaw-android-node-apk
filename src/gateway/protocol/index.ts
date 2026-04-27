@@ -52,6 +52,16 @@ import {
   TalkConfigParamsSchema,
   type TalkConfigResult,
   TalkConfigResultSchema,
+  type TalkRealtimeRelayAudioParams,
+  TalkRealtimeRelayAudioParamsSchema,
+  type TalkRealtimeRelayMarkParams,
+  TalkRealtimeRelayMarkParamsSchema,
+  type TalkRealtimeRelayOkResult,
+  TalkRealtimeRelayOkResultSchema,
+  type TalkRealtimeRelayStopParams,
+  TalkRealtimeRelayStopParamsSchema,
+  type TalkRealtimeRelayToolResultParams,
+  TalkRealtimeRelayToolResultParamsSchema,
   type TalkRealtimeSessionParams,
   TalkRealtimeSessionParamsSchema,
   type TalkRealtimeSessionResult,
@@ -463,6 +473,17 @@ export const validateTalkRealtimeSessionParams = ajv.compile<TalkRealtimeSession
 export const validateTalkRealtimeSessionResult = ajv.compile<TalkRealtimeSessionResult>(
   TalkRealtimeSessionResultSchema,
 );
+export const validateTalkRealtimeRelayAudioParams = ajv.compile<TalkRealtimeRelayAudioParams>(
+  TalkRealtimeRelayAudioParamsSchema,
+);
+export const validateTalkRealtimeRelayMarkParams = ajv.compile<TalkRealtimeRelayMarkParams>(
+  TalkRealtimeRelayMarkParamsSchema,
+);
+export const validateTalkRealtimeRelayStopParams = ajv.compile<TalkRealtimeRelayStopParams>(
+  TalkRealtimeRelayStopParamsSchema,
+);
+export const validateTalkRealtimeRelayToolResultParams =
+  ajv.compile<TalkRealtimeRelayToolResultParams>(TalkRealtimeRelayToolResultParamsSchema);
 export const validateTalkSpeakParams = ajv.compile<TalkSpeakParams>(TalkSpeakParamsSchema);
 export const validateTalkSpeakResult = ajv.compile<TalkSpeakResult>(TalkSpeakResultSchema);
 export const validateChannelsStatusParams = ajv.compile<ChannelsStatusParams>(
@@ -660,6 +681,11 @@ export {
   TalkConfigResultSchema,
   TalkRealtimeSessionParamsSchema,
   TalkRealtimeSessionResultSchema,
+  TalkRealtimeRelayAudioParamsSchema,
+  TalkRealtimeRelayMarkParamsSchema,
+  TalkRealtimeRelayStopParamsSchema,
+  TalkRealtimeRelayToolResultParamsSchema,
+  TalkRealtimeRelayOkResultSchema,
   TalkSpeakParamsSchema,
   TalkSpeakResultSchema,
   ChannelsStatusParamsSchema,
@@ -766,6 +792,11 @@ export type {
   TalkConfigResult,
   TalkRealtimeSessionParams,
   TalkRealtimeSessionResult,
+  TalkRealtimeRelayAudioParams,
+  TalkRealtimeRelayMarkParams,
+  TalkRealtimeRelayStopParams,
+  TalkRealtimeRelayToolResultParams,
+  TalkRealtimeRelayOkResult,
   TalkSpeakParams,
   TalkSpeakResult,
   TalkModeParams,

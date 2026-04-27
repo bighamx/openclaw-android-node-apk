@@ -56,6 +56,8 @@ type GatewayStartupConfigOverrides = {
   tailscale?: GatewayTailscaleConfig;
 };
 
+type GatewayStartupConfigMeasure = <T>(name: string, run: () => T | Promise<T>) => Promise<T>;
+
 export type GatewayStartupConfigSnapshotLoadResult = {
   snapshot: ConfigFileSnapshot;
   wroteConfig: boolean;
@@ -187,8 +189,12 @@ function resolveGatewayStartupConfigWithoutInvalidPluginEntries(params: {
 export async function loadGatewayStartupConfigSnapshot(params: {
   minimalTestGateway: boolean;
   log: GatewayStartupLog;
+  measure?: GatewayStartupConfigMeasure;
 }): Promise<GatewayStartupConfigSnapshotLoadResult> {
-  let configSnapshot = await readConfigFileSnapshot();
+  const measure = params.measure ?? (async (_name, run) => await run());
+  let configSnapshot = await measure("config.snapshot.read", () =>
+    readConfigFileSnapshot({ measure }),
+  );
   let wroteConfig = false;
   let degradedStartupConfig = false;
   let degradedPluginConfig = false;
@@ -236,7 +242,9 @@ export async function loadGatewayStartupConfigSnapshot(params: {
         params.log.warn(
           `gateway: invalid config was restored from last-known-good backup: ${configSnapshot.path}`,
         );
-        configSnapshot = await readConfigFileSnapshot();
+        configSnapshot = await measure("config.snapshot.recovery-read", () =>
+          readConfigFileSnapshot({ measure }),
+        );
         if (configSnapshot.valid) {
           enqueueConfigRecoveryNotice({
             cfg: configSnapshot.config,
@@ -251,7 +259,9 @@ export async function loadGatewayStartupConfigSnapshot(params: {
         params.log.warn(
           `gateway: invalid config was repaired by stripping a non-JSON prefix: ${configSnapshot.path}`,
         );
-        configSnapshot = await readConfigFileSnapshot();
+        configSnapshot = await measure("config.snapshot.prefix-recovery-read", () =>
+          readConfigFileSnapshot({ measure }),
+        );
       }
     }
     assertValidGatewayStartupConfigSnapshot(configSnapshot, { includeDoctorHint: true });
@@ -260,7 +270,9 @@ export async function loadGatewayStartupConfigSnapshot(params: {
   const autoEnable =
     params.minimalTestGateway || degradedStartupConfig || degradedPluginConfig
       ? { config: configSnapshot.config, changes: [] as string[] }
-      : applyPluginAutoEnable({ config: configSnapshot.config, env: process.env });
+      : await measure("config.snapshot.auto-enable", () =>
+          applyPluginAutoEnable({ config: configSnapshot.sourceConfig, env: process.env }),
+        );
   if (autoEnable.changes.length === 0) {
     return {
       snapshot: configSnapshot,
@@ -276,7 +288,9 @@ export async function loadGatewayStartupConfigSnapshot(params: {
       afterWrite: { mode: "auto" },
     });
     wroteConfig = true;
-    configSnapshot = await readConfigFileSnapshot();
+    configSnapshot = await measure("config.snapshot.auto-enable-read", () =>
+      readConfigFileSnapshot({ measure }),
+    );
     assertValidGatewayStartupConfigSnapshot(configSnapshot);
     params.log.info(
       `gateway: auto-enabled plugins:\n${autoEnable.changes.map((entry) => `- ${entry}`).join("\n")}`,
