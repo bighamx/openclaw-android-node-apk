@@ -502,6 +502,10 @@
       "types": "./dist/plugin-sdk/lazy-runtime.d.ts",
       "default": "./dist/plugin-sdk/lazy-runtime.js"
     },
+    "./plugin-sdk/plugin-test-api": {
+      "types": "./dist/plugin-sdk/plugin-test-api.d.ts",
+      "default": "./dist/plugin-sdk/plugin-test-api.js"
+    },
     "./plugin-sdk/testing": {
       "types": "./dist/plugin-sdk/testing.d.ts",
       "default": "./dist/plugin-sdk/testing.js"
