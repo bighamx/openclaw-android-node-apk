@@ -7,6 +7,7 @@ import { normalizeOptionalLowercaseString } from "../shared/string-coerce.js";
 import { resolveUserPath } from "../utils.js";
 
 const DISABLED_BUNDLED_PLUGINS_DIR = path.join(os.tmpdir(), "openclaw-empty-bundled-plugins");
+let bundledPluginsDirOverrideForTest: string | undefined;
 
 export function areBundledPluginsDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = normalizeOptionalLowercaseString(env.OPENCLAW_DISABLE_BUNDLED_PLUGINS);
@@ -59,6 +60,16 @@ function pathContains(parentDir: string, childPath: string): boolean {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
+function runningUnderVitest(): boolean {
+  return Boolean(
+    process.env.OPENCLAW_VITEST_FS_MODULE_CACHE_PATH ||
+    process.env.OPENCLAW_VITEST_INCLUDE_FILE ||
+    process.env.VITEST ||
+    process.env.VITEST_POOL_ID ||
+    process.env.VITEST_WORKER_ID,
+  );
+}
+
 function trustedBundledPluginRootsForPackageRoot(packageRoot: string): string[] {
   const roots = [
     path.join(packageRoot, "dist", "extensions"),
@@ -74,6 +85,9 @@ function resolveTrustedExistingOverride(resolvedOverride: string): string | null
   const realOverride = safeRealpathSync(resolvedOverride);
   if (!realOverride) {
     return null;
+  }
+  if (runningUnderVitest()) {
+    return path.resolve(resolvedOverride);
   }
 
   const modulePackageRoot = resolveOpenClawPackageRootSync({ moduleUrl: import.meta.url });
@@ -173,6 +187,10 @@ export function resolveBundledPluginsDir(env: NodeJS.ProcessEnv = process.env): 
     return resolveDisabledBundledPluginsDir();
   }
 
+  if (bundledPluginsDirOverrideForTest) {
+    return bundledPluginsDirOverrideForTest;
+  }
+
   const override = env.OPENCLAW_BUNDLED_PLUGINS_DIR?.trim();
   let rejectedExistingOverride: string | null = null;
   if (override) {
@@ -247,4 +265,11 @@ export function resolveBundledPluginsDir(env: NodeJS.ProcessEnv = process.env): 
   }
 
   return undefined;
+}
+
+export function setBundledPluginsDirOverrideForTest(dir: string | undefined): void {
+  if (process.env.VITEST !== "true" && process.env.NODE_ENV !== "test") {
+    throw new Error("setBundledPluginsDirOverrideForTest is only available in tests");
+  }
+  bundledPluginsDirOverrideForTest = dir;
 }
