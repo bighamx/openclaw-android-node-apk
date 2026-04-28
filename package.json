@@ -502,9 +502,41 @@
       "types": "./dist/plugin-sdk/lazy-runtime.d.ts",
       "default": "./dist/plugin-sdk/lazy-runtime.js"
     },
+    "./plugin-sdk/channel-target-testing": {
+      "types": "./dist/plugin-sdk/channel-target-testing.d.ts",
+      "default": "./dist/plugin-sdk/channel-target-testing.js"
+    },
+    "./plugin-sdk/channel-test-helpers": {
+      "types": "./dist/plugin-sdk/channel-test-helpers.d.ts",
+      "default": "./dist/plugin-sdk/channel-test-helpers.js"
+    },
     "./plugin-sdk/plugin-test-api": {
       "types": "./dist/plugin-sdk/plugin-test-api.d.ts",
       "default": "./dist/plugin-sdk/plugin-test-api.js"
+    },
+    "./plugin-sdk/plugin-test-contracts": {
+      "types": "./dist/plugin-sdk/plugin-test-contracts.d.ts",
+      "default": "./dist/plugin-sdk/plugin-test-contracts.js"
+    },
+    "./plugin-sdk/plugin-test-runtime": {
+      "types": "./dist/plugin-sdk/plugin-test-runtime.d.ts",
+      "default": "./dist/plugin-sdk/plugin-test-runtime.js"
+    },
+    "./plugin-sdk/provider-http-test-mocks": {
+      "types": "./dist/plugin-sdk/provider-http-test-mocks.d.ts",
+      "default": "./dist/plugin-sdk/provider-http-test-mocks.js"
+    },
+    "./plugin-sdk/provider-test-contracts": {
+      "types": "./dist/plugin-sdk/provider-test-contracts.d.ts",
+      "default": "./dist/plugin-sdk/provider-test-contracts.js"
+    },
+    "./plugin-sdk/test-env": {
+      "types": "./dist/plugin-sdk/test-env.d.ts",
+      "default": "./dist/plugin-sdk/test-env.js"
+    },
+    "./plugin-sdk/test-fixtures": {
+      "types": "./dist/plugin-sdk/test-fixtures.d.ts",
+      "default": "./dist/plugin-sdk/test-fixtures.js"
     },
     "./plugin-sdk/testing": {
       "types": "./dist/plugin-sdk/testing.d.ts",
@@ -718,6 +750,10 @@
       "types": "./dist/plugin-sdk/channel-config-schema.d.ts",
       "default": "./dist/plugin-sdk/channel-config-schema.js"
     },
+    "./plugin-sdk/bundled-channel-config-schema": {
+      "types": "./dist/plugin-sdk/bundled-channel-config-schema.d.ts",
+      "default": "./dist/plugin-sdk/bundled-channel-config-schema.js"
+    },
     "./plugin-sdk/channel-config-schema-legacy": {
       "types": "./dist/plugin-sdk/channel-config-schema-legacy.d.ts",
       "default": "./dist/plugin-sdk/channel-config-schema-legacy.js"
@@ -793,6 +829,10 @@
     "./plugin-sdk/channel-send-result": {
       "types": "./dist/plugin-sdk/channel-send-result.d.ts",
       "default": "./dist/plugin-sdk/channel-send-result.js"
+    },
+    "./plugin-sdk/channel-route": {
+      "types": "./dist/plugin-sdk/channel-route.d.ts",
+      "default": "./dist/plugin-sdk/channel-route.js"
     },
     "./plugin-sdk/channel-targets": {
       "types": "./dist/plugin-sdk/channel-targets.d.ts",
@@ -1731,13 +1771,13 @@
     "@agentclientprotocol/sdk": "0.20.0",
     "@clack/prompts": "^1.2.0",
     "@lydell/node-pty": "1.2.0-beta.12",
-    "@mariozechner/pi-agent-core": "0.70.2",
-    "@mariozechner/pi-ai": "0.70.2",
-    "@mariozechner/pi-coding-agent": "0.70.2",
-    "@mariozechner/pi-tui": "0.70.2",
+    "@mariozechner/pi-agent-core": "0.70.5",
+    "@mariozechner/pi-ai": "0.70.5",
+    "@mariozechner/pi-coding-agent": "0.70.5",
+    "@mariozechner/pi-tui": "0.70.5",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@vincentkoc/qrcode-tui": "0.2.1",
-    "ajv": "^8.18.0",
+    "ajv": "^8.20.0",
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
     "commander": "^14.0.3",
@@ -1774,14 +1814,14 @@
     "@types/markdown-it": "^14.1.2",
     "@types/node": "25.6.0",
     "@types/ws": "^8.18.1",
-    "@typescript/native-preview": "7.0.0-dev.20260426.1",
+    "@typescript/native-preview": "7.0.0-dev.20260427.1",
     "@vitest/coverage-v8": "^4.1.5",
     "jscpd": "4.0.9",
     "jsdom": "^29.0.2",
     "lit": "^3.3.2",
     "oxfmt": "0.46.0",
     "oxlint": "^1.61.0",
-    "oxlint-tsgolint": "^0.21.1",
+    "oxlint-tsgolint": "^0.22.0",
     "signal-utils": "0.21.1",
     "tsdown": "0.21.10",
     "tsx": "^4.21.0",
@@ -1800,7 +1840,7 @@
   "packageManager": "pnpm@10.33.0",
   "pnpm": {
     "overrides": {
-      "@anthropic-ai/sdk": "0.91.0",
+      "@anthropic-ai/sdk": "0.91.1",
       "hono": "4.12.14",
       "@hono/node-server": "1.19.14",
       "axios": "1.15.0",

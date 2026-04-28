@@ -25,7 +25,7 @@ Ollama provider config uses `baseUrl` as the canonical key. OpenClaw also accept
     Remote public hosts and Ollama Cloud (`https://ollama.com`) require a real credential through `OLLAMA_API_KEY`, an auth profile, or the provider's `apiKey`.
   </Accordion>
   <Accordion title="Custom provider ids">
-    Custom provider ids that set `api: "ollama"` follow the same rules. For example, an `ollama-remote` provider that points at a private LAN Ollama host can use `apiKey: "ollama-local"` and sub-agents will resolve that marker through the Ollama provider hook instead of treating it as a missing credential.
+    Custom provider ids that set `api: "ollama"` follow the same rules. For example, an `ollama-remote` provider that points at a private LAN Ollama host can use `apiKey: "ollama-local"` and sub-agents will resolve that marker through the Ollama provider hook instead of treating it as a missing credential. Memory search can also set `agents.defaults.memorySearch.provider` to that custom provider id so embeddings use the matching Ollama endpoint.
   </Accordion>
   <Accordion title="Memory embedding scope">
     When Ollama is used for memory embeddings, bearer auth is scoped to the host where it was declared:
@@ -214,6 +214,13 @@ When you switch a conversation with `/model ollama/<model>`, OpenClaw treats
 that as an exact user selection. If the configured Ollama `baseUrl` is
 unreachable, the next reply fails with the provider error instead of silently
 answering from another configured fallback model.
+
+Isolated cron jobs do one extra local safety check before they start the agent
+turn. If the selected model resolves to a local, private-network, or `.local`
+Ollama provider and `/api/tags` is unreachable, OpenClaw records that cron run
+as `skipped` with the selected `ollama/<model>` in the error text. The endpoint
+preflight is cached for 5 minutes, so multiple cron jobs pointed at the same
+stopped Ollama daemon do not all launch failing model requests.
 
 Live-verify the local text path, native stream path, and embeddings against
 local Ollama with:

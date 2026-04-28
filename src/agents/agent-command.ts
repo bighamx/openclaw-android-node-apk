@@ -60,6 +60,7 @@ import {
   resolveDefaultModelForAgent,
   resolveThinkingDefault,
 } from "./model-selection.js";
+import { classifyEmbeddedPiRunResultForModelFallback } from "./pi-embedded-runner/result-fallback-classifier.js";
 import { resolveProviderIdForAuth } from "./provider-auth-aliases.js";
 import { normalizeSpawnedRunMetadata } from "./spawned-context.js";
 import { resolveAgentTimeoutMs } from "./timeout.js";
@@ -67,6 +68,7 @@ import { ensureAgentWorkspace } from "./workspace.js";
 
 const log = createSubsystemLogger("agents/agent-command");
 type AttemptExecutionRuntime = typeof import("./command/attempt-execution.runtime.js");
+type AgentAttemptResult = Awaited<ReturnType<AttemptExecutionRuntime["runAgentAttempt"]>>;
 type AcpManagerRuntime = typeof import("../acp/control-plane/manager.js");
 type AcpPolicyRuntime = typeof import("../acp/policy.js");
 type AcpRuntimeErrorsRuntime = typeof import("../acp/runtime/errors.js");
@@ -902,7 +904,7 @@ async function agentCommandInternal(
       opts.replyChannel ?? opts.channel,
     );
 
-    let result: Awaited<ReturnType<AttemptExecutionRuntime["runAgentAttempt"]>>;
+    let result: AgentAttemptResult;
     let fallbackProvider = provider;
     let fallbackModel = model;
     const MAX_LIVE_SWITCH_RETRIES = 5;
@@ -919,13 +921,19 @@ async function agentCommandInternal(
         });
 
         let fallbackAttemptIndex = 0;
-        const fallbackResult = await runWithModelFallback({
+        const fallbackResult = await runWithModelFallback<AgentAttemptResult>({
           cfg,
           provider,
           model,
           runId,
           agentDir,
           fallbacksOverride: effectiveFallbacksOverride,
+          classifyResult: ({ provider, model, result }) =>
+            classifyEmbeddedPiRunResultForModelFallback({
+              provider,
+              model,
+              result,
+            }),
           run: async (providerOverride, modelOverride, runOptions) => {
             const isFallbackRetry = fallbackAttemptIndex > 0;
             fallbackAttemptIndex += 1;

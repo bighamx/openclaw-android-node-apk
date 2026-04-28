@@ -16,16 +16,24 @@ For the plugin authoring guide, see [Plugin SDK overview](/plugins/sdk-overview)
 
 ## Plugin entry
 
-| Subpath                        | Key exports                                                                                                                                            |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `plugin-sdk/plugin-entry`      | `definePluginEntry`                                                                                                                                    |
-| `plugin-sdk/core`              | `defineChannelPluginEntry`, `createChatChannelPlugin`, `createChannelPluginBase`, `defineSetupPluginEntry`, `buildChannelConfigSchema`                 |
-| `plugin-sdk/config-schema`     | `OpenClawSchema`                                                                                                                                       |
-| `plugin-sdk/provider-entry`    | `defineSingleProviderPluginEntry`                                                                                                                      |
-| `plugin-sdk/testing`           | Public plugin test fixtures, provider registration/catalog helpers, wizard contract hooks, and bundled-plugin contract maintenance helpers             |
-| `plugin-sdk/plugin-test-api`   | Minimal `OpenClawPluginApi` mock builder for direct plugin registration unit tests                                                                     |
-| `plugin-sdk/migration`         | Migration provider item helpers such as `createMigrationItem`, reason constants, item status markers, redaction helpers, and `summarizeMigrationItems` |
-| `plugin-sdk/migration-runtime` | Runtime migration helpers such as `copyMigrationFileItem` and `writeMigrationReport`                                                                   |
+| Subpath                               | Key exports                                                                                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `plugin-sdk/plugin-entry`             | `definePluginEntry`                                                                                                                                    |
+| `plugin-sdk/core`                     | `defineChannelPluginEntry`, `createChatChannelPlugin`, `createChannelPluginBase`, `defineSetupPluginEntry`, `buildChannelConfigSchema`                 |
+| `plugin-sdk/config-schema`            | `OpenClawSchema`                                                                                                                                       |
+| `plugin-sdk/provider-entry`           | `defineSingleProviderPluginEntry`                                                                                                                      |
+| `plugin-sdk/testing`                  | Broad compatibility barrel for legacy plugin tests; prefer focused test subpaths for new extension tests                                               |
+| `plugin-sdk/plugin-test-api`          | Minimal `OpenClawPluginApi` mock builder for direct plugin registration unit tests                                                                     |
+| `plugin-sdk/channel-test-helpers`     | Channel account lifecycle, directory, send-config, runtime mock, hook, and generic channel contract test helpers                                       |
+| `plugin-sdk/channel-target-testing`   | Shared channel target-resolution error-case test suite                                                                                                 |
+| `plugin-sdk/plugin-test-contracts`    | Plugin registration, package manifest, public artifact, runtime API, import side-effect, and direct import contract helpers                            |
+| `plugin-sdk/plugin-test-runtime`      | Plugin runtime, registry, provider-registration, setup-wizard, and runtime task-flow fixtures for tests                                                |
+| `plugin-sdk/provider-test-contracts`  | Provider runtime, auth, discovery, onboard, catalog, media capability, web-search/fetch, and wizard contract helpers                                   |
+| `plugin-sdk/provider-http-test-mocks` | Opt-in Vitest HTTP/auth mocks for provider tests that exercise `plugin-sdk/provider-http`                                                              |
+| `plugin-sdk/test-env`                 | Test environment, fetch/network, live-test, temporary filesystem, and time-control fixtures                                                            |
+| `plugin-sdk/test-fixtures`            | Generic CLI, sandbox, skill, agent-message, system-event, terminal, chunking, auth-token, and typed-case test fixtures                                 |
+| `plugin-sdk/migration`                | Migration provider item helpers such as `createMigrationItem`, reason constants, item status markers, redaction helpers, and `summarizeMigrationItems` |
+| `plugin-sdk/migration-runtime`        | Runtime migration helpers such as `copyMigrationFileItem` and `writeMigrationReport`                                                                   |
 
 <AccordionGroup>
   <Accordion title="Channel subpaths">
@@ -46,7 +54,8 @@ For the plugin authoring guide, see [Plugin SDK overview](/plugins/sdk-overview)
     | `plugin-sdk/channel-reply-pipeline` | `createChannelReplyPipeline` |
     | `plugin-sdk/channel-config-helpers` | `createHybridChannelConfigAdapter` |
     | `plugin-sdk/channel-config-schema` | Shared channel config schema primitives and generic builder |
-    | `plugin-sdk/channel-config-schema-legacy` | Deprecated bundled-channel config schemas for bundled compatibility only |
+    | `plugin-sdk/bundled-channel-config-schema` | Bundled OpenClaw channel config schemas for maintained bundled plugins only |
+    | `plugin-sdk/channel-config-schema-legacy` | Deprecated compatibility alias for bundled-channel config schemas |
     | `plugin-sdk/telegram-command-config` | Telegram custom-command normalization/validation helpers with bundled-contract fallback |
     | `plugin-sdk/command-gating` | Narrow command authorization gate helpers |
     | `plugin-sdk/channel-policy` | `resolveChannelGroupRequireMention` |
@@ -79,7 +88,8 @@ For the plugin authoring guide, see [Plugin SDK overview](/plugins/sdk-overview)
     | `plugin-sdk/channel-logging` | Channel logging helpers for inbound drops and typing/ack failures |
     | `plugin-sdk/channel-send-result` | Reply result types |
     | `plugin-sdk/channel-actions` | Channel message-action helpers, plus deprecated native schema helpers kept for plugin compatibility |
-    | `plugin-sdk/channel-targets` | Target parsing/matching helpers |
+    | `plugin-sdk/channel-route` | Shared route normalization, parser-driven target resolution, thread-id stringification, dedupe/compact route keys, parsed-target types, and route/target comparison helpers |
+    | `plugin-sdk/channel-targets` | Target parsing helpers; route comparison callers should use `plugin-sdk/channel-route` |
     | `plugin-sdk/channel-contract` | Channel contract types |
     | `plugin-sdk/channel-feedback` | Feedback/reaction wiring |
     | `plugin-sdk/channel-secret-runtime` | Narrow secret-contract helpers such as `collectSimpleChannelFieldAssignments`, `getChannelSurface`, `pushAssignment`, and secret target types |
@@ -101,7 +111,7 @@ For the plugin authoring guide, see [Plugin SDK overview](/plugins/sdk-overview)
     | `plugin-sdk/provider-env-vars` | Provider auth env-var lookup helpers |
     | `plugin-sdk/provider-auth` | `createProviderApiKeyAuthMethod`, `ensureApiKeyFromOptionEnvOrPrompt`, `upsertAuthProfile`, `upsertApiKeyProfile`, `writeOAuthCredentials` |
     | `plugin-sdk/provider-model-shared` | `ProviderReplayFamily`, `buildProviderReplayFamilyHooks`, `normalizeModelCompat`, shared replay-policy builders, provider-endpoint helpers, and model-id normalization helpers such as `normalizeNativeXaiModelId` |
-    | `plugin-sdk/provider-catalog-runtime` | Provider catalog runtime hook and plugin-provider registry seams for contract tests |
+    | `plugin-sdk/provider-catalog-runtime` | Provider catalog augmentation runtime hook and plugin-provider registry seams for contract tests |
     | `plugin-sdk/provider-catalog-shared` | `findCatalogTemplate`, `buildSingleProviderApiKeyCatalog`, `supportsNativeStreamingUsageCompat`, `applyProviderNativeStreamingUsageCompat` |
     | `plugin-sdk/provider-http` | Generic provider HTTP/endpoint capability helpers, provider HTTP errors, and audio transcription multipart form helpers |
     | `plugin-sdk/provider-web-fetch-contract` | Narrow web-fetch config/selection contract helpers such as `enablePluginInConfig` and `WebFetchProviderPlugin` |
@@ -246,11 +256,11 @@ For the plugin authoring guide, see [Plugin SDK overview](/plugins/sdk-overview)
     | `plugin-sdk/media-understanding` | Media understanding provider types plus provider-facing image/audio helper exports |
     | `plugin-sdk/text-runtime` | Shared text/markdown/logging helpers such as assistant-visible-text stripping, markdown render/chunking/table helpers, redaction helpers, directive-tag helpers, and safe-text utilities |
     | `plugin-sdk/text-chunking` | Outbound text chunking helper |
-    | `plugin-sdk/speech` | Speech provider types plus provider-facing directive, registry, validation, and speech helper exports |
+    | `plugin-sdk/speech` | Speech provider types plus provider-facing directive, registry, validation, OpenAI-compatible TTS builder, and speech helper exports |
     | `plugin-sdk/speech-core` | Shared speech provider types, registry, directive, normalization, and speech helper exports |
     | `plugin-sdk/realtime-transcription` | Realtime transcription provider types, registry helpers, and shared WebSocket session helper |
     | `plugin-sdk/realtime-voice` | Realtime voice provider types and registry helpers |
-    | `plugin-sdk/image-generation` | Image generation provider types |
+    | `plugin-sdk/image-generation` | Image generation provider types plus image asset/data URL helpers |
     | `plugin-sdk/image-generation-core` | Shared image-generation types, failover, auth, and registry helpers |
     | `plugin-sdk/music-generation` | Music generation provider/request/result types |
     | `plugin-sdk/music-generation-core` | Shared music-generation types, failover helpers, provider lookup, and model-ref parsing |
@@ -260,8 +270,14 @@ For the plugin authoring guide, see [Plugin SDK overview](/plugins/sdk-overview)
     | `plugin-sdk/webhook-path` | Webhook path normalization helpers |
     | `plugin-sdk/web-media` | Shared remote/local media loading helpers |
     | `plugin-sdk/zod` | Re-exported `zod` for plugin SDK consumers |
-    | `plugin-sdk/testing` | Public extension test helpers including plugin registry/runtime mocks, provider registration capture, setup-wizard helpers, fetch/env/temp/time fixtures, schema/media/live-test helpers, `installCommonResolveTargetErrorCases`, `writeSkill`, `createTestRegistry`, and live generation env loading. Extension `*.test-support.ts` helpers stay on this or focused SDK subpaths, not core internals |
+    | `plugin-sdk/testing` | Broad compatibility barrel for legacy plugin tests. New extension tests should import focused SDK subpaths such as `plugin-sdk/plugin-test-runtime`, `plugin-sdk/channel-test-helpers`, `plugin-sdk/test-env`, or `plugin-sdk/test-fixtures` instead |
     | `plugin-sdk/plugin-test-api` | Minimal `createTestPluginApi` helper for direct plugin registration unit tests without importing repo test helper bridges |
+    | `plugin-sdk/channel-test-helpers` | Channel-oriented test helpers for generic actions/setup/status contracts, directory assertions, account startup lifecycle, send-config threading, runtime mocks, status issues, outbound delivery, and hook registration |
+    | `plugin-sdk/channel-target-testing` | Shared target-resolution error-case suite for channel tests |
+    | `plugin-sdk/plugin-test-contracts` | Plugin package, registration, public artifact, direct import, runtime API, and import side-effect contract helpers |
+    | `plugin-sdk/provider-test-contracts` | Provider runtime, auth, discovery, onboard, catalog, wizard, media capability, web-search/fetch, and stream contract helpers |
+    | `plugin-sdk/provider-http-test-mocks` | Opt-in Vitest HTTP/auth mocks for provider tests that exercise `plugin-sdk/provider-http` |
+    | `plugin-sdk/test-fixtures` | Generic CLI runtime capture, sandbox context, skill writer, agent-message, system-event, terminal-text, chunking, auth-token, and typed-case fixtures |
   </Accordion>
 
   <Accordion title="Memory subpaths">

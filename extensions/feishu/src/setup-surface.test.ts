@@ -4,7 +4,7 @@ import {
   createPluginSetupWizardStatus,
   createTestWizardPrompter,
   runSetupWizardConfigure,
-} from "openclaw/plugin-sdk/testing";
+} from "openclaw/plugin-sdk/plugin-test-runtime";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./probe.js", () => ({
@@ -67,6 +67,7 @@ async function getStatusWithEnvRefs(params: { appIdKey: string; appSecretKey: st
 
 const feishuConfigure = createPluginSetupWizardConfigure(feishuPlugin);
 const feishuGetStatus = createPluginSetupWizardStatus(feishuPlugin);
+
 describe("feishu setup wizard", () => {
   it("does not throw when config appId/appSecret are SecretRef objects", async () => {
     const text = vi
