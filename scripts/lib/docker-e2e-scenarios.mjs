@@ -324,7 +324,7 @@ export const tailLanes = [
     "live-cli-backend-codex",
     liveDockerScriptCommand(
       "test-live-cli-backend-docker.sh",
-      "OPENCLAW_LIVE_CLI_BACKEND_MODEL=codex-cli/gpt-5.2",
+      "OPENCLAW_LIVE_CLI_BACKEND_MODEL=codex-cli/gpt-5.5",
     ),
     {
       cacheKey: "cli-backend-codex",
@@ -418,11 +418,14 @@ const releasePathPluginRuntimeLanes = [
   ),
 ];
 
-const releasePathPluginRuntimeCoreLanes = [
+const releasePathPluginRuntimePluginLanes = [
   lane("plugins", "OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:plugins", {
     resources: ["npm", "service"],
     weight: 6,
   }),
+];
+
+const releasePathPluginRuntimeServiceLanes = [
   serviceLane(
     "cron-mcp-cleanup",
     "OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:cron-mcp-cleanup",
@@ -436,6 +439,11 @@ const releasePathPluginRuntimeCoreLanes = [
     "OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:openai-web-search-minimal",
     { timeoutMs: 8 * 60 * 1000 },
   ),
+];
+
+const releasePathPluginRuntimeCoreLanes = [
+  ...releasePathPluginRuntimePluginLanes,
+  ...releasePathPluginRuntimeServiceLanes,
 ];
 
 const releasePathBundledChannelLanes = [
@@ -508,9 +516,12 @@ const primaryReleasePathChunks = {
   "package-update-openai": releasePathPackageInstallOpenAiLanes,
   "package-update-anthropic": releasePathPackageInstallAnthropicLanes,
   "package-update-core": releasePathPackageUpdateCoreLanes,
-  "plugins-runtime-core": releasePathPluginRuntimeCoreLanes,
-  "plugins-runtime-install-a": bundledPluginInstallUninstallLanes.slice(0, 4),
-  "plugins-runtime-install-b": bundledPluginInstallUninstallLanes.slice(4),
+  "plugins-runtime-plugins": releasePathPluginRuntimePluginLanes,
+  "plugins-runtime-services": releasePathPluginRuntimeServiceLanes,
+  "plugins-runtime-install-a": bundledPluginInstallUninstallLanes.slice(0, 2),
+  "plugins-runtime-install-b": bundledPluginInstallUninstallLanes.slice(2, 4),
+  "plugins-runtime-install-c": bundledPluginInstallUninstallLanes.slice(4, 6),
+  "plugins-runtime-install-d": bundledPluginInstallUninstallLanes.slice(6),
   "bundled-channels-core": [releasePathBundledChannelLanes[0], ...bundledChannelSmokeLanes],
   "bundled-channels-update-a": [bundledChannelUpdateLanes[0], bundledChannelUpdateLanes[4]],
   "bundled-channels-update-discord": [bundledChannelUpdateLanes[1]],
@@ -529,6 +540,7 @@ const legacyReleasePathChunks = {
     ...releasePathPackageInstallAnthropicLanes,
     ...releasePathPackageUpdateCoreLanes,
   ],
+  "plugins-runtime-core": releasePathPluginRuntimeCoreLanes,
   "plugins-runtime": releasePathPluginRuntimeLanes,
   "plugins-integrations": [...releasePathPluginRuntimeLanes, ...releasePathBundledChannelLanes],
   "bundled-channels": releasePathBundledChannelLanes,
@@ -560,7 +572,8 @@ export function releasePathChunkLanes(chunk, options = {}) {
     return options.includeOpenWebUI ? [openWebUILane()] : [];
   }
   if (
-    (chunk !== "plugins-runtime-core" &&
+    (chunk !== "plugins-runtime-services" &&
+      chunk !== "plugins-runtime-core" &&
       chunk !== "plugins-runtime" &&
       chunk !== "plugins-integrations") ||
     !options.includeOpenWebUI

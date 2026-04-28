@@ -27,6 +27,32 @@ function createSseResponse(events: Record<string, unknown>[] = []): Response {
   });
 }
 
+function createStalledSseResponse(params: { onCancel: (reason: unknown) => void }): Response {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          'data: {"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":1,"output_tokens":0}}}\n\n',
+        ),
+      );
+    },
+    cancel(reason) {
+      params.onCancel(reason);
+    },
+  });
+  return new Response(body, {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
+function delay<T>(ms: number, value: T): Promise<T> {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(value), ms);
+  });
+}
+
 function latestAnthropicRequest() {
   const [, init] = guardedFetchMock.mock.calls.at(-1) ?? [];
   const body = init?.body;
@@ -512,6 +538,64 @@ describe("anthropic transport stream", () => {
         }),
       ]),
     );
+  });
+
+  it("cancels stalled SSE body reads when the abort signal fires mid-stream", async () => {
+    const controller = new AbortController();
+    const abortReason = new Error("anthropic test abort");
+    let cancelReason: unknown;
+    guardedFetchMock.mockResolvedValueOnce(
+      createStalledSseResponse({
+        onCancel: (reason) => {
+          cancelReason = reason;
+        },
+      }),
+    );
+
+    setTimeout(() => controller.abort(abortReason), 50);
+
+    const timedOut = Symbol("timed out");
+    const startedAt = Date.now();
+    const result = await Promise.race([
+      runTransportStream(
+        makeAnthropicTransportModel(),
+        { messages: [{ role: "user", content: "hello" }] } as AnthropicStreamContext,
+        { apiKey: "sk-ant-api", signal: controller.signal } as AnthropicStreamOptions,
+      ),
+      delay(1_000, timedOut),
+    ]);
+
+    if (result === timedOut) {
+      throw new Error("Anthropic SSE stream did not abort within 1000ms");
+    }
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    expect(result.stopReason).toBe("aborted");
+    expect(result.errorMessage).toBe("anthropic test abort");
+    expect(cancelReason).toBe(abortReason);
+  });
+
+  it("treats already-aborted signals as abort errors before reading SSE chunks", async () => {
+    const controller = new AbortController();
+    const abortReason = new Error("pre-aborted stream");
+    let cancelReason: unknown;
+    guardedFetchMock.mockResolvedValueOnce(
+      createStalledSseResponse({
+        onCancel: (reason) => {
+          cancelReason = reason;
+        },
+      }),
+    );
+    controller.abort(abortReason);
+
+    const result = await runTransportStream(
+      makeAnthropicTransportModel(),
+      { messages: [{ role: "user", content: "hello" }] } as AnthropicStreamContext,
+      { apiKey: "sk-ant-api", signal: controller.signal } as AnthropicStreamOptions,
+    );
+
+    expect(result.stopReason).toBe("aborted");
+    expect(result.errorMessage).toBe("pre-aborted stream");
+    expect(cancelReason).toBe(abortReason);
   });
 
   it("maps adaptive thinking effort for Claude 4.6 transport runs", async () => {

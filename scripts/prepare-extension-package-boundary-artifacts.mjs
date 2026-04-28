@@ -32,6 +32,15 @@ const PACKAGE_DTS_REQUIRED_OUTPUTS = [
   "packages/plugin-sdk/dist/src/plugin-sdk/provider-auth.d.ts",
   "packages/plugin-sdk/dist/src/plugin-sdk/video-generation.d.ts",
 ];
+const QA_CHANNEL_DTS_INPUTS = [
+  "extensions/qa-channel/api.ts",
+  "extensions/qa-channel/runtime-api.ts",
+  "extensions/qa-channel/test-api.ts",
+  "extensions/qa-channel/src",
+  "extensions/qa-channel/tsconfig.json",
+];
+const QA_CHANNEL_DTS_STAMP = "dist/plugin-sdk/extensions/qa-channel/.boundary-dts.stamp";
+const QA_CHANNEL_DTS_REQUIRED_OUTPUTS = ["dist/plugin-sdk/extensions/qa-channel/api.d.ts"];
 const ENTRY_SHIMS_INPUTS = [
   "scripts/write-plugin-sdk-entry-dts.ts",
   "scripts/lib/plugin-sdk-entrypoints.json",
@@ -271,6 +280,12 @@ export async function main(argv = process.argv.slice(2)) {
       ],
       outputPaths: ["dist/plugin-sdk/.boundary-entry-shims.stamp"],
     });
+    const qaChannelDtsFresh =
+      isArtifactSetFresh({
+        inputPaths: QA_CHANNEL_DTS_INPUTS,
+        outputPaths: [QA_CHANNEL_DTS_STAMP, ...QA_CHANNEL_DTS_REQUIRED_OUTPUTS],
+        includeFile: isRelevantTypeInput,
+      }) && !hasMissingOutput(QA_CHANNEL_DTS_REQUIRED_OUTPUTS);
 
     const pendingSteps = [];
     if (mode === "all") {
@@ -304,6 +319,39 @@ export async function main(argv = process.argv.slice(2)) {
       });
     } else {
       process.stdout.write("[plugin-sdk package boundary dts] fresh; skipping\n");
+    }
+    if (mode === "all") {
+      if (!qaChannelDtsFresh) {
+        removeIncrementalStateForMissingOutput({
+          outputPaths: QA_CHANNEL_DTS_REQUIRED_OUTPUTS,
+          tsBuildInfoPath: "dist/plugin-sdk/extensions/qa-channel/.tsbuildinfo",
+        });
+        pendingSteps.push({
+          label: "qa-channel boundary dts",
+          args: [
+            runTsgoScript,
+            "-p",
+            "extensions/qa-channel/tsconfig.json",
+            "--declaration",
+            "true",
+            "--emitDeclarationOnly",
+            "true",
+            "--noEmit",
+            "false",
+            "--outDir",
+            "dist/plugin-sdk/extensions/qa-channel",
+            "--rootDir",
+            "extensions/qa-channel",
+            "--tsBuildInfoFile",
+            "dist/plugin-sdk/extensions/qa-channel/.tsbuildinfo",
+          ],
+          env: { OPENCLAW_TSGO_HEAVY_CHECK_LOCK_HELD: "1" },
+          timeoutMs: 300_000,
+          stampPath: QA_CHANNEL_DTS_STAMP,
+        });
+      } else {
+        process.stdout.write("[qa-channel boundary dts] fresh; skipping\n");
+      }
     }
 
     if (pendingSteps.length > 0) {
