@@ -78,7 +78,7 @@ import { resolveEffectiveReplyRoute } from "./effective-reply-route.js";
 import { withFullRuntimeReplyConfig } from "./get-reply-fast-path.js";
 import { claimInboundDedupe, commitInboundDedupe, releaseInboundDedupe } from "./inbound-dedupe.js";
 import { resolveReplyRoutingDecision } from "./routing-policy.js";
-import { resolveSourceReplyDeliveryMode } from "./source-reply-delivery-mode.js";
+import { resolveSourceReplyVisibilityPolicy } from "./source-reply-delivery-mode.js";
 import { resolveRunTypingPolicy } from "./typing-policy.js";
 
 let routeReplyRuntimePromise: Promise<typeof import("./route-reply.runtime.js")> | null = null;
@@ -592,20 +592,23 @@ export async function dispatchReplyFromConfig(
       undefined,
     chatType: sessionStoreEntry.entry?.chatType,
   });
-  const sendPolicyDenied = sendPolicy === "deny";
-  const sourceReplyDeliveryMode = resolveSourceReplyDeliveryMode({
+  const sourceReplyPolicy = resolveSourceReplyVisibilityPolicy({
     cfg,
     ctx,
     requested: params.replyOptions?.sourceReplyDeliveryMode,
+    sendPolicy,
+    suppressAcpChildUserDelivery,
+    explicitSuppressTyping: params.replyOptions?.suppressTyping === true,
+    shouldSuppressTyping,
   });
-  const suppressAutomaticSourceDelivery = sourceReplyDeliveryMode === "message_tool_only";
-  const suppressDelivery = sendPolicyDenied || suppressAutomaticSourceDelivery;
-  const deliverySuppressionReason = sendPolicyDenied
-    ? "sendPolicy: deny"
-    : suppressAutomaticSourceDelivery
-      ? "sourceReplyDeliveryMode: message_tool_only"
-      : "";
-  const suppressHookUserDelivery = suppressAcpChildUserDelivery || suppressDelivery;
+  const {
+    sourceReplyDeliveryMode,
+    suppressAutomaticSourceDelivery,
+    suppressDelivery,
+    deliverySuppressionReason,
+    suppressHookUserDelivery,
+    suppressHookReplyLifecycle,
+  } = sourceReplyPolicy;
 
   let pluginFallbackReason:
     | "plugin-bound-fallback-missing-plugin"
@@ -856,6 +859,7 @@ export async function dispatchReplyFromConfig(
           sessionTtsAuto,
           ttsChannel: deliveryChannel,
           suppressUserDelivery: suppressHookUserDelivery,
+          suppressReplyLifecycle: suppressHookReplyLifecycle,
           sourceReplyDeliveryMode,
           shouldRouteToOriginating,
           originatingChannel: routeReplyChannel,
@@ -1037,8 +1041,7 @@ export async function dispatchReplyFromConfig(
     };
     const typing = resolveRunTypingPolicy({
       requestedPolicy: params.replyOptions?.typingPolicy,
-      suppressTyping:
-        sendPolicyDenied || params.replyOptions?.suppressTyping === true || shouldSuppressTyping,
+      suppressTyping: sourceReplyPolicy.suppressTyping,
       originatingChannel: routeReplyChannel,
       systemEvent: shouldRouteToOriginating,
     });
@@ -1272,6 +1275,7 @@ export async function dispatchReplyFromConfig(
             sessionTtsAuto,
             ttsChannel: deliveryChannel,
             suppressUserDelivery: suppressHookUserDelivery,
+            suppressReplyLifecycle: suppressHookReplyLifecycle,
             sourceReplyDeliveryMode,
             shouldRouteToOriginating,
             originatingChannel: routeReplyChannel,

@@ -12,6 +12,7 @@ const PLUGIN_SDK_TYPE_INPUTS = [
   "tsconfig.json",
   "src/plugin-sdk",
   "src/auto-reply",
+  "packages/memory-host-sdk/src",
   "src/video-generation/dashscope-compatible.ts",
   "src/video-generation/types.ts",
   "src/types",
@@ -287,14 +288,15 @@ export async function main(argv = process.argv.slice(2)) {
         includeFile: isRelevantTypeInput,
       }) && !hasMissingOutput(QA_CHANNEL_DTS_REQUIRED_OUTPUTS);
 
-    const pendingSteps = [];
+    const prerequisiteSteps = [];
+    const dependentSteps = [];
     if (mode === "all") {
       if (!rootDtsFresh) {
         removeIncrementalStateForMissingOutput({
           outputPaths: ROOT_DTS_REQUIRED_OUTPUTS,
           tsBuildInfoPath: "dist/plugin-sdk/.tsbuildinfo",
         });
-        pendingSteps.push({
+        prerequisiteSteps.push({
           label: "plugin-sdk boundary dts",
           args: [runTsgoScript, "-p", "tsconfig.plugin-sdk.dts.json", "--declaration", "true"],
           env: { OPENCLAW_TSGO_HEAVY_CHECK_LOCK_HELD: "1" },
@@ -310,7 +312,7 @@ export async function main(argv = process.argv.slice(2)) {
         outputPaths: PACKAGE_DTS_REQUIRED_OUTPUTS,
         tsBuildInfoPath: "packages/plugin-sdk/dist/.tsbuildinfo",
       });
-      pendingSteps.push({
+      prerequisiteSteps.push({
         label: "plugin-sdk package boundary dts",
         args: [runTsgoScript, "-p", "packages/plugin-sdk/tsconfig.json", "--declaration", "true"],
         env: { OPENCLAW_TSGO_HEAVY_CHECK_LOCK_HELD: "1" },
@@ -326,7 +328,7 @@ export async function main(argv = process.argv.slice(2)) {
           outputPaths: QA_CHANNEL_DTS_REQUIRED_OUTPUTS,
           tsBuildInfoPath: "dist/plugin-sdk/extensions/qa-channel/.tsbuildinfo",
         });
-        pendingSteps.push({
+        dependentSteps.push({
           label: "qa-channel boundary dts",
           args: [
             runTsgoScript,
@@ -354,16 +356,16 @@ export async function main(argv = process.argv.slice(2)) {
       }
     }
 
-    if (pendingSteps.length > 0) {
-      await runNodeSteps(pendingSteps);
-      for (const step of pendingSteps) {
+    if (prerequisiteSteps.length > 0) {
+      await runNodeSteps(prerequisiteSteps);
+      for (const step of prerequisiteSteps) {
         if (step.stampPath) {
           writeStampFile(step.stampPath);
         }
       }
     }
 
-    if (mode === "all" && (!entryShimsFresh || pendingSteps.length > 0)) {
+    if (mode === "all" && (!entryShimsFresh || prerequisiteSteps.length > 0)) {
       await runNodeStep(
         "plugin-sdk boundary root shims",
         ["--import", "tsx", resolve(repoRoot, "scripts/write-plugin-sdk-entry-dts.ts")],
@@ -371,6 +373,15 @@ export async function main(argv = process.argv.slice(2)) {
       );
     } else if (mode === "all") {
       process.stdout.write("[plugin-sdk boundary root shims] fresh; skipping\n");
+    }
+
+    if (dependentSteps.length > 0) {
+      await runNodeSteps(dependentSteps);
+      for (const step of dependentSteps) {
+        if (step.stampPath) {
+          writeStampFile(step.stampPath);
+        }
+      }
     }
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);

@@ -490,7 +490,6 @@ const automaticGroupReplyConfig = {
   },
 } as const satisfies OpenClawConfig;
 let dispatchReplyFromConfig: typeof import("./dispatch-from-config.js").dispatchReplyFromConfig;
-let resolveSourceReplyDeliveryMode: typeof import("./source-reply-delivery-mode.js").resolveSourceReplyDeliveryMode;
 let resetInboundDedupe: typeof import("./inbound-dedupe.js").resetInboundDedupe;
 let tryDispatchAcpReplyHook: typeof import("../../plugin-sdk/acp-runtime.js").tryDispatchAcpReplyHook;
 type DispatchReplyArgs = Parameters<
@@ -499,7 +498,6 @@ type DispatchReplyArgs = Parameters<
 
 beforeAll(async () => {
   ({ dispatchReplyFromConfig } = await import("./dispatch-from-config.js"));
-  ({ resolveSourceReplyDeliveryMode } = await import("./source-reply-delivery-mode.js"));
   await import("./dispatch-acp.js");
   await import("./dispatch-acp-command-bypass.js");
   await import("./dispatch-acp-tts.runtime.js");
@@ -3869,31 +3867,6 @@ describe("before_dispatch hook", () => {
 });
 
 describe("sendPolicy deny — suppress delivery, not processing (#53328)", () => {
-  it("resolves group source delivery from shared core config", () => {
-    expect(resolveSourceReplyDeliveryMode({ cfg: emptyConfig, ctx: { ChatType: "channel" } })).toBe(
-      "message_tool_only",
-    );
-    expect(resolveSourceReplyDeliveryMode({ cfg: emptyConfig, ctx: { ChatType: "group" } })).toBe(
-      "message_tool_only",
-    );
-    expect(resolveSourceReplyDeliveryMode({ cfg: emptyConfig, ctx: { ChatType: "direct" } })).toBe(
-      "automatic",
-    );
-    expect(
-      resolveSourceReplyDeliveryMode({
-        cfg: automaticGroupReplyConfig,
-        ctx: { ChatType: "group" },
-      }),
-    ).toBe("automatic");
-    expect(
-      resolveSourceReplyDeliveryMode({
-        cfg: emptyConfig,
-        ctx: { ChatType: "channel" },
-        requested: "automatic",
-      }),
-    ).toBe("automatic");
-  });
-
   beforeEach(() => {
     resetInboundDedupe();
     sessionBindingMocks.resolveByConversation.mockReset();
@@ -3971,6 +3944,7 @@ describe("sendPolicy deny — suppress delivery, not processing (#53328)", () =>
         isTailDispatch: true,
         sendPolicy: "deny",
         suppressUserDelivery: true,
+        suppressReplyLifecycle: true,
       }),
       expect.any(Object),
     );
@@ -4301,6 +4275,7 @@ describe("sendPolicy deny — suppress delivery, not processing (#53328)", () =>
     expect(hookMocks.runner.runReplyDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         suppressUserDelivery: true,
+        suppressReplyLifecycle: false,
         sourceReplyDeliveryMode: "message_tool_only",
         sendPolicy: "allow",
       }),
