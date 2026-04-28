@@ -692,18 +692,22 @@ async function runUpgradeLane(params) {
       "--timeout",
       String(updateStepTimeoutSeconds()),
     ];
-    await runOpenClaw({
+    const updateResult = await runOpenClaw({
       lane,
       env: updateEnv,
       args: updateArgs,
       logPath: join(params.logsDir, "upgrade-update.log"),
       timeoutMs: updateTimeoutMs(),
+      check: false,
+    });
+    verifyPackagedUpgradeUpdateResult(updateResult, {
+      candidateVersion: params.build.candidateVersion,
     });
 
     logLanePhase(lane, "update-status");
     await runOpenClaw({
       lane,
-      env,
+      env: updateEnv,
       args: ["update", "status", "--json"],
       logPath: join(params.logsDir, "upgrade-update-status.log"),
       timeoutMs: 2 * 60 * 1000,
@@ -1226,6 +1230,46 @@ export function buildRealUpdateEnv(env) {
   delete updateEnv.OPENCLAW_DISABLE_BUNDLED_PLUGIN_POSTINSTALL;
   delete updateEnv.NODE_COMPILE_CACHE;
   return updateEnv;
+}
+
+export function verifyPackagedUpgradeUpdateResult(result, options) {
+  if (result.exitCode === 0) {
+    return;
+  }
+
+  let payload = null;
+  try {
+    payload = JSON.parse(result.stdout);
+  } catch {
+    payload = null;
+  }
+
+  const steps = Array.isArray(payload?.steps) ? payload.steps : [];
+  const allStepsSucceeded = steps.every((step) => step?.exitCode === 0);
+  const afterVersion = typeof payload?.after?.version === "string" ? payload.after.version : "";
+  if (
+    payload?.status === "ok" &&
+    afterVersion === options.candidateVersion &&
+    allStepsSucceeded &&
+    isSelfSwappedPackageProcessExit(result.stderr)
+  ) {
+    return;
+  }
+
+  throw new Error(
+    `Packaged upgrade failed (${result.exitCode}): ${trimForSummary(
+      `${result.stdout}\n${result.stderr}`,
+    )}`,
+  );
+}
+
+function isSelfSwappedPackageProcessExit(stderr) {
+  return (
+    typeof stderr === "string" &&
+    stderr.includes("[openclaw] Failed to start CLI:") &&
+    stderr.includes("ERR_MODULE_NOT_FOUND") &&
+    /[\\/]node_modules[\\/]openclaw[\\/]dist[\\/]/u.test(stderr)
+  );
 }
 
 export function resolveExplicitBaselineVersion(baselineSpec) {
@@ -1822,6 +1866,8 @@ async function runInstalledAgentTurn(params) {
       sessionId,
       "--message",
       "Reply with exact ASCII text OK only.",
+      "--thinking",
+      "minimal",
       "--json",
     ],
     cwd: params.cwd,
@@ -2579,6 +2625,8 @@ async function runAgentTurn(params) {
           sessionId,
           "--message",
           "Reply with exact ASCII text OK only.",
+          "--thinking",
+          "minimal",
           "--json",
         ],
         logPath: params.logPath,
