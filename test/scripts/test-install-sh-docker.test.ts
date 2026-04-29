@@ -201,6 +201,9 @@ describe("bun global install smoke", () => {
     expect(workflow).toContain("install-smoke-fast:");
     expect(workflow).toContain("run_fast_install_smoke");
     expect(workflow).toContain("run_full_install_smoke");
+    expect(workflow).toContain("timeout 45m docker buildx build");
+    expect(workflow).toContain("--progress=plain");
+    expect(workflow).toContain("--load");
     expect(workflow).toContain('OPENCLAW_INSTALL_SMOKE_SKIP_NPM_GLOBAL: "1"');
     expect(releaseChecks).toContain("install_smoke_release_checks:");
     expect(releaseChecks).toContain("uses: ./.github/workflows/install-smoke.yml");

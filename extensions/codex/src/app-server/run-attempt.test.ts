@@ -636,6 +636,65 @@ describe("runCodexAppServerAttempt", () => {
     );
   });
 
+  it("forwards Codex app-server verbose tool summaries and completed output", async () => {
+    const onToolResult = vi.fn();
+    const sessionFile = path.join(tempDir, "session.jsonl");
+    const workspaceDir = path.join(tempDir, "workspace");
+    const harness = createStartedThreadHarness();
+    const params = createParams(sessionFile, workspaceDir);
+    params.verboseLevel = "full";
+    params.onToolResult = onToolResult;
+
+    const run = runCodexAppServerAttempt(params);
+    await harness.waitForMethod("turn/start");
+    await harness.notify({
+      method: "item/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: {
+          type: "dynamicToolCall",
+          id: "tool-1",
+          namespace: null,
+          tool: "read",
+          arguments: { path: "README.md" },
+          status: "inProgress",
+          contentItems: null,
+          success: null,
+          durationMs: null,
+        },
+      },
+    });
+    await harness.notify({
+      method: "item/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: {
+          type: "dynamicToolCall",
+          id: "tool-1",
+          namespace: null,
+          tool: "read",
+          arguments: { path: "README.md" },
+          status: "completed",
+          contentItems: [{ type: "inputText", text: "file contents" }],
+          success: true,
+          durationMs: 12,
+        },
+      },
+    });
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await run;
+
+    expect(onToolResult).toHaveBeenCalledTimes(2);
+    expect(onToolResult).toHaveBeenNthCalledWith(1, {
+      text: "📖 Read: `from README.md`",
+    });
+    expect(onToolResult).toHaveBeenNthCalledWith(2, {
+      text: "📖 Read: `from README.md`\n```txt\nfile contents\n```",
+    });
+  });
+
   it("registers native hook relay config for an enabled Codex turn and cleans it up", async () => {
     const sessionFile = path.join(tempDir, "session.jsonl");
     const workspaceDir = path.join(tempDir, "workspace");
@@ -674,6 +733,71 @@ describe("runCodexAppServerAttempt", () => {
     );
     const relayId = extractRelayIdFromThreadRequest(startRequest?.params);
     expect(nativeHookRelayTesting.getNativeHookRelayRegistrationForTests(relayId)).toBeUndefined();
+  });
+
+  it("reuses the Codex native hook relay id across runs for the same session", async () => {
+    const sessionFile = path.join(tempDir, "session.jsonl");
+    const workspaceDir = path.join(tempDir, "workspace");
+    const firstHarness = createStartedThreadHarness();
+
+    const firstRun = runCodexAppServerAttempt(createParams(sessionFile, workspaceDir), {
+      nativeHookRelay: {
+        enabled: true,
+        events: ["pre_tool_use"],
+      },
+    });
+    await firstHarness.waitForMethod("turn/start");
+    await firstHarness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await firstRun;
+
+    const firstStartRequest = firstHarness.requests.find(
+      (request) => request.method === "thread/start",
+    );
+    const firstRelayId = extractRelayIdFromThreadRequest(firstStartRequest?.params);
+    expect(
+      nativeHookRelayTesting.getNativeHookRelayRegistrationForTests(firstRelayId),
+    ).toBeUndefined();
+
+    const secondHarness = createResumeHarness();
+    const secondParams = createParams(sessionFile, workspaceDir);
+    secondParams.runId = "run-2";
+    const secondRun = runCodexAppServerAttempt(secondParams, {
+      nativeHookRelay: {
+        enabled: true,
+        events: ["pre_tool_use"],
+      },
+    });
+    await secondHarness.waitForMethod("turn/start");
+
+    const resumeRequest = secondHarness.requests.find(
+      (request) => request.method === "thread/resume",
+    );
+    const secondRelayId = extractRelayIdFromThreadRequest(resumeRequest?.params);
+    expect(secondRelayId).toBe(firstRelayId);
+    expect(
+      nativeHookRelayTesting.getNativeHookRelayRegistrationForTests(firstRelayId),
+    ).toMatchObject({
+      runId: "run-2",
+      allowedEvents: ["pre_tool_use"],
+    });
+
+    await secondHarness.completeTurn({ threadId: "thread-existing", turnId: "turn-1" });
+    await secondRun;
+    expect(
+      nativeHookRelayTesting.getNativeHookRelayRegistrationForTests(firstRelayId),
+    ).toBeUndefined();
+  });
+
+  it("builds deterministic opaque Codex native hook relay ids", () => {
+    const relayId = __testing.buildCodexNativeHookRelayId({
+      agentId: "dev-codex",
+      sessionId: "cu-pr-relay-smoke",
+      sessionKey: "agent:dev-codex:cu-pr-relay-smoke",
+    });
+
+    expect(relayId).toBe("codex-8810b5252975550c887ff0def512b25e944bac39");
+    expect(relayId).not.toContain("dev-codex");
+    expect(relayId).not.toContain("cu-pr-relay-smoke");
   });
 
   it("sends clearing Codex native hook config when the relay is disabled", async () => {
