@@ -173,7 +173,7 @@ function createAppServerHarness(
       await vi.waitFor(
         () => {
           if (!requests.some((entry) => entry.method === method)) {
-            const mockMethods = request.mock.calls.map(([calledMethod]) => calledMethod);
+            const mockMethods = request.mock.calls.map((call) => call[0]);
             throw new Error(
               `expected app-server method ${method}; saw ${requests
                 .map((entry) => entry.method)

@@ -8,13 +8,13 @@ run_update_scenario() {
   state_script_b64="$(docker_e2e_test_state_shell_b64 bundled-channel-update empty)"
 
   echo "Running bundled channel runtime deps Docker update E2E..."
-  run_logged_print bundled-channel-update timeout "$DOCKER_UPDATE_RUN_TIMEOUT" docker run --rm \
+  run_logged_print_heartbeat bundled-channel-update 30 timeout "$DOCKER_UPDATE_RUN_TIMEOUT" docker run --rm \
+    "${DOCKER_E2E_HARNESS_ARGS[@]}" \
     -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
     -e OPENCLAW_BUNDLED_CHANNEL_UPDATE_BASELINE_VERSION="$UPDATE_BASELINE_VERSION" \
     -e "OPENCLAW_BUNDLED_CHANNEL_UPDATE_TARGETS=${OPENCLAW_BUNDLED_CHANNEL_UPDATE_TARGETS:-telegram,discord,slack,feishu,memory-lancedb,acpx}" \
     -e "OPENCLAW_TEST_STATE_SCRIPT_B64=$state_script_b64" \
     "${DOCKER_E2E_PACKAGE_ARGS[@]}" \
-    "${DOCKER_E2E_HARNESS_ARGS[@]}" \
     -i "$IMAGE_NAME" bash -s <<'EOF'
 set -euo pipefail
 
@@ -113,9 +113,8 @@ should_run_update_target() {
   esac
 }
 
-echo "Installing current candidate as update baseline..."
 echo "Update targets: $UPDATE_TARGETS"
-npm install -g "$package_tgz" --no-fund --no-audit >/tmp/openclaw-update-baseline-install.log 2>&1
+bundled_channel_install_package /tmp/openclaw-update-baseline-install.log "current candidate as update baseline"
 command -v openclaw >/dev/null
 poison_home_npm_project
 baseline_root="$(bundled_channel_package_root)"

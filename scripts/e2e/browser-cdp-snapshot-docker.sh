@@ -41,11 +41,12 @@ EOF
   echo "Building Docker image: $IMAGE_NAME"
   docker_build_run browser-cdp-snapshot-build -t "$IMAGE_NAME" -f "$build_dir/Dockerfile" "$build_dir"
 fi
-docker_e2e_harness_mount_args
 OPENCLAW_TEST_STATE_SCRIPT_B64="$(docker_e2e_test_state_shell_b64 browser-cdp-snapshot empty)"
 
 echo "Starting browser CDP snapshot container..."
+docker_e2e_harness_mount_args
 docker_cmd docker run -d \
+  "${DOCKER_E2E_HARNESS_ARGS[@]}" \
   --name "$CONTAINER_NAME" \
   -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
   -e OPENCLAW_GATEWAY_TOKEN="$TOKEN" \
@@ -56,7 +57,6 @@ docker_cmd docker run -d \
   -e OPENCLAW_SKIP_CRON=1 \
   -e OPENCLAW_SKIP_CANVAS_HOST=1 \
   -e "OPENCLAW_TEST_STATE_SCRIPT_B64=$OPENCLAW_TEST_STATE_SCRIPT_B64" \
-  "${DOCKER_E2E_HARNESS_ARGS[@]}" \
   "$IMAGE_NAME" \
   bash -lc "set -euo pipefail
 source scripts/lib/openclaw-e2e-instance.sh
@@ -118,26 +118,13 @@ NODE
 openclaw_e2e_exec_gateway \"\$entry\" $PORT loopback /tmp/browser-cdp-gateway.log" >/dev/null
 
 echo "Waiting for Chromium and Gateway..."
-ready=0
-for _ in $(seq 1 180); do
-  if [ "$(docker_cmd docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || echo false)" != "true" ]; then
-    break
-  fi
-  if docker_cmd docker exec "$CONTAINER_NAME" bash -lc "
+if ! docker_e2e_wait_container_bash "$CONTAINER_NAME" 180 0.5 "
     source scripts/lib/openclaw-e2e-instance.sh
     openclaw_e2e_probe_http_status http://127.0.0.1:$CDP_PORT/json/version
     openclaw_e2e_probe_tcp 127.0.0.1 $PORT
-  " >/dev/null 2>&1; then
-    ready=1
-    break
-  fi
-  sleep 0.5
-done
-
-if [ "$ready" -ne 1 ]; then
+"; then
   echo "Browser CDP snapshot container failed to become ready"
-  docker_cmd docker logs "$CONTAINER_NAME" 2>&1 | tail -n 120 || true
-  docker_cmd docker exec "$CONTAINER_NAME" bash -lc "tail -n 120 /tmp/browser-cdp-chromium.log /tmp/browser-cdp-gateway.log /tmp/browser-cdp-fixture.log" || true
+  docker_e2e_tail_container_file_if_running "$CONTAINER_NAME" "/tmp/browser-cdp-chromium.log /tmp/browser-cdp-gateway.log /tmp/browser-cdp-fixture.log" 120
   exit 1
 fi
 
