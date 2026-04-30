@@ -89,8 +89,8 @@ describe("buildSlackInteractiveBlocks", () => {
         {
           type: "select",
           options: [
-            { label: "Allowed", value: "a".repeat(75) },
-            { label: "Too long", value: "b".repeat(76) },
+            { label: "Allowed", value: "a".repeat(150) },
+            { label: "Too long", value: "b".repeat(151) },
           ],
         },
       ],
@@ -101,7 +101,7 @@ describe("buildSlackInteractiveBlocks", () => {
     };
 
     expect(selectBlock.elements?.[0]?.options).toHaveLength(1);
-    expect(selectBlock.elements?.[0]?.options?.[0]?.value).toBe("a".repeat(75));
+    expect(selectBlock.elements?.[0]?.options?.[0]?.value).toBe("a".repeat(150));
   });
 
   it("omits Slack select blocks when every option value exceeds Block Kit limits", () => {
@@ -110,7 +110,7 @@ describe("buildSlackInteractiveBlocks", () => {
         blocks: [
           {
             type: "select",
-            options: [{ label: "Too long", value: "x".repeat(76) }],
+            options: [{ label: "Too long", value: "x".repeat(151) }],
           },
         ],
       }),
@@ -162,6 +162,34 @@ describe("buildSlackInteractiveBlocks", () => {
       expect.objectContaining({ url: "https://example.com/docs" }),
     );
     expect(buttonBlock.elements?.[1]).not.toHaveProperty("value");
+  });
+
+  it("drops Slack button URLs beyond Block Kit limits", () => {
+    const validUrl = `https://example.com/${"a".repeat(2980)}`;
+    const longUrl = `https://example.com/${"b".repeat(2981)}`;
+    const blocks = buildSlackInteractiveBlocks({
+      blocks: [
+        {
+          type: "buttons",
+          buttons: [
+            { label: "Allowed", url: validUrl },
+            { label: "Too long", url: longUrl },
+            { label: "Fallback action", value: "fallback", url: longUrl },
+          ],
+        },
+      ],
+    });
+
+    const buttonBlock = blocks[0] as {
+      elements?: Array<{ value?: string; url?: string }>;
+    };
+
+    expect(validUrl).toHaveLength(3000);
+    expect(longUrl).toHaveLength(3001);
+    expect(buttonBlock.elements).toHaveLength(2);
+    expect(buttonBlock.elements?.[0]?.url).toBe(validUrl);
+    expect(buttonBlock.elements?.[1]?.value).toBe("fallback");
+    expect(buttonBlock.elements?.[1]).not.toHaveProperty("url");
   });
 
   it("caps Slack actions blocks at the Block Kit element limit", () => {
