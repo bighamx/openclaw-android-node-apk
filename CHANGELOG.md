@@ -2,6 +2,12 @@
 
 Docs: https://docs.openclaw.ai
 
+## Unreleased
+
+### Fixes
+
+- CLI/progress: suppress nested progress spinners and line clears while TUI input owns raw stdin, so Crestodian `/status` no longer disturbs the active input row. (#75003) Thanks @velvet-shark.
+
 ## 2026.4.29
 
 ### Highlights
@@ -44,6 +50,7 @@ Docs: https://docs.openclaw.ai
 - Security/outbound: strip re-formed HTML tags during plain-text sanitization so nested tag fragments cannot leave a CodeQL-detected `<script>` sequence behind. Thanks @vincentkoc.
 - Security/secrets: compare credential bytes with padded timing-safe buffers instead of hashing candidate passwords before equality checks. Thanks @vincentkoc.
 - Security/QQBot: sanitize debug log arguments before writing to `console.*`, so gateway payload fields cannot forge extra log lines when debug logging is enabled. Thanks @vincentkoc.
+- QQBot: unify slash command auth and c2cOnly gating in the command registry, pass `allowQQBotDataDownloads` when sending slash command file attachments, align clear-storage with actual downloads directory, and add `/bot-me` to display sender user ID. (#73616) Thanks @cxyhhhhh.
 - CLI/agents/status: keep `openclaw agents`, text `agents list`, and plain text `status` on read-only metadata paths so human output no longer preloads plugin runtimes or live channel scans before printing. Fixes #74195. Thanks @NianJiuZst.
 - Agents/local models: derive context-window guard thresholds from the effective model window with 4k/8k safety floors, so small local models are no longer rejected by fixed 16k/32k preflight cutoffs. Fixes #42999. Thanks @chengjialu8888.
 - PDF extraction: resolve PDF.js standard fonts from the installed package root and pass a filesystem path to the Node fallback extractor, so built-in font PDFs render without `file://` URL lookup failures. Fixes #51455; carries forward #70936, #54447, and #62175. Thanks @anyech, @JuanRdBO, and @solomonneas.
@@ -157,6 +164,7 @@ Docs: https://docs.openclaw.ai
 - Channels/Discord: treat bare numeric outbound targets that match the effective Discord DM allowlist as user DMs while preserving account-specific legacy `dm.allowFrom` precedence over inherited root `allowFrom`. (#74303) Thanks @Squirbie.
 - Channels/Discord/Slack: share one DM policy/allowlist resolver across runtime, setup, allowlist editing, and doctor repair, so legacy `dm.policy` / `dm.allowFrom` compatibility migrates to canonical `dmPolicy` / `allowFrom` without divergent access checks. Thanks @Squirbie.
 - Control UI: make the chat sidebar split divider focusable, keyboard-resizable, ARIA-described, and pointer-event based so sidebar resizing works without a mouse. Thanks @BunsDev.
+- Control UI/chat: wire the slash-command autocomplete menu to the composer with stable ARIA relationships so screen readers announce the active command or argument option. Thanks @BunsDev.
 - Agents/usage: keep PI embedded-run telemetry attributed to the resolved model provider instead of the PI harness label, so OpenRouter and other provider-backed turns report the right provider in session usage and traces. Thanks @vincentkoc.
 - Agents/attribution: send OpenClaw attribution headers on native OpenAI and Codex traffic, including SDK transports, realtime voice and TTS, device-code auth, WHAM usage, and remote embeddings, so PI-origin defaults no longer leak into provider requests. Thanks @vincentkoc.
 - Agents/auth: keep OAuth auth profiles inherited from the main agent read-through instead of copying refresh tokens into secondary agents, and refresh Codex app-server tokens against the owning store so multi-agent swarms avoid reused refresh-token failures. Fixes #74055. Thanks @ClarityInvest.
