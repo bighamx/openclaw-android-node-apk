@@ -25,7 +25,10 @@ import {
   toInternalMessageReceivedContext,
   triggerInternalHook,
 } from "openclaw/plugin-sdk/hook-runtime";
-import { runPreparedInboundReplyTurn } from "openclaw/plugin-sdk/inbound-reply-dispatch";
+import {
+  hasFinalInboundReplyDispatch,
+  runPreparedInboundReplyTurn,
+} from "openclaw/plugin-sdk/inbound-reply-dispatch";
 import { kindFromMime } from "openclaw/plugin-sdk/media-runtime";
 import {
   buildPendingHistoryContextFromMap,
@@ -351,8 +354,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
         }
       },
     });
-    const queuedFinal = dispatchResult?.queuedFinal ?? false;
-    if (!queuedFinal) {
+    if (!hasFinalInboundReplyDispatch(dispatchResult)) {
       if (entry.isGroup && historyKey) {
         clearHistoryEntriesIfEnabled({
           historyMap: deps.groupHistories,
@@ -491,7 +493,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
     ]
       .filter(Boolean)
       .join(":");
-    enqueueSystemEvent(text, { sessionKey: route.sessionKey, contextKey });
+    enqueueSystemEvent(text, { sessionKey: route.sessionKey, contextKey, trusted: false });
     return true;
   }
 

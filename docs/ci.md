@@ -256,10 +256,10 @@ landed PR is merged and that each duplicate has either a shared referenced issue
 or overlapping changed hunks.
 
 The `CodeQL` workflow is intentionally a narrow first-pass security scanner,
-not the full repository sweep. Daily and manual runs scan Actions workflow code
-plus the highest-risk JavaScript/TypeScript auth, secrets, sandbox, cron, and
-gateway surfaces with high-precision security queries under the
-`/codeql-critical-security/core-auth-secrets` category. The
+not the full repository sweep. Daily, manual, and non-draft pull request guard
+runs scan Actions workflow code plus the highest-risk JavaScript/TypeScript
+auth, secrets, sandbox, cron, and gateway surfaces with high-precision security
+queries under the `/codeql-critical-security/core-auth-secrets` category. The
 channel-runtime-boundary job separately scans core channel implementation
 contracts plus the channel plugin runtime, gateway, Plugin SDK, secrets, and
 audit touchpoints under the `/codeql-critical-security/channel-runtime-boundary`
@@ -278,6 +278,10 @@ source-loading, public-surface, and Plugin SDK package contract trust surfaces
 under the `/codeql-critical-security/plugin-trust-boundary` category so plugin
 supply-chain and runtime-loading signal stays separate from both bundled plugin
 implementation code and the non-security plugin quality shard.
+The pull request guard stays light: it only starts for changes under
+`.github/actions`, `.github/codeql`, `.github/workflows`, `packages`, or `src`,
+and it runs the same critical-security matrix as the scheduled workflow. Android,
+macOS, and non-security quality CodeQL stay out of PR defaults.
 
 The `CodeQL Android Critical Security` workflow is the scheduled Android
 security shard. It builds the Android app manually for CodeQL on the smallest
@@ -294,7 +298,7 @@ The `CodeQL Critical Quality` workflow is the matching non-security shard. It
 runs only error-severity, non-security JavaScript/TypeScript quality queries
 over narrow high-value surfaces on the smaller Blacksmith Linux runner. Its
 manual dispatch accepts
-`profile=all|plugin-sdk-package-contract|plugin-sdk-reply-runtime|session-diagnostics-boundary`;
+`profile=all|plugin-sdk-package-contract|plugin-sdk-reply-runtime|provider-runtime-boundary|session-diagnostics-boundary`;
 the narrow profiles are teaching/iteration hooks for running one quality shard
 in isolation without dispatching the rest of the workflow.
 Its
@@ -325,6 +329,10 @@ plugin-sdk-reply-runtime job scans Plugin SDK inbound reply dispatch, reply
 payload/chunking/runtime helpers, channel reply options, delivery queues, and
 session/thread binding helpers under the separate
 `/codeql-critical-quality/plugin-sdk-reply-runtime` category. The
+provider-runtime-boundary job scans model catalog normalization, provider auth
+and discovery, provider runtime registration, provider defaults/catalogs, and
+web/search/fetch/embedding provider registries under the separate
+`/codeql-critical-quality/provider-runtime-boundary` category. The
 ui-control-plane job scans Control UI bootstrap, local persistence, gateway
 control flows, and task control-plane runtime contracts under the separate
 `/codeql-critical-quality/ui-control-plane` category. The

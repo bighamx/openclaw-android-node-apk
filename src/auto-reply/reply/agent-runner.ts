@@ -69,6 +69,7 @@ import { resolveActiveRunQueueAction } from "./queue-policy.js";
 import {
   enqueueFollowupRun,
   refreshQueuedFollowupSession,
+  resolvePiSteeringModeForQueueMode,
   type FollowupRun,
   type QueueSettings,
 } from "./queue.js";
@@ -998,7 +999,10 @@ export async function runReplyAgent(params: {
     const steerSessionId =
       (sessionKey ? replyRunRegistry.resolveSessionId(sessionKey) : undefined) ??
       followupRun.run.sessionId;
-    const steered = queueEmbeddedPiMessage(steerSessionId, followupRun.prompt);
+    const steered = queueEmbeddedPiMessage(steerSessionId, followupRun.prompt, {
+      steeringMode: resolvePiSteeringModeForQueueMode(resolvedQueue.mode),
+      ...(resolvedQueue.debounceMs !== undefined ? { debounceMs: resolvedQueue.debounceMs } : {}),
+    });
     if (steered && !shouldFollowup) {
       await touchActiveSessionEntry();
       typing.cleanup();
@@ -1515,7 +1519,9 @@ export async function runReplyAgent(params: {
       (sessionKey ? activeSessionStore?.[sessionKey]?.responseUsage : undefined);
     const responseUsageMode = resolveResponseUsageMode(responseUsageRaw);
     if (responseUsageMode !== "off" && hasNonzeroUsage(usage)) {
-      const authMode = resolveModelAuthMode(providerUsed, cfg);
+      const authMode = resolveModelAuthMode(providerUsed, cfg, undefined, {
+        workspaceDir: followupRun.run.workspaceDir,
+      });
       const showCost = authMode === "api-key";
       const costConfig = showCost
         ? resolveModelCostConfig({
@@ -1678,7 +1684,9 @@ export async function runReplyAgent(params: {
       authMode:
         runResult.meta?.requestShaping?.authMode ??
         (cfg?.models?.providers && providerUsed in cfg.models.providers
-          ? (resolveModelAuthMode(providerUsed, cfg) ?? undefined)
+          ? (resolveModelAuthMode(providerUsed, cfg, undefined, {
+              workspaceDir: followupRun.run.workspaceDir,
+            }) ?? undefined)
           : undefined),
       thinking:
         runResult.meta?.requestShaping?.thinking ??

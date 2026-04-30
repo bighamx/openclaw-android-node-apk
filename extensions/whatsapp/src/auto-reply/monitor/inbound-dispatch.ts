@@ -1,4 +1,4 @@
-import { resolveMergedWhatsAppAccountConfig } from "../../account-config.js";
+import { hasVisibleInboundReplyDispatch } from "openclaw/plugin-sdk/inbound-reply-dispatch";
 import {
   type DeliverableWhatsAppOutboundPayload,
   normalizeWhatsAppOutboundPayload,
@@ -89,12 +89,11 @@ function resolveWhatsAppDisableBlockStreaming(cfg: ReturnType<LoadConfigFn>): bo
 function resolveWhatsAppDeliverablePayload(
   payload: ReplyPayload,
   info: { kind: ReplyLifecycleKind },
-  options?: { exposeErrorText?: boolean },
 ): ReplyPayload | null {
   if (payload.isReasoning === true || payload.isCompactionNotice === true) {
     return null;
   }
-  if (payload.isError === true && options?.exposeErrorText === false) {
+  if (payload.isError === true) {
     return null;
   }
   if (info.kind === "tool") {
@@ -314,9 +313,6 @@ export async function dispatchWhatsAppBufferedReply(params: {
   });
   const mediaLocalRoots = getAgentScopedMediaLocalRoots(params.cfg, params.route.agentId);
   const disableBlockStreaming = resolveWhatsAppDisableBlockStreaming(params.cfg);
-  const exposeErrorText =
-    resolveMergedWhatsAppAccountConfig({ cfg: params.cfg, accountId: params.route.accountId })
-      .exposeErrorText !== false;
   let didSendReply = false;
   let didLogHeartbeatStrip = false;
 
@@ -333,9 +329,7 @@ export async function dispatchWhatsAppBufferedReply(params: {
         }
       },
       deliver: async (payload: ReplyPayload, info: { kind: ReplyLifecycleKind }) => {
-        const deliveryPayload = resolveWhatsAppDeliverablePayload(payload, info, {
-          exposeErrorText,
-        });
+        const deliveryPayload = resolveWhatsAppDeliverablePayload(payload, info);
         if (!deliveryPayload) {
           return;
         }
@@ -395,8 +389,7 @@ export async function dispatchWhatsAppBufferedReply(params: {
     },
   });
 
-  const didQueueVisibleReply =
-    queuedFinal || counts.tool > 0 || counts.block > 0 || counts.final > 0;
+  const didQueueVisibleReply = hasVisibleInboundReplyDispatch({ queuedFinal, counts });
   if (!didQueueVisibleReply) {
     if (params.shouldClearGroupHistory) {
       params.groupHistories.set(params.groupHistoryKey, []);
