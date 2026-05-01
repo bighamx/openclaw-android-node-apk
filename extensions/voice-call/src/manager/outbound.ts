@@ -124,6 +124,13 @@ export async function initiateCall(
     if (validationError) {
       return { callId: "", success: false, error: validationError };
     }
+    if (mode !== "conversation") {
+      return {
+        callId: "",
+        success: false,
+        error: "dtmfSequence requires conversation mode",
+      };
+    }
   }
 
   if (!ctx.provider) {
@@ -178,6 +185,9 @@ export async function initiateCall(
       console.log(`[voice-call] Using inline TwiML for notify mode (voice: ${pollyVoice})`);
     } else if (dtmfSequence) {
       preConnectTwiml = generateDtmfRedirectTwiml(dtmfSequence, ctx.webhookUrl);
+      console.log(
+        `[voice-call] Using pre-connect DTMF TwiML for call ${callId} (digits=${dtmfSequence.length}, initialMessage=${initialMessage ? "yes" : "no"})`,
+      );
     }
 
     const result = await ctx.provider.initiateCall({
@@ -192,6 +202,9 @@ export async function initiateCall(
     callRecord.providerCallId = result.providerCallId;
     ctx.providerCallIdMap.set(result.providerCallId, callId);
     persistCallRecord(ctx.storePath, callRecord);
+    console.log(
+      `[voice-call] Outbound call initiated: callId=${callId} providerCallId=${result.providerCallId} mode=${mode} preConnectDtmf=${preConnectTwiml ? "yes" : "no"} initialMessage=${initialMessage ? "yes" : "no"}`,
+    );
 
     return { callId, success: true };
   } catch (err) {

@@ -96,7 +96,7 @@ skips starting the runtime. Commands, RPC calls, and agent tools still
 return the exact missing provider configuration when used.
 
 <Note>
-Voice-call credentials accept SecretRefs. `plugins.entries.voice-call.config.twilio.authToken` and `plugins.entries.voice-call.config.tts.providers.*.apiKey` resolve through the standard SecretRef surface; see [SecretRef credential surface](/reference/secretref-credential-surface).
+Voice-call credentials accept SecretRefs. `plugins.entries.voice-call.config.twilio.authToken`, `plugins.entries.voice-call.config.realtime.providers.*.apiKey`, `plugins.entries.voice-call.config.streaming.providers.*.apiKey`, and `plugins.entries.voice-call.config.tts.providers.*.apiKey` resolve through the standard SecretRef surface; see [SecretRef credential surface](/reference/secretref-credential-surface).
 </Note>
 
 ```json5
@@ -210,6 +210,7 @@ Current runtime behaviour:
 - Bundled realtime voice providers: Google Gemini Live (`google`) and OpenAI (`openai`), registered by their provider plugins.
 - Provider-owned raw config lives under `realtime.providers.<providerId>`.
 - Voice Call exposes the shared `openclaw_agent_consult` realtime tool by default. The realtime model can call it when the caller asks for deeper reasoning, current information, or normal OpenClaw tools.
+- `realtime.fastContext.enabled` is default-off. When enabled, Voice Call first searches indexed memory/session context for the consult question and returns those snippets to the realtime model within `realtime.fastContext.timeoutMs` before falling back to the full consult agent only if `realtime.fastContext.fallbackToConsult` is true.
 - If `realtime.provider` points at an unregistered provider, or no realtime voice provider is registered at all, Voice Call logs a warning and skips realtime media instead of failing the whole plugin.
 - Consult session keys reuse the existing voice session when available, then fall back to the caller/callee phone number so follow-up consult calls keep context during the call.
 
@@ -624,27 +625,31 @@ for turn latency and listen-wait times.
 
 Tool name: `voice_call`.
 
-| Action          | Args                      |
-| --------------- | ------------------------- |
-| `initiate_call` | `message`, `to?`, `mode?` |
-| `continue_call` | `callId`, `message`       |
-| `speak_to_user` | `callId`, `message`       |
-| `send_dtmf`     | `callId`, `digits`        |
-| `end_call`      | `callId`                  |
-| `get_status`    | `callId`                  |
+| Action          | Args                                       |
+| --------------- | ------------------------------------------ |
+| `initiate_call` | `message`, `to?`, `mode?`, `dtmfSequence?` |
+| `continue_call` | `callId`, `message`                        |
+| `speak_to_user` | `callId`, `message`                        |
+| `send_dtmf`     | `callId`, `digits`                         |
+| `end_call`      | `callId`                                   |
+| `get_status`    | `callId`                                   |
 
 This repo ships a matching skill doc at `skills/voice-call/SKILL.md`.
 
 ## Gateway RPC
 
-| Method               | Args                      |
-| -------------------- | ------------------------- |
-| `voicecall.initiate` | `to?`, `message`, `mode?` |
-| `voicecall.continue` | `callId`, `message`       |
-| `voicecall.speak`    | `callId`, `message`       |
-| `voicecall.dtmf`     | `callId`, `digits`        |
-| `voicecall.end`      | `callId`                  |
-| `voicecall.status`   | `callId`                  |
+| Method               | Args                                       |
+| -------------------- | ------------------------------------------ |
+| `voicecall.initiate` | `to?`, `message`, `mode?`, `dtmfSequence?` |
+| `voicecall.continue` | `callId`, `message`                        |
+| `voicecall.speak`    | `callId`, `message`                        |
+| `voicecall.dtmf`     | `callId`, `digits`                         |
+| `voicecall.end`      | `callId`                                   |
+| `voicecall.status`   | `callId`                                   |
+
+`dtmfSequence` is only valid with `mode: "conversation"`. Notify-mode calls
+should use `voicecall.dtmf` after the call exists if they need post-connect
+digits.
 
 ## Troubleshooting
 
@@ -719,6 +724,7 @@ Then inspect runtime state:
 ```bash
 openclaw voicecall status --call-id <id>
 openclaw voicecall tail
+openclaw logs --follow
 ```
 
 Common causes:
@@ -771,6 +777,19 @@ For Twilio calls, Voice Call serves the DTMF TwiML first, redirects back to the
 webhook, then opens the realtime media stream so the saved intro is generated
 after the phone participant has joined the meeting.
 
+Use `openclaw logs --follow` for the live phase trace. A healthy Twilio Meet
+join logs this order:
+
+- Google Meet delegates the Twilio join to Voice Call.
+- Voice Call stores pre-connect DTMF TwiML.
+- Twilio initial TwiML is consumed and served before realtime handling.
+- Voice Call serves realtime TwiML for the Twilio call.
+- The realtime bridge starts with the initial greeting queued.
+
+`openclaw voicecall tail` still shows persisted call records; it is useful for
+call state and transcripts, but not every webhook/realtime transition appears
+there.
+
 ### Realtime call has no speech
 
 Confirm only one audio mode is enabled. `realtime.enabled` and
@@ -781,8 +800,8 @@ For realtime Twilio calls, also verify:
 - A realtime provider plugin is loaded and registered.
 - `realtime.provider` is unset or names a registered provider.
 - The provider API key is available to the Gateway process.
-- `openclaw voicecall tail` shows the media stream accepted and realtime
-  provider readiness before the initial greeting.
+- `openclaw logs --follow` shows realtime TwiML served, the realtime bridge
+  started, and the initial greeting queued.
 
 ## Related
 

@@ -213,6 +213,12 @@ console.log(resolveUbuntuVmName("Ubuntu missing"));
     }
   });
 
+  it("waits for apt locks during Linux snapshot bootstrap", () => {
+    const script = readFileSync(TS_PATHS.linux, "utf8");
+
+    expect(script).toContain("DPkg::Lock::Timeout=300");
+  });
+
   it("resolves provider defaults and explicit model overrides", () => {
     expect(resolveProviderAuth("openai", { env: { OPENAI_API_KEY: "sk-openai" } })).toEqual({
       apiKeyEnv: "OPENAI_API_KEY",
@@ -283,11 +289,13 @@ console.log(resolveUbuntuVmName("Ubuntu missing"));
       expect(script, scriptPath).toContain("AgentWorkspaceScript");
       expect(script, scriptPath).toContain("parallels-");
       expect(script, scriptPath).toContain("agents.defaults.skipBootstrap");
+      expect(script, scriptPath).toContain("--timeout");
     }
 
     const npmUpdateScripts = readFileSync(TS_PATHS.npmUpdateScripts, "utf8");
     expect(npmUpdateScripts).toContain("posixAgentWorkspaceScript");
     expect(npmUpdateScripts).toContain("windowsAgentWorkspaceScript");
+    expect(npmUpdateScripts).toContain("--timeout 0");
   });
 
   it("clears phase timers and applies phase deadlines to guest commands", () => {

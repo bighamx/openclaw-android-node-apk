@@ -672,6 +672,19 @@ export class VoiceCallWebhookServer {
         return { statusCode: 401, body: "Unauthorized" };
       }
 
+      const initialTwiML = this.provider.consumeInitialTwiML?.(ctx);
+      if (initialTwiML !== undefined && initialTwiML !== null) {
+        const params = new URLSearchParams(ctx.rawBody);
+        console.log(
+          `[voice-call] Serving provider initial TwiML before realtime handling (callSid=${params.get("CallSid") ?? "unknown"}, direction=${params.get("Direction") ?? "unknown"})`,
+        );
+        return {
+          statusCode: 200,
+          headers: { "Content-Type": "application/xml" },
+          body: initialTwiML,
+        };
+      }
+
       const realtimeParams = this.getRealtimeTwimlParams(ctx);
       if (realtimeParams) {
         const direction = realtimeParams.get("Direction");
@@ -680,6 +693,9 @@ export class VoiceCallWebhookServer {
           console.log("[voice-call] Realtime inbound call rejected before stream setup");
           return buildRealtimeRejectedTwiML();
         }
+        console.log(
+          `[voice-call] Serving realtime TwiML for Twilio call ${realtimeParams.get("CallSid") ?? "unknown"} (direction=${direction ?? "unknown"})`,
+        );
         return this.realtimeHandler!.buildTwiMLPayload(req, realtimeParams);
       }
 
