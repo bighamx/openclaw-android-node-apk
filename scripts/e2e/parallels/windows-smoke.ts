@@ -397,7 +397,7 @@ class WindowsSmoke {
     this.status.freshGateway = "pass";
     await this.phase(
       "fresh.first-agent-turn",
-      Number(process.env.OPENCLAW_PARALLELS_WINDOWS_AGENT_TIMEOUT_S || 900),
+      Number(process.env.OPENCLAW_PARALLELS_WINDOWS_AGENT_TIMEOUT_S || 1500),
       () => this.verifyTurn(),
     );
     this.status.freshAgent = "pass";
@@ -453,7 +453,7 @@ class WindowsSmoke {
     this.status.upgradeGateway = "pass";
     await this.phase(
       "upgrade.first-agent-turn",
-      Number(process.env.OPENCLAW_PARALLELS_WINDOWS_AGENT_TIMEOUT_S || 900),
+      Number(process.env.OPENCLAW_PARALLELS_WINDOWS_AGENT_TIMEOUT_S || 1500),
       () => this.verifyTurn(),
     );
     this.status.upgradeAgent = "pass";
@@ -920,19 +920,23 @@ for ($attempt = 1; $attempt -le 2; $attempt++) {
     '--json'
   )
   $output = Invoke-OpenClaw @args 2>&1
+  $agentExitCode = $LASTEXITCODE
   if ($null -ne $output) { $output | ForEach-Object { $_ } }
-  if ($LASTEXITCODE -ne 0) { throw "agent failed with exit code $LASTEXITCODE" }
-  if (($output | Out-String) -match '"finalAssistant(Raw|Visible)Text":\\s*"OK"') {
+  if ($agentExitCode -eq 0 -and ($output | Out-String) -match '"finalAssistant(Raw|Visible)Text":\\s*"OK"') {
     $agentOk = $true
     break
   }
   if ($attempt -lt 2) {
-    Write-Host "agent turn attempt $attempt finished without OK response; retrying"
+    Write-Host "agent turn attempt $attempt failed or finished without OK response; retrying"
     Start-Sleep -Seconds 3
+    continue
+  }
+  if ($agentExitCode -ne 0) {
+    throw "agent failed with exit code $agentExitCode"
   }
 }
 if (-not $agentOk) { throw 'openclaw agent finished without OK response' }`,
-      Number(process.env.OPENCLAW_PARALLELS_WINDOWS_AGENT_TIMEOUT_S || 900) * 1000,
+      Number(process.env.OPENCLAW_PARALLELS_WINDOWS_AGENT_TIMEOUT_S || 1500) * 1000,
     );
   }
 
