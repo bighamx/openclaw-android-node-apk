@@ -15,6 +15,7 @@ vi.mock("./runtime-entry.js", () => ({
 
 import plugin from "./index.js";
 import { createVoiceCallRuntime } from "./runtime-entry.js";
+import { __testing as voiceCallCliTesting } from "./src/cli.js";
 
 const noopLogger = {
   info: vi.fn(),
@@ -22,6 +23,8 @@ const noopLogger = {
   error: vi.fn(),
   debug: vi.fn(),
 };
+
+const callGatewayFromCliMock = vi.fn();
 
 type Registered = {
   methods: Map<string, unknown>;
@@ -63,6 +66,7 @@ function createRuntimeStub(callId = "call-1"): VoiceCallRuntime {
       endCall: vi.fn(async () => ({ success: true })),
       getCall: vi.fn((id: string) => (id === callId ? { callId } : undefined)),
       getCallByProviderCallId: vi.fn(() => undefined),
+      getActiveCalls: vi.fn(() => [{ callId }]),
     } as unknown as VoiceCallRuntime["manager"],
     webhookServer: {} as VoiceCallRuntime["webhookServer"],
     webhookUrl: "http://127.0.0.1:3334/voice/webhook",
@@ -143,11 +147,15 @@ describe("voice-call plugin", () => {
     noopLogger.error.mockClear();
     noopLogger.debug.mockClear();
     runtimeStub = createRuntimeStub();
+    callGatewayFromCliMock.mockReset();
+    callGatewayFromCliMock.mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:18789"));
+    voiceCallCliTesting.setCallGatewayFromCliForTests(callGatewayFromCliMock);
     vi.mocked(createVoiceCallRuntime).mockReset();
     vi.mocked(createVoiceCallRuntime).mockImplementation(async () => runtimeStub);
   });
 
   afterEach(() => {
+    voiceCallCliTesting.setCallGatewayFromCliForTests();
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
     delete (globalThis as Record<PropertyKey, unknown>)[Symbol.for("openclaw.voice-call.runtime")];
@@ -202,6 +210,29 @@ describe("voice-call plugin", () => {
     await handler?.({ params: { message: "Hi" }, respond });
 
     expect(respond).toHaveBeenCalledWith(true, { callId: "call-1", initiated: true });
+  });
+
+  it("does not start the webhook runtime for CLI-only plugin loading", async () => {
+    vi.stubEnv("OPENCLAW_CLI", "1");
+    const { service } = setup({ provider: "mock" });
+
+    await service?.start(createServiceContext());
+
+    expect(createVoiceCallRuntime).not.toHaveBeenCalled();
+  });
+
+  it("still starts the webhook runtime for gateway CLI processes", async () => {
+    const previousArgv = process.argv;
+    vi.stubEnv("OPENCLAW_CLI", "1");
+    process.argv = ["node", "openclaw", "gateway", "run"];
+    const { service } = setup({ provider: "mock" });
+
+    try {
+      await service?.start(createServiceContext());
+      expect(createVoiceCallRuntime).toHaveBeenCalledTimes(1);
+    } finally {
+      process.argv = previousArgv;
+    }
   });
 
   it("creates a fresh shared runtime after service stop", async () => {
@@ -282,6 +313,32 @@ describe("voice-call plugin", () => {
     const [ok, payload] = respond.mock.calls[0];
     expect(ok).toBe(true);
     expect(payload.callId).toBe("call-1");
+  });
+
+  it("preserves mode on legacy voicecall.start", async () => {
+    const { methods } = setup({ provider: "mock" });
+    const handler = methods.get("voicecall.start") as
+      | ((ctx: {
+          params: Record<string, unknown>;
+          respond: ReturnType<typeof vi.fn>;
+        }) => Promise<void>)
+      | undefined;
+    const respond = vi.fn();
+    await handler?.({
+      params: {
+        dtmfSequence: "ww123456#",
+        message: "Hi",
+        mode: "conversation",
+        to: "+15550001234",
+      },
+      respond,
+    });
+    expect(runtimeStub.manager.initiateCall).toHaveBeenCalledWith("+15550001234", undefined, {
+      dtmfSequence: "ww123456#",
+      message: "Hi",
+      mode: "conversation",
+    });
+    expect(respond.mock.calls[0]?.[0]).toBe(true);
   });
 
   it("returns call status", async () => {
@@ -441,6 +498,29 @@ describe("voice-call plugin", () => {
     }
   });
 
+  it("CLI start delegates to the running gateway runtime", async () => {
+    callGatewayFromCliMock.mockResolvedValueOnce({ callId: "gateway-call", initiated: true });
+    const program = new Command();
+    const stdout = captureStdout();
+    await registerVoiceCallCli(program);
+
+    try {
+      await program.parseAsync(["voicecall", "start", "--to", "+1", "--message", "Hello"], {
+        from: "user",
+      });
+      expect(callGatewayFromCliMock).toHaveBeenCalledWith(
+        "voicecall.start",
+        { json: true, timeout: "5000" },
+        { to: "+1", message: "Hello", mode: "conversation" },
+        { progress: false },
+      );
+      expect(createVoiceCallRuntime).not.toHaveBeenCalled();
+      expect(stdout.output()).toContain('"callId": "gateway-call"');
+    } finally {
+      stdout.restore();
+    }
+  });
+
   it("CLI setup prints human-readable checks by default", async () => {
     const program = new Command();
     const stdout = captureStdout();
@@ -485,6 +565,81 @@ describe("voice-call plugin", () => {
       expect(parsed.checks).toContainEqual(
         expect.objectContaining({ id: "webhook-exposure", ok: false }),
       );
+    } finally {
+      stdout.restore();
+    }
+  });
+
+  it("CLI setup rejects local public webhook URLs for Twilio", async () => {
+    const program = new Command();
+    const stdout = captureStdout();
+    await registerVoiceCallCli(program, {
+      provider: "twilio",
+      fromNumber: "+15550001234",
+      publicUrl: "http://127.0.0.1:3334/voice/webhook",
+      twilio: {
+        accountSid: "AC123",
+        authToken: "token",
+      },
+    });
+
+    try {
+      await program.parseAsync(["voicecall", "setup", "--json"], { from: "user" });
+      const parsed = JSON.parse(stdout.output()) as {
+        ok?: boolean;
+        checks?: Array<{ id: string; ok: boolean; message: string }>;
+      };
+      expect(parsed.ok).toBe(false);
+      expect(parsed.checks).toContainEqual(
+        expect.objectContaining({
+          id: "webhook-exposure",
+          ok: false,
+          message: expect.stringContaining("local/private"),
+        }),
+      );
+    } finally {
+      stdout.restore();
+    }
+  });
+
+  it("CLI status lists active calls without a call id", async () => {
+    const program = new Command();
+    const stdout = captureStdout();
+    await registerVoiceCallCli(program);
+
+    try {
+      await program.parseAsync(["voicecall", "status", "--json"], { from: "user" });
+      const parsed = JSON.parse(stdout.output()) as {
+        calls?: Array<{ callId?: string }>;
+      };
+      expect(parsed.calls).toEqual([expect.objectContaining({ callId: "call-1" })]);
+    } finally {
+      stdout.restore();
+    }
+  });
+
+  it("CLI status lists active calls through the running gateway runtime", async () => {
+    callGatewayFromCliMock.mockResolvedValueOnce({
+      found: true,
+      calls: [{ callId: "gateway-call" }],
+    });
+    const program = new Command();
+    const stdout = captureStdout();
+    await registerVoiceCallCli(program);
+
+    try {
+      await program.parseAsync(["voicecall", "status", "--json"], { from: "user" });
+      const parsed = JSON.parse(stdout.output()) as {
+        calls?: Array<{ callId?: string }>;
+      };
+      expect(callGatewayFromCliMock).toHaveBeenCalledWith(
+        "voicecall.status",
+        { json: true, timeout: "5000" },
+        undefined,
+        { progress: false },
+      );
+      expect(createVoiceCallRuntime).not.toHaveBeenCalled();
+      expect(parsed.calls).toEqual([expect.objectContaining({ callId: "gateway-call" })]);
     } finally {
       stdout.restore();
     }

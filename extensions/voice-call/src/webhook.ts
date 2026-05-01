@@ -195,6 +195,13 @@ export class VoiceCallWebhookServer {
     return this.realtimeHandler;
   }
 
+  speakRealtime(callId: string, instructions: string): { success: boolean; error?: string } {
+    if (!this.realtimeHandler) {
+      return { success: false, error: "Realtime voice handler is not configured" };
+    }
+    return this.realtimeHandler.speak(callId, instructions);
+  }
+
   setRealtimeHandler(handler: RealtimeCallHandler): void {
     this.realtimeHandler = handler;
   }
@@ -383,8 +390,8 @@ export class VoiceCallWebhookServer {
         if (this.provider.name === "twilio") {
           (this.provider as TwilioProvider).registerCallStream(callId, streamSid);
         }
-
-        // Speak initial message immediately (no delay) to avoid stream timeout
+      },
+      onTranscriptionReady: (callId) => {
         this.manager.speakInitialMessage(callId).catch((err) => {
           console.warn(`[voice-call] Failed to speak initial message:`, err);
         });
