@@ -40,7 +40,6 @@
     "!dist/extensions/diagnostics-otel/**",
     "!dist/extensions/diagnostics-prometheus/**",
     "!dist/extensions/diffs/**",
-    "!dist/extensions/discord/**",
     "!dist/extensions/feishu/**",
     "!dist/extensions/google-meet/**",
     "!dist/extensions/googlechat/**",
@@ -1334,7 +1333,7 @@
     "crabbox:run": "node scripts/crabbox-wrapper.mjs run",
     "crabbox:stop": "node scripts/crabbox-wrapper.mjs stop",
     "crabbox:warmup": "node scripts/crabbox-wrapper.mjs warmup",
-    "deadcode:ci": "pnpm deadcode:report:ci:knip",
+    "deadcode:ci": "pnpm deadcode:report:ci:knip && pnpm deadcode:report:ci:ts-unused",
     "deadcode:dependencies": "pnpm --config.minimum-release-age=0 dlx knip@6.8.0 --config knip.config.ts --production --no-progress --reporter compact --dependencies --no-config-hints",
     "deadcode:knip": "pnpm dlx knip --config knip.config.ts --production --no-progress --reporter compact --files --dependencies",
     "deadcode:report": "pnpm deadcode:knip; pnpm deadcode:ts-prune; pnpm deadcode:ts-unused",
@@ -1726,7 +1725,7 @@
     "vitest": "^4.1.5"
   },
   "overrides": {
-    "@aws-sdk/client-bedrock-runtime": "3.1024.0",
+    "@aws-sdk/client-bedrock-runtime": "$@aws-sdk/client-bedrock-runtime",
     "axios": "1.15.0",
     "follow-redirects": "1.16.0",
     "node-domexception": "npm:@nolyfill/domexception@1.0.28",

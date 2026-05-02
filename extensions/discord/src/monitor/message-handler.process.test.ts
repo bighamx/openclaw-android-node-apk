@@ -357,11 +357,14 @@ function getLastDispatchCtx():
       CommandBody?: string;
       From?: string;
       MediaTranscribedIndexes?: number[];
+      MessageSid?: string;
+      MessageSidFull?: string;
       MessageThreadId?: string | number;
       ModelParentSessionKey?: string;
       OriginatingTo?: string;
       ParentSessionKey?: string;
       SessionKey?: string;
+      ThreadStarterBody?: string;
       To?: string;
       Transcript?: string;
     }
@@ -375,11 +378,14 @@ function getLastDispatchCtx():
           CommandBody?: string;
           From?: string;
           MediaTranscribedIndexes?: number[];
+          MessageSid?: string;
+          MessageSidFull?: string;
           MessageThreadId?: string | number;
           ModelParentSessionKey?: string;
           OriginatingTo?: string;
           ParentSessionKey?: string;
           SessionKey?: string;
+          ThreadStarterBody?: string;
           To?: string;
           Transcript?: string;
         };
@@ -925,6 +931,25 @@ describe("processDiscordMessage session routing", () => {
     expect(sendMocks.removeReactionDiscord).not.toHaveBeenCalled();
   });
 
+  it("uses PluralKit original ids for inbound dedupe while preserving the Discord message id", async () => {
+    const ctx = await createBaseContext({
+      canonicalMessageId: "orig-123",
+      message: {
+        id: "proxy-456",
+        channelId: "c1",
+        timestamp: new Date().toISOString(),
+        attachments: [],
+      },
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(getLastDispatchCtx()).toMatchObject({
+      MessageSid: "orig-123",
+      MessageSidFull: "proxy-456",
+    });
+  });
+
   it("defaults guild replies to message-tool-only source delivery", async () => {
     await runProcessDiscordMessage(
       await createBaseContext({
@@ -1029,6 +1054,49 @@ describe("processDiscordMessage session routing", () => {
       ModelParentSessionKey: "agent:main:discord:channel:parent-1",
     });
     expect(getLastDispatchCtx()?.ParentSessionKey).toBeUndefined();
+  });
+
+  it("omits thread starter context when the effective thread session already exists", async () => {
+    const threadSessionKey = "agent:main:discord:channel:thread-1";
+    readSessionUpdatedAt.mockImplementation((params?: unknown) => {
+      const sessionKey = (params as { sessionKey?: string } | undefined)?.sessionKey;
+      return sessionKey === threadSessionKey ? 1_700_000_000_000 : undefined;
+    });
+    const rest = {
+      get: vi.fn(async () => ({
+        content: "original thread starter",
+        embeds: [],
+        author: { id: "U2", username: "bob", discriminator: "0" },
+        timestamp: new Date().toISOString(),
+      })),
+    };
+    const ctx = await createBaseContext({
+      baseSessionKey: threadSessionKey,
+      route: BASE_CHANNEL_ROUTE,
+      messageChannelId: "thread-1",
+      message: {
+        id: "m1",
+        channelId: "thread-1",
+        content: "follow-up",
+        timestamp: new Date().toISOString(),
+        attachments: [],
+      },
+      messageText: "follow-up",
+      baseText: "follow-up",
+      threadChannel: { id: "thread-1", name: "child-thread" },
+      threadParentId: "parent-1",
+      client: { rest },
+      channelConfig: { allowed: true, users: ["U2"] },
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    expect(rest.get).toHaveBeenCalled();
+    expect(getLastDispatchCtx()).toMatchObject({
+      SessionKey: threadSessionKey,
+      MessageThreadId: "thread-1",
+    });
+    expect(getLastDispatchCtx()?.ThreadStarterBody).toBeUndefined();
   });
 });
 
