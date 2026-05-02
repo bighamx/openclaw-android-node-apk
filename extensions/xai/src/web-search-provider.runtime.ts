@@ -19,6 +19,7 @@ import {
   extractXaiWebSearchContent,
   requestXaiWebSearch,
   resolveXaiInlineCitations,
+  resolveXaiWebSearchEndpoint,
   resolveXaiWebSearchModel,
 } from "./web-search-shared.js";
 import { resolveEffectiveXSearchConfig, setPluginXSearchConfigValue } from "./x-search-config.js";
@@ -120,13 +121,14 @@ export async function runXaiSearchProviderSetup(
 function runXaiWebSearch(params: {
   query: string;
   model: string;
+  endpoint: string;
   apiKey: string;
   timeoutSeconds: number;
   inlineCitations: boolean;
   cacheTtlMs: number;
 }): Promise<Record<string, unknown>> {
   const cacheKey = normalizeCacheKey(
-    `grok:${params.model}:${String(params.inlineCitations)}:${params.query}`,
+    `grok:${params.endpoint}:${params.model}:${String(params.inlineCitations)}:${params.query}`,
   );
   const cached = readCache(XAI_WEB_SEARCH_CACHE, cacheKey);
   if (cached) {
@@ -139,6 +141,7 @@ function runXaiWebSearch(params: {
       query: params.query,
       model: params.model,
       apiKey: params.apiKey,
+      endpoint: params.endpoint,
       timeoutSeconds: params.timeoutSeconds,
       inlineCitations: params.inlineCitations,
     });
@@ -194,7 +197,7 @@ export async function executeXaiWebSearchProviderTool(
     return {
       error: "missing_xai_api_key",
       message:
-        "web_search (grok) needs an xAI API key. Set XAI_API_KEY in the Gateway environment, or configure plugins.entries.xai.config.webSearch.apiKey.",
+        "web_search (grok) needs an xAI API key. Set XAI_API_KEY in the Gateway environment, or configure plugins.entries.xai.config.webSearch.apiKey. If you do not want to configure a search API key, use web_fetch for a specific URL or the browser tool for interactive pages.",
       docs: "https://docs.openclaw.ai/tools/web",
     };
   }
@@ -205,6 +208,7 @@ export async function executeXaiWebSearchProviderTool(
   return await runXaiWebSearch({
     query,
     model: resolveXaiWebSearchModel(searchConfig),
+    endpoint: resolveXaiWebSearchEndpoint(searchConfig),
     apiKey,
     timeoutSeconds: resolveXaiWebSearchTimeoutSeconds(searchConfig),
     inlineCitations: resolveXaiInlineCitations(searchConfig),
@@ -218,6 +222,7 @@ export const __testing = {
   resolveXaiToolSearchConfig,
   resolveXaiInlineCitations,
   resolveXaiWebSearchCredential,
+  resolveXaiWebSearchEndpoint,
   resolveXaiWebSearchModel,
   resolveXaiWebSearchTimeoutSeconds,
   requestXaiWebSearch,
