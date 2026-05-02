@@ -33,6 +33,21 @@ export type OfficialExternalProviderCatalogProvider = {
   authChoices?: readonly OfficialExternalProviderAuthChoice[];
 };
 
+export type OfficialExternalWebSearchProvider = {
+  id?: string;
+  label?: string;
+  hint?: string;
+  onboardingScopes?: readonly "text-inference"[];
+  requiresCredential?: boolean;
+  credentialLabel?: string;
+  envVars?: readonly string[];
+  placeholder?: string;
+  signupUrl?: string;
+  docsUrl?: string;
+  credentialPath?: string;
+  autoDetectOrder?: number;
+};
+
 export type OfficialExternalPluginCatalogManifest = {
   plugin?: {
     id?: string;
@@ -43,6 +58,7 @@ export type OfficialExternalPluginCatalogManifest = {
     label?: string;
   };
   providers?: readonly OfficialExternalProviderCatalogProvider[];
+  webSearchProviders?: readonly OfficialExternalWebSearchProvider[];
   install?: PluginPackageInstall;
 };
 
@@ -82,7 +98,7 @@ export function getOfficialExternalPluginCatalogManifest(
   entry: OfficialExternalPluginCatalogEntry,
 ): OfficialExternalPluginCatalogManifest | undefined {
   const manifest = entry[MANIFEST_KEY];
-  return isRecord(manifest) ? (manifest as OfficialExternalPluginCatalogManifest) : undefined;
+  return isRecord(manifest) ? manifest : undefined;
 }
 
 export function resolveOfficialExternalPluginId(
@@ -140,7 +156,7 @@ export function listOfficialExternalPluginCatalogEntries(): OfficialExternalPlug
   const resolved = new Map<string, OfficialExternalPluginCatalogEntry>();
   for (const entry of entries) {
     const pluginId = resolveOfficialExternalPluginId(entry);
-    const key = pluginId ? `${entry.kind ?? "plugin"}:${pluginId}` : `${entry.name ?? ""}`;
+    const key = pluginId ? `${entry.kind ?? "plugin"}:${pluginId}` : (entry.name ?? "");
     if (key && !resolved.has(key)) {
       resolved.set(key, entry);
     }

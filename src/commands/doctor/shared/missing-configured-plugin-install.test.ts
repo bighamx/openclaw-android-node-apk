@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => ({
   listOfficialExternalPluginCatalogEntries: vi.fn(),
   loadInstalledPluginIndexInstallRecords: vi.fn(),
   loadPluginMetadataSnapshot: vi.fn(),
+  getOfficialExternalPluginCatalogManifest: vi.fn(
+    (entry: { openclaw?: unknown }) => entry.openclaw,
+  ),
   resolveOfficialExternalPluginId: vi.fn((entry: { id?: string }) => entry.id),
   resolveOfficialExternalPluginInstall: vi.fn(
     (entry: { install?: unknown }) => entry.install ?? null,
@@ -51,6 +54,7 @@ vi.mock("../../../plugins/plugin-metadata-snapshot.js", () => ({
 }));
 
 vi.mock("../../../plugins/official-external-plugin-catalog.js", () => ({
+  getOfficialExternalPluginCatalogManifest: mocks.getOfficialExternalPluginCatalogManifest,
   listOfficialExternalPluginCatalogEntries: mocks.listOfficialExternalPluginCatalogEntries,
   resolveOfficialExternalPluginId: mocks.resolveOfficialExternalPluginId,
   resolveOfficialExternalPluginInstall: mocks.resolveOfficialExternalPluginInstall,
@@ -381,6 +385,60 @@ describe("repairMissingConfiguredPluginInstalls", () => {
     ]);
   });
 
+  it("installs the missing configured Codex runtime plugin from the beta npm tag", async () => {
+    mocks.installPluginFromNpmSpec.mockResolvedValueOnce({
+      ok: true,
+      pluginId: "codex",
+      targetDir: "/tmp/openclaw-plugins/codex",
+      version: "2026.5.2-beta.1",
+      npmResolution: {
+        name: "@openclaw/codex",
+        version: "2026.5.2-beta.1",
+        resolvedSpec: "@openclaw/codex@2026.5.2-beta.1",
+        integrity: "sha512-codex-beta",
+        resolvedAt: "2026-05-01T00:00:00.000Z",
+      },
+    });
+
+    const { repairMissingPluginInstallsForIds } =
+      await import("./missing-configured-plugin-install.js");
+    const result = await repairMissingPluginInstallsForIds({
+      cfg: {
+        agents: {
+          defaults: {
+            model: "openai/gpt-5.4",
+            agentRuntime: { id: "codex" },
+          },
+        },
+      },
+      pluginIds: ["codex"],
+      env: {},
+    });
+
+    expect(mocks.resolveProviderInstallCatalogEntries).toHaveBeenCalled();
+    expect(mocks.installPluginFromNpmSpec).toHaveBeenCalledWith(
+      expect.objectContaining({
+        spec: "@openclaw/codex@beta",
+        expectedPluginId: "codex",
+      }),
+    );
+    expect(mocks.writePersistedInstalledPluginIndexInstallRecords).toHaveBeenCalledWith(
+      expect.objectContaining({
+        codex: expect.objectContaining({
+          source: "npm",
+          spec: "@openclaw/codex@beta",
+          installPath: "/tmp/openclaw-plugins/codex",
+          version: "2026.5.2-beta.1",
+        }),
+      }),
+      { env: {} },
+    );
+    expect(result.changes).toEqual([
+      'Installed missing configured plugin "codex" from @openclaw/codex@beta.',
+    ]);
+    expect(result.warnings).toEqual([]);
+  });
+
   it("does not install a blocked downloadable plugin from explicit channel ids", async () => {
     mocks.listChannelPluginCatalogEntries.mockReturnValue([
       {
@@ -467,5 +525,170 @@ describe("repairMissingConfiguredPluginInstalls", () => {
       { env: {} },
     );
     expect(result.changes).toEqual(['Repaired missing configured plugin "demo".']);
+  });
+
+  it("reinstalls a recorded external web search plugin from provider-only config", async () => {
+    const records = {
+      brave: {
+        source: "npm",
+        spec: "@openclaw/brave-plugin@beta",
+        installPath: "/missing/brave",
+      },
+    };
+    mocks.loadInstalledPluginIndexInstallRecords.mockResolvedValue(records);
+    mocks.listOfficialExternalPluginCatalogEntries.mockReturnValue([
+      {
+        id: "brave",
+        label: "Brave",
+        install: {
+          npmSpec: "@openclaw/brave-plugin",
+          defaultChoice: "npm",
+        },
+        openclaw: {
+          plugin: { id: "brave", label: "Brave" },
+          webSearchProviders: [
+            {
+              id: "brave",
+              label: "Brave Search",
+              hint: "Brave Search",
+              envVars: ["BRAVE_API_KEY"],
+              placeholder: "BSA...",
+              signupUrl: "https://example.test/brave",
+            },
+          ],
+        },
+      },
+    ]);
+    mocks.updateNpmInstalledPlugins.mockResolvedValue({
+      changed: true,
+      config: {
+        plugins: {
+          installs: {
+            brave: {
+              source: "npm",
+              spec: "@openclaw/brave-plugin@beta",
+              installPath: "/tmp/openclaw-plugins/brave",
+            },
+          },
+        },
+      },
+      outcomes: [
+        {
+          pluginId: "brave",
+          status: "updated",
+          message: "Updated brave.",
+        },
+      ],
+    });
+
+    const { repairMissingConfiguredPluginInstalls } =
+      await import("./missing-configured-plugin-install.js");
+    const result = await repairMissingConfiguredPluginInstalls({
+      cfg: {
+        tools: {
+          web: {
+            search: {
+              provider: "brave",
+            },
+          },
+        },
+      },
+      env: {},
+    });
+
+    expect(mocks.updateNpmInstalledPlugins).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pluginIds: ["brave"],
+        config: expect.objectContaining({
+          plugins: expect.objectContaining({ installs: records }),
+        }),
+      }),
+    );
+    expect(mocks.writePersistedInstalledPluginIndexInstallRecords).toHaveBeenCalledWith(
+      expect.objectContaining({
+        brave: expect.objectContaining({ installPath: "/tmp/openclaw-plugins/brave" }),
+      }),
+      { env: {} },
+    );
+    expect(result.changes).toEqual(['Repaired missing configured plugin "brave".']);
+  });
+
+  it("installs a configured external web search plugin from provider-only config", async () => {
+    mocks.listOfficialExternalPluginCatalogEntries.mockReturnValue([
+      {
+        id: "brave",
+        label: "Brave",
+        install: {
+          npmSpec: "@openclaw/brave-plugin",
+          defaultChoice: "npm",
+        },
+        openclaw: {
+          plugin: { id: "brave", label: "Brave" },
+          webSearchProviders: [
+            {
+              id: "brave",
+              label: "Brave Search",
+              hint: "Brave Search",
+              envVars: ["BRAVE_API_KEY"],
+              placeholder: "BSA...",
+              signupUrl: "https://example.test/brave",
+              credentialPath: "plugins.entries.brave.config.webSearch.apiKey",
+            },
+          ],
+          install: {
+            npmSpec: "@openclaw/brave-plugin",
+            defaultChoice: "npm",
+          },
+        },
+      },
+    ]);
+    mocks.resolveOfficialExternalPluginId.mockImplementation(
+      (entry: { id?: string; openclaw?: { plugin?: { id?: string } } }) =>
+        entry.openclaw?.plugin?.id ?? entry.id,
+    );
+    mocks.resolveOfficialExternalPluginInstall.mockImplementation(
+      (entry: { install?: unknown; openclaw?: { install?: unknown } }) =>
+        entry.openclaw?.install ?? entry.install ?? null,
+    );
+    mocks.resolveOfficialExternalPluginLabel.mockImplementation(
+      (entry: { label?: string; openclaw?: { plugin?: { label?: string } } }) =>
+        entry.openclaw?.plugin?.label ?? entry.label ?? "plugin",
+    );
+    mocks.installPluginFromNpmSpec.mockResolvedValueOnce({
+      ok: true,
+      pluginId: "brave",
+      targetDir: "/tmp/openclaw-plugins/brave",
+      version: "2026.5.2",
+      npmResolution: {
+        name: "@openclaw/brave-plugin",
+        version: "2026.5.2",
+        resolvedSpec: "@openclaw/brave-plugin@2026.5.2",
+      },
+    });
+
+    const { repairMissingConfiguredPluginInstalls } =
+      await import("./missing-configured-plugin-install.js");
+    const result = await repairMissingConfiguredPluginInstalls({
+      cfg: {
+        tools: {
+          web: {
+            search: {
+              provider: "brave",
+            },
+          },
+        },
+      },
+      env: {},
+    });
+
+    expect(mocks.installPluginFromNpmSpec).toHaveBeenCalledWith(
+      expect.objectContaining({
+        spec: "@openclaw/brave-plugin",
+        expectedPluginId: "brave",
+      }),
+    );
+    expect(result.changes).toEqual([
+      'Installed missing configured plugin "brave" from @openclaw/brave-plugin.',
+    ]);
   });
 });
