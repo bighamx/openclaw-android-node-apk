@@ -1,26 +1,30 @@
 import { normalizeToolName } from "../agents/tool-policy.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
-import { resolveRuntimeConfigCacheKey } from "../config/runtime-snapshot.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { getLoadedRuntimePluginRegistry } from "./active-runtime-registry.js";
 import { applyTestPluginDefaults, normalizePluginsConfig } from "./config-state.js";
-import { resolveRuntimePluginRegistry, type PluginLoadOptions } from "./loader.js";
+import type { PluginLoadOptions } from "./loader.js";
 import {
   isManifestPluginAvailableForControlPlane,
   loadManifestContractSnapshot,
 } from "./manifest-contract-eligibility.js";
 import { hasManifestToolAvailability } from "./manifest-tool-availability.js";
-import {
-  getActivePluginChannelRegistry,
-  getActivePluginRegistry,
-  getActivePluginRegistryKey,
-  getActivePluginRuntimeSubagentMode,
-} from "./runtime.js";
+import type { PluginToolRegistration } from "./registry-types.js";
 import {
   buildPluginRuntimeLoadOptions,
   resolvePluginRuntimeLoadContext,
 } from "./runtime/load-context.js";
+import { ensureStandaloneRuntimePluginRegistryLoaded } from "./runtime/standalone-runtime-registry-loader.js";
 import { findUndeclaredPluginToolNames } from "./tool-contracts.js";
-import type { OpenClawPluginToolContext, OpenClawPluginToolFactory } from "./types.js";
+import {
+  buildPluginToolFactoryCacheKey,
+  readCachedPluginToolFactoryResult,
+  type PluginToolFactoryResult,
+  writeCachedPluginToolFactoryResult,
+} from "./tool-factory-cache.js";
+import type { OpenClawPluginToolContext } from "./types.js";
+
+export { resetPluginToolFactoryCache } from "./tool-factory-cache.js";
 
 export type PluginToolMeta = {
   pluginId: string;
@@ -43,105 +47,8 @@ const log = createSubsystemLogger("plugins/tools");
 const PLUGIN_TOOL_FACTORY_WARN_TOTAL_MS = 5_000;
 const PLUGIN_TOOL_FACTORY_WARN_FACTORY_MS = 1_000;
 const PLUGIN_TOOL_FACTORY_SUMMARY_LIMIT = 20;
-const PLUGIN_TOOL_FACTORY_CACHE_LIMIT_PER_FACTORY = 64;
-
-type PluginToolFactoryResult = AnyAgentTool | AnyAgentTool[] | null | undefined;
-
-let pluginToolFactoryCache = new WeakMap<
-  OpenClawPluginToolFactory,
-  Map<string, PluginToolFactoryResult>
->();
-let pluginToolFactoryCacheObjectIds = new WeakMap<object, number>();
-let nextPluginToolFactoryCacheObjectId = 1;
 
 const pluginToolMeta = new WeakMap<AnyAgentTool, PluginToolMeta>();
-
-export function resetPluginToolFactoryCache(): void {
-  pluginToolFactoryCache = new WeakMap();
-  pluginToolFactoryCacheObjectIds = new WeakMap();
-  nextPluginToolFactoryCacheObjectId = 1;
-}
-
-function getPluginToolFactoryCacheObjectId(value: object | null | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-  const existing = pluginToolFactoryCacheObjectIds.get(value);
-  if (existing !== undefined) {
-    return existing;
-  }
-  const next = nextPluginToolFactoryCacheObjectId++;
-  pluginToolFactoryCacheObjectIds.set(value, next);
-  return next;
-}
-
-function getPluginToolFactoryConfigCacheKey(
-  value: PluginLoadOptions["config"] | null | undefined,
-): string | number | null {
-  if (!value) {
-    return null;
-  }
-  try {
-    return resolveRuntimeConfigCacheKey(value);
-  } catch {
-    return getPluginToolFactoryCacheObjectId(value);
-  }
-}
-
-function buildPluginToolFactoryCacheKey(params: {
-  ctx: OpenClawPluginToolContext;
-  currentRuntimeConfig?: PluginLoadOptions["config"] | null;
-}): string {
-  const { ctx } = params;
-  return JSON.stringify({
-    config: getPluginToolFactoryConfigCacheKey(ctx.config),
-    runtimeConfig: getPluginToolFactoryConfigCacheKey(ctx.runtimeConfig),
-    currentRuntimeConfig: getPluginToolFactoryConfigCacheKey(params.currentRuntimeConfig),
-    fsPolicy: ctx.fsPolicy ?? null,
-    workspaceDir: ctx.workspaceDir ?? null,
-    agentDir: ctx.agentDir ?? null,
-    agentId: ctx.agentId ?? null,
-    sessionKey: ctx.sessionKey ?? null,
-    sessionId: ctx.sessionId ?? null,
-    browser: ctx.browser ?? null,
-    messageChannel: ctx.messageChannel ?? null,
-    agentAccountId: ctx.agentAccountId ?? null,
-    deliveryContext: ctx.deliveryContext ?? null,
-    requesterSenderId: ctx.requesterSenderId ?? null,
-    senderIsOwner: ctx.senderIsOwner ?? null,
-    sandboxed: ctx.sandboxed ?? null,
-  });
-}
-
-function readCachedPluginToolFactoryResult(params: {
-  factory: OpenClawPluginToolFactory;
-  cacheKey: string;
-}): { hit: boolean; result: PluginToolFactoryResult } {
-  const cache = pluginToolFactoryCache.get(params.factory);
-  if (!cache || !cache.has(params.cacheKey)) {
-    return { hit: false, result: undefined };
-  }
-  return { hit: true, result: cache.get(params.cacheKey) };
-}
-
-function writeCachedPluginToolFactoryResult(params: {
-  factory: OpenClawPluginToolFactory;
-  cacheKey: string;
-  result: PluginToolFactoryResult;
-}): void {
-  let cache = pluginToolFactoryCache.get(params.factory);
-  if (!cache) {
-    cache = new Map();
-    pluginToolFactoryCache.set(params.factory, cache);
-  }
-  if (!cache.has(params.cacheKey) && cache.size >= PLUGIN_TOOL_FACTORY_CACHE_LIMIT_PER_FACTORY) {
-    const oldestKey = cache.keys().next().value;
-    if (oldestKey !== undefined) {
-      cache.delete(oldestKey);
-    }
-  }
-  cache.set(params.cacheKey, params.result);
-}
 
 export function setPluginToolMeta(tool: AnyAgentTool, meta: PluginToolMeta): void {
   pluginToolMeta.set(tool, meta);
@@ -236,6 +143,99 @@ function describePluginToolFactoryResult(
     return { result: "array", resultCount: resolved.length };
   }
   return { result: "single", resultCount: 1 };
+}
+
+function createPluginToolFactoryTiming(params: {
+  pluginId: string;
+  names: string[];
+  durationMs: number;
+  elapsedMs: number;
+  resolved: PluginToolFactoryResult;
+  failed: boolean;
+  optional: boolean;
+}): PluginToolFactoryTiming {
+  const result = describePluginToolFactoryResult(params.resolved, params.failed);
+  return {
+    pluginId: params.pluginId,
+    names: params.names,
+    durationMs: params.durationMs,
+    elapsedMs: params.elapsedMs,
+    result: result.result,
+    resultCount: result.resultCount,
+    optional: params.optional,
+  };
+}
+
+function resolvePluginToolFactoryEntry(params: {
+  entry: PluginToolRegistration;
+  ctx: OpenClawPluginToolContext;
+  declaredNames: string[];
+  currentRuntimeConfig: PluginLoadOptions["config"] | null | undefined;
+  factoryTimingStartedAt: number;
+  logError: (message: string) => void;
+}): {
+  resolved: PluginToolFactoryResult;
+  failed: boolean;
+  timing: PluginToolFactoryTiming;
+} {
+  let resolved: PluginToolFactoryResult = null;
+  let failed = false;
+  const factoryStartedAt = Date.now();
+  const factoryCacheKey = buildPluginToolFactoryCacheKey({
+    ctx: params.ctx,
+    currentRuntimeConfig: params.currentRuntimeConfig,
+  });
+  const cached = readCachedPluginToolFactoryResult({
+    factory: params.entry.factory,
+    cacheKey: factoryCacheKey,
+  });
+
+  if (cached.hit) {
+    resolved = cached.result;
+    return {
+      resolved,
+      failed: false,
+      timing: createPluginToolFactoryTiming({
+        pluginId: params.entry.pluginId,
+        names: params.declaredNames,
+        durationMs: 0,
+        elapsedMs: toElapsedMs(Date.now() - params.factoryTimingStartedAt),
+        resolved,
+        failed: false,
+        optional: params.entry.optional,
+      }),
+    };
+  }
+
+  try {
+    resolved = params.entry.factory(params.ctx);
+  } catch (err) {
+    failed = true;
+    params.logError(`plugin tool failed (${params.entry.pluginId}): ${String(err)}`);
+  } finally {
+    if (!failed) {
+      writeCachedPluginToolFactoryResult({
+        factory: params.entry.factory,
+        cacheKey: factoryCacheKey,
+        result: resolved,
+      });
+    }
+  }
+
+  const factoryEndedAt = Date.now();
+  return {
+    resolved,
+    failed,
+    timing: createPluginToolFactoryTiming({
+      pluginId: params.entry.pluginId,
+      names: params.declaredNames,
+      durationMs: toElapsedMs(factoryEndedAt - factoryStartedAt),
+      elapsedMs: toElapsedMs(factoryEndedAt - params.factoryTimingStartedAt),
+      resolved,
+      failed,
+      optional: params.entry.optional,
+    }),
+  };
 }
 
 function formatPluginToolFactoryTiming(timing: PluginToolFactoryTiming): string {
@@ -402,51 +402,32 @@ function resolvePluginToolRuntimePluginIds(params: {
   return [...pluginIds].toSorted((left, right) => left.localeCompare(right));
 }
 
-function registryContainsPluginIds(
-  registry: ReturnType<typeof getActivePluginRegistry>,
-  pluginIds?: readonly string[],
-): boolean {
-  if (!registry || pluginIds === undefined || pluginIds.length === 0) {
-    return false;
-  }
-  const loadedPluginIds = new Set(
-    (registry.plugins ?? [])
-      .filter((plugin) => plugin.status === undefined || plugin.status === "loaded")
-      .map((plugin) => plugin.id),
-  );
-  return pluginIds.every((pluginId) => loadedPluginIds.has(pluginId));
-}
-
 function resolvePluginToolRegistry(params: {
   loadOptions: PluginLoadOptions;
   onlyPluginIds?: readonly string[];
 }) {
-  const activeRegistry = getActivePluginRegistry();
-  const channelRegistry = getActivePluginChannelRegistry();
-  const activeRegistryIsGatewayBindable =
-    getActivePluginRegistryKey() && getActivePluginRuntimeSubagentMode() === "gateway-bindable";
-  const hasPinnedGatewayRegistry = Boolean(channelRegistry && channelRegistry !== activeRegistry);
-  if (
-    channelRegistry &&
-    (activeRegistryIsGatewayBindable || hasPinnedGatewayRegistry) &&
-    registryContainsPluginIds(channelRegistry, params.onlyPluginIds)
-  ) {
-    return channelRegistry;
-  }
-  return resolveRuntimePluginRegistry(params.loadOptions);
+  return getLoadedRuntimePluginRegistry({
+    env: params.loadOptions.env,
+    loadOptions: params.loadOptions,
+    workspaceDir: params.loadOptions.workspaceDir,
+    requiredPluginIds: params.onlyPluginIds,
+    surface: "channel",
+  });
 }
 
-export function resolvePluginTools(params: {
+function resolvePluginToolLoadState(params: {
   context: OpenClawPluginToolContext;
-  existingToolNames?: Set<string>;
   toolAllowlist?: string[];
-  suppressNameConflicts?: boolean;
   allowGatewaySubagentBinding?: boolean;
   hasAuthForProvider?: (providerId: string) => boolean;
   env?: NodeJS.ProcessEnv;
-}): AnyAgentTool[] {
-  // Fast path: when plugins are effectively disabled, avoid discovery/jiti entirely.
-  // This matters a lot for unit tests and for tool construction hot paths.
+}):
+  | {
+      context: ReturnType<typeof resolvePluginRuntimeLoadContext>;
+      loadOptions: PluginLoadOptions;
+      onlyPluginIds: string[];
+    }
+  | undefined {
   const env = params.env ?? process.env;
   const baseConfig = applyTestPluginDefaults(params.context.config ?? {}, env);
   const context = resolvePluginRuntimeLoadContext({
@@ -456,7 +437,7 @@ export function resolvePluginTools(params: {
   });
   const normalized = normalizePluginsConfig(context.config.plugins);
   if (!normalized.enabled) {
-    return [];
+    return undefined;
   }
 
   const runtimeOptions = params.allowGatewaySubagentBinding
@@ -476,6 +457,43 @@ export function resolvePluginTools(params: {
     ...(onlyPluginIds !== undefined ? { onlyPluginIds } : {}),
     runtimeOptions,
   });
+  return { context, loadOptions, onlyPluginIds };
+}
+
+export function ensureStandalonePluginToolRegistryLoaded(params: {
+  context: OpenClawPluginToolContext;
+  toolAllowlist?: string[];
+  allowGatewaySubagentBinding?: boolean;
+  hasAuthForProvider?: (providerId: string) => boolean;
+  env?: NodeJS.ProcessEnv;
+}): void {
+  const loadState = resolvePluginToolLoadState(params);
+  if (!loadState) {
+    return;
+  }
+  ensureStandaloneRuntimePluginRegistryLoaded({
+    surface: "channel",
+    requiredPluginIds: loadState.onlyPluginIds,
+    loadOptions: loadState.loadOptions,
+  });
+}
+
+export function resolvePluginTools(params: {
+  context: OpenClawPluginToolContext;
+  existingToolNames?: Set<string>;
+  toolAllowlist?: string[];
+  suppressNameConflicts?: boolean;
+  allowGatewaySubagentBinding?: boolean;
+  hasAuthForProvider?: (providerId: string) => boolean;
+  env?: NodeJS.ProcessEnv;
+}): AnyAgentTool[] {
+  // Fast path: when plugins are effectively disabled, avoid discovery/jiti entirely.
+  // This matters a lot for unit tests and for tool construction hot paths.
+  const loadState = resolvePluginToolLoadState(params);
+  if (!loadState) {
+    return [];
+  }
+  const { context, loadOptions, onlyPluginIds } = loadState;
   const registry = resolvePluginToolRegistry({
     loadOptions,
     onlyPluginIds,
@@ -535,59 +553,19 @@ export function resolvePluginTools(params: {
     ) {
       continue;
     }
-    let resolved: PluginToolFactoryResult = null;
-    let factoryFailed = false;
-    const factoryStartedAt = Date.now();
-    const factoryCacheKey = buildPluginToolFactoryCacheKey({
+    const factoryResult = resolvePluginToolFactoryEntry({
+      entry,
       ctx: params.context,
+      declaredNames,
       currentRuntimeConfig: currentRuntimeConfigForFactoryCache,
+      factoryTimingStartedAt,
+      logError: (message) => context.logger.error(message),
     });
-    const cached = readCachedPluginToolFactoryResult({
-      factory: entry.factory,
-      cacheKey: factoryCacheKey,
-    });
-    if (cached.hit) {
-      resolved = cached.result;
-      const result = describePluginToolFactoryResult(resolved, false);
-      factoryTimings.push({
-        pluginId: entry.pluginId,
-        names: declaredNames,
-        durationMs: 0,
-        elapsedMs: toElapsedMs(Date.now() - factoryTimingStartedAt),
-        result: result.result,
-        resultCount: result.resultCount,
-        optional: entry.optional,
-      });
-    } else {
-      try {
-        resolved = entry.factory(params.context);
-      } catch (err) {
-        factoryFailed = true;
-        context.logger.error(`plugin tool failed (${entry.pluginId}): ${String(err)}`);
-      } finally {
-        const factoryEndedAt = Date.now();
-        const result = describePluginToolFactoryResult(resolved, factoryFailed);
-        factoryTimings.push({
-          pluginId: entry.pluginId,
-          names: declaredNames,
-          durationMs: toElapsedMs(factoryEndedAt - factoryStartedAt),
-          elapsedMs: toElapsedMs(factoryEndedAt - factoryTimingStartedAt),
-          result: result.result,
-          resultCount: result.resultCount,
-          optional: entry.optional,
-        });
-        if (!factoryFailed) {
-          writeCachedPluginToolFactoryResult({
-            factory: entry.factory,
-            cacheKey: factoryCacheKey,
-            result: resolved,
-          });
-        }
-      }
-    }
-    if (factoryFailed) {
+    factoryTimings.push(factoryResult.timing);
+    if (factoryResult.failed) {
       continue;
     }
+    const { resolved } = factoryResult;
     if (!resolved) {
       if (declaredNames.length > 0) {
         context.logger.debug?.(
