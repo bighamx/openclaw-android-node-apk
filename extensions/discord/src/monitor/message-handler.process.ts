@@ -565,6 +565,7 @@ export async function processDiscordMessage(
         }
         await replyPipeline.typingCallbacks?.onReplyStart();
         await statusReactions.setThinking();
+        await draftPreview.startProgressDraft();
       },
     });
 
@@ -617,8 +618,9 @@ export async function processDiscordMessage(
             limit: historyLimit,
           },
           onPreDispatchFailure: settleDispatchBeforeStart,
-          runDispatch: () =>
-            dispatchInboundMessage({
+          runDispatch: async () => {
+            await draftPreview.startProgressDraft();
+            return await dispatchInboundMessage({
               ctx: ctxPayload,
               cfg,
               dispatcher,
@@ -643,9 +645,8 @@ export async function processDiscordMessage(
                   ? draftPreview.handleAssistantMessageBoundary
                   : undefined,
                 onModelSelected,
-                suppressDefaultToolProgressMessages: draftPreview.previewToolProgressEnabled
-                  ? true
-                  : undefined,
+                suppressDefaultToolProgressMessages:
+                  draftPreview.suppressDefaultToolProgressMessages ? true : undefined,
                 onReasoningStream: async () => {
                   await statusReactions.setThinking();
                 },
@@ -712,7 +713,8 @@ export async function processDiscordMessage(
                   await statusReactions.setThinking();
                 },
               },
-            }),
+            });
+          },
         }),
       },
     });

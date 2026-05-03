@@ -10,6 +10,7 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Channels/streaming: add unified `streaming.mode: "progress"` drafts with auto single-word status labels and shared progress configuration across Discord, Telegram, Matrix, Slack, and Microsoft Teams.
 - Tools/BTW: add `/side` as a text and native slash-command alias for `/btw` side questions.
 - Agents/tools: skip optional media and PDF tool factories when the effective tool denylist already blocks them, avoiding unnecessary hot-path setup for tools that will be filtered out before model use. (#76773) Thanks @dorukardahan.
 - Discord/status: let explicit reaction tool calls opt into tracking subsequent tool progress on the reacted message with `trackToolCalls: true`, and use the shared tool display emoji table for status reactions.
@@ -29,12 +30,19 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Control UI/WebChat: collapse duplicate in-flight internal text sends onto the active Gateway run so rapid repeat submits do not start fresh `agent:main:main` dispatches. Fixes #75737. Thanks @dsdsddd1 and @BunsDev.
+- Channels/streaming: expose `streaming.progress.label`, `labels`, `maxLines`, and `toolProgress` in bundled channel config metadata so progress draft settings appear in config, docs, and control surfaces. Thanks @vincentkoc.
+- Channels/streaming: normalize whitespace and case for `streaming.progress.label: "auto"` so progress draft labels keep using the built-in label pool instead of rendering a literal `auto` title. Thanks @vincentkoc.
+- Gateway/install: prefer supported system Node over nvm/fnm/volta/asdf/mise when regenerating managed gateway services, so `gateway install --force` no longer recreates service definitions that doctor immediately flags as version-manager-backed. Fixes #76339. Thanks @brokemac79.
 - Gateway/usage: serve `usage.cost` and `sessions.usage` from a durable transcript aggregate cache with lock-safe background refreshes and localized stale-cache status, so large usage views avoid repeated full scans. (#76650) Thanks @Marvinthebored.
 - Plugins/hooks: let `plugins.entries.<id>.hooks.timeoutMs` and `plugins.entries.<id>.hooks.timeouts` bound plugin typed hooks from operator config, so slow hooks can be tuned without patching installed plugin code. Fixes #76778. Thanks @vincentkoc.
 - Telegram: add `channels.telegram.mediaGroupFlushMs` at the top level and per account so operators can tune album buffering instead of being stuck with the hard-coded 500ms media-group flush window. Fixes #76149. Thanks @vincentkoc.
 - Config/messages: coerce boolean `messages.visibleReplies` and `messages.groupChat.visibleReplies` values to the documented enum modes so an intuitive toggle no longer invalidates config and drops channel startup. Fixes #75390. Thanks @scottgl9.
 - Agents/network: allow trusted web-search providers and configured model-provider hosts to work behind Surge/Clash/sing-box fake-IP DNS by accepting RFC 2544 and IPv6 ULA synthetic answers only for the request's scoped hostname, without broad private-network access. Refs #76530 and #76549. Thanks @zqchris.
+- Providers: honor env-proxy settings for guarded provider model fetches when no explicit dispatcher policy is configured, preserving explicit transport overrides. Fixes #70453. (#72480) Thanks @mjamiv.
+- Web fetch: add a default-off `tools.web.fetch.useTrustedEnvProxy` opt-in for proxy-only environments so `web_fetch` can let an operator-controlled HTTP(S) proxy resolve DNS while preserving default strict DNS pinning and hostname policy checks. Refs #58034 and #62560. Thanks @cosmicnet and @mjamiv.
 - Feishu: accept and honor `channels.feishu.blockStreaming` at the top level and per account, while keeping the legacy default off so Feishu cards no longer reject documented config or silently drop block replies. Fixes #75555. Thanks @vincentkoc.
+- Gateway/update: avoid `launchctl kickstart -k` immediately after fresh macOS update bootstraps, and unlink dangling global plugin-runtime symlinks during packaged postinstall and `doctor --fix` so upgrades no longer SIGTERM the newly booted Gateway or leave bundled plugin imports pointed at pruned `plugin-runtime-deps` trees. Completes #76261 and fixes #76466. (#76929)
 - Google Chat: normalize custom Google auth transport headers before google-auth/gaxios interceptors run, restoring webhook token verification when certificate retrieval expects Fetch `Headers`. Fixes #76742. Thanks @donbowman.
 - Doctor/plugins: reset stale `plugins.slots.memory` and `plugins.slots.contextEngine` references during `doctor --fix`, so cleanup of missing plugin config does not leave unrecoverable slot owners behind. Fixes #76550 and #76551. Thanks @vincentkoc.
 - Docs/WhatsApp: merge the duplicate top-level `web` objects in the gateway channel config example so copy-pasted WhatsApp config keeps both `web.whatsapp` and reconnect settings. Fixes #76619. Thanks @WadydX.
@@ -71,6 +79,7 @@ Docs: https://docs.openclaw.ai
 - Doctor/Telegram: warn when selected Telegram quote replies can suppress `streaming.preview.toolProgress`, and document the `replyToMode` trade-off without changing runtime delivery. Fixes #73487. Thanks @GodsBoy.
 - Channels/Discord: send a best-effort native typing cue immediately after an inbound DM is accepted, so slow pre-dispatch turns show Discord liveness before queueing, context assembly, model, or tool work starts. Fixes #76417. Thanks @mlopez14.
 - Plugins/install: reject source-only TypeScript package installs and installed plugin packages that are missing compiled runtime output, so broken npm artifacts fail at install/discovery time instead of falling through jiti and surfacing later as unavailable providers. Fixes #76720.
+- Plugins/config: deduplicate identical manifest compatibility diagnostics when an explicitly configured plugin overrides another discovered candidate, so external channel plugins do not print the same missing `channelConfigs` warning repeatedly during install and enable. Thanks @vincentkoc.
 - Discord/status: honor explicit `messages.statusReactions.enabled: true` in tool-only guild channels so queued ack reactions can progress through thinking/done lifecycle reactions instead of stopping at the initial emoji. Thanks @Marvinthebored.
 - Discord/native commands: compare Discord-normalized slash-command descriptions and localized descriptions during reconcile so CJK or multiline command text no longer triggers redundant startup PATCH bursts and rate-limit 429s. Fixes #76587. Thanks @zhengsx.
 - Agents/OpenAI: omit Chat Completions `reasoning_effort` for `gpt-5.4-mini` only when function tools are present while preserving tool-free Chat and Responses reasoning support, preventing Telegram-routed fallback runs from hanging after OpenAI rejects tool payloads. Fixes #76176. Thanks @ThisIsAdilah and @chinar-amrutkar.
