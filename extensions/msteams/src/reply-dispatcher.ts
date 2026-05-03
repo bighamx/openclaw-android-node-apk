@@ -343,6 +343,93 @@ export function createMSTeamsReplyDispatcher(params: {
         ? {
             onPartialReply: (payload: { text?: string }) =>
               streamController.onPartialReply(payload),
+            onToolStart: async (payload: { name?: string }) => {
+              await streamController.noteProgressWork({ toolName: payload.name });
+            },
+            onItemEvent: async () => {
+              await streamController.noteProgressWork();
+            },
+            onPlanUpdate: async (payload: { phase?: string }) => {
+              if (payload.phase === "update") {
+                await streamController.noteProgressWork();
+              }
+            },
+            onApprovalEvent: async (payload: { phase?: string }) => {
+              if (payload.phase === "requested") {
+                await streamController.noteProgressWork();
+              }
+            },
+            onCommandOutput: async (payload: { phase?: string }) => {
+              if (payload.phase === "end") {
+                await streamController.noteProgressWork();
+              }
+            },
+            onPatchSummary: async (payload: { phase?: string }) => {
+              if (payload.phase === "end") {
+                await streamController.noteProgressWork();
+              }
+            },
+          }
+        : {}),
+      ...(streamController.shouldSuppressDefaultToolProgressMessages()
+        ? { suppressDefaultToolProgressMessages: true }
+        : {}),
+      ...(streamController.shouldStreamPreviewToolProgress()
+        ? {
+            onToolStart: async (payload: { name?: string; phase?: string }) => {
+              await streamController.pushProgressLine(
+                payload.name ? `tool: ${payload.name}` : (payload.phase ?? "tool running"),
+                { toolName: payload.name },
+              );
+            },
+            onItemEvent: async (payload: {
+              progressText?: string;
+              summary?: string;
+              title?: string;
+              name?: string;
+            }) => {
+              await streamController.pushProgressLine(
+                payload.progressText ?? payload.summary ?? payload.title ?? payload.name,
+              );
+            },
+            onPlanUpdate: async (payload: {
+              phase?: string;
+              explanation?: string;
+              steps?: string[];
+            }) => {
+              if (payload.phase !== "update") {
+                return;
+              }
+              await streamController.pushProgressLine(
+                payload.explanation ?? payload.steps?.[0] ?? "planning",
+              );
+            },
+            onApprovalEvent: async (payload: { phase?: string; command?: string }) => {
+              if (payload.phase !== "requested") {
+                return;
+              }
+              await streamController.pushProgressLine(
+                payload.command ? `approval: ${payload.command}` : "approval requested",
+              );
+            },
+            onCommandOutput: async (payload: { phase?: string; summary?: string }) => {
+              if (payload.phase !== "end") {
+                return;
+              }
+              await streamController.pushProgressLine(payload.summary ?? "command output ready");
+            },
+            onPatchSummary: async (payload: {
+              phase?: string;
+              summary?: string;
+              title?: string;
+            }) => {
+              if (payload.phase !== "end") {
+                return;
+              }
+              await streamController.pushProgressLine(
+                payload.summary ?? payload.title ?? "patch applied",
+              );
+            },
           }
         : {}),
       disableBlockStreaming:

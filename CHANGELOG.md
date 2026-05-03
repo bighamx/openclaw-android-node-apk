@@ -13,6 +13,7 @@ Docs: https://docs.openclaw.ai
 - Channels/streaming: add unified `streaming.mode: "progress"` drafts with auto single-word status labels and shared progress configuration across Discord, Telegram, Matrix, Slack, and Microsoft Teams.
 - Agents/commands: add `/steer <message>` for queue-independent steering of the active current-session run without starting a new turn when the session is idle. (#76934)
 - Tools/BTW: add `/side` as a text and native slash-command alias for `/btw` side questions.
+- Doctor/config: `doctor --fix` now commits safe legacy migrations even when unrelated validation issues (e.g. a missing plugin) prevent full validation from passing, so `agents.defaults.llm` and other known-legacy keys are always cleaned up by `doctor --fix` regardless of other config problems. (#76798)
 - Agents/tools: skip optional media and PDF tool factories when the effective tool denylist already blocks them, avoiding unnecessary hot-path setup for tools that will be filtered out before model use. (#76773) Thanks @dorukardahan.
 - Discord/status: let explicit reaction tool calls opt into tracking subsequent tool progress on the reacted message with `trackToolCalls: true`, and use the shared tool display emoji table for status reactions.
 - Gateway/config: stop Gateway startup and hot reload from auto-restoring invalid config; invalid config now fails closed and `openclaw doctor --fix` owns last-known-good repair.
@@ -32,16 +33,28 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Gateway/systemd: preserve operator-added secrets in the Gateway env file across re-stage while clearing OpenClaw-managed keys (such as `OPENCLAW_GATEWAY_TOKEN`) so a fresh staging value is never shadowed by a stale env-file copy; operator secrets are also retained when the state-dir `.env` is empty. Fixes #76860. Thanks @hclsys.
+- QA/Matrix: keep the mock OpenAI tool-progress provider aligned with exact-marker Matrix prompts so the hardened live preview scenario still forces a deterministic read before final delivery. Thanks @vincentkoc.
+- OpenAI/Google Meet: wait for realtime voice `session.updated` before treating the bridge as connected, so Meet joins do not return with audio queued behind an unconfigured realtime session. Thanks @vincentkoc.
+- Plugins/catalog: merge official external catalog descriptors into partial package channel config metadata, so lagging WeCom/Yuanbao manifests keep their own schema while still exposing host-supplied labels and setup text. Thanks @vincentkoc.
+- Plugins/catalog: supplement lagging official external WeCom and Yuanbao npm manifests with channel config descriptors and declared tool contracts from the OpenClaw catalog, so trusted package sweeps no longer fail because external package metadata trails the host contract. Thanks @vincentkoc.
+- Plugins/install: let trusted official `@openclaw/*` catalog installs recover when npm `latest` points at a prerelease by falling back to the newest stable version, or by selecting the newest exact prerelease for prerelease-only launch packages with a warning instead of making beta/development plugin sweeps fail at install time. Thanks @vincentkoc.
+- Google Meet: grant Chrome media permissions against the actual Meet tab, start the local realtime audio bridge only after Meet joins, expose realtime transcripts in status/logs, and force explicit audio responses with current OpenAI realtime output-audio events so BlackHole capture does not keep the OpenClaw participant muted or silent.
+- Memory/LanceDB: declare `apache-arrow` in the bundled memory plugin package so LanceDB installs include its runtime peer. Fixes #76910. Thanks @afiqfiles-max.
 - Google Meet: use the local call-control microphone button instead of disabled remote participant mute buttons, and block realtime speech when the OpenClaw Meet microphone remains muted.
 - Google Meet: refresh realtime browser state during status and retry delayed speech after Meet finishes joining, so a just-opened in-call tab no longer leaves speech stuck behind stale `not-in-call` health.
 - Plugins/install: recover the install ledger from the managed npm root when `plugins/installs.json` is empty or partial, so reinstalling Discord and Codex no longer makes the other installed plugin disappear.
 - Google Meet: grant Meet media permissions through the Playwright browser context when CDP grants do not affect the attached Chrome page, and report in-call microphone/speaker permission problems instead of marking realtime speech ready.
-- Channel docs: keep JSON5 channel config examples parseable and schema-valid, fixing BlueBubbles, QQ Bot, and Slack snippets that could not be copied into config or app manifests as shown. Thanks @vincentkoc.
+- QA/Slack: fail the live mention-gating scenario on any unexpected SUT reply, even when the reply does not echo the expected marker. Thanks @vincentkoc.
+- QA/Matrix: steer the live tool-progress preview check away from `HEARTBEAT.md` and report final preview candidates when the live marker reply misses the exact token. Thanks @vincentkoc.
 - Tlon: expose `groupInviteAllowlist` in the channel config schema and clarify that group invite auto-accept fails closed without an invite allowlist. Thanks @vincentkoc.
-- Google Chat: update the setup example to use the accepted `groups.<space>.enabled` key instead of the legacy `allow` alias, with a schema regression for the documented group shape. Thanks @vincentkoc.
 - Control UI/WebChat: collapse duplicate in-flight internal text sends onto the active Gateway run so rapid repeat submits do not start fresh `agent:main:main` dispatches. Fixes #75737. Thanks @dsdsddd1 and @BunsDev.
 - Mattermost: accept the documented `channels.mattermost.streaming` config and honor `streaming: "off"` by disabling draft preview posts. Thanks @vincentkoc.
+- Mattermost: expose streaming progress config labels and help text in generated channel config metadata so Control UI/docs can explain the new `channels.mattermost.streaming.progress.*` fields. Thanks @vincentkoc.
+- Mattermost: honor `channels.mattermost.streaming.progress.toolProgress=false` in progress draft mode so compact tool status lines stay hidden until final delivery. Thanks @vincentkoc.
+- Microsoft Teams: honor progress draft tool lines in native Teams progress streams and suppress standalone tool messages when `channels.msteams.streaming.progress.toolProgress=false`. Thanks @vincentkoc.
 - Discord: keep progress draft boundary callbacks bound during streaming replies, so extension lint stays green while progress previews transition between assistant and reasoning blocks. Thanks @vincentkoc.
+- Discord: resolve SecretRef-backed bot tokens from the active runtime snapshot for named accounts and keep unresolved configured tokens from crashing status or health checks. (#76987) Thanks @joshavant.
 - Channels/streaming: expose `streaming.progress.label`, `labels`, `maxLines`, and `toolProgress` in bundled channel config metadata so progress draft settings appear in config, docs, and control surfaces. Thanks @vincentkoc.
 - Channels/streaming: normalize whitespace and case for `streaming.progress.label: "auto"` so progress draft labels keep using the built-in label pool instead of rendering a literal `auto` title. Thanks @vincentkoc.
 - Gateway/install: prefer supported system Node over nvm/fnm/volta/asdf/mise when regenerating managed gateway services, so `gateway install --force` no longer recreates service definitions that doctor immediately flags as version-manager-backed. Fixes #76339. Thanks @brokemac79.
@@ -59,8 +72,10 @@ Docs: https://docs.openclaw.ai
 - Doctor/plugins: reset stale `plugins.slots.memory` and `plugins.slots.contextEngine` references during `doctor --fix`, so cleanup of missing plugin config does not leave unrecoverable slot owners behind. Fixes #76550 and #76551. Thanks @vincentkoc.
 - Docs/WhatsApp: merge the duplicate top-level `web` objects in the gateway channel config example so copy-pasted WhatsApp config keeps both `web.whatsapp` and reconnect settings. Fixes #76619. Thanks @WadydX.
 - Plugins/Anthropic: expose Claude thinking profiles from the bundled provider-policy artifact so non-runtime callers keep Opus 4.7 `adaptive`, `xhigh`, and `max` instead of downgrading to `high`. Fixes #76779. Thanks @tomascupr and @iAbhi001.
+- Plugins/tools: honor `tools.alsoAllow` as an optional plugin tool discovery hint without treating its internal allow-all default as permission to load every optional plugin tool. Fixes #76616.
 - Discord/native commands: skip slash-command registration and cleanup REST calls when `channels.discord.commands.native=false`, letting low-power gateways start without waiting on disabled native-command lifecycle requests. Fixes #76202. Thanks @vincentkoc.
 - CLI/plugins: reject unowned command roots such as `openclaw foo` before managed proxy startup and full plugin CLI runtime loading while preserving manifest-owned and CLI-metadata-owned plugin commands. Fixes #75287. Thanks @neilofneils404.
+- CLI/message: skip local configured-channel plugin preload for explicit gateway-owned message actions, letting normalized CLI delivery delegate to the gateway without initializing channel runtime in the short-lived CLI process. Fixes #75477.
 - Plugins/commands: normalize empty plugin command handler results and let Telegram native plugin commands send the empty-response fallback instead of throwing when a handler returns `undefined`. Fixes #74800. Thanks @vincentkoc.
 - Plugins/tools: cold-load selected plugin tool registries when the active registry only has partial tool coverage, so wildcard-expanded allowlists no longer hide installed plugin tools from `tools.effective`. Fixes #76780. Thanks @lilesjtu.
 - Plugins/tools: compare cached and runtime plugin tool name conflicts with normalized core tool names, so case variants of core tools are blocked instead of leaking duplicate tool registrations. Thanks @vincentkoc.

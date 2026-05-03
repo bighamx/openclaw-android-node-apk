@@ -122,6 +122,9 @@ type SlackQaSummary = {
   startedAt: string;
 };
 
+type SlackCredentialLease = Awaited<ReturnType<typeof acquireQaCredentialLease<SlackQaRuntimeEnv>>>;
+type SlackCredentialHeartbeat = ReturnType<typeof startQaCredentialLeaseHeartbeat>;
+
 const SLACK_QA_CAPTURE_CONTENT_ENV = "OPENCLAW_QA_SLACK_CAPTURE_CONTENT";
 const QA_REDACT_PUBLIC_METADATA_ENV = "OPENCLAW_QA_REDACT_PUBLIC_METADATA";
 const SLACK_QA_ENV_KEYS = [
@@ -210,6 +213,23 @@ function resolveEnvValue(env: NodeJS.ProcessEnv, key: (typeof SLACK_QA_ENV_KEYS)
 function isTruthyOptIn(value: string | undefined) {
   const normalized = value?.trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function inferSlackCredentialSource(
+  value: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): "convex" | "env" {
+  const normalized =
+    value?.trim().toLowerCase() || env.OPENCLAW_QA_CREDENTIAL_SOURCE?.trim().toLowerCase();
+  return normalized === "convex" ? "convex" : "env";
+}
+
+function inferSlackCredentialRole(value: string | undefined): QaCredentialRole | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "ci" || normalized === "maintainer") {
+    return normalized;
+  }
+  return undefined;
 }
 
 function normalizeSlackId(value: string, label: string) {
@@ -428,16 +448,38 @@ async function waitForSlackNoReply(params: {
   sutIdentity: SlackAuthIdentity;
   timeoutMs: number;
 }) {
-  try {
-    await waitForSlackScenarioReply(params);
-  } catch (error) {
-    const message = formatErrorMessage(error);
-    if (message === `timed out after ${params.timeoutMs}ms waiting for Slack message`) {
-      return;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < params.timeoutMs) {
+    const messages = await listSlackMessages({
+      channelId: params.channelId,
+      client: params.client,
+      oldestTs: params.sentTs,
+    });
+    for (const message of messages) {
+      const text = message.text ?? "";
+      if (
+        !message.ts ||
+        message.ts === params.sentTs ||
+        !isSutSlackMessage(message, params.sutIdentity)
+      ) {
+        continue;
+      }
+      const matchedScenario = text.includes(params.matchText);
+      params.observedMessages.push({
+        botId: message.bot_id,
+        channelId: params.channelId,
+        matchedScenario,
+        scenarioId: params.observationScenarioId,
+        scenarioTitle: params.observationScenarioTitle,
+        text,
+        threadTs: message.thread_ts,
+        ts: message.ts,
+        userId: message.user,
+      });
+      throw new Error("unexpected Slack SUT reply observed");
     }
-    throw error;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
-  throw new Error("unexpected Slack SUT reply observed");
 }
 
 async function waitForSlackChannelRunning(
@@ -585,20 +627,8 @@ export async function runSlackQaLive(params: {
   const alternateModel = params.alternateModel?.trim() || defaultQaModelForMode(providerMode, true);
   const sutAccountId = params.sutAccountId?.trim() || "sut";
   const scenarios = findScenario(params.scenarioIds);
-
-  const credentialLease = await acquireQaCredentialLease({
-    kind: "slack",
-    source: params.credentialSource,
-    role: params.credentialRole,
-    resolveEnvPayload: () => resolveSlackQaRuntimeEnv(),
-    parsePayload: parseSlackQaCredentialPayload,
-  });
-  const leaseHeartbeat = startQaCredentialLeaseHeartbeat(credentialLease);
-  const assertLeaseHealthy = () => {
-    leaseHeartbeat.throwIfFailed();
-  };
-
-  const runtimeEnv = credentialLease.payload;
+  const requestedCredentialSource = inferSlackCredentialSource(params.credentialSource);
+  const requestedCredentialRole = inferSlackCredentialRole(params.credentialRole);
   const redactPublicMetadata = isTruthyOptIn(process.env[QA_REDACT_PUBLIC_METADATA_ENV]);
   const includeObservedMessageContent = isTruthyOptIn(process.env[SLACK_QA_CAPTURE_CONTENT_ENV]);
   const startedAt = new Date().toISOString();
@@ -607,18 +637,37 @@ export async function runSlackQaLive(params: {
   const cleanupIssues: string[] = [];
   const gatewayDebugDirPath = path.join(outputDir, "gateway-debug");
   let preservedGatewayDebugArtifacts = false;
+  let credentialLease: SlackCredentialLease | undefined;
+  let leaseHeartbeat: SlackCredentialHeartbeat | undefined;
+  let runtimeEnv: SlackQaRuntimeEnv | undefined;
 
   try {
+    credentialLease = await acquireQaCredentialLease({
+      kind: "slack",
+      source: params.credentialSource,
+      role: params.credentialRole,
+      resolveEnvPayload: () => resolveSlackQaRuntimeEnv(),
+      parsePayload: parseSlackQaCredentialPayload,
+    });
+    leaseHeartbeat = startQaCredentialLeaseHeartbeat(credentialLease);
+    const assertLeaseHealthy = () => {
+      leaseHeartbeat?.throwIfFailed();
+    };
+    const activeRuntimeEnv = credentialLease.payload;
+    runtimeEnv = activeRuntimeEnv;
+
     const [driverIdentity, sutIdentity] = await Promise.all([
-      getSlackIdentity(runtimeEnv.driverBotToken),
-      getSlackIdentity(runtimeEnv.sutBotToken),
+      getSlackIdentity(activeRuntimeEnv.driverBotToken),
+      getSlackIdentity(activeRuntimeEnv.sutBotToken),
     ]);
     if (driverIdentity.userId === sutIdentity.userId) {
       throw new Error("Slack QA requires two distinct bots for driver and SUT.");
     }
 
-    const driverClient = createSlackWriteClient(runtimeEnv.driverBotToken, { timeout: 15_000 });
-    const sutReadClient = createSlackWebClient(runtimeEnv.sutBotToken, { timeout: 15_000 });
+    const driverClient = createSlackWriteClient(activeRuntimeEnv.driverBotToken, {
+      timeout: 15_000,
+    });
+    const sutReadClient = createSlackWebClient(activeRuntimeEnv.sutBotToken, { timeout: 15_000 });
     const gatewayHarness = await startQaLiveLaneGateway({
       repoRoot,
       transport: {
@@ -633,11 +682,11 @@ export async function runSlackQaLive(params: {
       controlUiEnabled: false,
       mutateConfig: (cfg) =>
         buildSlackQaConfig(cfg, {
-          channelId: runtimeEnv.channelId,
+          channelId: activeRuntimeEnv.channelId,
           driverBotUserId: driverIdentity.userId,
           sutAccountId,
-          sutAppToken: runtimeEnv.sutAppToken,
-          sutBotToken: runtimeEnv.sutBotToken,
+          sutAppToken: activeRuntimeEnv.sutAppToken,
+          sutBotToken: activeRuntimeEnv.sutBotToken,
         }),
     });
     try {
@@ -649,13 +698,13 @@ export async function runSlackQaLive(params: {
         const requestStartedAt = new Date();
         try {
           const sent = await sendSlackChannelMessage({
-            channelId: runtimeEnv.channelId,
+            channelId: activeRuntimeEnv.channelId,
             client: driverClient,
             text: scenarioRun.input,
           });
           if (scenarioRun.expectReply) {
             const reply = await waitForSlackScenarioReply({
-              channelId: runtimeEnv.channelId,
+              channelId: activeRuntimeEnv.channelId,
               client: sutReadClient,
               matchText: scenarioRun.matchText,
               observedMessages,
@@ -678,7 +727,7 @@ export async function runSlackQaLive(params: {
             });
           } else {
             await waitForSlackNoReply({
-              channelId: runtimeEnv.channelId,
+              channelId: activeRuntimeEnv.channelId,
               client: sutReadClient,
               matchText: scenarioRun.matchText,
               observedMessages,
@@ -738,15 +787,19 @@ export async function runSlackQaLive(params: {
       details: formatErrorMessage(error),
     });
   } finally {
-    try {
-      await leaseHeartbeat.stop();
-    } catch (error) {
-      appendLiveLaneIssue(cleanupIssues, "credential heartbeat stop failed", error);
+    if (leaseHeartbeat) {
+      try {
+        await leaseHeartbeat.stop();
+      } catch (error) {
+        appendLiveLaneIssue(cleanupIssues, "credential heartbeat stop failed", error);
+      }
     }
-    try {
-      await credentialLease.release();
-    } catch (error) {
-      appendLiveLaneIssue(cleanupIssues, "credential release failed", error);
+    if (credentialLease) {
+      try {
+        await credentialLease.release();
+      } catch (error) {
+        appendLiveLaneIssue(cleanupIssues, "credential release failed", error);
+      }
     }
   }
 
@@ -757,14 +810,24 @@ export async function runSlackQaLive(params: {
   const passed = scenarioResults.filter((entry) => entry.status === "pass").length;
   const failed = scenarioResults.filter((entry) => entry.status === "fail").length;
   const summary: SlackQaSummary = {
-    credentials: {
-      source: credentialLease.source,
-      kind: credentialLease.kind,
-      role: credentialLease.role,
-      credentialId: redactPublicMetadata ? undefined : credentialLease.credentialId,
-      ownerId: redactPublicMetadata ? undefined : credentialLease.ownerId,
-    },
-    channelId: redactPublicMetadata ? "<redacted>" : runtimeEnv.channelId,
+    credentials: credentialLease
+      ? {
+          source: credentialLease.source,
+          kind: credentialLease.kind,
+          role: credentialLease.role,
+          credentialId: redactPublicMetadata ? undefined : credentialLease.credentialId,
+          ownerId: redactPublicMetadata ? undefined : credentialLease.ownerId,
+        }
+      : {
+          source: requestedCredentialSource,
+          kind: "slack",
+          role: requestedCredentialRole,
+        },
+    channelId: runtimeEnv
+      ? redactPublicMetadata
+        ? "<redacted>"
+        : runtimeEnv.channelId
+      : "<unavailable>",
     startedAt,
     finishedAt,
     cleanupIssues,
@@ -791,9 +854,9 @@ export async function runSlackQaLive(params: {
   await fs.writeFile(
     reportPath,
     `${renderSlackQaMarkdown({
-      channelId: runtimeEnv.channelId,
+      channelId: runtimeEnv?.channelId ?? "<unavailable>",
       cleanupIssues,
-      credentialSource: credentialLease.source,
+      credentialSource: credentialLease?.source ?? requestedCredentialSource,
       finishedAt,
       gatewayDebugDirPath: preservedGatewayDebugArtifacts ? gatewayDebugDirPath : undefined,
       redactMetadata: redactPublicMetadata,
@@ -816,4 +879,5 @@ export const __testing = {
   parseSlackQaCredentialPayload,
   resolveSlackQaRuntimeEnv,
   SLACK_QA_STANDARD_SCENARIO_IDS,
+  waitForSlackNoReply,
 };
