@@ -430,6 +430,12 @@ export async function processDiscordMessage(
           return;
         }
         const draftStream = draftPreview.draftStream;
+        if (draftStream && draftPreview.isProgressMode && info.kind === "block") {
+          const reply = resolveSendableOutboundReplyParts(payload);
+          if (!reply.hasMedia && !payload.isError) {
+            return;
+          }
+        }
         if (draftStream && isFinal) {
           draftPreview.markFinalDeliveryHandled();
           const reply = resolveSendableOutboundReplyParts(payload);
@@ -639,10 +645,10 @@ export async function processDiscordMessage(
                   ? (payload) => draftPreview.updateFromPartial(payload.text)
                   : undefined,
                 onAssistantMessageStart: draftPreview.draftStream
-                  ? draftPreview.handleAssistantMessageBoundary
+                  ? () => draftPreview.handleAssistantMessageBoundary()
                   : undefined,
                 onReasoningEnd: draftPreview.draftStream
-                  ? draftPreview.handleAssistantMessageBoundary
+                  ? () => draftPreview.handleAssistantMessageBoundary()
                   : undefined,
                 onModelSelected,
                 suppressDefaultToolProgressMessages:
