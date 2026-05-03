@@ -54,6 +54,8 @@ const webhookStats = {
 const DEFAULT_STUCK_SESSION_WARN_MS = 120_000;
 const MIN_STUCK_SESSION_WARN_MS = 1_000;
 const MAX_STUCK_SESSION_WARN_MS = 24 * 60 * 60 * 1000;
+const MIN_STALLED_EMBEDDED_RUN_ABORT_MS = 10 * 60_000;
+const STALLED_EMBEDDED_RUN_ABORT_WARN_MULTIPLIER = 5;
 const RECENT_DIAGNOSTIC_ACTIVITY_MS = 120_000;
 const DEFAULT_LIVENESS_EVENT_LOOP_DELAY_WARN_MS = 1_000;
 const DEFAULT_LIVENESS_EVENT_LOOP_UTILIZATION_WARN = 0.95;
@@ -82,6 +84,7 @@ type RecoverStuckSession = (params: {
   sessionKey?: string;
   ageMs: number;
   queueDepth?: number;
+  allowActiveAbort?: boolean;
 }) => void | Promise<void>;
 
 type DiagnosticLivenessSample = {
@@ -125,6 +128,7 @@ function recoverStuckSession(params: {
   sessionKey?: string;
   ageMs: number;
   queueDepth?: number;
+  allowActiveAbort?: boolean;
 }) {
   stuckSessionRecoveryRuntimePromise ??= import("./diagnostic-stuck-session-recovery.runtime.js");
   void stuckSessionRecoveryRuntimePromise
@@ -344,6 +348,26 @@ export function resolveStuckSessionWarnMs(config?: OpenClawConfig): number {
   return rounded;
 }
 
+function resolveStalledEmbeddedRunAbortMs(stuckSessionWarnMs: number): number {
+  return Math.max(
+    MIN_STALLED_EMBEDDED_RUN_ABORT_MS,
+    stuckSessionWarnMs * STALLED_EMBEDDED_RUN_ABORT_WARN_MULTIPLIER,
+  );
+}
+
+function isStalledEmbeddedRunRecoveryEligible(params: {
+  classification: SessionAttentionClassification | undefined;
+  ageMs: number;
+  stuckSessionWarnMs: number;
+}): boolean {
+  return (
+    params.classification?.eventType === "session.stalled" &&
+    params.classification.classification === "stalled_agent_run" &&
+    params.classification.activeWorkKind === "embedded_run" &&
+    params.ageMs >= resolveStalledEmbeddedRunAbortMs(params.stuckSessionWarnMs)
+  );
+}
+
 export function logWebhookReceived(params: {
   channel: string;
   updateType?: string;
@@ -437,6 +461,7 @@ export function logMessageQueued(params: {
   state.queueDepth += 1;
   state.lastActivity = Date.now();
   state.lastStuckWarnAgeMs = undefined;
+  state.lastLongRunningWarnAgeMs = undefined;
   if (diag.isEnabled("debug")) {
     diag.debug(
       `message queued: sessionId=${state.sessionId ?? "unknown"} sessionKey=${
@@ -516,6 +541,7 @@ export function logSessionStateChange(
   state.state = params.state;
   state.lastActivity = Date.now();
   state.lastStuckWarnAgeMs = undefined;
+  state.lastLongRunningWarnAgeMs = undefined;
   if (params.state === "idle") {
     state.queueDepth = Math.max(0, state.queueDepth - 1);
   }
@@ -547,6 +573,7 @@ export function markDiagnosticSessionProgress(params: SessionRef) {
   const state = getDiagnosticSessionState(params);
   state.lastActivity = Date.now();
   state.lastStuckWarnAgeMs = undefined;
+  state.lastLongRunningWarnAgeMs = undefined;
   markActivity();
 }
 
@@ -594,6 +621,13 @@ export function logSessionAttention(
     activity,
     staleMs: params.thresholdMs,
   });
+  const recoveryEligible =
+    classification.recoveryEligible ||
+    isStalledEmbeddedRunRecoveryEligible({
+      classification,
+      ageMs: params.ageMs,
+      stuckSessionWarnMs: params.thresholdMs,
+    });
   if (classification.eventType === "session.stuck") {
     const nextWarnAgeMs =
       state.lastStuckWarnAgeMs === undefined
@@ -603,6 +637,19 @@ export function logSessionAttention(
       return undefined;
     }
     state.lastStuckWarnAgeMs = params.ageMs;
+  }
+  if (classification.eventType === "session.long_running") {
+    const nextWarnAgeMs =
+      state.lastLongRunningWarnAgeMs === undefined
+        ? params.thresholdMs
+        : Math.max(
+            state.lastLongRunningWarnAgeMs + params.thresholdMs,
+            state.lastLongRunningWarnAgeMs * 2,
+          );
+    if (params.ageMs < nextWarnAgeMs) {
+      return undefined;
+    }
+    state.lastLongRunningWarnAgeMs = params.ageMs;
   }
   const label =
     classification.eventType === "session.stuck"
@@ -617,7 +664,7 @@ export function logSessionAttention(
       state.queueDepth
     } reason=${classification.reason} classification=${classification.classification}${
       classification.activeWorkKind ? ` activeWorkKind=${classification.activeWorkKind}` : ""
-    } recovery=${classification.recoveryEligible ? "checking" : "none"}`,
+    } recovery=${recoveryEligible ? "checking" : "none"}`,
   );
   const baseEvent = {
     sessionId: state.sessionId,
@@ -815,6 +862,20 @@ export function startDiagnosticHeartbeat(
             sessionKey: state.sessionKey,
             ageMs,
             queueDepth: state.queueDepth,
+          });
+        } else if (
+          isStalledEmbeddedRunRecoveryEligible({
+            classification,
+            ageMs,
+            stuckSessionWarnMs,
+          })
+        ) {
+          void (opts?.recoverStuckSession ?? recoverStuckSession)({
+            sessionId: state.sessionId,
+            sessionKey: state.sessionKey,
+            ageMs,
+            queueDepth: state.queueDepth,
+            allowActiveAbort: true,
           });
         }
       }
