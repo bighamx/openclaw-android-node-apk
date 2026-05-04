@@ -46,7 +46,6 @@ import { runAgentTurnWithFallback } from "./agent-runner-execution.js";
 import {
   createShouldEmitToolOutput,
   createShouldEmitToolResult,
-  finalizeWithFollowup,
   isAudioPayload,
   signalTypingIfNeeded,
 } from "./agent-runner-helpers.js";
@@ -71,6 +70,7 @@ import {
   enqueueFollowupRun,
   refreshQueuedFollowupSession,
   resolvePiSteeringModeForQueueMode,
+  scheduleFollowupDrain,
   type FollowupRun,
   type QueueSettings,
 } from "./queue.js";
@@ -1064,7 +1064,7 @@ export async function runReplyAgent(params: {
     // the followup queue idle if the original run already finished.
     const queuedBehindActiveRun = isRunActive?.() === true;
     if (!queuedBehindActiveRun) {
-      finalizeWithFollowup(undefined, queueKey, queuedRunFollowupTurn);
+      scheduleFollowupDrain(queueKey, queuedRunFollowupTurn);
     }
     await touchActiveSessionEntry();
     if (queuedBehindActiveRun) {
@@ -1148,6 +1148,14 @@ export async function runReplyAgent(params: {
     throw error;
   }
   let runFollowupTurn = queuedRunFollowupTurn;
+  let shouldDrainQueuedFollowupsAfterClear = false;
+  const returnWithQueuedFollowupDrain = <T>(value: T): T => {
+    shouldDrainQueuedFollowupsAfterClear = true;
+    return value;
+  };
+  const drainQueuedFollowupsAfterClear = () => {
+    scheduleFollowupDrain(queueKey, runFollowupTurn);
+  };
   const prePreflightCompactionCount = activeSessionEntry?.compactionCount ?? 0;
   let preflightCompactionApplied = false;
 
@@ -1283,7 +1291,7 @@ export async function runReplyAgent(params: {
       if (!replyOperation.result) {
         replyOperation.fail("run_failed", new Error("reply operation exited with final payload"));
       }
-      return finalizeWithFollowup(runOutcome.payload, queueKey, runFollowupTurn);
+      return returnWithQueuedFollowupDrain(runOutcome.payload);
     }
 
     const {
@@ -1416,7 +1424,7 @@ export async function runReplyAgent(params: {
     // Otherwise, a late typing trigger (e.g. from a tool callback) can outlive the run and
     // keep the typing indicator stuck.
     if (payloadArray.length === 0) {
-      return finalizeWithFollowup(undefined, queueKey, runFollowupTurn);
+      return returnWithQueuedFollowupDrain(undefined);
     }
 
     const currentMessageId = sessionCtx.MessageSidFull ?? sessionCtx.MessageSid;
@@ -1448,7 +1456,7 @@ export async function runReplyAgent(params: {
     didLogHeartbeatStrip = payloadResult.didLogHeartbeatStrip;
 
     if (replyPayloads.length === 0) {
-      return finalizeWithFollowup(undefined, queueKey, runFollowupTurn);
+      return returnWithQueuedFollowupDrain(undefined);
     }
 
     const successfulCronAdds = runResult.successfulCronAdds ?? 0;
@@ -1865,10 +1873,8 @@ export async function runReplyAgent(params: {
       }
     }
 
-    const result = finalizeWithFollowup(
+    const result = returnWithQueuedFollowupDrain(
       finalPayloads.length === 1 ? finalPayloads[0] : finalPayloads,
-      queueKey,
-      runFollowupTurn,
     );
 
     return result;
@@ -1877,38 +1883,36 @@ export async function runReplyAgent(params: {
       replyOperation.result?.kind === "aborted" &&
       replyOperation.result.code === "aborted_for_restart"
     ) {
-      return finalizeWithFollowup(
-        { text: "⚠️ Gateway is restarting. Please wait a few seconds and try again." },
-        queueKey,
-        runFollowupTurn,
-      );
+      return returnWithQueuedFollowupDrain({
+        text: "⚠️ Gateway is restarting. Please wait a few seconds and try again.",
+      });
     }
     if (replyOperation.result?.kind === "aborted") {
-      return finalizeWithFollowup({ text: SILENT_REPLY_TOKEN }, queueKey, runFollowupTurn);
+      return returnWithQueuedFollowupDrain({ text: SILENT_REPLY_TOKEN });
     }
     if (error instanceof GatewayDrainingError) {
       replyOperation.fail("gateway_draining", error);
-      return finalizeWithFollowup(
-        { text: "⚠️ Gateway is restarting. Please wait a few seconds and try again." },
-        queueKey,
-        runFollowupTurn,
-      );
+      return returnWithQueuedFollowupDrain({
+        text: "⚠️ Gateway is restarting. Please wait a few seconds and try again.",
+      });
     }
     if (error instanceof CommandLaneClearedError) {
       replyOperation.fail("command_lane_cleared", error);
-      return finalizeWithFollowup(
-        { text: "⚠️ Gateway is restarting. Please wait a few seconds and try again." },
-        queueKey,
-        runFollowupTurn,
-      );
+      return returnWithQueuedFollowupDrain({
+        text: "⚠️ Gateway is restarting. Please wait a few seconds and try again.",
+      });
     }
     replyOperation.fail("run_failed", error);
     // Keep the followup queue moving even when an unexpected exception escapes
     // the run path; the caller still receives the original error.
-    finalizeWithFollowup(undefined, queueKey, runFollowupTurn);
+    returnWithQueuedFollowupDrain(undefined);
     throw error;
   } finally {
-    replyOperation.complete();
+    if (shouldDrainQueuedFollowupsAfterClear) {
+      replyOperation.completeThen(drainQueuedFollowupsAfterClear);
+    } else {
+      replyOperation.complete();
+    }
     blockReplyPipeline?.stop();
     typing.markRunComplete();
     // Safety net: the dispatcher's onIdle callback normally fires
