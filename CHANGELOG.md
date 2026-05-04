@@ -46,6 +46,8 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Gate zalouser startup name matching [AI]. (#77411) Thanks @pgondhi987.
+- fix(device-pair): require pairing scope for pair command [AI]. (#76377) Thanks @pgondhi987.
 - fix(qqbot): keep private commands off framework surface [AI]. (#77212) Thanks @pgondhi987.
 - Memory/wiki: preserve representation from both corpora in `corpus=all` searches while backfilling unused result capacity, so memory hits are not starved by numerically higher wiki integer scores. Fixes #77337. Thanks @hclsys.
 - Telegram: clean up tool-only draft previews after assistant message boundaries so transient `Surfacing...` tool-status bubbles do not linger when no matching final preview arrives. Thanks @BunsDev.
@@ -200,6 +202,7 @@ Docs: https://docs.openclaw.ai
 - Direct APNs: route direct HTTP/2 delivery through the active managed proxy with redacted proxy diagnostics, so push requests honor configured egress controls and `openclaw proxy validate --apns-reachable` can prove APNs is reachable through the proxy before deployment. (#74905) Thanks @jesse-merhi.
 - Agents/subagents: detect prefix-only completion announce replies and fall back to the captured child result so requester chats no longer lose most of long sub-agent reports silently. Fixes #76412. Thanks @inxaos and @davemorin.
 - TUI: replace the stale-response watchdog notice with plain user-facing copy so stalled replies no longer surface backend or streaming internals. (#77120) Thanks @davemorin.
+- Security/Windows: validate `SystemRoot`/`WINDIR` env values through the Windows install-root validator and add them to the dangerous-host-env policy when resolving `icacls.exe`/`whoami.exe` for `openclaw security audit`, so workspace `.env` overrides and bare command names cannot redirect Windows ACL helpers to attacker-controlled binaries. (#74458) Thanks @mmaps.
 
 ## 2026.5.3-1
 
