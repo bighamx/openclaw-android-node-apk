@@ -2,37 +2,63 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { realtimeTalkCtor, startMock, stopMock } = vi.hoisted(() => ({
+  realtimeTalkCtor: vi.fn(),
+  startMock: vi.fn(),
+  stopMock: vi.fn(),
+}));
+
 describe("OpenClawApp Talk controls", () => {
   beforeEach(() => {
-    vi.restoreAllMocks();
+    vi.resetModules();
+    vi.doMock("./chat/realtime-talk.ts", () => ({
+      RealtimeTalkSession: realtimeTalkCtor,
+    }));
+    realtimeTalkCtor.mockReset();
+    startMock.mockReset();
+    stopMock.mockReset();
+    realtimeTalkCtor.mockImplementation(
+      function MockRealtimeTalkSession(this: { start: typeof startMock; stop: typeof stopMock }) {
+        this.start = startMock;
+        this.stop = stopMock;
+      },
+    );
+    startMock.mockResolvedValue(undefined);
   });
 
   it("retries Talk immediately when the previous session is already in error state", async () => {
-    await import("./app.ts");
-    const app = document.createElement("openclaw-app") as unknown as {
+    const { OpenClawApp } = await import("./app.ts");
+    const app = Object.create(OpenClawApp.prototype) as {
       client: unknown;
       connected: boolean;
+      lastError: string | null;
       realtimeTalkActive: boolean;
+      realtimeTalkDetail: string | null;
       realtimeTalkStatus: string;
       realtimeTalkSession: { stop(): void } | null;
+      realtimeTalkTranscript: string | null;
       sessionKey: string;
-      toggleRealtimeTalk(): Promise<void>;
     };
     const staleStop = vi.fn();
-    const request = vi.fn().mockRejectedValue(new Error("session unavailable"));
-    app.client = { request } as never;
-    app.connected = true;
-    app.sessionKey = "main";
-    app.realtimeTalkActive = true;
-    app.realtimeTalkStatus = "error";
-    app.realtimeTalkSession = { stop: staleStop };
+    Object.defineProperties(app, {
+      client: { value: { request: vi.fn() }, writable: true },
+      connected: { value: true, writable: true },
+      lastError: { value: null, writable: true },
+      realtimeTalkActive: { value: true, writable: true },
+      realtimeTalkDetail: { value: null, writable: true },
+      realtimeTalkSession: { value: { stop: staleStop }, writable: true },
+      realtimeTalkStatus: { value: "error", writable: true },
+      realtimeTalkTranscript: { value: null, writable: true },
+      sessionKey: { value: "main", writable: true },
+    });
 
-    await app.toggleRealtimeTalk();
+    await OpenClawApp.prototype.toggleRealtimeTalk.call(app as never);
 
     expect(staleStop).toHaveBeenCalledOnce();
-    expect(request).toHaveBeenCalledOnce();
-    expect(request).toHaveBeenCalledWith("talk.realtime.session", { sessionKey: "main" });
-    expect(app.realtimeTalkStatus).toBe("error");
-    expect(app.realtimeTalkSession).toBeNull();
+    expect(realtimeTalkCtor).toHaveBeenCalledOnce();
+    expect(startMock).toHaveBeenCalledOnce();
+    expect(stopMock).not.toHaveBeenCalled();
+    expect(app.realtimeTalkStatus).toBe("connecting");
+    expect(app.realtimeTalkSession).not.toBeNull();
   });
 });

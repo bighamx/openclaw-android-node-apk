@@ -68,6 +68,7 @@ Docs: https://docs.openclaw.ai
 - Plugins/install: remove the previous managed plugin directory when a reinstall switches sources, so stale ClawHub and npm copies no longer keep duplicate plugin ids in discovery after the new install wins. Thanks @vincentkoc.
 - Plugins/install: let official plugin reinstall recovery repair source-only installed runtime shadows, so `openclaw plugins install npm:@openclaw/discord --force` can replace the bad package instead of stopping at stale config validation. Thanks @vincentkoc.
 - Plugins/commands: allow the official ClawHub Codex plugin package to keep reserved `/codex` command ownership, matching the existing npm-managed Codex package behavior. Thanks @vincentkoc.
+- Auth/OpenAI Codex: rewrite invalidated per-agent Codex auth-order and session profile overrides toward a healthy relogin profile, so revoked OAuth accounts do not stay pinned after signing in again. Thanks @BunsDev.
 - Plugins/commands: scope QQBot framework slash commands to the QQBot channel so `/bot-*` command handlers and native specs do not leak onto unrelated chat surfaces. Thanks @vincentkoc.
 - fix: harden backend message action gateway routing [AI]. (#76374) Thanks @pgondhi987.
 - Gate QQBot streaming command auth [AI]. (#76375) Thanks @pgondhi987.
@@ -109,6 +110,7 @@ Docs: https://docs.openclaw.ai
 - Agents/trajectory: bound runtime trajectory capture and yield queued sidecar writes so oversized traces stop recording instead of monopolizing Gateway cleanup. Fixes #77124. Thanks @loyur.
 - Telegram/streaming: sanitize tool-progress draft preview backticks before shared compaction, so long backtick-heavy progress text still renders inside the safe code-formatted preview instead of collapsing to an ellipsis.
 - UI/chat: remove the unsupported `line-clamp` declaration from the chat queue text rule to eliminate Firefox console noise without changing visible truncation behavior. Thanks @ZanderH-code.
+- Control UI: add explicit feedback for repeated actions by announcing session switches, flashing the active session selector, showing inline Save/Apply/Update progress, and distinguishing filtered-empty session lists from genuinely empty session stores. Thanks @BunsDev.
 - Agents/Pi: suppress persistence for synthetic mid-turn overflow continuation prompts, so transcript-retry recovery does not write the "continue from transcript" prompt as a new user turn. Thanks @vincentkoc.
 - Agents/tools: strip reasoning text from visible rich presentation titles, blocks, buttons, and select labels before message-tool sends, so structured channel payloads cannot leak hidden planning. Thanks @vincentkoc.
 - Telegram: keep reply-dispatch lazy provider runtime chunks behind stable dist names and delete `/reasoning stream` previews after final delivery so package updates and live reasoning drafts do not leave Telegram turns broken or noisy. Thanks @BunsDev.
@@ -278,6 +280,7 @@ Docs: https://docs.openclaw.ai
 - Slack: collapse routine Socket Mode pong-timeout reconnects into one OpenClaw reconnect line and suppress the duplicate Slack SDK pong warning.
 - Gateway/diagnostics: abort-drain embedded runs after an extended no-progress stall so a single dead session no longer leaves queued Discord/channel turns blocked behind repeated `recovery=none` liveness warnings.
 - Plugins/ClawHub: accept the live artifact resolver `kind`/`sha256` field names alongside the typed `artifactKind`/`artifactSha256` form so `clawhub:` installs of npm-pack and legacy ZIP packages no longer miss downloadable artifacts. Thanks @romneyda.
+- Direct APNs: route direct HTTP/2 delivery through the active managed proxy with redacted proxy diagnostics, so push requests honor configured egress controls and `openclaw proxy validate --apns-reachable` can prove APNs is reachable through the proxy before deployment. (#74905) Thanks @jesse-merhi.
 - Control UI/Sessions: avoid full `sessions.list` reloads for chat-turn `sessions.changed` payloads, so large session stores no longer add multi-second delays while chat responses are being delivered. (#76676) Thanks @VACInc.
 - Gateway/watch: run `doctor --fix --non-interactive` once and retry when the dev Gateway child exits during startup, so stale local plugin install/config state does not leave the tmux watch session disappearing without a repair attempt.
 - Doctor/Telegram: warn when selected Telegram quote replies can suppress `streaming.preview.toolProgress`, and document the `replyToMode` trade-off without changing runtime delivery. Fixes #73487. Thanks @GodsBoy.
