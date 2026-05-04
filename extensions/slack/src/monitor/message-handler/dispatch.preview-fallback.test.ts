@@ -256,13 +256,23 @@ vi.mock("openclaw/plugin-sdk/channel-streaming", () => ({
     };
   },
   formatChannelProgressDraftText: (params: {
-    entry?: { streaming?: { progress?: { label?: string; maxLines?: number } } };
+    entry?: { streaming?: { progress?: { label?: string | false; maxLines?: number } } };
     lines: string[];
-  }) =>
-    [
-      params.entry?.streaming?.progress?.label ?? "Thinking",
+  }) => {
+    const label = params.entry?.streaming?.progress?.label;
+    return [
+      label === false ? undefined : (label ?? "Thinking"),
       ...params.lines.map((line) => `• ${line}`),
-    ].join("\n"),
+    ]
+      .filter((line): line is string => Boolean(line))
+      .join("\n");
+  },
+  formatChannelProgressDraftLine: (params: {
+    progressText?: string;
+    summary?: string;
+    title?: string;
+    name?: string;
+  }) => params.progressText ?? params.summary ?? params.title ?? params.name,
   resolveChannelProgressDraftMaxLines: (entry?: {
     streaming?: { progress?: { maxLines?: number } };
   }) => entry?.streaming?.progress?.maxLines ?? 8,
@@ -289,6 +299,9 @@ vi.mock("openclaw/plugin-sdk/channel-streaming", () => ({
       return false;
     }
     if (entry?.streaming?.mode === "progress") {
+      return true;
+    }
+    if (options?.draftStreamActive === true) {
       return true;
     }
     return options?.previewToolProgressEnabled ?? true;
@@ -731,7 +744,31 @@ describe("dispatchPreparedSlackMessage preview fallback", () => {
     expect(capturedReplyOptions?.onItemEvent).toBeDefined();
   });
 
-  it("keeps standalone Slack tool progress when partial preview lines are disabled", async () => {
+  it("does not create a blank Slack progress draft when label and lines are disabled", async () => {
+    const draftStream = createDraftStreamStub();
+    createSlackDraftStreamMock.mockReturnValueOnce(draftStream);
+    mockedSlackStreamingMode = "progress";
+    mockedSlackDraftMode = "status_final";
+    mockedDispatchSequence = [];
+    mockedReplyOptionEvents = [
+      { kind: "item", progressText: "tool one" },
+      { kind: "item", progressText: "tool two" },
+      { kind: "partial", text: "partial answer" },
+    ];
+
+    await dispatchPreparedSlackMessage(
+      createPreparedSlackMessage({
+        accountConfig: {
+          streaming: { mode: "progress", progress: { label: false, toolProgress: false } },
+        },
+      }),
+    );
+
+    expect(capturedReplyOptions?.suppressDefaultToolProgressMessages).toBe(true);
+    expect(draftStream.update).not.toHaveBeenCalled();
+  });
+
+  it("suppresses standalone Slack tool progress when partial preview lines are disabled", async () => {
     mockedSlackStreamingMode = "partial";
     mockedSlackDraftMode = "replace";
     mockedDispatchSequence = [];
@@ -742,7 +779,7 @@ describe("dispatchPreparedSlackMessage preview fallback", () => {
       }),
     );
 
-    expect(capturedReplyOptions?.suppressDefaultToolProgressMessages).toBeUndefined();
+    expect(capturedReplyOptions?.suppressDefaultToolProgressMessages).toBe(true);
     expect(capturedReplyOptions?.onItemEvent).toBeDefined();
   });
 

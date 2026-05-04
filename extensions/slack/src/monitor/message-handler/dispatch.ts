@@ -14,6 +14,7 @@ import {
 } from "openclaw/plugin-sdk/channel-reply-pipeline";
 import {
   createChannelProgressDraftGate,
+  formatChannelProgressDraftLine,
   formatChannelProgressDraftText,
   isChannelProgressDraftWorkToolName,
   resolveChannelProgressDraftMaxLines,
@@ -891,13 +892,15 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
     if (!draftStream || streamMode !== "status_final") {
       return;
     }
-    draftStream.update(
-      formatChannelProgressDraftText({
-        entry: account.config,
-        lines: previewToolProgressLines,
-        seed: progressSeed,
-      }),
-    );
+    const previewText = formatChannelProgressDraftText({
+      entry: account.config,
+      lines: previewToolProgressLines,
+      seed: progressSeed,
+    });
+    if (!previewText) {
+      return;
+    }
+    draftStream.update(previewText);
     hasStreamedMessage = true;
   };
   const progressDraftGate = createChannelProgressDraftGate({
@@ -982,13 +985,15 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
       if (statusUpdateCount > 1 && statusUpdateCount % 4 !== 0) {
         return;
       }
-      draftStream?.update(
-        formatChannelProgressDraftText({
-          entry: account.config,
-          lines: previewToolProgressLines,
-          seed: progressSeed,
-        }),
-      );
+      const previewText = formatChannelProgressDraftText({
+        entry: account.config,
+        lines: previewToolProgressLines,
+        seed: progressSeed,
+      });
+      if (!previewText) {
+        return;
+      }
+      draftStream?.update(previewText);
       hasStreamedMessage = true;
       return;
     }
@@ -1079,13 +1084,31 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
                     await statusReactions.setTool(payload.name);
                   }
                   await pushPreviewToolProgress(
-                    payload.name ? `tool: ${payload.name}` : "tool running",
+                    formatChannelProgressDraftLine(
+                      {
+                        event: "tool",
+                        name: payload.name,
+                        phase: payload.phase,
+                        args: payload.args,
+                      },
+                      payload.detailMode ? { detailMode: payload.detailMode } : undefined,
+                    ),
                     { toolName: payload.name },
                   );
                 },
                 onItemEvent: async (payload) => {
                   await pushPreviewToolProgress(
-                    payload.progressText ?? payload.summary ?? payload.title ?? payload.name,
+                    formatChannelProgressDraftLine({
+                      event: "item",
+                      itemKind: payload.kind,
+                      title: payload.title,
+                      name: payload.name,
+                      phase: payload.phase,
+                      status: payload.status,
+                      summary: payload.summary,
+                      progressText: payload.progressText,
+                      meta: payload.meta,
+                    }),
                   );
                 },
                 onPlanUpdate: async (payload) => {
@@ -1093,7 +1116,13 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
                     return;
                   }
                   await pushPreviewToolProgress(
-                    payload.explanation ?? payload.steps?.[0] ?? "planning",
+                    formatChannelProgressDraftLine({
+                      event: "plan",
+                      phase: payload.phase,
+                      title: payload.title,
+                      explanation: payload.explanation,
+                      steps: payload.steps,
+                    }),
                   );
                 },
                 onApprovalEvent: async (payload) => {
@@ -1101,7 +1130,14 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
                     return;
                   }
                   await pushPreviewToolProgress(
-                    payload.command ? `approval: ${payload.command}` : "approval requested",
+                    formatChannelProgressDraftLine({
+                      event: "approval",
+                      phase: payload.phase,
+                      title: payload.title,
+                      command: payload.command,
+                      reason: payload.reason,
+                      message: payload.message,
+                    }),
                   );
                 },
                 onCommandOutput: async (payload) => {
@@ -1109,9 +1145,14 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
                     return;
                   }
                   await pushPreviewToolProgress(
-                    payload.name
-                      ? `${payload.name}${payload.exitCode === 0 ? " ✓" : payload.exitCode != null ? ` (exit ${payload.exitCode})` : ""}`
-                      : payload.title,
+                    formatChannelProgressDraftLine({
+                      event: "command-output",
+                      phase: payload.phase,
+                      title: payload.title,
+                      name: payload.name,
+                      status: payload.status,
+                      exitCode: payload.exitCode,
+                    }),
                   );
                 },
                 onPatchSummary: async (payload) => {
@@ -1119,7 +1160,16 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
                     return;
                   }
                   await pushPreviewToolProgress(
-                    payload.summary ?? payload.title ?? "patch applied",
+                    formatChannelProgressDraftLine({
+                      event: "patch",
+                      phase: payload.phase,
+                      title: payload.title,
+                      name: payload.name,
+                      added: payload.added,
+                      modified: payload.modified,
+                      deleted: payload.deleted,
+                      summary: payload.summary,
+                    }),
                   );
                 },
               },
