@@ -82,6 +82,11 @@ const googleMeetConfigSchema = {
       help: "Command-pair audio format. PCM16 24 kHz is the default Chrome/Meet path; G.711 mu-law 8 kHz remains available for legacy command pairs.",
       advanced: true,
     },
+    "chrome.audioBufferBytes": {
+      label: "Audio Buffer Bytes",
+      help: "SoX processing buffer for generated Chrome command-pair audio commands. Lower values reduce latency but may underrun on busy hosts.",
+      advanced: true,
+    },
     "chrome.audioInputCommand": {
       label: "Audio Input Command",
       help: "Command that writes meeting audio to stdout in chrome.audioFormat.",
@@ -155,10 +160,22 @@ const googleMeetConfigSchema = {
       help: "Legacy realtime alias setting. Use mode=agent or mode=bidi for new Meet joins.",
     },
     "realtime.provider": {
-      label: "Realtime Provider",
-      help: "Defaults to OpenAI; uses OPENAI_API_KEY when no provider config is set.",
+      label: "Speech Provider",
+      help: "Compatibility fallback for both realtime transcription and bidi voice. Prefer realtime.transcriptionProvider and realtime.voiceProvider for new configs.",
     },
-    "realtime.model": { label: "Realtime Model", advanced: true },
+    "realtime.transcriptionProvider": {
+      label: "Realtime Transcription Provider",
+      help: "Agent mode uses this provider to transcribe meeting audio before regular OpenClaw TTS answers.",
+    },
+    "realtime.voiceProvider": {
+      label: "Bidi Voice Provider",
+      help: "Bidi mode uses this realtime voice provider. Falls back to realtime.provider when unset.",
+    },
+    "realtime.model": {
+      label: "Bidi Realtime Model",
+      help: "Only used by mode=bidi. Agent mode answers with the configured OpenClaw agent and regular TTS.",
+      advanced: true,
+    },
     "realtime.instructions": { label: "Realtime Instructions", advanced: true },
     "realtime.introMessage": {
       label: "Realtime Intro Message",
@@ -238,9 +255,9 @@ const GoogleMeetToolSchema = Type.Object({
   ),
   mode: Type.Optional(
     Type.String({
-      enum: ["agent", "bidi", "realtime", "transcribe"],
+      enum: ["agent", "bidi", "transcribe"],
       description:
-        "Join mode. agent uses realtime transcription, the configured OpenClaw agent, and regular TTS. bidi uses the realtime voice model directly. realtime is a compatibility alias for agent. transcribe joins observe-only.",
+        "Join mode. agent uses realtime transcription, the configured OpenClaw agent, and regular TTS. bidi uses the realtime voice model directly. transcribe joins observe-only.",
     }),
   ),
   dialInNumber: Type.Optional(
