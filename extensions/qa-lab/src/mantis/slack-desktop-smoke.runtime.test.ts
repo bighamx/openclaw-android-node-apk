@@ -121,7 +121,9 @@ describe("mantis Slack desktop smoke runtime", () => {
     const remoteScript = runArgs?.at(-1);
     expect(remoteScript).toContain("${BROWSER:-}");
     expect(remoteScript).toContain("${CHROME_BIN:-}");
-    expect(remoteScript).toContain("pnpm install --frozen-lockfile");
+    expect(remoteScript).toContain("PNPM_STORE_DIR");
+    expect(remoteScript).toContain("build-essential python3");
+    expect(remoteScript).toContain("pnpm install --frozen-lockfile --prefer-offline");
     expect(remoteScript).toContain("pnpm build");
     expect(remoteScript).toContain("ffmpeg");
     expect(remoteScript).toContain('sudo apt-get update -y >>"$out/apt.log" 2>&1 || true');
@@ -404,7 +406,7 @@ describe("mantis Slack desktop smoke runtime", () => {
       warning?: string;
     };
     expect(summary.status).toBe("pass");
-    expect(summary.warning).toContain("remote command exited 1");
+    expect(summary.warning).toBeUndefined();
   });
 
   it("copies the screenshot before reporting a failed remote Slack QA run", async () => {

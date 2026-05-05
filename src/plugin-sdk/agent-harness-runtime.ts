@@ -86,7 +86,7 @@ export {
   filterToolResultMediaUrls,
 } from "../agents/pi-embedded-subscribe.tools.js";
 export { normalizeUsage } from "../agents/usage.js";
-export { resolveOpenClawAgentDir } from "../agents/agent-paths.js";
+export { resolveOpenClawAgentDir } from "./agent-dir-compat.js";
 export { resolveSessionAgentIds } from "../agents/agent-scope.js";
 export { resolveModelAuthMode } from "../agents/model-auth.js";
 export { supportsModelTools } from "../agents/model-tool-support.js";

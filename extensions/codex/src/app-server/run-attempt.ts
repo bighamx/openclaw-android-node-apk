@@ -16,9 +16,9 @@ import {
   isSubagentSessionKey,
   normalizeAgentRuntimeTools,
   resolveAttemptSpawnWorkspaceDir,
+  resolveAgentDir,
   resolveAgentHarnessBeforePromptBuildResult,
   resolveModelAuthMode,
-  resolveOpenClawAgentDir,
   resolveSandboxContext,
   resolveSessionAgentIds,
   resolveUserPath,
@@ -385,7 +385,7 @@ export async function runCodexAppServerAttempt(
     config: params.config,
     agentId: params.agentId,
   });
-  const agentDir = params.agentDir ?? resolveOpenClawAgentDir();
+  const agentDir = params.agentDir ?? resolveAgentDir(params.config ?? {}, sessionAgentId);
   const startupBinding = await readCodexAppServerBinding(params.sessionFile);
   const startupAuthProfileCandidate =
     params.runtimePlan?.auth.forwardedAuthProfileId ??
@@ -1477,7 +1477,7 @@ async function buildDynamicTools(input: DynamicToolBuildParams) {
     return [];
   }
   const modelHasVision = params.model.input?.includes("image") ?? false;
-  const agentDir = params.agentDir ?? resolveOpenClawAgentDir();
+  const agentDir = params.agentDir ?? resolveAgentDir(params.config ?? {}, input.sessionAgentId);
   const { createOpenClawCodingTools } = await import("openclaw/plugin-sdk/agent-harness");
   const allTools = createOpenClawCodingTools({
     agentId: input.sessionAgentId,

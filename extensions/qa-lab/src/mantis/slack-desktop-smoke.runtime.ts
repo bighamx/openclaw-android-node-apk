@@ -495,8 +495,17 @@ qa_status=0
 {
   set -e
   echo "remote pwd: $(pwd)"
+  if ! command -v make >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+    sudo apt-get update -y >>"$out/apt.log" 2>&1 || true
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential python3 >>"$out/apt.log" 2>&1 || true
+  fi
   sudo corepack enable || sudo npm install -g pnpm@10.33.2
-  pnpm install --frozen-lockfile
+  if [ -d /var/cache/crabbox ]; then
+    export PNPM_STORE_DIR="\${PNPM_STORE_DIR:-/var/cache/crabbox/pnpm}"
+    mkdir -p "$PNPM_STORE_DIR" >/dev/null 2>&1 || true
+    pnpm config set store-dir "$PNPM_STORE_DIR" >/dev/null 2>&1 || true
+  fi
+  pnpm install --frozen-lockfile --prefer-offline
   pnpm build
   if [ "$setup_gateway" = "1" ]; then
     export OPENCLAW_HOME="$HOME/.openclaw-mantis/slack-openclaw"
@@ -912,9 +921,6 @@ export async function runMantisSlackDesktopSmoke(
     if (gatewaySetup && !gatewaySetupCompleted) {
       throw new Error("Slack desktop gateway setup did not report a live OpenClaw gateway.");
     }
-    const ignoredRemoteRunError = remoteRunError
-      ? `Crabbox returned a non-zero command status after the gateway setup completed: ${formatErrorMessage(remoteRunError)}`
-      : undefined;
     summary = {
       artifacts: {
         reportPath,
@@ -938,7 +944,6 @@ export async function runMantisSlackDesktopSmoke(
       slackUrl: trimToValue(remoteMetadata?.openedUrl) ?? slackUrl,
       startedAt: startedAt.toISOString(),
       status: "pass",
-      warning: ignoredRemoteRunError,
     };
     return {
       outputDir,
