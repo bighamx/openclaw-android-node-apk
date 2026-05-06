@@ -1,9 +1,14 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import { resetLogger, setLoggerOverride } from "../logging/logger.js";
 import { createWarnLogCapture } from "../logging/test-helpers/warn-log-capture.js";
+import {
+  clearCurrentPluginMetadataSnapshot,
+  setCurrentPluginMetadataSnapshot,
+} from "../plugins/current-plugin-metadata-snapshot.js";
+import { loadPluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.js";
 import { AUTH_STORE_VERSION } from "./auth-profiles/constants.js";
 import type { AuthProfileStore } from "./auth-profiles/types.js";
 import { FailoverError } from "./failover-error.js";
@@ -140,6 +145,17 @@ vi.mock("./model-fallback-auth.runtime.js", () => authRuntimeMock.runtime);
 const makeCfg = makeModelFallbackCfg;
 let authTempRoot = "";
 let authTempCounter = 0;
+
+beforeAll(() => {
+  setCurrentPluginMetadataSnapshot(loadPluginMetadataSnapshot({ config: {}, env: process.env }), {
+    config: {},
+    env: process.env,
+  });
+});
+
+afterAll(() => {
+  clearCurrentPluginMetadataSnapshot();
+});
 
 function resetModelFallbackTestState(): void {
   authRuntimeMock.clear();
