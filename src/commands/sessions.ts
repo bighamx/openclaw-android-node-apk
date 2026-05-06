@@ -415,3 +415,7 @@ export async function sessionsCommand(
     runtime.log(line.trimEnd());
   }
 }
+
+export const __testing = {
+  parseSessionsLimit,
+} as const;

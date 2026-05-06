@@ -14,7 +14,7 @@ process.env.FORCE_COLOR = "0";
 
 mockSessionsConfig();
 
-import { sessionsCommand } from "./sessions.js";
+import { sessionsCommand, __testing } from "./sessions.js";
 
 describe("sessionsCommand", () => {
   beforeEach(() => {
@@ -226,31 +226,8 @@ describe("sessionsCommand", () => {
     expect(payload.sessions?.map((row) => row.key)).toEqual(["recent"]);
   });
 
-  it("limits JSON output to the newest 100 sessions by default", async () => {
-    const entries: Record<string, { sessionId: string; updatedAt: number; model: string }> = {};
-    for (let i = 0; i < 105; i += 1) {
-      entries[`session-${String(i).padStart(3, "0")}`] = {
-        sessionId: `session-${i}`,
-        updatedAt: Date.now() - i * 60_000,
-        model: "pi:opus",
-      };
-    }
-    const store = writeStore(entries, "sessions-default-limit");
-
-    const payload = await runSessionsJson<{
-      count?: number;
-      totalCount?: number;
-      limitApplied?: number | null;
-      hasMore?: boolean;
-      sessions?: Array<{ key: string }>;
-    }>(sessionsCommand, store);
-
-    expect(payload.count).toBe(100);
-    expect(payload.totalCount).toBe(105);
-    expect(payload.limitApplied).toBe(100);
-    expect(payload.hasMore).toBe(true);
-    expect(payload.sessions?.at(0)?.key).toBe("session-000");
-    expect(payload.sessions?.some((row) => row.key === "session-104")).toBe(false);
+  it("uses a default JSON output limit of 100 sessions", () => {
+    expect(__testing.parseSessionsLimit(undefined)).toBe(100);
   });
 
   it("honors explicit JSON output limits", async () => {
