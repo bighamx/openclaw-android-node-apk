@@ -331,6 +331,17 @@ async function flushTasks() {
   await vi.dynamicImportSettled();
 }
 
+function getChatModelSelect(container: Element): HTMLSelectElement {
+  const select = container.querySelector<HTMLSelectElement>(
+    'select[data-chat-model-select="true"]',
+  );
+  expect(select).toBeInstanceOf(HTMLSelectElement);
+  if (!(select instanceof HTMLSelectElement)) {
+    throw new Error("Expected chat model select");
+  }
+  return select;
+}
+
 function renderChatView(overrides: Partial<Parameters<typeof renderChat>[0]> = {}) {
   const container = document.createElement("div");
   render(
@@ -427,7 +438,8 @@ describe("chat compaction divider", () => {
     const button = container.querySelector<HTMLButtonElement>(".chat-divider__action");
     expect(button?.textContent).toContain("Open checkpoints");
 
-    button?.click();
+    expect(button).toBeInstanceOf(HTMLButtonElement);
+    button!.click();
 
     expect(onOpenSessionCheckpoints).toHaveBeenCalledTimes(1);
   });
@@ -484,7 +496,7 @@ describe("chat loading skeleton", () => {
     });
 
     expect(container.querySelector(".chat-loading-skeleton")).toBeNull();
-    expect(container.querySelector(".chat-reading-indicator")).not.toBeNull();
+    expect(container.querySelectorAll(".chat-reading-indicator")).toHaveLength(1);
   });
 });
 
@@ -509,7 +521,9 @@ describe("chat voice controls", () => {
       'Realtime voice provider "openai" is not configured',
     );
 
-    container.querySelector<HTMLButtonElement>('[aria-label="Dismiss error"]')?.click();
+    const dismiss = container.querySelector<HTMLButtonElement>('[aria-label="Dismiss error"]');
+    expect(dismiss).toBeInstanceOf(HTMLButtonElement);
+    dismiss!.click();
 
     expect(onDismissError).toHaveBeenCalledTimes(1);
   });
@@ -933,14 +947,11 @@ describe("chat session controls", () => {
     const container = document.createElement("div");
     render(renderChatSessionSelect(state), container);
 
-    const modelSelect = container.querySelector<HTMLSelectElement>(
-      'select[data-chat-model-select="true"]',
-    );
-    expect(modelSelect).not.toBeNull();
-    expect(modelSelect?.value).toBe("");
+    const modelSelect = getChatModelSelect(container);
+    expect(modelSelect.value).toBe("");
 
-    modelSelect!.value = "openai/gpt-5-mini";
-    modelSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+    modelSelect.value = "openai/gpt-5-mini";
+    modelSelect.dispatchEvent(new Event("change", { bubbles: true }));
 
     expect(request).toHaveBeenCalledWith("sessions.patch", {
       key: "main",
@@ -963,14 +974,11 @@ describe("chat session controls", () => {
     const container = document.createElement("div");
     render(renderChatSessionSelect(state), container);
 
-    const modelSelect = container.querySelector<HTMLSelectElement>(
-      'select[data-chat-model-select="true"]',
-    );
-    expect(modelSelect).not.toBeNull();
-    expect(modelSelect?.value).toBe("openai/gpt-5-mini");
+    const modelSelect = getChatModelSelect(container);
+    expect(modelSelect.value).toBe("openai/gpt-5-mini");
 
-    modelSelect!.value = "";
-    modelSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+    modelSelect.value = "";
+    modelSelect.dispatchEvent(new Event("change", { bubbles: true }));
 
     expect(request).toHaveBeenCalledWith("sessions.patch", {
       key: "main",
@@ -988,11 +996,8 @@ describe("chat session controls", () => {
     const container = document.createElement("div");
     render(renderChatSessionSelect(state), container);
 
-    const modelSelect = container.querySelector<HTMLSelectElement>(
-      'select[data-chat-model-select="true"]',
-    );
-    expect(modelSelect).not.toBeNull();
-    expect(modelSelect?.disabled).toBe(true);
+    const modelSelect = getChatModelSelect(container);
+    expect(modelSelect.disabled).toBe(true);
   });
 
   it("keeps the selected model visible when the active session is absent from sessions.list", async () => {
@@ -1000,20 +1005,15 @@ describe("chat session controls", () => {
     const container = document.createElement("div");
     render(renderChatSessionSelect(state), container);
 
-    const modelSelect = container.querySelector<HTMLSelectElement>(
-      'select[data-chat-model-select="true"]',
-    );
-    expect(modelSelect).not.toBeNull();
+    const modelSelect = getChatModelSelect(container);
 
-    modelSelect!.value = "openai/gpt-5-mini";
-    modelSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+    modelSelect.value = "openai/gpt-5-mini";
+    modelSelect.dispatchEvent(new Event("change", { bubbles: true }));
     await flushTasks();
     render(renderChatSessionSelect(state), container);
 
-    const rerendered = container.querySelector<HTMLSelectElement>(
-      'select[data-chat-model-select="true"]',
-    );
-    expect(rerendered?.value).toBe("openai/gpt-5-mini");
+    const rerendered = getChatModelSelect(container);
+    expect(rerendered.value).toBe("openai/gpt-5-mini");
   });
 
   it("uses default thinking options when the active session is absent", () => {

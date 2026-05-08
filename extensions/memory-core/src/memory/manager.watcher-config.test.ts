@@ -146,7 +146,6 @@ describe("memory watcher config", () => {
 
   async function expectWatcherManager(cfg: OpenClawConfig) {
     const result = await getMemorySearchManager({ cfg, agentId: "main" });
-    expect(result.manager).not.toBeNull();
     if (!result.manager) {
       throw new Error("manager missing");
     }
@@ -200,7 +199,9 @@ describe("memory watcher config", () => {
     const cfg = createWatcherConfig();
 
     const result = await getMemorySearchManager({ cfg, agentId: "main", purpose: "cli" });
-    expect(result.manager).not.toBeNull();
+    if (!result.manager) {
+      throw new Error("manager missing");
+    }
     manager = result.manager as unknown as MemoryIndexManager;
 
     expect(watchMock).not.toHaveBeenCalled();
