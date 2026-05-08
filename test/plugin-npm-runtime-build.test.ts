@@ -10,13 +10,12 @@ const repoRoot = path.resolve(import.meta.dirname, "..");
 type PluginNpmRuntimeBuildPlan = NonNullable<ReturnType<typeof resolvePluginNpmRuntimeBuildPlan>>;
 
 function expectDistRelativePaths(paths: string[]) {
-  expect(paths.filter((entry) => !entry.startsWith("./dist/"))).toEqual([]);
+  expect(paths.every((entry) => entry.startsWith("./dist/"))).toBe(true);
 }
 
 function expectPluginNpmRuntimeBuildPlan(
   plan: ReturnType<typeof resolvePluginNpmRuntimeBuildPlan>,
 ): PluginNpmRuntimeBuildPlan {
-  expect(plan).toBeTruthy();
   if (!plan) {
     throw new Error("expected plugin npm runtime build plan");
   }
