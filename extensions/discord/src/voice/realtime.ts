@@ -12,6 +12,7 @@ import {
   resolveRealtimeVoiceAgentConsultToolPolicy,
   resolveRealtimeVoiceAgentConsultTools,
   resolveRealtimeVoiceAgentConsultToolsAllow,
+  type RealtimeVoiceBridgeEvent,
   type RealtimeVoiceAgentTalkbackQueue,
   type RealtimeVoiceAgentConsultToolPolicy,
   type RealtimeVoiceBridgeSession,
@@ -50,6 +51,7 @@ type DiscordRealtimeVoiceConfig = NonNullable<DiscordAccountConfig["voice"]>["re
 type PendingSpeakerTurn = {
   context: DiscordRealtimeSpeakerContext;
   hasAudio: boolean;
+  interruptedPlayback: boolean;
   closed: boolean;
 };
 
@@ -59,6 +61,33 @@ function formatRealtimeLogPreview(text: string): string {
     return oneLine;
   }
   return `${oneLine.slice(0, DISCORD_REALTIME_LOG_PREVIEW_CHARS)}...`;
+}
+
+function formatRealtimeInterruptionLog(event: RealtimeVoiceBridgeEvent): string | undefined {
+  const detail = event.detail ? ` ${event.detail}` : "";
+  if (event.direction === "client") {
+    if (event.type === "response.cancel") {
+      return `discord voice: realtime model interrupt requested ${event.direction}:${event.type}${detail}`;
+    }
+    if (event.type === "conversation.item.truncate") {
+      return `discord voice: realtime model audio truncated ${event.direction}:${event.type}${detail}`;
+    }
+  }
+  if (event.direction === "server") {
+    if (event.type === "response.cancelled") {
+      return `discord voice: realtime model interrupt confirmed ${event.direction}:${event.type}${detail}`;
+    }
+    if (event.type === "response.done" && event.detail?.includes("status=cancelled")) {
+      return `discord voice: realtime model interrupt confirmed ${event.direction}:${event.type}${detail}`;
+    }
+    if (
+      event.type === "error" &&
+      event.detail === "Cancellation failed: no active response found"
+    ) {
+      return `discord voice: realtime model interrupt raced ${event.direction}:${event.type}${detail}`;
+    }
+  }
+  return undefined;
 }
 
 function readProviderConfigString(
@@ -213,6 +242,10 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
       onEvent: (event) => {
         const detail = event.detail ? ` ${event.detail}` : "";
         logVoiceVerbose(`realtime ${event.direction}:${event.type}${detail}`);
+        const interruptionLog = formatRealtimeInterruptionLog(event);
+        if (interruptionLog) {
+          logger.info(interruptionLog);
+        }
       },
       onError: (error) =>
         logger.warn(`discord voice: realtime error: ${formatErrorMessage(error)}`),
@@ -252,6 +285,7 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
     const turn: PendingSpeakerTurn = {
       context: { ...context, userId },
       hasAudio: false,
+      interruptedPlayback: false,
       closed: false,
     };
     this.pendingSpeakerTurns.push(turn);
@@ -273,6 +307,13 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
     turn.hasAudio = true;
     const realtimePcm = convertDiscordPcm48kStereoToRealtimePcm24kMono(discordPcm48kStereo);
     if (realtimePcm.length > 0) {
+      if (!turn.interruptedPlayback && this.isBargeInEnabled()) {
+        turn.interruptedPlayback = true;
+        logVoiceVerbose(
+          `realtime barge-in from active speaker audio: guild ${this.params.entry.guildId} channel ${this.params.entry.channelId} user ${turn.context.userId}`,
+        );
+        this.handleBargeIn();
+      }
       this.bridge.sendAudio(realtimePcm);
     }
   }
@@ -281,7 +322,7 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
     if (!this.isBargeInEnabled()) {
       return;
     }
-    this.bridge?.handleBargeIn({ audioPlaybackActive: Boolean(this.outputStream) });
+    this.bridge?.handleBargeIn({ audioPlaybackActive: true });
     this.clearOutputAudio();
   }
 
