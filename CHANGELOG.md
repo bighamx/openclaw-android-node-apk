@@ -2,7 +2,7 @@
 
 Docs: https://docs.openclaw.ai
 
-## 2026.5.8
+## 2026.5.9
 
 ### Changes
 
@@ -54,6 +54,7 @@ Docs: https://docs.openclaw.ai
 - Codex app-server: pin the managed Codex harness and Codex CLI smoke package to `@openai/codex@0.129.0`, defer OpenClaw integration dynamic tools behind Codex tool search by default, and accept current Codex service-tier values so legacy `fast` settings survive the stable harness upgrade as `priority`.
 - Codex app-server: annotate message-tool-only direct chat turns in the dynamic `message` tool spec so visible replies are sent through `message(action="send")` instead of staying private. (#79704)
 - Agents/PI: route explicit OpenAI Codex Responses runs through PI's native WebSocket-capable transport and remove OpenClaw's custom OpenAI Responses WebSocket stack while preserving auth injection, run abort signals, and prompt cache boundary stripping.
+- Models/config: allow `compat.thinkingFormat` values `qwen` and `qwen-chat-template` for configured OpenAI-compatible Qwen models, preserving them through catalog normalization and mapping `/think` levels to `enable_thinking` or `chat_template_kwargs.enable_thinking`. Fixes #79677. (#79777) Thanks @indulgeback.
 - Codex app-server: default implicit local stdio app-server permissions to guardian when Codex system requirements disallow the YOLO approval, reviewer, or sandbox value, including hostname-scoped remote sandbox entries, avoiding turn-start failures on managed hosts that permit only reviewed approval or narrower sandboxes.
 - Plugins/install: run managed npm-root install, uninstall, prune, and repair commands from the managed root without a redundant `--prefix .`, avoiding npm 10.9.3 Arborist crashes on native Windows WhatsApp plugin installs. Fixes #78514. (#78902) Thanks @melihselamett-stack.
 - Discord/voice: stream ElevenLabs TTS directly into Discord playback and send ElevenLabs latency optimization as the documented query parameter so spoken replies can start sooner.
@@ -156,16 +157,21 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Agents/CLI: handle resumed CLI JSONL output and bound supervisor output buffering so resumed runs stay readable without letting noisy child output grow unbounded.
 - Agents/sandbox: include the container workspace path hint in sandbox-root escape errors while preserving shortened host workspace roots. Fixes #79712. Thanks @haumanto and @hclsys.
+- Image generation: honor configured web-fetch SSRF policy across OpenAI, Google, MiniMax, OpenRouter, and Vydra provider requests so RFC2544 fake-IP proxy opt-ins reach generation calls. Fixes #79716. (#79765) Thanks @hclsys.
+- Telegram: persist reply-chain message cache records as a compact append log instead of rewriting the full cache on every inbound message, reducing large-group turn latency.
 - QQBot: route gateway WebSocket connections through the ambient proxy agent so deployments with `https_proxy`, `HTTPS_PROXY`, or `HTTP_PROXY` can reach the QQ gateway. (#72961) Thanks @xialonglee.
 - Agents/subagents: treat `sessions_spawn` `model: "default"` as the default-model fallback and ignore ACP-only stream targets for native sub-agent spawns. Fixes #72078. (#72101) Thanks @xialonglee.
 - Agents/failover: stop retrying assistant-prefill format rejections across auth profiles or model fallbacks, surfacing the deterministic provider error instead of requeueing the lane. Fixes #79688. (#79728) Thanks @hclsys.
+- Google/Gemini: resolve missing Gemini 3 Flash catalog rows through the Google provider template path so image-capable media-understanding models keep `input: ["text", "image"]` instead of falling back to text-only metadata. Fixes #79750. (#79759) Thanks @fenglanhua and @hclsys.
 - Memory/QMD: warn with a manual stale collection removal hint when QMD reports a path/pattern conflict but `collection list` lacks verifiable metadata, avoiding unsafe stderr-only rebinds. Refs #71783. (#72297) Thanks @MonkeyLeeT.
 - Models/auth: make `openclaw models status --check` and dashboard auth health honor effective auth profile order while keeping stale profiles visible. (#79685) Thanks @nimbleenigma.
 - Agents/failover: classify bare `stream_read_error` streaming failures as transient timeouts so configured model fallback runs instead of surfacing the raw transport error. Fixes #79689. (#79692) Thanks @hekunwang.
 - Agents/failover: persist overloaded auth-profile cooldown marks before exhausted fallback summaries surface, so immediate fallback retries honor the recorded cooldown state.
 - Docs/Subagents: correct the listed sub-agent bootstrap context files to include `SOUL.md`, `IDENTITY.md`, and `USER.md`. (#79470) Thanks @lastguru-net.
 - Backup: keep live backup archives from copying current agent session transcripts, cron run logs, and delivery queues while preserving workspace lock/temp files and keeping `--json` output parseable when volatile files are skipped. Fixes #72249. (#72251) Thanks @abnershang.
+- Backup: place the temp manifest outside every backed-up asset so `backup create --verify` still passes when `TMPDIR` resolves inside a source path (for example `~/.openclaw/tmp`), avoiding the duplicate root manifest that otherwise tripped `Expected exactly one backup manifest entry, found 2`. Fixes #75007. Thanks @YaanFPV.
 - OpenAI/Codex: install the Codex runtime plugin from npm during OpenAI onboarding and load it automatically for implicit OpenAI model routes, while preserving manual PI runtime overrides. Fixes #79358.
 - OpenAI/realtime voice: defer `response.create` while a realtime response is still active, retry after `response.done`/`response.cancelled`, and align GA input transcription/noise-reduction defaults with the Codex realtime reference so Discord/Voice Call consult results can resume speaking instead of tripping the active-response race.
 - OpenAI/realtime voice: avoid duplicate barge-in cancellation requests, log realtime model interruption/cutoff events in Discord voice logs, and treat OpenAI's no-active-response cancellation reply as a completed cancel so Discord voice sessions do not wedge pending speech after fast interruptions.
@@ -192,6 +198,7 @@ Docs: https://docs.openclaw.ai
 - QA-lab/scenarios: raise the `approval-turn-tool-followthrough` per-turn fallback timeouts from 20s/30s to 60s so cold mock-gateway parity runs do not flake on the approval-turn chain. Carries forward the timeout-bump portion of #74290. Thanks @100yenadmin.
 - Agents/compaction: keep the recent tail after manual `/compact` when Pi returns an empty or no-op compaction summary, preventing blank checkpoints from replacing the live context.
 - Native commands: handle slash commands before workspace and agent-reply bootstrap so Telegram `/status` and other command-only native replies do not wait behind full agent turn setup.
+- Telegram/groups: include the recent local chat window and nearby reply-target window as generic inbound context so stale reply ancestry does not overshadow the live group conversation.
 - Plugins/Nix: allow externally configured plugin roots under `/nix/store` to load in `OPENCLAW_NIX_MODE=1` while keeping normal external plugin hardlink rejection unchanged. Thanks @joshp123.
 - Nextcloud Talk: include the required bot `response` feature in setup, explain missing `--feature response` on rejected sends, and surface missing response capability in doctor/status checks. Fixes #78935. (#79657) Thanks @joshavant.
 - fix(discord): gate user allowlist name resolution [AI]. (#79002) Thanks @pgondhi987.
@@ -354,6 +361,7 @@ Docs: https://docs.openclaw.ai
 - Agents/failover: rotate auth profiles before deferred cooldown marking on rate-limit failures, so file-lock contention cannot stall profile failover. Fixes #57281. (#57283) Thanks @jeremyknows.
 - Gateway/sessions: when `session.dmScope: "main"` is configured, route a bare webchat `/new` against the agent's main session (`sessions.create` with `emitCommandHooks=true`) to an in-place reset instead of creating a parallel `dashboard:` child, matching `/new` behavior on Telegram/Discord. Fixes #77434. (#71170) Thanks @statxc.
 - Scripts/UI/Windows: launch `.cmd` and `.bat` UI runners through the shared cmd.exe escaping path with shell mode disabled, avoiding Node.js v24 DEP0190 warnings while preserving argument boundaries. (#62910) Thanks @nandanadileep.
+- Agents/CLI runner: disable supervisor stdout/stderr capture for prepared CLI runs while keeping bounded diagnostics and incremental JSONL output parsing, preventing long CLI output from being retained in memory. (#79617) Thanks @samzong.
 - Telegram: treat a DM binding that carries the chat id in both `conversationId` and `parentConversationId` as a direct conversation instead of a topic, so reverse delivery for Telegram DMs is not misrouted through a topic-shaped target. (#79700) Thanks @TSHOGX.
 
 ## 2026.5.7
