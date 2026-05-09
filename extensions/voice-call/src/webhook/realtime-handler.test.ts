@@ -128,6 +128,13 @@ const startRealtimeServer = async (
   });
 };
 
+async function waitForRealtimeTest(
+  callback: () => void | Promise<void>,
+  options: { timeout?: number; interval?: number } = {},
+) {
+  await vi.waitFor(callback, { interval: 1, ...options });
+}
+
 describe("RealtimeCallHandler path routing", () => {
   it("uses the request host and stream path in TwiML", () => {
     const handler = makeHandler();
@@ -213,7 +220,7 @@ describe("RealtimeCallHandler path routing", () => {
             start: { streamSid: "MZ-outbound", callSid: "CA-outbound" },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(createBridge).toHaveBeenCalled();
         });
         callbacks?.onReady?.();
@@ -280,7 +287,7 @@ describe("RealtimeCallHandler path routing", () => {
             start: { streamSid: "MZ-silent", callSid: "CA-silent" },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(createBridge).toHaveBeenCalled();
         });
 
@@ -332,7 +339,7 @@ describe("RealtimeCallHandler path routing", () => {
             start: { streamSid: "MZ-speak", callSid: "CA-speak" },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(createBridge).toHaveBeenCalled();
         });
 
@@ -400,13 +407,13 @@ describe("RealtimeCallHandler path routing", () => {
             start: { streamSid: "MZ-complete", callSid: "CA-complete" },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(createBridge).toHaveBeenCalled();
         });
 
         ws.send(JSON.stringify({ event: "stop" }));
 
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           const events = processEvent.mock.calls.map(([event]) => event as NormalizedEvent);
           const ended = events.find((event) => event.type === "call.ended");
           expect(ended).toBeDefined();
@@ -477,7 +484,7 @@ describe("RealtimeCallHandler path routing", () => {
             start: { streamSid: "MZ-talk-events", callSid: "CA-talk-events" },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(createBridge).toHaveBeenCalled();
         });
 
@@ -488,7 +495,7 @@ describe("RealtimeCallHandler path routing", () => {
             media: { payload: Buffer.from([0xff, 0xff]).toString("base64") },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(sendAudio).toHaveBeenCalledWith(Buffer.from([0xff, 0xff]));
         });
         callbacks?.onTranscript?.("user", "hello", true);
@@ -575,7 +582,7 @@ describe("RealtimeCallHandler path routing", () => {
             start: { streamSid: "MZ-barge-in", callSid: "CA-barge-in" },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(createBridge).toHaveBeenCalled();
         });
 
@@ -584,7 +591,7 @@ describe("RealtimeCallHandler path routing", () => {
         ws.send(JSON.stringify({ event: "media", media: { payload: speechPayload } }));
         ws.send(JSON.stringify({ event: "media", media: { payload: speechPayload } }));
 
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(sendAudio).toHaveBeenCalledTimes(2);
         });
 
@@ -676,7 +683,7 @@ describe("RealtimeCallHandler path routing", () => {
             start: { streamSid: "MZ-tool", callSid: "CA-tool" },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(createBridge).toHaveBeenCalled();
         });
 
@@ -689,11 +696,11 @@ describe("RealtimeCallHandler path routing", () => {
           args: { question: "Are the basement lights on?" },
         });
         await vi.advanceTimersByTimeAsync(350);
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(receivedPartialTranscript).toBe("Are the basement");
         });
 
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           const workingCall = submitToolResult.mock.calls.find(
             ([callId]) => callId === "consult-call",
           );
@@ -708,7 +715,7 @@ describe("RealtimeCallHandler path routing", () => {
 
         resolveConsult?.({ text: "The basement lights are on." });
 
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(submitToolResult).toHaveBeenLastCalledWith(
             "consult-call",
             {
@@ -726,7 +733,7 @@ describe("RealtimeCallHandler path routing", () => {
           args: {},
         });
 
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(submitToolResult).toHaveBeenCalledWith("custom-call", { ok: true }, undefined);
         });
         expect(submitToolResult).not.toHaveBeenCalledWith("custom-call", expect.anything(), {
@@ -795,7 +802,7 @@ describe("RealtimeCallHandler path routing", () => {
             start: { streamSid: "MZ-force", callSid: "CA-force" },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(createBridge).toHaveBeenCalled();
         });
 
@@ -803,7 +810,7 @@ describe("RealtimeCallHandler path routing", () => {
         callbacks?.onTranscript?.("user", "Create a smoke test file for me.", true);
         await vi.advanceTimersByTimeAsync(200);
 
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(consult).toHaveBeenCalledTimes(1);
         });
         const [args, callId, context] = consult.mock.calls[0] ?? [];
@@ -814,7 +821,7 @@ describe("RealtimeCallHandler path routing", () => {
         });
         expect(callId).toBe("call-1");
         expect(context).toEqual({});
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(sendUserMessage).toHaveBeenCalledWith(
             expect.stringContaining("I created the smoke test file."),
           );
@@ -875,7 +882,7 @@ describe("RealtimeCallHandler path routing", () => {
             start: { streamSid: "MZ-direct-turns", callSid: "CA-direct-turns" },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(createBridge).toHaveBeenCalled();
         });
 
@@ -955,7 +962,7 @@ describe("RealtimeCallHandler path routing", () => {
             start: { streamSid: "MZ-settle", callSid: "CA-settle" },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(createBridge).toHaveBeenCalled();
         });
 
@@ -971,7 +978,7 @@ describe("RealtimeCallHandler path routing", () => {
         callbacks?.onTranscript?.("user", "message.", false);
         await vi.advanceTimersByTimeAsync(350);
 
-        await vi.waitFor(
+        await waitForRealtimeTest(
           () => {
             expect(consult).toHaveBeenCalledTimes(1);
           },
@@ -985,7 +992,7 @@ describe("RealtimeCallHandler path routing", () => {
         );
         expect(callId).toBe("call-1");
         expect(context).toEqual({ partialUserTranscript: "Send a Discord message." });
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(submitToolResult).toHaveBeenLastCalledWith(
             "consult-call",
             { text: "I sent it." },
@@ -1057,7 +1064,7 @@ describe("RealtimeCallHandler path routing", () => {
             start: { streamSid: "MZ-native", callSid: "CA-native" },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(createBridge).toHaveBeenCalled();
         });
 
@@ -1070,7 +1077,7 @@ describe("RealtimeCallHandler path routing", () => {
           args: { question: "Send me a Discord message." },
         });
 
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(submitToolResult).toHaveBeenLastCalledWith(
             "consult-call",
             { text: "Native consult result." },
@@ -1150,7 +1157,7 @@ describe("RealtimeCallHandler path routing", () => {
             start: { streamSid: "MZ-fast", callSid: "CA-fast" },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(createBridge).toHaveBeenCalled();
         });
 
@@ -1161,7 +1168,7 @@ describe("RealtimeCallHandler path routing", () => {
           args: { question: "What do you remember?" },
         });
 
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           expect(submitToolResult).toHaveBeenCalledWith(
             "consult-call",
             { text: "Fast context." },
@@ -1220,7 +1227,7 @@ describe("RealtimeCallHandler websocket hardening", () => {
             start: { streamSid: "MZ-backpressure", callSid: "CA-backpressure" },
           }),
         );
-        await vi.waitFor(() => {
+        await waitForRealtimeTest(() => {
           if (!sendProviderAudio) {
             throw new Error("expected realtime provider audio sender");
           }

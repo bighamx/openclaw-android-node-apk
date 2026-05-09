@@ -28,6 +28,26 @@ vi.mock("../plugins/channel-plugin-ids.js", () => ({
   resolveConfiguredChannelPluginIds: () => [],
 }));
 
+const collectNoFindings = vi.hoisted(() => vi.fn(() => []));
+vi.mock("./audit.nondeep.runtime.js", () => ({
+  collectAttackSurfaceSummaryFindings: collectNoFindings,
+  collectExposureMatrixFindings: collectNoFindings,
+  collectGatewayHttpNoAuthFindings: collectNoFindings,
+  collectGatewayHttpSessionKeyOverrideFindings: collectNoFindings,
+  collectHooksHardeningFindings: collectNoFindings,
+  collectLikelyMultiUserSetupFindings: collectNoFindings,
+  collectMinimalProfileOverrideFindings: collectNoFindings,
+  collectModelHygieneFindings: collectNoFindings,
+  collectNodeDangerousAllowCommandFindings: collectNoFindings,
+  collectNodeDenyCommandPatternFindings: collectNoFindings,
+  collectSandboxDangerousConfigFindings: collectNoFindings,
+  collectSandboxDockerNoopFindings: collectNoFindings,
+  collectSecretsInConfigFindings: collectNoFindings,
+  collectSmallModelRiskFindings: collectNoFindings,
+  collectSyncedFolderFindings: collectNoFindings,
+  readConfigSnapshotForAudit: vi.fn(async () => null),
+}));
+
 const { runSecurityAudit } = await import("./audit.js");
 
 describe("security audit channel read-only setup fallback", () => {
