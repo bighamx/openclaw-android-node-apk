@@ -1,4 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveRegistryUpdateChannel } from "../../../infra/update-channels.js";
+import { resolveNpmInstallSpecsForUpdateChannel } from "../../../plugins/install-channel-specs.js";
+import { VERSION } from "../../../version.js";
+
+function expectedNpmInstallSpec(spec: string): string {
+  return resolveNpmInstallSpecsForUpdateChannel({
+    spec,
+    updateChannel: resolveRegistryUpdateChannel({ currentVersion: VERSION }),
+  }).installSpec;
+}
 
 const mocks = vi.hoisted(() => ({
   installPluginFromClawHub: vi.fn(),
@@ -354,13 +364,13 @@ describe("repairMissingConfiguredPluginInstalls", () => {
     expect(mocks.installPluginFromClawHub).not.toHaveBeenCalled();
     expect(mocks.installPluginFromNpmSpec).toHaveBeenCalledWith(
       expect.objectContaining({
-        spec: "@openclaw/twitch@beta",
+        spec: expectedNpmInstallSpec("@openclaw/twitch"),
         expectedPluginId: "twitch",
         trustedSourceLinkedOfficialInstall: true,
       }),
     );
     expect(result.changes).toEqual([
-      'Installed missing configured plugin "twitch" from @openclaw/twitch@beta.',
+      `Installed missing configured plugin "twitch" from ${expectedNpmInstallSpec("@openclaw/twitch")}.`,
     ]);
   });
 
@@ -406,12 +416,12 @@ describe("repairMissingConfiguredPluginInstalls", () => {
     expect(mocks.installPluginFromClawHub).not.toHaveBeenCalled();
     expect(mocks.installPluginFromNpmSpec).toHaveBeenCalledWith(
       expect.objectContaining({
-        spec: "@openclaw/diagnostics-otel@beta",
+        spec: expectedNpmInstallSpec("@openclaw/diagnostics-otel"),
         expectedPluginId: "diagnostics-otel",
       }),
     );
     expect(result.changes).toEqual([
-      'Installed missing configured plugin "diagnostics-otel" from @openclaw/diagnostics-otel@beta.',
+      `Installed missing configured plugin "diagnostics-otel" from ${expectedNpmInstallSpec("@openclaw/diagnostics-otel")}.`,
     ]);
   });
 
@@ -453,13 +463,13 @@ describe("repairMissingConfiguredPluginInstalls", () => {
 
     expect(mocks.installPluginFromNpmSpec).toHaveBeenCalledWith(
       expect.objectContaining({
-        spec: "@openclaw/acpx@beta",
+        spec: expectedNpmInstallSpec("@openclaw/acpx"),
         expectedPluginId: "acpx",
         trustedSourceLinkedOfficialInstall: true,
       }),
     );
     expect(result.changes).toEqual([
-      'Installed missing configured plugin "acpx" from @openclaw/acpx@beta.',
+      `Installed missing configured plugin "acpx" from ${expectedNpmInstallSpec("@openclaw/acpx")}.`,
     ]);
   });
 
@@ -1162,7 +1172,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
     expect(mocks.resolveProviderInstallCatalogEntries).toHaveBeenCalled();
     expect(mocks.installPluginFromNpmSpec).toHaveBeenCalledWith(
       expect.objectContaining({
-        spec: "@openclaw/codex@beta",
+        spec: expectedNpmInstallSpec("@openclaw/codex"),
         expectedPluginId: "codex",
         trustedSourceLinkedOfficialInstall: true,
       }),
@@ -1179,7 +1189,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
       { env: {} },
     );
     expect(result.changes).toEqual([
-      'Installed missing configured plugin "codex" from @openclaw/codex@beta.',
+      `Installed missing configured plugin "codex" from ${expectedNpmInstallSpec("@openclaw/codex")}.`,
     ]);
     expect(result.warnings).toStrictEqual([]);
   });
@@ -1262,7 +1272,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
 
     expect(mocks.installPluginFromNpmSpec).toHaveBeenCalledWith(
       expect.objectContaining({
-        spec: "@openclaw/codex@beta",
+        spec: expectedNpmInstallSpec("@openclaw/codex"),
         expectedPluginId: "codex",
         trustedSourceLinkedOfficialInstall: true,
       }),
@@ -1279,7 +1289,9 @@ describe("repairMissingConfiguredPluginInstalls", () => {
       { env },
     );
     expect(result).toEqual({
-      changes: ['Installed missing configured plugin "codex" from @openclaw/codex@beta.'],
+      changes: [
+        `Installed missing configured plugin "codex" from ${expectedNpmInstallSpec("@openclaw/codex")}.`,
+      ],
       warnings: [],
     });
   });
@@ -1484,13 +1496,13 @@ describe("repairMissingConfiguredPluginInstalls", () => {
 
     expect(mocks.installPluginFromNpmSpec).toHaveBeenCalledWith(
       expect.objectContaining({
-        spec: "@openclaw/feishu@beta",
+        spec: expectedNpmInstallSpec("@openclaw/feishu"),
         expectedPluginId: "feishu",
         trustedSourceLinkedOfficialInstall: true,
       }),
     );
     expect(result.changes).toEqual([
-      'Installed missing configured plugin "feishu" from @openclaw/feishu@beta.',
+      `Installed missing configured plugin "feishu" from ${expectedNpmInstallSpec("@openclaw/feishu")}.`,
     ]);
   });
 
@@ -1562,13 +1574,13 @@ describe("repairMissingConfiguredPluginInstalls", () => {
 
     expect(mocks.installPluginFromNpmSpec).toHaveBeenCalledWith(
       expect.objectContaining({
-        spec: "@openclaw/feishu@beta",
+        spec: expectedNpmInstallSpec("@openclaw/feishu"),
         expectedPluginId: "feishu",
         trustedSourceLinkedOfficialInstall: true,
       }),
     );
     expect(result.changes).toEqual([
-      'Installed missing configured plugin "feishu" from @openclaw/feishu@beta.',
+      `Installed missing configured plugin "feishu" from ${expectedNpmInstallSpec("@openclaw/feishu")}.`,
     ]);
   });
 
@@ -1717,7 +1729,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
     );
     expect(mocks.installPluginFromNpmSpec).toHaveBeenCalledWith(
       expect.objectContaining({
-        spec: "@openclaw/discord@beta",
+        spec: expectedNpmInstallSpec("@openclaw/discord"),
         expectedPluginId: "discord",
         trustedSourceLinkedOfficialInstall: true,
       }),
@@ -1729,7 +1741,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
       { env: {} },
     );
     expect(result.changes).toEqual([
-      'Installed missing configured plugin "discord" from @openclaw/discord@beta.',
+      `Installed missing configured plugin "discord" from ${expectedNpmInstallSpec("@openclaw/discord")}.`,
     ]);
   });
 
@@ -2062,13 +2074,13 @@ describe("repairMissingConfiguredPluginInstalls", () => {
 
     expect(mocks.installPluginFromNpmSpec).toHaveBeenCalledWith(
       expect.objectContaining({
-        spec: "@openclaw/brave-plugin@beta",
+        spec: expectedNpmInstallSpec("@openclaw/brave-plugin"),
         expectedPluginId: "brave",
         trustedSourceLinkedOfficialInstall: true,
       }),
     );
     expect(result.changes).toEqual([
-      'Installed missing configured plugin "brave" from @openclaw/brave-plugin@beta.',
+      `Installed missing configured plugin "brave" from ${expectedNpmInstallSpec("@openclaw/brave-plugin")}.`,
     ]);
   });
 

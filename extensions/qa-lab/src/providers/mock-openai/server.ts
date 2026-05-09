@@ -156,6 +156,7 @@ const QA_GROUP_VISIBLE_REPLY_TOOL_PROMPT_RE = /qa group visible reply tool check
 const QA_GROUP_MESSAGE_UNAVAILABLE_FALLBACK_PROMPT_RE =
   /qa group message unavailable fallback check/i;
 const QA_TELEGRAM_CURRENT_SESSION_STATUS_PROMPT_RE = /telegram current session_status qa check/i;
+const QA_TELEGRAM_STREAM_SINGLE_MARKER = "QA-TELEGRAM-STREAM-SINGLE-OK";
 const QA_TELEGRAM_LONG_FINAL_THREE_CHUNK_PROMPT_RE = /telegram long final three chunk qa check/i;
 const QA_TELEGRAM_LONG_FINAL_PROMPT_RE = /telegram long final qa check/i;
 const QA_SUBAGENT_DIRECT_FALLBACK_PROMPT_RE = /subagent direct fallback qa check/i;
@@ -1523,6 +1524,19 @@ async function buildResponsesPayload(
         phase: "final_answer",
         streamDeltas: splitMockStreamingText(text),
         text,
+      },
+    ]);
+  }
+  if (
+    QA_STREAMING_PROMPT_RE.test(allInputText) &&
+    allInputText.includes(QA_TELEGRAM_STREAM_SINGLE_MARKER)
+  ) {
+    return buildAssistantEvents([
+      {
+        id: "msg_mock_telegram_quiet_stream",
+        phase: "final_answer",
+        streamDeltas: splitMockStreamingText(QA_TELEGRAM_STREAM_SINGLE_MARKER),
+        text: QA_TELEGRAM_STREAM_SINGLE_MARKER,
       },
     ]);
   }

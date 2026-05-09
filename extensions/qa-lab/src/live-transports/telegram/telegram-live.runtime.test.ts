@@ -740,7 +740,7 @@ describe("telegram live qa runtime", () => {
         sutBotId: 88,
         message: {
           updateId: 3,
-          messageId: 12,
+          messageId: 56,
           chatId: -100123,
           senderId: 88,
           senderIsBot: true,
@@ -753,6 +753,27 @@ describe("telegram live qa runtime", () => {
         },
       }),
     ).toBe(true);
+    expect(
+      __testing.matchesTelegramScenarioReply({
+        allowAnySutReply: true,
+        groupId: "-100123",
+        sentMessageId: 55,
+        sutBotId: 88,
+        message: {
+          updateId: 4,
+          messageId: 54,
+          chatId: -100123,
+          senderId: 88,
+          senderIsBot: true,
+          senderUsername: "sut_bot",
+          text: "stale reply from a previous scenario",
+          replyToMessageId: undefined,
+          timestamp: 1_700_000_004_000,
+          inlineButtons: [],
+          mediaKinds: [],
+        },
+      }),
+    ).toBe(false);
   });
 
   it("validates expected Telegram reply markers", () => {

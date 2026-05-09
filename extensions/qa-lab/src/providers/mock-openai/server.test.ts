@@ -221,6 +221,26 @@ describe("qa mock openai server", () => {
     expect(partialBody).toContain('"type":"response.output_text.delta"');
     expect(partialBody).toContain("QA_PARTIAL_OK");
 
+    const telegramStreamResponse = await fetch(`${server.baseUrl}/v1/responses`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        stream: true,
+        input: [
+          makeUserInput(
+            "Telegram reply-chain marker QA. Reply exactly: QA-TELEGRAM-REPLY-CHAIN-OK",
+          ),
+          makeUserInput("Quiet streaming QA check. Reply exactly: QA-TELEGRAM-STREAM-SINGLE-OK"),
+        ],
+      }),
+    });
+    expect(telegramStreamResponse.status).toBe(200);
+    const telegramStreamBody = await telegramStreamResponse.text();
+    expect(telegramStreamBody).toContain("QA-TELEGRAM-STREAM-SINGLE-OK");
+    expect(telegramStreamBody).not.toContain("QA-TELEGRAM-REPLY-CHAIN-OK");
+
     const telegramLongResponse = await fetch(`${server.baseUrl}/v1/responses`, {
       method: "POST",
       headers: {

@@ -7,9 +7,15 @@ Docs: https://docs.openclaw.ai
 ### Changes
 
 - Agents/compaction: preserve scoped background exec/process session references across embedded compaction and after-turn runtime contexts without exposing sessions from unrelated scopes. Fixes #79284. (#79307) Thanks @TurboTheTurtle.
+- CLI/onboarding: improve setup, onboarding, configure, and channel command wayfinding so terminal flows explain the next useful command instead of relying on terse setup labels.
 
 ### Fixes
 
+- ACP sessions: map canonical runtime options to backend-advertised ACP config keys like Claude's `effort` while keeping persisted OpenClaw state canonical. (#79926) Thanks @InTheCloudDan.
+- Gateway/watch: rebuild or restage missing bundled-plugin dist and runtime-postbuild outputs before launching the Gateway from a source checkout, preventing incomplete watch-mode runtime trees. (#70805) Thanks @rubencu.
+- CLI/update: allow restart health probes from the previous gateway protocol during self-update, and make plugin dry-runs report exact npm target versions instead of `unknown` while preserving unchanged status.
+- OpenAI/Codex: point gateway missing-key recovery and wizard docs at the canonical `openai/gpt-5.5` plus Codex OAuth route, and fix trajectory export errors so they suggest the valid `openclaw sessions` command.
+- Google/Gemini: normalize retired `google/gemini-3-pro-preview` primary, fallback, and model-map refs during config load and unrelated config writes so saved config keeps targeting Gemini 3.1 Pro Preview.
 - Discord/voice: synthesize realtime playback timestamps from emitted Discord PCM so OpenAI realtime barge-in truncation no longer sees `audioEndMs=0` and skips legitimate interruptions.
 - Plugin SDK: keep activated linked plugin runtime facades loadable when bundled plugin fallback is disabled. Thanks @shakkernerd.
 - Feishu: auto-thread `message(action="send")` replies inside the topic when the active session is group_topic or group_topic_sender, and propagate `replyInThread` through text, card, and media outbound adapters so topic-scoped sessions no longer post at the group root. Fixes #74903. (#77151) Thanks @ai-hpc.
@@ -179,6 +185,8 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Google/Gemini: default new API-key onboarding to stable `google/gemini-2.5-flash` instead of the preview Pro route, reducing surprise daily quota exhaustion. Fixes #79670. Thanks @HugeBunny.
+- Amazon Bedrock: expose Claude thinking profiles through the lightweight provider policy surface so `/think:adaptive` validates before the Bedrock runtime plugin is loaded. Fixes #79754. Thanks @phoenixyy and @hclsys.
 - Codex/transcripts: mirror dynamic tool calls and outputs into Codex app-server transcripts so tool activity is visible alongside assistant text instead of being elided, with per-item output capped at 12,000 characters. (#79952) Thanks @scoootscooob.
 - Memory: close temp SQLite handles before failed atomic reindex cleanup and retry Windows EBUSY/EPERM/EACCES temp file removals, so `memory index --force` does not abort or leave temp sidecars on locked filesystems. Fixes #79708. Thanks @LobsterFarmerAmp and @hclsys.
 - Agents/CLI: add an explicit `reseedFromRawTranscriptWhenUncompacted` backend opt-in so safe invalidated CLI sessions can reseed from a bounded raw OpenClaw transcript tail before compaction while auth-boundary resets remain no-raw. Fixes #79713. (#79764) Thanks @hclsys.

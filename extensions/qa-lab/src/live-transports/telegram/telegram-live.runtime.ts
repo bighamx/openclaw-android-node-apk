@@ -1246,7 +1246,7 @@ function matchesTelegramScenarioReply(params: {
     return true;
   }
   if (params.allowAnySutReply === true) {
-    return true;
+    return params.message.messageId > params.sentMessageId;
   }
   return Boolean(params.matchText && params.message.text.includes(params.matchText));
 }
