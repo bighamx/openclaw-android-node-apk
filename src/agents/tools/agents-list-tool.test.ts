@@ -3,6 +3,18 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 
 const loadConfigMock = vi.fn<() => OpenClawConfig>();
 
+type AgentListDetails = {
+  requester?: string;
+  allowAny?: boolean;
+  agents?: Array<{
+    id?: string;
+    name?: string;
+    configured?: boolean;
+    model?: string;
+    agentRuntime?: { id?: string; source?: string };
+  }>;
+};
+
 vi.mock("../../config/config.js", async () => {
   const actual =
     await vi.importActual<typeof import("../../config/config.js")>("../../config/config.js");
@@ -46,19 +58,16 @@ describe("agents_list tool", () => {
       "call",
       {},
     );
+    const details = result.details as AgentListDetails;
 
-    expect(result.details).toMatchObject({
-      requester: "main",
-      agents: [
-        {
-          id: "codex",
-          name: "Codex",
-          configured: true,
-          model: "openai/gpt-5.5",
-          agentRuntime: { id: "codex", source: "model" },
-        },
-      ],
-    });
+    expect(details.requester).toBe("main");
+    expect(details.agents).toHaveLength(1);
+    expect(details.agents?.[0]?.id).toBe("codex");
+    expect(details.agents?.[0]?.name).toBe("Codex");
+    expect(details.agents?.[0]?.configured).toBe(true);
+    expect(details.agents?.[0]?.model).toBe("openai/gpt-5.5");
+    expect(details.agents?.[0]?.agentRuntime?.id).toBe("codex");
+    expect(details.agents?.[0]?.agentRuntime?.source).toBe("model");
   });
 
   it("returns requester as the only target when no subagent allowlist is configured", async () => {
@@ -73,17 +82,13 @@ describe("agents_list tool", () => {
       "call",
       {},
     );
+    const details = result.details as AgentListDetails;
 
-    expect(result.details).toMatchObject({
-      requester: "main",
-      allowAny: false,
-      agents: [
-        {
-          id: "main",
-          configured: true,
-        },
-      ],
-    });
+    expect(details.requester).toBe("main");
+    expect(details.allowAny).toBe(false);
+    expect(details.agents).toHaveLength(1);
+    expect(details.agents?.[0]?.id).toBe("main");
+    expect(details.agents?.[0]?.configured).toBe(true);
   });
 
   it("ignores legacy env-forced plugin runtime selections", async () => {
@@ -102,15 +107,12 @@ describe("agents_list tool", () => {
       "call",
       {},
     );
+    const details = result.details as AgentListDetails;
 
-    expect(result.details).toMatchObject({
-      agents: [
-        {
-          id: "main",
-          agentRuntime: { id: "codex", source: "implicit" },
-        },
-      ],
-    });
+    expect(details.agents).toHaveLength(1);
+    expect(details.agents?.[0]?.id).toBe("main");
+    expect(details.agents?.[0]?.agentRuntime?.id).toBe("codex");
+    expect(details.agents?.[0]?.agentRuntime?.source).toBe("implicit");
   });
 
   it("ignores legacy per-agent runtime overrides", async () => {
@@ -132,14 +134,11 @@ describe("agents_list tool", () => {
       "call",
       {},
     );
+    const details = result.details as AgentListDetails;
 
-    expect(result.details).toMatchObject({
-      agents: [
-        {
-          id: "strict",
-          agentRuntime: { id: "codex", source: "implicit" },
-        },
-      ],
-    });
+    expect(details.agents).toHaveLength(1);
+    expect(details.agents?.[0]?.id).toBe("strict");
+    expect(details.agents?.[0]?.agentRuntime?.id).toBe("codex");
+    expect(details.agents?.[0]?.agentRuntime?.source).toBe("implicit");
   });
 });

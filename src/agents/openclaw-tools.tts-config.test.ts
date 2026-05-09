@@ -117,6 +117,19 @@ vi.mock("../tts/tts.js", () => ({
   textToSpeech: mocks.textToSpeech,
 }));
 
+function getTextToSpeechParams() {
+  const calls = (mocks.textToSpeech as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+  return calls[0]?.[0] as
+    | {
+        text?: string;
+        cfg?: OpenClawConfig;
+        agentId?: string;
+        channel?: string;
+        accountId?: string;
+      }
+    | undefined;
+}
+
 describe("createOpenClawTools TTS config wiring", () => {
   beforeEach(() => {
     mocks.createCronToolOptions.mockClear();
@@ -153,12 +166,9 @@ describe("createOpenClawTools TTS config wiring", () => {
 
       await tool.execute("call-1", { text: "hello from config" });
 
-      expect(mocks.textToSpeech).toHaveBeenCalledWith(
-        expect.objectContaining({
-          text: "hello from config",
-          cfg: injectedConfig,
-        }),
-      );
+      const ttsParams = getTextToSpeechParams();
+      expect(ttsParams?.text).toBe("hello from config");
+      expect(ttsParams?.cfg).toBe(injectedConfig);
     } finally {
       __testing.setDepsForTest();
     }
@@ -208,12 +218,9 @@ describe("createOpenClawTools TTS config wiring", () => {
 
       await tool.execute("call-1", { text: "hello from reader" });
 
-      expect(mocks.textToSpeech).toHaveBeenCalledWith(
-        expect.objectContaining({
-          text: "hello from reader",
-          agentId: "reader",
-        }),
-      );
+      const ttsParams = getTextToSpeechParams();
+      expect(ttsParams?.text).toBe("hello from reader");
+      expect(ttsParams?.agentId).toBe("reader");
     } finally {
       __testing.setDepsForTest();
     }
@@ -251,14 +258,11 @@ describe("createOpenClawTools TTS config wiring", () => {
 
       await tool.execute("call-1", { text: "hello from account" });
 
-      expect(mocks.textToSpeech).toHaveBeenCalledWith(
-        expect.objectContaining({
-          text: "hello from account",
-          cfg: injectedConfig,
-          channel: "feishu",
-          accountId: "feishu-main",
-        }),
-      );
+      const ttsParams = getTextToSpeechParams();
+      expect(ttsParams?.text).toBe("hello from account");
+      expect(ttsParams?.cfg).toBe(injectedConfig);
+      expect(ttsParams?.channel).toBe("feishu");
+      expect(ttsParams?.accountId).toBe("feishu-main");
     } finally {
       __testing.setDepsForTest();
     }

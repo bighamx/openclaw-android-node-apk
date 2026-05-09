@@ -262,16 +262,13 @@ describe("buildExecApprovalPendingToolResult", () => {
   }
 
   it("does not infer approver DM delivery from unavailable approval state", () => {
-    expect(
-      resolveExecApprovalUnavailableState({
-        turnSourceChannel: "telegram",
-        turnSourceAccountId: "default",
-        preResolvedDecision: null,
-      }),
-    ).toMatchObject({
-      sentApproverDms: false,
-      unavailableReason: "no-approval-route",
+    const state = resolveExecApprovalUnavailableState({
+      turnSourceChannel: "telegram",
+      turnSourceAccountId: "default",
+      preResolvedDecision: null,
     });
+    expect(state.sentApproverDms).toBe(false);
+    expect(state.unavailableReason).toBe("no-approval-route");
   });
 
   it("keeps a local /approve prompt when the initiating Discord surface is disabled", () => {
@@ -295,14 +292,13 @@ describe("buildExecApprovalPendingToolResult", () => {
       unavailableReason: "initiating-platform-disabled",
     });
 
-    expect(result.details).toMatchObject({
-      status: "approval-unavailable",
-      reason: "initiating-platform-disabled",
-      channel: "discord",
-      channelLabel: "Discord",
-      accountId: "default",
-      host: "gateway",
-    });
+    const details = result.details as Record<string, unknown>;
+    expect(details.status).toBe("approval-unavailable");
+    expect(details.reason).toBe("initiating-platform-disabled");
+    expect(details.channel).toBe("discord");
+    expect(details.channelLabel).toBe("Discord");
+    expect(details.accountId).toBe("default");
+    expect(details.host).toBe("gateway");
     const text = result.content.find((part) => part.type === "text")?.text ?? "";
     expect(text).toContain("native chat exec approvals are not configured on Discord");
     expect(text).not.toContain("/approve");
@@ -316,15 +312,14 @@ describe("buildExecApprovalPendingToolResult", () => {
       unavailableReason: "initiating-platform-disabled",
     });
 
-    expect(result.details).toMatchObject({
-      status: "approval-unavailable",
-      reason: "initiating-platform-disabled",
-      channel: "telegram",
-      channelLabel: "Telegram",
-      accountId: "default",
-      sentApproverDms: false,
-      host: "gateway",
-    });
+    const details = result.details as Record<string, unknown>;
+    expect(details.status).toBe("approval-unavailable");
+    expect(details.reason).toBe("initiating-platform-disabled");
+    expect(details.channel).toBe("telegram");
+    expect(details.channelLabel).toBe("Telegram");
+    expect(details.accountId).toBe("default");
+    expect(details.sentApproverDms).toBe(false);
+    expect(details.host).toBe("gateway");
     const text = result.content.find((part) => part.type === "text")?.text ?? "";
     expect(text).toContain("native chat exec approvals are not configured on Telegram");
     expect(text).not.toContain("/approve");
