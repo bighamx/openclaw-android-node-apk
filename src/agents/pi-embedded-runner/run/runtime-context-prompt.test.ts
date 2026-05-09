@@ -88,11 +88,12 @@ describe("runtime context prompt submission", () => {
     });
 
     expect(sendCustomMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
+      {
         customType: "openclaw.runtime-context",
         content: "secret runtime context",
         display: false,
-      }),
+        details: { source: "openclaw-runtime-context" },
+      },
       { deliverAs: "nextTurn" },
     );
     expect(sentMessages[0]?.content).not.toContain(

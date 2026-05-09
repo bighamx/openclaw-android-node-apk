@@ -372,6 +372,43 @@ describe("loadWorkspaceSkillEntries", () => {
   );
 
   it.runIf(process.platform !== "win32")(
+    "allows configured skill symlink targets outside their source root",
+    async () => {
+      const workspaceDir = await createTempWorkspaceDir();
+      const skillName = `manager-${++workspaceCaseIndex}`;
+      const targetRoot = path.join(tempRoot, `${skillName}-skills`);
+      const targetSkillDir = path.join(targetRoot, skillName);
+      await writeSkill({
+        dir: targetSkillDir,
+        name: skillName,
+        description: "Manager skill",
+      });
+      const personalSkillsDir = path.join(fakeHome, ".agents", "skills");
+      await fs.mkdir(personalSkillsDir, { recursive: true });
+      const symlinkPath = path.join(personalSkillsDir, skillName);
+      await fs.symlink(targetSkillDir, symlinkPath, "dir");
+      const warn = captureWarningLogger();
+
+      try {
+        const entries = loadTestWorkspaceSkillEntries(workspaceDir, {
+          config: {
+            skills: {
+              load: {
+                allowSymlinkTargets: [targetRoot],
+              },
+            },
+          },
+        });
+
+        expect(entries.map((entry) => entry.skill.name)).toContain(skillName);
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        await fs.unlink(symlinkPath).catch(() => undefined);
+      }
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
     "calls out bundled symlink escapes with compact home-relative paths",
     async () => {
       const { workspaceDir, bundledDir, requestedPath } = await createEscapedBundledSkillFixture();

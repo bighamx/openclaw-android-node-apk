@@ -6,12 +6,14 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Skills: add `skills.load.allowSymlinkTargets` so intentional symlinked skill folders can resolve into trusted sibling repos without disabling root containment.
 - Chat commands: add `/think default` and `/fast default` to clear session overrides and inherit configured/provider defaults. (#79385) Thanks @VACInc.
 - Dependencies: refresh workspace dependency pins and lockfile, including `@openai/codex` `0.130.0`, `acpx` `0.7.0`, AWS SDK `3.1044.0`, OpenTelemetry `0.217.0`, `typebox` `1.1.38`, `vite` `8.0.11`, `oxfmt` `0.48.0`, and `oxlint` `1.63.0`, and update the Codex harness model snapshot for the new bundled app-server catalog.
 - Plugins/install: add guarded plugin install overrides so onboarding and repair tests can route specific plugins to registry specs or local `npm pack` artifacts via environment variables.
 - Tests/Docker: add Codex on-demand install and live plugin-tool dependency E2E lanes for packaged onboarding and npm-pack plugin proof.
 - Plugins/ACPX: accept an optional `args` array in `agents.<name>` config so paths and flag values containing spaces stay intact when spawning ACP agent processes. Thanks @TheArchitectit and @BunsDev.
 - Agents: inject the current provider/model identity into system prompts, including configured prompt overrides and CLI hook prompt replacements, so agents can answer model-identity questions from the actual runtime selection.
+- Agents/subagents: add prompt-only `agents.defaults.subagents.delegationMode` and per-agent overrides with `suggest`/`prefer` modes, and centralize config-backed system prompt resolution across embedded, CLI, compaction, and command-export prompt surfaces.
 - Plugins/CLI: add the optional bundled `oc-path` plugin, providing `openclaw path` for surgical `oc://` access to markdown, JSONC, and JSONL workspace files.
 - Plugins/SDK: add unified model catalog registration for text, image, video, and music providers, including `providerCatalogEntry` manifests, shared media list help, live catalog caching, and per-model video capability overlays.
 - Plugin SDK: add presentation helpers for controls-only interactive rendering and opt-in empty fallback text so rich channel renderers can share `MessagePresentation` semantics without duplicating native cards or components.
@@ -49,6 +51,7 @@ Docs: https://docs.openclaw.ai
 - Discord/voice: add bounded realtime gateway logs for voice channel joins, realtime model/voice selection, transcripts, consult routing/answers, and playback start, allow OpenAI realtime Discord sessions to disable input-triggered response interruption for echo-heavy rooms while keeping explicit Discord barge-in available for new and already-active speakers, and allow voice turns to target an existing Discord channel agent session.
 - Discord/voice: add `voice.realtime.minBargeInAudioEndMs` and let the realtime provider own playback clearing, so speaker echo no longer cuts OpenAI realtime model audio at `audioEndMs=0` while low-echo rooms can opt back into immediate barge-in with `0`.
 - Discord/voice: make `agent-proxy` the default voice mode so realtime voice acts as the microphone/speaker extension of the routed OpenClaw agent session, with `stt-tts` remaining available as an explicit fallback.
+- Discord/voice: route default `agent-proxy` realtime turns through the OpenClaw consult handoff with owner-level tool access and a forced-consult transcript fallback, matching the Codex-style voice front end while keeping the routed agent authoritative.
 - Discord/voice: keep OpenAI realtime bidi consults quiet while the supervisor agent is still working, accept Codex-style `conversation.item.done` function-call events, and preserve continuing tool results through the gateway relay so the OpenAI realtime bridge reliably routes consults before speaking the final answer.
 - Discord/voice: include a bounded one-line STT transcript preview in verbose voice logs so live voice debugging shows what speakers said before the agent reply.
 - Codex app-server: pin the managed Codex harness and Codex CLI smoke package to `@openai/codex@0.129.0`, defer OpenClaw integration dynamic tools behind Codex tool search by default, and accept current Codex service-tier values so legacy `fast` settings survive the stable harness upgrade as `priority`.
@@ -92,6 +95,7 @@ Docs: https://docs.openclaw.ai
 - Voice Call/realtime: add opt-in OpenClaw agent voice context capsules and consult-cadence guidance so Gemini/OpenAI realtime calls can sound like the configured agent without consulting the full agent on every ordinary turn. Thanks @scoootscooob.
 - Telegram/streaming: keep draft preview rotation from reusing a pre-tool assistant preview after visible tool or media output lands between compaction replay and the next assistant message. Thanks @vincentkoc.
 - Telegram/performance: skip non-forum topic-cache setup, defer status reaction variant work until reactions are needed, and reuse ack reaction gating during message context assembly. Thanks @vincentkoc.
+- Telegram/performance: reduce command-menu CPU and allocation work when many native, plugin, and custom commands are registered. (#79717) Thanks @drsolveit.
 - CLI/migrate: add bulk on/off and skip controls to interactive Codex skill migration, leaving conflicting skill copies unchecked by default. (#77597) Thanks @kevinslin.
 - CLI/migrate: show native Codex plugin names before truncated plan items and prompt for plugin activation explicitly during interactive Codex migration instead of silently keeping every planned plugin. Thanks @kevinslin.
 - CLI/migrate: leave already configured target Codex plugins unchecked in the interactive plugin selector and show a `plugin exists` conflict hint while keeping new plugin activations selected by default. Thanks @kevinslin.
@@ -157,7 +161,9 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Memory: close temp SQLite handles before failed atomic reindex cleanup and retry Windows EBUSY/EPERM/EACCES temp file removals, so `memory index --force` does not abort or leave temp sidecars on locked filesystems. Fixes #79708. Thanks @LobsterFarmerAmp and @hclsys.
 - Agents/CLI: handle resumed CLI JSONL output and bound supervisor output buffering so resumed runs stay readable without letting noisy child output grow unbounded.
+- Codex app-server: honor per-call `timeoutMs`, configured `image_generate` timeouts, and media image-understanding timeouts for dynamic tool calls, capped at 600000 ms, so slow image generation and image analysis no longer fail at the 30s bridge default. Fixes #79810. Thanks @omarshahine.
 - Agents/sandbox: include the container workspace path hint in sandbox-root escape errors while preserving shortened host workspace roots. Fixes #79712. Thanks @haumanto and @hclsys.
 - Image generation: honor configured web-fetch SSRF policy across OpenAI, Google, MiniMax, OpenRouter, and Vydra provider requests so RFC2544 fake-IP proxy opt-ins reach generation calls. Fixes #79716. (#79765) Thanks @hclsys.
 - Telegram: persist reply-chain message cache records as a compact append log instead of rewriting the full cache on every inbound message, reducing large-group turn latency.

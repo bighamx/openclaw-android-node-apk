@@ -351,15 +351,13 @@ describe("loadEnabledBundlePiSettingsSnapshot", () => {
 
     expect(snapshot.hideThinkingBlock).toBe(true);
     expect(pluginMetadataSnapshotMocks.getCurrentPluginMetadataSnapshot).toHaveBeenCalledOnce();
-    expect(pluginMetadataSnapshotMocks.getCurrentPluginMetadataSnapshot).toHaveBeenCalledWith({
-      config: expect.objectContaining({
-        plugins: expect.objectContaining({
-          load: { paths: ["/tmp/changed-plugin-root"] },
-        }),
-      }),
-      env: process.env,
-      workspaceDir,
+    const [snapshotLookup] =
+      pluginMetadataSnapshotMocks.getCurrentPluginMetadataSnapshot.mock.calls[0] ?? [];
+    expect(snapshotLookup?.config?.plugins?.load).toEqual({
+      paths: ["/tmp/changed-plugin-root"],
     });
+    expect(snapshotLookup?.env).toBe(process.env);
+    expect(snapshotLookup?.workspaceDir).toBe(workspaceDir);
     expect(pluginMetadataSnapshotMocks.loadPluginMetadataSnapshot).toHaveBeenCalledOnce();
   });
 

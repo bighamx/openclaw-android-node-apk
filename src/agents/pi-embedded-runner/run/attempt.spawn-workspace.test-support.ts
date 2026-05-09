@@ -272,6 +272,11 @@ vi.mock("../../../plugins/plugin-metadata-snapshot.js", () => ({
   loadPluginMetadataSnapshot: () => emptyPluginMetadataSnapshot,
 }));
 
+vi.mock("../../../trajectory/metadata.js", () => ({
+  buildTrajectoryArtifacts: (params: Record<string, unknown>) => params,
+  buildTrajectoryRunMetadata: () => ({ source: "test" }),
+}));
+
 vi.mock("@mariozechner/pi-coding-agent", () => {
   function AuthStorage() {}
   class DefaultResourceLoader {
