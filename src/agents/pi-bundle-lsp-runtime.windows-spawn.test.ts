@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { spawnLspServerProcess } from "./pi-bundle-lsp-runtime.js";
 
 const resolveWindowsSpawnProgramMock = vi.hoisted(() => vi.fn());
 const materializeWindowsSpawnProgramMock = vi.hoisted(() => vi.fn());
@@ -58,7 +59,6 @@ describe("spawnLspServerProcess Windows .cmd shim handling", () => {
       windowsHide: true,
     });
 
-    const { spawnLspServerProcess } = await import("./pi-bundle-lsp-runtime.js");
     spawnLspServerProcess({
       command: "typescript-language-server",
       args: ["--stdio"],
@@ -85,7 +85,6 @@ describe("spawnLspServerProcess Windows .cmd shim handling", () => {
       windowsHide: true,
     });
 
-    const { spawnLspServerProcess } = await import("./pi-bundle-lsp-runtime.js");
     spawnLspServerProcess({ command: "typescript-language-server", args: ["--stdio"] });
 
     const resolveParams = resolveWindowsSpawnProgramMock.mock.calls[0]?.[0] as
@@ -107,7 +106,6 @@ describe("spawnLspServerProcess Windows .cmd shim handling", () => {
       windowsHide: true,
     });
 
-    const { spawnLspServerProcess } = await import("./pi-bundle-lsp-runtime.js");
     spawnLspServerProcess({ command: "typescript-language-server", args: ["--stdio"] });
 
     const spawnCall = spawnMock.mock.calls[0];

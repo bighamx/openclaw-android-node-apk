@@ -1,4 +1,12 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  buildExecApprovalPendingToolResult,
+  enforceStrictInlineEvalApprovalBoundary,
+  MAX_EXEC_APPROVAL_FOLLOWUP_FAILURE_LOG_KEYS as maxExecApprovalFollowupFailureLogKeys,
+  resolveExecApprovalUnavailableState,
+  resolveExecHostApprovalContext,
+  sendExecApprovalFollowupResult,
+} from "./bash-tools.exec-host-shared.js";
 
 const mocks = vi.hoisted(() => ({
   resolveExecApprovals: vi.fn(() => ({
@@ -25,24 +33,6 @@ vi.mock("../infra/exec-approvals.js", async (importOriginal) => {
     ...mod,
     resolveExecApprovals: mocks.resolveExecApprovals,
   };
-});
-
-let sendExecApprovalFollowupResult: typeof import("./bash-tools.exec-host-shared.js").sendExecApprovalFollowupResult;
-let maxExecApprovalFollowupFailureLogKeys: typeof import("./bash-tools.exec-host-shared.js").MAX_EXEC_APPROVAL_FOLLOWUP_FAILURE_LOG_KEYS;
-let enforceStrictInlineEvalApprovalBoundary: typeof import("./bash-tools.exec-host-shared.js").enforceStrictInlineEvalApprovalBoundary;
-let resolveExecHostApprovalContext: typeof import("./bash-tools.exec-host-shared.js").resolveExecHostApprovalContext;
-let resolveExecApprovalUnavailableState: typeof import("./bash-tools.exec-host-shared.js").resolveExecApprovalUnavailableState;
-let buildExecApprovalPendingToolResult: typeof import("./bash-tools.exec-host-shared.js").buildExecApprovalPendingToolResult;
-
-beforeAll(async () => {
-  ({
-    sendExecApprovalFollowupResult,
-    MAX_EXEC_APPROVAL_FOLLOWUP_FAILURE_LOG_KEYS: maxExecApprovalFollowupFailureLogKeys,
-    enforceStrictInlineEvalApprovalBoundary,
-    resolveExecHostApprovalContext,
-    resolveExecApprovalUnavailableState,
-    buildExecApprovalPendingToolResult,
-  } = await import("./bash-tools.exec-host-shared.js"));
 });
 
 describe("sendExecApprovalFollowupResult", () => {

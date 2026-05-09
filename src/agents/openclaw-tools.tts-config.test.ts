@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { __testing, createOpenClawTools } from "./openclaw-tools.js";
 import type { AnyAgentTool } from "./tools/common.js";
 
 const mocks = vi.hoisted(() => {
@@ -151,7 +152,6 @@ describe("createOpenClawTools TTS config wiring", () => {
       },
     } satisfies OpenClawConfig;
 
-    const { __testing, createOpenClawTools } = await import("./openclaw-tools.js");
     __testing.setDepsForTest({ config: injectedConfig });
 
     try {
@@ -175,7 +175,6 @@ describe("createOpenClawTools TTS config wiring", () => {
   });
 
   it("keeps direct TTS tool guidance explicit even when the tool is available", async () => {
-    const { __testing, createOpenClawTools } = await import("./openclaw-tools.js");
     __testing.setDepsForTest({ config: {} });
 
     try {
@@ -202,7 +201,6 @@ describe("createOpenClawTools TTS config wiring", () => {
       },
     } satisfies OpenClawConfig;
 
-    const { __testing, createOpenClawTools } = await import("./openclaw-tools.js");
     __testing.setDepsForTest({ config: injectedConfig });
 
     try {
@@ -241,7 +239,6 @@ describe("createOpenClawTools TTS config wiring", () => {
       },
     } satisfies OpenClawConfig;
 
-    const { __testing, createOpenClawTools } = await import("./openclaw-tools.js");
     __testing.setDepsForTest({ config: injectedConfig });
 
     try {
@@ -275,8 +272,6 @@ describe("createOpenClawTools cron context wiring", () => {
   });
 
   it("passes preserved channel delivery context into the cron tool", async () => {
-    const { createOpenClawTools } = await import("./openclaw-tools.js");
-
     createOpenClawTools({
       agentSessionKey: "agent:main:matrix:channel:!abcdef1234567890:example.org",
       agentChannel: "matrix",
@@ -301,8 +296,6 @@ describe("createOpenClawTools cron context wiring", () => {
   });
 
   it("uses agent route context when auto-threading context is unavailable", async () => {
-    const { createOpenClawTools } = await import("./openclaw-tools.js");
-
     createOpenClawTools({
       agentSessionKey: "agent:main:matrix:channel:!abcdef1234567890:example.org",
       agentChannel: "matrix",
@@ -325,8 +318,6 @@ describe("createOpenClawTools cron context wiring", () => {
   });
 
   it("passes self-remove scope into the cron tool", async () => {
-    const { createOpenClawTools } = await import("./openclaw-tools.js");
-
     createOpenClawTools({
       agentSessionKey: "agent:main:cron:job-current",
       cronSelfRemoveOnlyJobId: "job-current",
