@@ -923,6 +923,8 @@ describe("isFailoverErrorMessage", () => {
       "terminated",
       "Terminated",
       "  terminated  ",
+      "stream_read_error",
+      "  stream_read_error  ",
       "UND_ERR_SOCKET",
       "Error: UND_ERR_SOCKET other side closed",
       "UND_ERR_CONNECT_TIMEOUT",
@@ -1151,6 +1153,15 @@ describe("classifyFailoverReason provider messages", () => {
       ),
     ).toBe("timeout");
     expect(classifyFailoverReason("string should match pattern")).toBe("format");
+    expect(
+      classifyFailoverReason(
+        "This model does not support assistant message prefill. The conversation must end with a user message.",
+      ),
+    ).toBe("format");
+    expect(
+      classifyFailoverReason("LLM request rejected: does not support assistant message prefill"),
+    ).toBe("format");
+    expect(classifyFailoverReason("conversation must end with a user message")).toBe("format");
     expect(classifyFailoverReason("bad request")).toBeNull();
     expect(
       classifyFailoverReason(
