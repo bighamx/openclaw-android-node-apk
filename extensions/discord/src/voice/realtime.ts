@@ -43,6 +43,7 @@ const DISCORD_REALTIME_PENDING_SPEAKER_CONTEXT_LIMIT = 32;
 const DISCORD_REALTIME_LOG_PREVIEW_CHARS = 500;
 const DISCORD_REALTIME_DEFAULT_MIN_BARGE_IN_AUDIO_END_MS = 250;
 const DISCORD_REALTIME_FORCED_CONSULT_FALLBACK_DELAY_MS = 200;
+const REALTIME_PCM16_BYTES_PER_SAMPLE = 2;
 
 export type DiscordVoiceMode = "stt-tts" | "agent-proxy" | "bidi";
 
@@ -245,6 +246,7 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
   private consultPolicy: "auto" | "always" = "auto";
   private pendingAgentProxyConsultContexts: PendingAgentProxyConsultContext[] = [];
   private readonly pendingSpeakerTurns: PendingSpeakerTurn[] = [];
+  private outputAudioTimestampMs = 0;
   private readonly playerIdleHandler = () => {
     this.resetOutputStream();
   };
@@ -430,6 +432,7 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
     if (!this.isBargeInEnabled()) {
       return;
     }
+    this.syncOutputAudioTimestamp();
     this.bridge?.handleBargeIn({ audioPlaybackActive: true });
   }
 
@@ -450,8 +453,13 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
     if (discordPcm.length === 0) {
       return;
     }
+    this.syncOutputAudioTimestamp();
     const stream = this.ensureOutputStream();
     stream.write(discordPcm);
+    this.outputAudioTimestampMs += pcm16MonoDurationMs(
+      realtimePcm24kMono,
+      REALTIME_VOICE_AUDIO_FORMAT_PCM16_24KHZ.sampleRateHz,
+    );
   }
 
   private ensureOutputStream(): PassThrough {
@@ -485,8 +493,13 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
   private resetOutputStream(): void {
     const stream = this.outputStream;
     this.outputStream = null;
+    this.outputAudioTimestampMs = 0;
     stream?.end();
     stream?.destroy();
+  }
+
+  private syncOutputAudioTimestamp(): void {
+    this.bridge?.setMediaTimestamp(Math.floor(this.outputAudioTimestampMs));
   }
 
   private handleToolCall(
@@ -640,6 +653,7 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
     logger.info(
       `discord voice: realtime forced agent consult starting chars=${question.length} voiceSession=${this.params.entry.voiceSessionKey} supervisorSession=${this.params.entry.route.sessionKey} agent=${this.params.entry.route.agentId} speaker=${context.speakerLabel} owner=${context.senderIsOwner}`,
     );
+    this.syncOutputAudioTimestamp();
     this.bridge?.handleBargeIn({ audioPlaybackActive: true, force: true });
     this.clearOutputAudio();
     try {
@@ -716,6 +730,14 @@ function isDiscordRealtimeSpeakerContext(value: unknown): value is DiscordRealti
     typeof (value as { senderIsOwner?: unknown }).senderIsOwner === "boolean" &&
     typeof (value as { speakerLabel?: unknown }).speakerLabel === "string"
   );
+}
+
+function pcm16MonoDurationMs(audio: Buffer, sampleRate: number): number {
+  if (audio.length === 0 || sampleRate <= 0) {
+    return 0;
+  }
+  const samples = audio.length / REALTIME_PCM16_BYTES_PER_SAMPLE;
+  return (samples * 1000) / sampleRate;
 }
 
 function buildProviderConfigs(

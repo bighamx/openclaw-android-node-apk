@@ -287,6 +287,7 @@ describe("DiscordVoiceManager", () => {
     realtimeSessionMock.sendAudio.mockClear();
     realtimeSessionMock.sendUserMessage.mockClear();
     realtimeSessionMock.handleBargeIn.mockClear();
+    realtimeSessionMock.setMediaTimestamp.mockClear();
     realtimeSessionMock.submitToolResult.mockClear();
     createRealtimeVoiceBridgeSessionMock.mockClear();
     createRealtimeVoiceBridgeSessionMock.mockReturnValue(realtimeSessionMock);
@@ -641,7 +642,12 @@ describe("DiscordVoiceManager", () => {
     bridgeParams?.audioSink?.sendAudio(Buffer.alloc(480));
     turn?.sendInputAudio(Buffer.alloc(3840));
 
+    expect(realtimeSessionMock.setMediaTimestamp).toHaveBeenCalledWith(0);
+    expect(realtimeSessionMock.setMediaTimestamp).toHaveBeenCalledWith(10);
     expect(realtimeSessionMock.handleBargeIn).toHaveBeenCalled();
+    const lastTimestampCall = realtimeSessionMock.setMediaTimestamp.mock.invocationCallOrder.at(-1);
+    const firstBargeInCall = realtimeSessionMock.handleBargeIn.mock.invocationCallOrder[0];
+    expect(lastTimestampCall).toBeLessThan(firstBargeInCall);
     expect(player.stop).not.toHaveBeenCalled();
     expect(realtimeSessionMock.sendAudio).toHaveBeenCalled();
   });

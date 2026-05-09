@@ -2058,15 +2058,13 @@ export async function runEmbeddedPiAgent(
               (await advanceAuthProfile())
             ) {
               if (failedPromptProfileId && promptProfileFailureReason) {
-                try {
-                  await maybeMarkAuthProfileFailure({
-                    profileId: failedPromptProfileId,
-                    reason: promptProfileFailureReason,
-                    modelId,
-                  });
-                } catch (err) {
+                void maybeMarkAuthProfileFailure({
+                  profileId: failedPromptProfileId,
+                  reason: promptProfileFailureReason,
+                  modelId,
+                }).catch((err) => {
                   log.warn(`prompt profile failure mark failed: ${String(err)}`);
-                }
+                });
               }
               traceAttempts.push({
                 provider,
