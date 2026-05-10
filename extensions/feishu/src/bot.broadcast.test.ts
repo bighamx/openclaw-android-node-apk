@@ -7,7 +7,7 @@ import { setFeishuRuntime } from "./runtime.js";
 
 const { mockCreateFeishuReplyDispatcher, mockCreateFeishuClient, mockResolveAgentRoute } =
   vi.hoisted(() => ({
-    mockCreateFeishuReplyDispatcher: vi.fn(() => ({
+    mockCreateFeishuReplyDispatcher: vi.fn((_params?: unknown) => ({
       dispatcher: {
         sendToolResult: vi.fn(),
         sendBlockReply: vi.fn(),
@@ -287,7 +287,7 @@ describe("broadcast dispatch", () => {
           groupSubject: call.GroupSubject,
           conversationLabel: call.ConversationLabel,
         }))
-        .sort((left, right) => String(left.sessionKey).localeCompare(String(right.sessionKey))),
+        .toSorted((left, right) => String(left.sessionKey).localeCompare(String(right.sessionKey))),
     ).toEqual([
       {
         sessionKey: "agent:main:feishu:group:oc-broadcast-group",

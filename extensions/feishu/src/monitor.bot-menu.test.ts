@@ -3,9 +3,11 @@ import type { ClawdbotConfig } from "../runtime-api.js";
 import { expectFirstSentCardUsesFillWidthOnly } from "./card-test-helpers.js";
 import { createFeishuBotMenuHandler } from "./monitor.bot-menu-handler.js";
 
-const handleFeishuMessageMock = vi.hoisted(() => vi.fn(async () => {}));
+const handleFeishuMessageMock = vi.hoisted(() => vi.fn(async (_params?: unknown) => {}));
 const parseFeishuMessageEventMock = vi.hoisted(() => vi.fn());
-const sendCardFeishuMock = vi.hoisted(() => vi.fn(async () => ({ messageId: "m1", chatId: "c1" })));
+const sendCardFeishuMock = vi.hoisted(() =>
+  vi.fn(async (_params?: unknown) => ({ messageId: "m1", chatId: "c1" })),
+);
 const getMessageFeishuMock = vi.hoisted(() => vi.fn());
 
 const originalStateDir = process.env.OPENCLAW_STATE_DIR;
