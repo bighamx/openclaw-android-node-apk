@@ -10,6 +10,8 @@ Docs: https://docs.openclaw.ai
 - Context: add `/context map` to send a treemap image of the current session context contributors. (#79867)
 - Slack: add `unfurlLinks` and `unfurlMedia` config for bot `chat.postMessage` replies, including per-account overrides, so Slack link and media previews can be suppressed without workspace-wide settings. Fixes #48435. (#80145) Thanks @esegev1 and @HemantSudarshan.
 - Slack: add explicit `replyBroadcast` support for text and Block Kit thread replies so agents can opt into Slack's parent-channel `reply_broadcast` behavior. (#64365) Thanks @tony88331.
+- Slack: preserve mention target/source metadata in inbound prompt context so agents can distinguish direct bot mentions from implicit thread wakes that mention someone else. Fixes #79025. (#75356) Thanks @tmimmanuel.
+- Slack: canonicalize outbound delivery-mirror routes for native DM channel IDs to the peer user session so `message.send` calls to `D...` targets do not split the same Slack DM thread into a channel session. Fixes #80091. (#80111) Thanks @bek91.
 - Plugin SDK: deprecate public subpaths that existed for at least one month and have no bundled extension production imports, keep legacy barrel/test/zod subpath package exports for backwards compatibility, and track both sets in the SDK surface report.
 - Plugin SDK: deprecate public subpaths currently used by only one or two bundled plugin owners, keeping them importable while steering new plugin code to focused shared SDK seams or plugin-owned APIs.
 - Plugin SDK: remove the owner-specific `provider-auth-login` public subpath after moving Chutes, GitHub Copilot, and OpenAI Codex auth flows back to provider-owned modules.
@@ -32,6 +34,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- CLI/gateway: keep `gateway status --deep` plugin-aware so configured plugin manifest warnings, including missing channel config metadata, stay visible during install and update smoke checks.
 - Doctor: stop flagging the live compatibility agent directory as orphaned when the configured default agent is not `main`. Fixes #74313. (#74438) Thanks @carlos4s.
 - Codex app-server: report Codex-native tool execution to diagnostics so long-running native `bash`, web, file, and MCP tools no longer look like stale embedded runs to the watchdog. (#80217)
 - Telegram: preserve blank lines between manually indented bullet blocks and following numbered sections in rendered replies. Fixes #76998. Thanks @evgyur.
@@ -40,6 +43,9 @@ Docs: https://docs.openclaw.ai
 - Slack: refresh private file URLs with `files.info` when inbound DM file events omit or stale attachment URLs, preventing file attachments from being dropped before media hydration. Fixes #50129. (#50200) Thanks @smartchainark.
 - Slack: add scoped message-tool formatting hints so agents use Markdown for plain sends and direct mrkdwn for Block Kit fields. Fixes #34609. (#50979) Thanks @carrotRakko.
 - Slack: describe `download-file` file ids separately from message timestamps and return a targeted recovery error when agents pass `messageId` instead of `fileId`. (#74155) Thanks @jarvis-ai-gregmoser.
+- Slack: retain processed room messages for `requireMention=false` channels so always-on Slack rooms keep recent conversation context between turns. (#38658) Thanks @syedamaann.
+- Slack: compile interactive reply directives for direct outbound sends without bypassing the `interactiveReplies` capability gate, preserving Block Kit for Slack CLI and cron deliveries. (#78220) Thanks @kazamak.
+- Slack: keep DM last-route updates scoped to the active non-main DM session, including threaded DM turns, so isolated Slack DM sessions do not overwrite the shared main route. (#73085) Thanks @clawSean.
 - Gateway/agents: keep structured reasons when active-run queueing fails and deprecate the legacy boolean queue helper, so steering and subagent wake diagnostics distinguish completed, non-streaming, and compacting runs. Fixes #80156. Thanks @markus-lassfolk.
 - Agents/UI: compact exec and tool progress rows by hiding redundant shell tool names, replacing known workspace paths with short context markers, and preserving Discord trace scrubbing for compact command lines.
 - ACPX: run and await the embedded ACP backend startup probe by default so the gateway `ready` signal no longer fires before the acpx runtime has either become usable or reported a probe failure; set `OPENCLAW_ACPX_RUNTIME_STARTUP_PROBE=0` to restore lazy startup. Fixes #79596. Thanks @bzelones.
@@ -142,6 +148,7 @@ Docs: https://docs.openclaw.ai
 - Kimi Code: use Kimi's stable `kimi-for-coding` API model id in bundled catalog, onboarding, and docs while normalizing legacy `kimi-code` and `k2p5` refs. Fixes #79965.
 - Volcengine/Kimi: strip provider-unsupported tool schema length and item constraint keywords for direct and coding-plan models so hosted Kimi runs do not reject message tools with `minLength`. Fixes #38817.
 - DeepSeek: backfill V4 `reasoning_content` replay fields for unowned OpenAI-compatible proxy providers, preventing follow-up request failures outside the bundled DeepSeek and OpenRouter routes. Fixes #79608.
+- iMessage: emit a WARN log when an action is blocked because the imsg private API bridge is not attached, so operators see the silent-drop in `~/.openclaw/logs/openclaw.log` instead of having to read per-session trajectory JSONL `tool.result` payloads. Common after a gateway restart un-injects the dylib from Messages.app. (#80035) Thanks @omarshahine.
 
 ## 2026.5.9
 
