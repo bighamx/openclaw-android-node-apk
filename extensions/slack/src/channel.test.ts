@@ -1114,6 +1114,66 @@ describe("slackPlugin outbound new targets", () => {
   });
 });
 
+describe("slackPlugin configured bindings", () => {
+  function requireSlackBindings() {
+    const bindings = slackPlugin.bindings;
+    if (!bindings) {
+      throw new Error("slack bindings adapter unavailable");
+    }
+    return bindings;
+  }
+
+  it("normalizes Slack channel and user ids for configured ACP bindings", () => {
+    const bindings = requireSlackBindings();
+
+    expect(
+      bindings.compileConfiguredBinding({
+        binding: {} as never,
+        conversationId: "channel:C123",
+      }),
+    ).toEqual({ conversationId: "c123" });
+    expect(
+      bindings.compileConfiguredBinding({
+        binding: {} as never,
+        conversationId: "#C123",
+      }),
+    ).toEqual({ conversationId: "c123" });
+    expect(
+      bindings.compileConfiguredBinding({
+        binding: {} as never,
+        conversationId: "<@U123>",
+      }),
+    ).toEqual({ conversationId: "u123" });
+    expect(
+      bindings.compileConfiguredBinding({
+        binding: {} as never,
+        conversationId: "slack:U123",
+      }),
+    ).toEqual({ conversationId: "u123" });
+  });
+
+  it("matches Slack thread replies against configured channel bindings", () => {
+    const bindings = requireSlackBindings();
+    const compiledBinding = bindings.compileConfiguredBinding({
+      binding: {} as never,
+      conversationId: "C123",
+    });
+
+    expect(compiledBinding).toEqual({ conversationId: "c123" });
+    expect(
+      bindings.matchInboundConversation({
+        binding: {} as never,
+        compiledBinding: compiledBinding!,
+        conversationId: "1770408518.451689",
+        parentConversationId: "C123",
+      }),
+    ).toEqual({
+      conversationId: "c123",
+      matchPriority: 1,
+    });
+  });
+});
+
 describe("slackPlugin config", () => {
   it("treats HTTP mode accounts with bot token + signing secret as configured", async () => {
     const cfg: OpenClawConfig = {

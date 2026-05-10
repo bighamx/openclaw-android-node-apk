@@ -14,6 +14,7 @@ import {
 import { resolveChannelMessageSourceReplyDeliveryMode } from "openclaw/plugin-sdk/channel-message";
 import { hasControlCommand } from "openclaw/plugin-sdk/command-detection";
 import { shouldHandleTextCommands } from "openclaw/plugin-sdk/command-surface";
+import { ensureConfiguredBindingRouteReady } from "openclaw/plugin-sdk/conversation-runtime";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { finalizeInboundContext } from "openclaw/plugin-sdk/reply-dispatch-runtime";
 import {
@@ -471,7 +472,9 @@ export async function prepareSlackMessage(params: {
       }));
   let mentionRegexes = resolveCachedMentionRegexes(ctx, routing.route.agentId);
   let wasMentioned = resolveWasMentioned(mentionRegexes);
-  const hasRuntimeBoundSession = Boolean(routing.runtimeBoundSessionKey);
+  const hasBoundSession = Boolean(
+    routing.runtimeBoundSessionKey || routing.configuredBindingSessionKey,
+  );
   // Runtime bindings already pin the root and later thread replies to the same
   // target session, so only unbound regex mentions need a seeded thread reroute.
   if (
@@ -479,7 +482,7 @@ export async function prepareSlackMessage(params: {
     wasMentioned &&
     isRoom &&
     !routing.isThreadReply &&
-    !hasRuntimeBoundSession
+    !hasBoundSession
   ) {
     routing = resolveSlackRoutingContext({
       ctx,
@@ -497,6 +500,8 @@ export async function prepareSlackMessage(params: {
   const {
     route,
     runtimeBinding,
+    configuredBinding,
+    configuredBindingSessionKey,
     replyToMode,
     threadContext,
     threadTs,
@@ -509,6 +514,32 @@ export async function prepareSlackMessage(params: {
     logVerbose(
       `slack: routed via bound conversation ${runtimeBinding.conversation.conversationId} -> ${runtimeBinding.targetSessionKey}`,
     );
+  }
+  if (configuredBinding) {
+    const ensured = await ensureConfiguredBindingRouteReady({
+      cfg,
+      bindingResolution: configuredBinding,
+    });
+    if (ensured.ok) {
+      if (shouldLogVerbose()) {
+        logVerbose(
+          `slack: using configured ACP binding for ${configuredBinding.record.conversation.conversationId} -> ${configuredBindingSessionKey}`,
+        );
+      }
+    } else {
+      if (shouldLogVerbose()) {
+        logVerbose(
+          `slack: configured ACP binding unavailable for ${configuredBinding.record.conversation.conversationId}: ${ensured.error}`,
+        );
+      }
+      logInboundDrop({
+        log: logVerbose,
+        channel: "slack",
+        reason: "configured ACP binding unavailable",
+        target: configuredBinding.record.conversation.conversationId,
+      });
+      return null;
+    }
   }
   let implicitMentionKinds: ReturnType<typeof implicitMentionKindWhen> = [];
   if (
@@ -560,6 +591,17 @@ export async function prepareSlackMessage(params: {
   const shouldRequireMention = isRoom
     ? (channelConfig?.requireMention ?? ctx.defaultRequireMention)
     : false;
+  if (message._ambiguousThreadReply) {
+    ctx.logger.info(
+      {
+        channel: message.channel,
+        ts: message.ts,
+        parentUserId: message.parent_user_id,
+      },
+      "skipping ambiguous slack thread reply",
+    );
+    return null;
+  }
   const canDetectMention = Boolean(ctx.botUserId) || mentionRegexes.length > 0;
   // Strip Slack mentions (<@U123>) before command detection so "@Labrador /new" is recognized
   const textForCommandDetection = stripSlackMentionsForCommandDetection(message.text ?? "");
