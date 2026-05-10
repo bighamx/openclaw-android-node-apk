@@ -139,7 +139,16 @@ describe("slackPlugin actions", () => {
 
     expect(discovery?.actions).toContain("send");
     expect(discovery?.capabilities).toContain("presentation");
-    expect(discovery?.schema).toBeUndefined();
+    expect(discovery?.schema).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: ["download-file"],
+          properties: expect.objectContaining({
+            fileId: expect.any(Object),
+          }),
+        }),
+      ]),
+    );
   });
 
   it("honors the selected Slack account during message tool discovery", () => {
@@ -257,7 +266,7 @@ describe("slackPlugin actions", () => {
     });
   });
 
-  it("does not expose Slack-native message tool schema", () => {
+  it("exposes Slack-native message id and file id schema hints", () => {
     const discovery = slackPlugin.actions?.describeMessageTool({
       cfg: {
         channels: {
@@ -268,7 +277,23 @@ describe("slackPlugin actions", () => {
         },
       } as OpenClawConfig,
     });
-    expect(discovery?.schema).toBeUndefined();
+    expect(discovery?.schema).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: ["download-file"],
+          properties: expect.objectContaining({
+            fileId: expect.any(Object),
+          }),
+        }),
+        expect.objectContaining({
+          actions: ["react", "reactions", "edit", "delete", "pin", "unpin"],
+          properties: expect.objectContaining({
+            messageId: expect.any(Object),
+            message_id: expect.any(Object),
+          }),
+        }),
+      ]),
+    );
   });
 
   it("treats interactive reply payloads as structured Slack payloads", () => {
@@ -809,9 +834,15 @@ describe("slackPlugin agentPrompt", () => {
       },
     });
 
-    expect(hints).toEqual([
+    expect(hints).toContain(
       "- Slack interactive replies are disabled. If needed, ask to set `channels.slack.capabilities.interactiveReplies=true` (or the same under `channels.slack.accounts.<account>.capabilities`).",
-    ]);
+    );
+    expect(hints).toContain(
+      "- Slack plain text sends: write standard Markdown; OpenClaw converts it to Slack mrkdwn, including `**bold**`, headings, lists, and `[label](url)` links.",
+    );
+    expect(hints).toContain(
+      "- Slack Block Kit or presentation text fields are sent as Slack mrkdwn directly; use `*bold*`, `_italic_`, `~strike~`, `<url|label>` links, and avoid Markdown headings or pipe tables there.",
+    );
   });
 
   it("shows Slack interactive reply directives when enabled", () => {
@@ -835,6 +866,12 @@ describe("slackPlugin agentPrompt", () => {
     );
     expect(hints).toContain(
       "- Slack selects: use `[[slack_select: Placeholder | Label:value, Other:other]]` to add a static select menu that routes the chosen value back as a Slack interaction system event.",
+    );
+    expect(hints).toContain(
+      "- Slack plain text sends: write standard Markdown; OpenClaw converts it to Slack mrkdwn, including `**bold**`, headings, lists, and `[label](url)` links.",
+    );
+    expect(hints).toContain(
+      "- Slack Block Kit or presentation text fields are sent as Slack mrkdwn directly; use `*bold*`, `_italic_`, `~strike~`, `<url|label>` links, and avoid Markdown headings or pipe tables there.",
     );
   });
 });
