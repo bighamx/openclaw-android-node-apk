@@ -136,9 +136,10 @@ describe("ollama setup", () => {
 
   it("Docker setup defaults to the host Ollama endpoint", async () => {
     vi.stubEnv("OPENCLAW_DOCKER_SETUP", "1");
+    const text = vi.fn().mockResolvedValueOnce("http://host.docker.internal:11434");
     const prompter = {
       select: vi.fn().mockResolvedValueOnce("local-only"),
-      text: vi.fn().mockResolvedValueOnce("http://host.docker.internal:11434"),
+      text,
       note: vi.fn(async () => undefined),
     } as unknown as WizardPrompter;
 
@@ -150,7 +151,7 @@ describe("ollama setup", () => {
       prompter,
     });
 
-    const baseUrlPrompt = prompter.text.mock.calls[0]?.[0] as {
+    const baseUrlPrompt = text.mock.calls[0]?.[0] as {
       message?: string;
       initialValue?: string;
       placeholder?: string;
