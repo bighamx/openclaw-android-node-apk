@@ -28,12 +28,26 @@ This starts one held session:
 - restores TDLib and Telegram Desktop with the same user account
 - starts a mock OpenClaw Telegram SUT from the current checkout
 - selects the configured Telegram chat in the visible Linux desktop
-- starts desktop recording
+- starts a 24fps desktop recording
 - writes `.artifacts/qa-e2e/telegram-user-crabbox/pr-review/session.json`
 
 Keep the session alive while investigating. It is valid for the agent to test
 for minutes, run several commands, use WebVNC, inspect transcripts, and only
 finish once the behavior is understood.
+
+For deterministic visual repros, put the exact mock-model reply in a file and
+pass it to `start`:
+
+```bash
+pnpm qa:telegram-user:crabbox -- start \
+  --tdlib-url http://artifacts.openclaw.ai/tdlib-v1.8.0-linux-x64.tgz \
+  --mock-response-file .artifacts/qa-e2e/telegram-user-crabbox/reply.txt \
+  --output-dir .artifacts/qa-e2e/telegram-user-crabbox/pr-review
+```
+
+The runner defaults to `--class standard`, `--record-fps 24`,
+`--preview-fps 24`, and `--preview-width 1920`. Keep those defaults unless the
+proof needs something else.
 
 ## While Testing
 
@@ -119,6 +133,27 @@ This copies only `telegram-user-crabbox-session-motion.gif` into a temporary
 publish bundle and comments that GIF. Use `--full-artifacts` only when the PR
 needs logs or JSON output. Never publish credential payloads, local env files,
 TDLib databases, Telegram Desktop profiles, or raw session archives.
+
+For before/after proof, run one session on `main` and one on the PR head, then
+publish only the intended GIFs from a clean bundle:
+
+```bash
+mkdir -p .artifacts/qa-e2e/telegram-user-crabbox/pr-123/comparison
+cp <main-output>/telegram-user-crabbox-session-motion.gif \
+  .artifacts/qa-e2e/telegram-user-crabbox/pr-123/comparison/main-before.gif
+cp <pr-output>/telegram-user-crabbox-session-motion.gif \
+  .artifacts/qa-e2e/telegram-user-crabbox/pr-123/comparison/pr-after.gif
+crabbox artifacts publish \
+  --repo openclaw/openclaw \
+  --pr 123 \
+  --dir .artifacts/qa-e2e/telegram-user-crabbox/pr-123/comparison \
+  --summary 'Telegram before/after proof' \
+  --no-comment
+```
+
+Then post a concise markdown table with those two URLs. Do not publish working
+directories that contain screenshots, raw videos, logs, session JSON, or crop
+experiments unless those artifacts are explicitly needed.
 
 ## Quick Smoke
 

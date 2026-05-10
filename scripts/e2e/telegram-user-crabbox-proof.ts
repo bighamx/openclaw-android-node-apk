@@ -4,6 +4,7 @@ import { type ChildProcess, spawn, type SpawnOptionsWithoutStdio } from "node:ch
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 type CommandResult = {
   stderr: string;
@@ -23,6 +24,7 @@ type CrabboxInspect = {
 };
 
 type Options = {
+  crabboxClass: string;
   command: "finish" | "probe" | "publish" | "run" | "screenshot" | "send" | "start" | "status";
   crabboxBin: string;
   desktopChatTitle: string;
@@ -33,13 +35,17 @@ type Options = {
   idleTimeout: string;
   keepBox: boolean;
   leaseId?: string;
+  mockResponseText: string;
   mockPort: number;
   outputDir: string;
+  previewFps: number;
+  previewWidth: number;
   provider: string;
   publishFullArtifacts: boolean;
   publishPr?: number;
   publishRepo: string;
   publishSummary?: string;
+  recordFps: number;
   recordSeconds: number;
   remoteCommand: string[];
   sessionFile?: string;
@@ -75,6 +81,7 @@ type SessionFile = {
   command: "telegram-user-crabbox-session";
   createdAt: string;
   crabbox: {
+    class: string;
     createdLease: boolean;
     id: string;
     inspect: CrabboxInspect;
@@ -113,6 +120,7 @@ const DEFAULT_CONVEX_ENV_FILE = `${DEFAULT_SKILL_DIR}/convex.local.env`;
 const DEFAULT_USER_DRIVER = `${DEFAULT_SKILL_DIR}/scripts/user-driver.py`;
 const DEFAULT_OUTPUT_ROOT = ".artifacts/qa-e2e/telegram-user-crabbox";
 const REMOTE_ROOT = "/tmp/openclaw-telegram-user-crabbox";
+const CREDENTIAL_SCRIPT = fileURLToPath(new URL("./telegram-user-credential.ts", import.meta.url));
 
 function usageText() {
   return [
@@ -127,11 +135,16 @@ function usageText() {
     "  node --import tsx scripts/e2e/telegram-user-crabbox-proof.ts publish --session <session.json> --pr <number>",
     "",
     "Useful options:",
+    "  --class <name>                Crabbox machine class. Default: standard.",
     "  --desktop-chat-title <name>   Telegram Desktop chat to select before recording.",
     "  --id <cbx_id>                 Reuse an existing Crabbox desktop lease.",
     "  --keep-box                    Leave the Crabbox lease running for VNC debugging.",
+    "  --mock-response-file <path>    Text returned by the mock model.",
     "  --output-dir <path>           Artifact directory under the repo.",
+    "  --preview-fps <fps>            Motion GIF frames per second. Default: 24.",
+    "  --preview-width <pixels>       Motion GIF width. Default: 1920.",
     "  --pr <number>                 Pull request number for publish.",
+    "  --record-fps <fps>             Desktop recording frames per second. Default: 24.",
     "  --record-seconds <seconds>    Desktop video duration. Default: 35.",
     "  --repo <owner/name>           GitHub repo for publish. Default: openclaw/openclaw.",
     "  --session <path>              Session file from start. Default: <output-dir>/session.json.",
@@ -185,6 +198,7 @@ function parseArgs(argv: string[]): Options {
   const command = commands.has(argv[0] ?? "") ? (argv.shift() as Options["command"]) : "probe";
   const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
   const opts: Options = {
+    crabboxClass: "standard",
     command,
     crabboxBin: trimToValue(process.env.OPENCLAW_TELEGRAM_USER_CRABBOX_BIN) ?? "crabbox",
     desktopChatTitle:
@@ -194,11 +208,15 @@ function parseArgs(argv: string[]): Options {
     gatewayPort: 19_879,
     idleTimeout: "60m",
     keepBox: false,
+    mockResponseText: "OPENCLAW_E2E_OK",
     mockPort: 19_882,
     outputDir: path.join(DEFAULT_OUTPUT_ROOT, stamp),
+    previewFps: 24,
+    previewWidth: 1920,
     provider: process.env.OPENCLAW_TELEGRAM_USER_CRABBOX_PROVIDER?.trim() || "aws",
     publishFullArtifacts: false,
     publishRepo: "openclaw/openclaw",
+    recordFps: 24,
     recordSeconds: 35,
     remoteCommand: [],
     target: "linux",
@@ -223,7 +241,9 @@ function parseArgs(argv: string[]): Options {
       index += 1;
       return value;
     };
-    if (arg === "--crabbox-bin") {
+    if (arg === "--class") {
+      opts.crabboxClass = readValue();
+    } else if (arg === "--crabbox-bin") {
       opts.crabboxBin = readValue();
     } else if (arg === "--desktop-chat-title") {
       opts.desktopChatTitle = readValue();
@@ -247,8 +267,14 @@ function parseArgs(argv: string[]): Options {
       opts.keepBox = true;
     } else if (arg === "--mock-port") {
       opts.mockPort = parsePositiveInteger(readValue(), "--mock-port");
+    } else if (arg === "--mock-response-file") {
+      opts.mockResponseText = fs.readFileSync(resolveRepoPath(process.cwd(), readValue()), "utf8");
     } else if (arg === "--output-dir") {
       opts.outputDir = readValue();
+    } else if (arg === "--preview-fps") {
+      opts.previewFps = parsePositiveInteger(readValue(), "--preview-fps");
+    } else if (arg === "--preview-width") {
+      opts.previewWidth = parsePositiveInteger(readValue(), "--preview-width");
     } else if (arg === "--provider") {
       opts.provider = readValue();
     } else if (arg === "--pr") {
@@ -263,6 +289,8 @@ function parseArgs(argv: string[]): Options {
       opts.publishSummary = readValue();
     } else if (arg === "--full-artifacts") {
       opts.publishFullArtifacts = true;
+    } else if (arg === "--record-fps") {
+      opts.recordFps = parsePositiveInteger(readValue(), "--record-fps");
     } else if (arg === "--sut-username") {
       opts.sutUsername = readValue().replace(/^@/u, "");
     } else if (arg === "--target") {
@@ -346,6 +374,25 @@ function requireString(source: JsonObject, key: string) {
 function optionalString(source: JsonObject, key: string) {
   const value = source[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function mockServerEnv(params: { mockPort: number; mockResponseText: string; requestLog: string }) {
+  return {
+    ...process.env,
+    MOCK_PORT: String(params.mockPort),
+    MOCK_REQUEST_LOG: params.requestLog,
+    SUCCESS_MARKER: params.mockResponseText,
+  };
+}
+
+function gatewayEnv(params: { configPath: string; stateDir: string; sutToken: string }) {
+  return {
+    ...process.env,
+    OPENAI_API_KEY: "sk-openclaw-e2e-mock",
+    OPENCLAW_CONFIG_PATH: params.configPath,
+    OPENCLAW_STATE_DIR: params.stateDir,
+    TELEGRAM_BOT_TOKEN: params.sutToken,
+  };
 }
 
 function shellQuote(value: string) {
@@ -662,6 +709,7 @@ function writeSutConfig(params: {
 async function startLocalSut(params: {
   gatewayPort: number;
   groupId: string;
+  mockResponseText: string;
   mockPort: number;
   outputDir: string;
   sutToken: string;
@@ -673,12 +721,7 @@ async function startLocalSut(params: {
   const requestLog = path.join(params.outputDir, "mock-openai-requests.ndjson");
   const mock = spawnLogged("node", ["scripts/e2e/mock-openai-server.mjs"], {
     cwd: params.repoRoot,
-    env: {
-      ...process.env,
-      MOCK_PORT: String(params.mockPort),
-      MOCK_REQUEST_LOG: requestLog,
-      SUCCESS_MARKER: "OPENCLAW_E2E_OK",
-    },
+    env: mockServerEnv({ ...params, requestLog }),
   });
   await waitForOutput(
     mock.child,
@@ -692,13 +735,7 @@ async function startLocalSut(params: {
     ["openclaw", "gateway", "--port", String(params.gatewayPort)],
     {
       cwd: params.repoRoot,
-      env: {
-        ...process.env,
-        OPENAI_API_KEY: "sk-openclaw-e2e-mock",
-        OPENCLAW_CONFIG_PATH: config.configPath,
-        OPENCLAW_STATE_DIR: config.stateDir,
-        TELEGRAM_BOT_TOKEN: params.sutToken,
-      },
+      env: gatewayEnv({ ...config, sutToken: params.sutToken }),
     },
   );
   await waitForOutput(gateway.child, /\[gateway\] ready/u, () => gateway.output, "gateway", 60_000);
@@ -720,6 +757,7 @@ async function startLocalSut(params: {
 async function startLocalSutDaemon(params: {
   gatewayPort: number;
   groupId: string;
+  mockResponseText: string;
   mockPort: number;
   outputDir: string;
   sutToken: string;
@@ -735,12 +773,7 @@ async function startLocalSutDaemon(params: {
     command: "node",
     args: ["scripts/e2e/mock-openai-server.mjs"],
     cwd: params.repoRoot,
-    env: {
-      ...process.env,
-      MOCK_PORT: String(params.mockPort),
-      MOCK_REQUEST_LOG: requestLog,
-      SUCCESS_MARKER: "OPENCLAW_E2E_OK",
-    },
+    env: mockServerEnv({ ...params, requestLog }),
     logPath: mockLog,
   });
   if (!mockPid) {
@@ -752,13 +785,7 @@ async function startLocalSutDaemon(params: {
     command: "pnpm",
     args: ["openclaw", "gateway", "--port", String(params.gatewayPort)],
     cwd: params.repoRoot,
-    env: {
-      ...process.env,
-      OPENAI_API_KEY: "sk-openclaw-e2e-mock",
-      OPENCLAW_CONFIG_PATH: config.configPath,
-      OPENCLAW_STATE_DIR: config.stateDir,
-      TELEGRAM_BOT_TOKEN: params.sutToken,
-    },
+    env: gatewayEnv({ ...config, sutToken: params.sutToken }),
     logPath: gatewayLog,
   });
   if (!gatewayPid) {
@@ -791,6 +818,8 @@ async function warmupCrabbox(opts: Options, root: string) {
       opts.target,
       "--desktop",
       "--browser",
+      "--class",
+      opts.crabboxClass,
       "--idle-timeout",
       opts.idleTimeout,
       "--ttl",
@@ -804,6 +833,36 @@ async function warmupCrabbox(opts: Options, root: string) {
     throw new Error("Crabbox warmup did not print a lease id.");
   }
   return leaseId;
+}
+
+async function createMotionPreview(params: {
+  motionGifPath: string;
+  motionVideoPath: string;
+  opts: Options;
+  root: string;
+  videoPath: string;
+}) {
+  const preview = await runCommand({
+    command: params.opts.crabboxBin,
+    args: [
+      "media",
+      "preview",
+      "--input",
+      params.videoPath,
+      "--output",
+      params.motionGifPath,
+      "--fps",
+      String(params.opts.previewFps),
+      "--width",
+      String(params.opts.previewWidth),
+      "--trimmed-video-output",
+      params.motionVideoPath,
+      "--json",
+    ],
+    cwd: params.root,
+    stdio: "inherit",
+  });
+  return JSON.parse(preview.stdout) as JsonObject;
 }
 
 async function inspectCrabbox(opts: Options, root: string, leaseId: string) {
@@ -1047,7 +1106,7 @@ async function leaseCredential(params: { localRoot: string; opts: Options; root:
   const leaseFile = path.join(params.localRoot, "lease.json");
   const payloadFile = path.join(params.localRoot, "payload.json");
   const args = [
-    "scripts/e2e/telegram-user-credential.ts",
+    CREDENTIAL_SCRIPT,
     "lease-restore",
     "--user-driver-dir",
     userDriverDir,
@@ -1086,7 +1145,7 @@ async function releaseCredential(root: string, opts: Options, leaseFile: string)
   if (!fs.existsSync(leaseFile)) {
     return;
   }
-  const args = ["scripts/e2e/telegram-user-credential.ts", "release", "--lease-file", leaseFile];
+  const args = [CREDENTIAL_SCRIPT, "release", "--lease-file", leaseFile];
   if (opts.envFile) {
     args.push("--env-file", opts.envFile);
   }
@@ -1246,7 +1305,7 @@ EOF
   );
 }
 
-async function startRemoteRecording(root: string, inspect: CrabboxInspect) {
+async function startRemoteRecording(root: string, inspect: CrabboxInspect, opts: Options) {
   const command = `set -euo pipefail
 export DISPLAY="\${DISPLAY:-:99}"
 root=${REMOTE_ROOT}
@@ -1255,7 +1314,7 @@ log="$root/ffmpeg.log"
 pid_file="$root/ffmpeg.pid"
 rm -f "$video" "$log" "$pid_file"
 size="$(xdpyinfo | awk '/dimensions:/ {print $2; exit}')"
-nohup ffmpeg -y -hide_banner -loglevel warning -f x11grab -framerate 15 -video_size "$size" -i "$DISPLAY" -pix_fmt yuv420p "$video" >"$log" 2>&1 &
+nohup ffmpeg -y -hide_banner -loglevel warning -f x11grab -framerate ${opts.recordFps} -video_size "$size" -i "$DISPLAY" -pix_fmt yuv420p "$video" >"$log" 2>&1 &
 echo $! >"$pid_file"`;
   await sshRun(root, inspect, command);
   return {
@@ -1299,6 +1358,7 @@ async function startSession(root: string, opts: Options, outputDir: string) {
   if (opts.dryRun) {
     return {
       command: "telegram-user-crabbox-session",
+      crabboxClass: opts.crabboxClass,
       outputDir,
       provider: opts.provider,
       target: opts.target,
@@ -1332,17 +1392,19 @@ async function startSession(root: string, opts: Options, outputDir: string) {
     localSut = await startLocalSutDaemon({
       gatewayPort: opts.gatewayPort,
       groupId: credential.groupId,
+      mockResponseText: opts.mockResponseText,
       mockPort: opts.mockPort,
       outputDir,
       repoRoot: root,
       sutToken: credential.sutToken,
       testerId: credential.testerUserId,
     });
-    const recorder = await startRemoteRecording(root, inspect);
+    const recorder = await startRemoteRecording(root, inspect, opts);
     const session: SessionFile = {
       command: "telegram-user-crabbox-session",
       createdAt: new Date().toISOString(),
       crabbox: {
+        class: opts.crabboxClass,
         createdLease,
         id: leaseId,
         inspect,
@@ -1505,23 +1567,13 @@ async function finishSession(root: string, opts: Options, outputDir: string) {
     await scpFromRemote(root, session.crabbox.inspect, session.recorder.log, ffmpegLogPath).catch(
       () => {},
     );
-    const preview = await runCommand({
-      command: opts.crabboxBin,
-      args: [
-        "media",
-        "preview",
-        "--input",
-        videoPath,
-        "--output",
-        motionGifPath,
-        "--trimmed-video-output",
-        motionVideoPath,
-        "--json",
-      ],
-      cwd: root,
-      stdio: "inherit",
+    summary.mediaPreview = await createMotionPreview({
+      motionGifPath,
+      motionVideoPath,
+      opts,
+      root,
+      videoPath,
     });
-    summary.mediaPreview = JSON.parse(preview.stdout) as JsonObject;
     await runCommand({
       command: opts.crabboxBin,
       args: [
@@ -1696,6 +1748,7 @@ async function main() {
       summary.status = "pass";
       summary.plan = {
         command: "telegram-user-crabbox-proof",
+        crabboxClass: opts.crabboxClass,
         outputDir,
         provider: opts.provider,
         target: opts.target,
@@ -1778,6 +1831,7 @@ async function main() {
     const sutRuntime = await startLocalSut({
       gatewayPort: opts.gatewayPort,
       groupId: credential.groupId,
+      mockResponseText: opts.mockResponseText,
       mockPort: opts.mockPort,
       outputDir,
       repoRoot: root,
@@ -1821,23 +1875,13 @@ async function main() {
     }
     const motionVideoPath = path.join(outputDir, "telegram-user-crabbox-proof-motion.mp4");
     const motionGifPath = path.join(outputDir, "telegram-user-crabbox-proof-motion.gif");
-    const preview = await runCommand({
-      command: opts.crabboxBin,
-      args: [
-        "media",
-        "preview",
-        "--input",
-        videoPath,
-        "--output",
-        motionGifPath,
-        "--trimmed-video-output",
-        motionVideoPath,
-        "--json",
-      ],
-      cwd: root,
-      stdio: "inherit",
+    summary.mediaPreview = await createMotionPreview({
+      motionGifPath,
+      motionVideoPath,
+      opts,
+      root,
+      videoPath,
     });
-    summary.mediaPreview = JSON.parse(preview.stdout) as JsonObject;
 
     const screenshotPath = path.join(outputDir, "telegram-user-crabbox-proof.png");
     await runCommand({

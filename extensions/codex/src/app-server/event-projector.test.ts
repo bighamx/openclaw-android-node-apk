@@ -1034,7 +1034,7 @@ describe("CodexAppServerEventProjector", () => {
 
     expect(onToolResult).toHaveBeenCalledTimes(1);
     expect(onToolResult).toHaveBeenCalledWith({
-      text: "🛠️ Bash: `run tests (in /workspace)`",
+      text: "🛠️ `run tests (workspace)`",
     });
   });
 
@@ -1066,7 +1066,7 @@ describe("CodexAppServerEventProjector", () => {
     );
 
     expect(onToolResult).toHaveBeenCalledWith({
-      text: "🛠️ Bash: `` run tests (in /workspace), `pnpm test extensions/codex` ``",
+      text: "🛠️ `` run tests (workspace), `pnpm test extensions/codex` ``",
     });
   });
 
