@@ -579,7 +579,15 @@ describe("DiscordVoiceManager", () => {
 
     const player = getLastAudioPlayer();
     const entry = getSessionEntry(manager);
+    const bridgeParams = createRealtimeVoiceBridgeSessionMock.mock.calls.at(-1)?.[0] as
+      | {
+          audioSink?: {
+            sendAudio: (audio: Buffer) => void;
+          };
+        }
+      | undefined;
     player.state.status = "playing";
+    bridgeParams?.audioSink?.sendAudio(Buffer.alloc(480));
 
     await (
       manager as unknown as {
@@ -652,7 +660,7 @@ describe("DiscordVoiceManager", () => {
     expect(realtimeSessionMock.sendAudio).toHaveBeenCalled();
   });
 
-  it("interrupts provider response state even after local realtime playback has ended", async () => {
+  it("does not interrupt realtime provider state when local playback is already idle", async () => {
     const manager = createManager({
       groupPolicy: "open",
       allowFrom: ["discord:u1"],
@@ -689,7 +697,7 @@ describe("DiscordVoiceManager", () => {
 
     turn?.sendInputAudio(Buffer.alloc(3840));
 
-    expect(realtimeSessionMock.handleBargeIn).toHaveBeenCalled();
+    expect(realtimeSessionMock.handleBargeIn).not.toHaveBeenCalled();
     expect(player.stop).not.toHaveBeenCalled();
     expect(realtimeSessionMock.sendAudio).toHaveBeenCalled();
   });
@@ -911,7 +919,7 @@ describe("DiscordVoiceManager", () => {
           ) => void;
         }
       | undefined;
-    expect(bridgeParams?.autoRespondToAudio).toBe(true);
+    expect(bridgeParams?.autoRespondToAudio).toBe(false);
     expect(bridgeParams?.instructions).toContain("same OpenClaw agent");
     expect(bridgeParams?.tools?.map((tool) => tool.name)).toContain("openclaw_agent_consult");
 
@@ -1030,12 +1038,19 @@ describe("DiscordVoiceManager", () => {
           audioSink?: {
             sendAudio: (audio: Buffer) => void;
           };
+          onEvent?: (event: { direction: "server"; type: string }) => void;
         }
       | undefined;
 
     bridgeParams?.audioSink?.sendAudio(Buffer.alloc(480));
     expect(createAudioResourceMock).toHaveBeenCalledTimes(1);
     expect(player.play).toHaveBeenCalledTimes(1);
+    const firstStream = createAudioResourceMock.mock.calls.at(-1)?.[0] as
+      | { writableEnded?: boolean }
+      | undefined;
+    expect(firstStream?.writableEnded).toBe(false);
+    bridgeParams?.onEvent?.({ direction: "server", type: "response.done" });
+    expect(firstStream?.writableEnded).toBe(true);
 
     const idleHandler = player.on.mock.calls.find(([event]) => event === "idle")?.[1] as
       | (() => void)
@@ -1115,6 +1130,7 @@ describe("DiscordVoiceManager", () => {
     const bridgeParams = createRealtimeVoiceBridgeSessionMock.mock.calls.at(-1)?.[0] as
       | {
           onTranscript?: (role: "user" | "assistant", text: string, isFinal: boolean) => void;
+          onEvent?: (event: { direction: "server"; type: string }) => void;
         }
       | undefined;
     bridgeParams?.onTranscript?.("user", "non-owner question", true);
@@ -1131,10 +1147,7 @@ describe("DiscordVoiceManager", () => {
       }),
       expect.anything(),
     );
-    expect(realtimeSessionMock.handleBargeIn).toHaveBeenCalledWith({
-      audioPlaybackActive: true,
-      force: true,
-    });
+    expect(realtimeSessionMock.handleBargeIn).not.toHaveBeenCalled();
     expect(realtimeSessionMock.sendUserMessage).toHaveBeenCalledWith(
       expect.stringContaining("non-owner answer"),
     );
@@ -1165,6 +1178,7 @@ describe("DiscordVoiceManager", () => {
     const bridgeParams = createRealtimeVoiceBridgeSessionMock.mock.calls.at(-1)?.[0] as
       | {
           onTranscript?: (role: "user" | "assistant", text: string, isFinal: boolean) => void;
+          onEvent?: (event: { direction: "server"; type: string }) => void;
         }
       | undefined;
 
@@ -1183,6 +1197,7 @@ describe("DiscordVoiceManager", () => {
     bridgeParams?.onTranscript?.("user", "owner question", true);
 
     await new Promise((resolve) => setTimeout(resolve, 260));
+    bridgeParams?.onEvent?.({ direction: "server", type: "response.done" });
 
     expect(agentCommandMock).toHaveBeenNthCalledWith(
       1,
@@ -1205,6 +1220,87 @@ describe("DiscordVoiceManager", () => {
     );
     expect(realtimeSessionMock.sendUserMessage).toHaveBeenCalledWith(
       expect.stringContaining("owner answer"),
+    );
+  });
+
+  it("queues forced agent-proxy answers until current realtime playback idles", async () => {
+    let resolveFirst: ((value: { payloads: Array<{ text: string }> }) => void) | undefined;
+    let resolveSecond: ((value: { payloads: Array<{ text: string }> }) => void) | undefined;
+    agentCommandMock
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ payloads: Array<{ text: string }> }>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ payloads: Array<{ text: string }> }>((resolve) => {
+            resolveSecond = resolve;
+          }),
+      );
+    const manager = createManager({
+      groupPolicy: "open",
+      voice: {
+        enabled: true,
+        mode: "agent-proxy",
+        realtime: { provider: "openai" },
+      },
+    });
+
+    await manager.join({ guildId: "g1", channelId: "1001" });
+    const entry = getSessionEntry(manager) as {
+      realtime?: {
+        beginSpeakerTurn: (
+          context: { extraSystemPrompt?: string; senderIsOwner: boolean; speakerLabel: string },
+          userId: string,
+        ) => { close: () => void; sendInputAudio: (audio: Buffer) => void };
+      };
+    };
+    const player = getLastAudioPlayer() as {
+      on: ReturnType<typeof vi.fn>;
+    };
+    const bridgeParams = createRealtimeVoiceBridgeSessionMock.mock.calls.at(-1)?.[0] as
+      | {
+          audioSink?: { sendAudio: (audio: Buffer) => void };
+          onTranscript?: (role: "user" | "assistant", text: string, isFinal: boolean) => void;
+        }
+      | undefined;
+
+    const firstTurn = entry.realtime?.beginSpeakerTurn(
+      { extraSystemPrompt: undefined, senderIsOwner: true, speakerLabel: "Owner" },
+      "u-owner",
+    );
+    firstTurn?.sendInputAudio(Buffer.alloc(8));
+    bridgeParams?.onTranscript?.("user", "first question", true);
+    const secondTurn = entry.realtime?.beginSpeakerTurn(
+      { extraSystemPrompt: undefined, senderIsOwner: true, speakerLabel: "Owner" },
+      "u-owner",
+    );
+    secondTurn?.sendInputAudio(Buffer.alloc(8));
+    bridgeParams?.onTranscript?.("user", "second question", true);
+    await new Promise((resolve) => setTimeout(resolve, 260));
+
+    resolveFirst?.({ payloads: [{ text: "first answer" }] });
+    await vi.waitFor(() =>
+      expect(realtimeSessionMock.sendUserMessage).toHaveBeenCalledWith(
+        expect.stringContaining("first answer"),
+      ),
+    );
+    bridgeParams?.audioSink?.sendAudio(Buffer.alloc(480));
+
+    resolveSecond?.({ payloads: [{ text: "second answer" }] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(realtimeSessionMock.sendUserMessage).not.toHaveBeenCalledWith(
+      expect.stringContaining("second answer"),
+    );
+
+    const idleHandler = player.on.mock.calls.find(([event]) => event === "idle")?.[1] as
+      | (() => void)
+      | undefined;
+    idleHandler?.();
+    expect(realtimeSessionMock.sendUserMessage).toHaveBeenCalledWith(
+      expect.stringContaining("second answer"),
     );
   });
 
@@ -1242,6 +1338,7 @@ describe("DiscordVoiceManager", () => {
             session: typeof realtimeSessionMock,
           ) => void;
           onTranscript?: (role: "user" | "assistant", text: string, isFinal: boolean) => void;
+          onEvent?: (event: { direction: "server"; type: string }) => void;
         }
       | undefined;
 
@@ -1328,6 +1425,7 @@ describe("DiscordVoiceManager", () => {
             session: typeof realtimeSessionMock,
           ) => void;
           onTranscript?: (role: "user" | "assistant", text: string, isFinal: boolean) => void;
+          onEvent?: (event: { direction: "server"; type: string }) => void;
         }
       | undefined;
 
@@ -1403,6 +1501,7 @@ describe("DiscordVoiceManager", () => {
             session: typeof realtimeSessionMock,
           ) => void;
           onTranscript?: (role: "user" | "assistant", text: string, isFinal: boolean) => void;
+          onEvent?: (event: { direction: "server"; type: string }) => void;
         }
       | undefined;
 
@@ -1477,6 +1576,7 @@ describe("DiscordVoiceManager", () => {
             session: typeof realtimeSessionMock,
           ) => void;
           onTranscript?: (role: "user" | "assistant", text: string, isFinal: boolean) => void;
+          onEvent?: (event: { direction: "server"; type: string }) => void;
         }
       | undefined;
 
@@ -1514,6 +1614,7 @@ describe("DiscordVoiceManager", () => {
     expect(realtimeSessionMock.submitToolResult).toHaveBeenCalledWith("call-late", {
       error: "Discord speaker context changed before this realtime consult completed",
     });
+    bridgeParams?.onEvent?.({ direction: "server", type: "response.done" });
 
     bridgeParams?.onTranscript?.("user", "guest followup", true);
     await new Promise((resolve) => setTimeout(resolve, 260));
