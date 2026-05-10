@@ -5,7 +5,7 @@ import type {
   GroupMetadata,
   WAMessage,
   WASocket,
-} from "@whiskeysockets/baileys";
+} from "baileys";
 import { recordChannelActivity } from "openclaw/plugin-sdk/channel-activity-runtime";
 import { formatLocationText } from "openclaw/plugin-sdk/channel-inbound";
 import { createInboundDebouncer } from "openclaw/plugin-sdk/channel-inbound-debounce";
@@ -839,9 +839,7 @@ export async function attachWebInboxToSocket(
       await enqueueInboundMessage(msg, inbound, enriched);
     }
   };
-  const handleConnectionUpdate = (
-    update: Partial<import("@whiskeysockets/baileys").ConnectionState>,
-  ) => {
+  const handleConnectionUpdate = (update: Partial<import("baileys").ConnectionState>) => {
     try {
       if (update.connection === "close") {
         if (options.socketRef?.current === sock) {

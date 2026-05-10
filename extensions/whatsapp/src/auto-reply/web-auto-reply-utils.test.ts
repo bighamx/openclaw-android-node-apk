@@ -342,7 +342,7 @@ describe("web auto-reply util", () => {
   describe("isLikelyWhatsAppCryptoError", () => {
     it("matches known Baileys crypto auth errors (Error)", () => {
       const err = new Error("bad mac");
-      err.stack = "at something\nat @whiskeysockets/baileys/noise-handler\n";
+      err.stack = "at something\nat baileys/noise-handler\n";
       expect(isLikelyWhatsAppCryptoError(err)).toBe(true);
     });
 

@@ -1784,7 +1784,7 @@
     "@types/markdown-it": "^14.1.2",
     "@types/node": "25.6.2",
     "@types/ws": "^8.18.1",
-    "@typescript/native-preview": "7.0.0-dev.20260509.2",
+    "@typescript/native-preview": "7.0.0-dev.20260510.1",
     "@vitest/coverage-v8": "^4.1.5",
     "jscpd": "4.1.0",
     "jsdom": "^29.1.1",
@@ -1849,7 +1849,7 @@
       "@matrix-org/matrix-sdk-crypto-nodejs",
       "@tloncorp/api",
       "@tloncorp/tlon-skill",
-      "@whiskeysockets/baileys",
+      "baileys",
       "@whiskeysockets/libsignal-node",
       "authenticate-pam",
       "esbuild",
@@ -1875,7 +1875,7 @@
       }
     },
     "patchedDependencies": {
-      "@whiskeysockets/baileys@7.0.0-rc10": "patches/@whiskeysockets__baileys@7.0.0-rc10.patch",
+      "baileys@7.0.0-rc10": "patches/baileys@7.0.0-rc10.patch",
       "@agentclientprotocol/claude-agent-acp@0.33.1": "patches/@agentclientprotocol__claude-agent-acp@0.33.1.patch"
     }
   }

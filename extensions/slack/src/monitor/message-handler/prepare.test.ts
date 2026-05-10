@@ -618,6 +618,84 @@ describe("slack prepareSlackMessage inbound contract", () => {
     expect(members).not.toHaveBeenCalled();
   });
 
+  it("drops bot-authored room messages without mention when allowBots is mentions", async () => {
+    const members = vi.fn();
+    const slackCtx = createInboundSlackCtx({
+      cfg: {
+        channels: {
+          slack: { enabled: true },
+        },
+      } as OpenClawConfig,
+      appClient: { conversations: { members } } as unknown as App["client"],
+      defaultRequireMention: false,
+      channelsConfig: {
+        C123: { users: ["B0AGV8EQYA3"] },
+      },
+    });
+
+    const prepared = await prepareMessageWith(
+      slackCtx,
+      createSlackAccount({ allowBots: "mentions" }),
+      createBotRoomMessage({ text: "status failed" }),
+    );
+
+    expect(prepared).toBeNull();
+    expect(members).not.toHaveBeenCalled();
+  });
+
+  it("allows bot-authored room messages with explicit mention when allowBots is mentions", async () => {
+    const members = vi.fn();
+    const slackCtx = createInboundSlackCtx({
+      cfg: {
+        channels: {
+          slack: { enabled: true },
+        },
+      } as OpenClawConfig,
+      appClient: { conversations: { members } } as unknown as App["client"],
+      defaultRequireMention: false,
+      channelsConfig: {
+        C123: { users: ["B0AGV8EQYA3"] },
+      },
+    });
+
+    const prepared = await prepareMessageWith(
+      slackCtx,
+      createSlackAccount({ allowBots: "mentions" }),
+      createBotRoomMessage({ text: "hey <@B1> status failed" }),
+    );
+
+    assertPrepared(prepared);
+    expect(prepared.ctxPayload.RawBody).toContain("status failed");
+    expect(members).not.toHaveBeenCalled();
+  });
+
+  it("allows bot-authored DM messages when allowBots is mentions", async () => {
+    const slackCtx = createInboundSlackCtx({
+      cfg: {
+        channels: {
+          slack: { enabled: true },
+        },
+      } as OpenClawConfig,
+      defaultRequireMention: false,
+    });
+    slackCtx.resolveUserName = async () => ({ name: "Bot" }) as any;
+
+    const prepared = await prepareMessageWith(
+      slackCtx,
+      createSlackAccount({ allowBots: "mentions" }),
+      createSlackMessage({
+        channel: "D123",
+        channel_type: "im",
+        text: "bot DM",
+        bot_id: "B0AGV8EQYA3",
+        subtype: "bot_message",
+      }),
+    );
+
+    assertPrepared(prepared);
+    expect(prepared.ctxPayload.RawBody).toContain("bot DM");
+  });
+
   it("drops bot-authored room messages when owner presence lookup fails (#59284)", async () => {
     const members = vi.fn().mockRejectedValue(new Error("missing_scope"));
     const slackCtx = createInboundSlackCtx({

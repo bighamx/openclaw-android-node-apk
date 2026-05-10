@@ -55,7 +55,6 @@ export function isLikelyWhatsAppCryptoError(reason: unknown) {
     return false;
   }
   return (
-    haystack.includes("@whiskeysockets/baileys") ||
     haystack.includes("baileys") ||
     haystack.includes("noise-handler") ||
     haystack.includes("aesdecryptgcm")
