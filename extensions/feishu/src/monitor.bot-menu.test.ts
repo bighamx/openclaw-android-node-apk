@@ -79,19 +79,21 @@ describe("Feishu bot menu handler", () => {
 
     await onBotMenu(createBotMenuEvent({ eventKey: "quick-actions", timestamp: "1700000000000" }));
 
-    expect(sendCardFeishuMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: "user:ou_user1",
-        card: expect.objectContaining({
-          config: expect.objectContaining({
-            width_mode: "fill",
-          }),
-          header: expect.objectContaining({
-            title: expect.objectContaining({ content: "Quick actions" }),
-          }),
-        }),
-      }),
-    );
+    expect(sendCardFeishuMock).toHaveBeenCalledTimes(1);
+    const sendArgs = sendCardFeishuMock.mock.calls[0]?.[0] as
+      | {
+          accountId?: string;
+          card?: {
+            config?: { width_mode?: string };
+            header?: { title?: { content?: string } };
+          };
+          to?: string;
+        }
+      | undefined;
+    expect(sendArgs?.to).toBe("user:ou_user1");
+    expect(sendArgs?.accountId).toBe("default");
+    expect(sendArgs?.card?.config?.width_mode).toBe("fill");
+    expect(sendArgs?.card?.header?.title?.content).toBe("Quick actions");
     expect(handleFeishuMessageMock).not.toHaveBeenCalled();
   });
 
@@ -126,15 +128,11 @@ describe("Feishu bot menu handler", () => {
 
     await onBotMenu(createBotMenuEvent({ eventKey: "custom-key", timestamp: "1700000000002" }));
 
-    expect(handleFeishuMessageMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: expect.objectContaining({
-          message: expect.objectContaining({
-            content: '{"text":"/menu custom-key"}',
-          }),
-        }),
-      }),
-    );
+    expect(handleFeishuMessageMock).toHaveBeenCalledTimes(1);
+    const handleArgs = handleFeishuMessageMock.mock.calls[0]?.[0] as
+      | { event?: { message?: { content?: string } } }
+      | undefined;
+    expect(handleArgs?.event?.message?.content).toBe('{"text":"/menu custom-key"}');
     expect(sendCardFeishuMock).not.toHaveBeenCalled();
   });
 
@@ -145,16 +143,12 @@ describe("Feishu bot menu handler", () => {
     await onBotMenu(createBotMenuEvent({ eventKey: "quick-actions", timestamp: "1700000000003" }));
 
     await vi.waitFor(() => {
-      expect(handleFeishuMessageMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          event: expect.objectContaining({
-            message: expect.objectContaining({
-              content: '{"text":"/menu quick-actions"}',
-            }),
-          }),
-        }),
-      );
+      expect(handleFeishuMessageMock).toHaveBeenCalledTimes(1);
     });
+    const handleArgs = handleFeishuMessageMock.mock.calls[0]?.[0] as
+      | { event?: { message?: { content?: string } } }
+      | undefined;
+    expect(handleArgs?.event?.message?.content).toBe('{"text":"/menu quick-actions"}');
     expectFirstSentCardUsesFillWidthOnly(sendCardFeishuMock);
   });
 
