@@ -4,7 +4,7 @@ import {
   type Api,
   type AssistantMessage,
   type Model,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 import { getRuntimeConfig } from "../config/config.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import { resolveDefaultAgentDir } from "./agent-scope.js";
