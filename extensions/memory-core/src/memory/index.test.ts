@@ -449,11 +449,9 @@ describe("memory index", () => {
     managersForCleanup.add(second);
 
     const cachedBeforeProbe = second.getCachedEmbeddingAvailability?.();
-    expect(cachedBeforeProbe).toMatchObject({
-      ok: true,
-      checked: true,
-      cached: true,
-    });
+    expect(cachedBeforeProbe?.ok).toBe(true);
+    expect(cachedBeforeProbe?.checked).toBe(true);
+    expect(cachedBeforeProbe?.cached).toBe(true);
     expect(cachedBeforeProbe?.checkedAtMs).toBeTypeOf("number");
     expect(cachedBeforeProbe?.cacheExpiresAtMs).toBeTypeOf("number");
     if (

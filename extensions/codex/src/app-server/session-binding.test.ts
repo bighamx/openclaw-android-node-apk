@@ -48,15 +48,13 @@ describe("codex app-server session binding", () => {
 
     const binding = await readCodexAppServerBinding(sessionFile);
 
-    expect(binding).toMatchObject({
-      schemaVersion: 1,
-      threadId: "thread-123",
-      sessionFile,
-      cwd: tempDir,
-      model: "gpt-5.4-codex",
-      modelProvider: "openai",
-      dynamicToolsFingerprint: "tools-v1",
-    });
+    expect(binding?.schemaVersion).toBe(1);
+    expect(binding?.threadId).toBe("thread-123");
+    expect(binding?.sessionFile).toBe(sessionFile);
+    expect(binding?.cwd).toBe(tempDir);
+    expect(binding?.model).toBe("gpt-5.4-codex");
+    expect(binding?.modelProvider).toBe("openai");
+    expect(binding?.dynamicToolsFingerprint).toBe("tools-v1");
     const bindingStat = await fs.stat(resolveCodexAppServerBindingPath(sessionFile));
     expect(bindingStat.isFile()).toBe(true);
   });
@@ -142,11 +140,9 @@ describe("codex app-server session binding", () => {
     const binding = await readCodexAppServerBinding(sessionFile, nativeAuthLookup);
 
     expect(raw).not.toContain('"modelProvider": "openai"');
-    expect(binding).toMatchObject({
-      threadId: "thread-123",
-      authProfileId: "work",
-      model: "gpt-5.4-mini",
-    });
+    expect(binding?.threadId).toBe("thread-123");
+    expect(binding?.authProfileId).toBe("work");
+    expect(binding?.model).toBe("gpt-5.4-mini");
     expect(binding?.modelProvider).toBeUndefined();
   });
 
