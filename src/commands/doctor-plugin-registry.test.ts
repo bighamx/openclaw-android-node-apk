@@ -31,7 +31,6 @@ async function readRequiredPersistedInstalledPluginIndex(
   stateDir: string,
 ): Promise<InstalledPluginIndex> {
   const persisted = await readPersistedInstalledPluginIndex({ stateDir });
-  expect(persisted).not.toBeNull();
   if (!persisted) {
     throw new Error("Expected persisted installed plugin index");
   }
@@ -239,8 +238,23 @@ describe("maybeRepairPluginRegistryState", () => {
     expect(nextConfig).toStrictEqual({});
     const persisted = await readRequiredPersistedInstalledPluginIndex(stateDir);
     expect(persisted.refreshReason).toBe("migration");
-    expect(persisted.plugins).toHaveLength(1);
-    expect(persisted.plugins[0]?.pluginId).toBe("demo");
+    expect(persisted.plugins).toStrictEqual([
+      expect.objectContaining({
+        compat: [],
+        enabled: true,
+        manifestPath: path.join(pluginDir, "openclaw.plugin.json"),
+        origin: "global",
+        pluginId: "demo",
+        rootDir: pluginDir,
+        source: path.join(pluginDir, "index.ts"),
+        startup: {
+          agentHarnesses: [],
+          deferConfiguredChannelFullLoadUntilAfterListen: false,
+          memory: false,
+          sidecar: false,
+        },
+      }),
+    ]);
   });
 
   it("does not repair when registry migration is disabled", async () => {
@@ -350,10 +364,25 @@ describe("maybeRepairPluginRegistryState", () => {
     ).not.toHaveProperty("dependencies");
     const persisted = await readRequiredPersistedInstalledPluginIndex(stateDir);
     expect(persisted.refreshReason).toBe("migration");
-    expect(persisted.plugins).toHaveLength(1);
-    expect(persisted.plugins[0]?.pluginId).toBe("google-meet");
-    expect(persisted.plugins[0]?.origin).toBe("bundled");
-    expect(persisted.plugins[0]?.rootDir).toBe(bundledDir);
+    expect(persisted.plugins).toStrictEqual([
+      expect.objectContaining({
+        compat: [],
+        enabled: true,
+        manifestPath: path.join(bundledDir, "openclaw.plugin.json"),
+        origin: "bundled",
+        packageName: "@openclaw/google-meet",
+        packageVersion: "2026.5.3",
+        pluginId: "google-meet",
+        rootDir: bundledDir,
+        source: path.join(bundledDir, "index.ts"),
+        startup: {
+          agentHarnesses: [],
+          deferConfiguredChannelFullLoadUntilAfterListen: false,
+          memory: false,
+          sidecar: false,
+        },
+      }),
+    ]);
     expect(vi.mocked(note).mock.calls.join("\n")).toContain(
       "Removed stale managed npm plugin package",
     );
@@ -408,10 +437,25 @@ describe("maybeRepairPluginRegistryState", () => {
     const persisted = await readRequiredPersistedInstalledPluginIndex(stateDir);
     expect(persisted.installRecords).toStrictEqual({});
     expect(persisted.refreshReason).toBe("migration");
-    expect(persisted.plugins).toHaveLength(1);
-    expect(persisted.plugins[0]?.pluginId).toBe("google-meet");
-    expect(persisted.plugins[0]?.origin).toBe("bundled");
-    expect(persisted.plugins[0]?.rootDir).toBe(bundledDir);
+    expect(persisted.plugins).toStrictEqual([
+      expect.objectContaining({
+        compat: [],
+        enabled: true,
+        manifestPath: path.join(bundledDir, "openclaw.plugin.json"),
+        origin: "bundled",
+        packageName: "@openclaw/google-meet",
+        packageVersion: "2026.5.3",
+        pluginId: "google-meet",
+        rootDir: bundledDir,
+        source: path.join(bundledDir, "index.ts"),
+        startup: {
+          agentHarnesses: [],
+          deferConfiguredChannelFullLoadUntilAfterListen: false,
+          memory: false,
+          sidecar: false,
+        },
+      }),
+    ]);
   });
 
   it("removes stale managed npm packages from the package lock during repair", async () => {

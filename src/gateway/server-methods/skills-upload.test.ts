@@ -593,8 +593,7 @@ describe("skill upload gateway handlers", () => {
     await expect(
       fs.readFile(path.join(workspaceDir, "skills", "rollback-demo", "SKILL.md"), "utf8"),
     ).resolves.toContain("first version");
-    await expect(
-      fs.stat(path.join(stateDir, "tmp", "skill-uploads", forced.uploadId)),
-    ).resolves.toBeTruthy();
+    const uploadStat = await fs.stat(path.join(stateDir, "tmp", "skill-uploads", forced.uploadId));
+    expect(uploadStat.isDirectory()).toBe(true);
   });
 });

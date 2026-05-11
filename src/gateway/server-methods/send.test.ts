@@ -688,7 +688,9 @@ describe("gateway send mirroring", () => {
     );
 
     const call = pollCall();
-    expect(call.cfg).toBeDefined();
+    if (call.cfg === undefined) {
+      throw new Error("Expected poll delivery config");
+    }
     expect(call.to).toBe("resolved");
     expect(call.gatewayClientScopes).toEqual(["operator.admin"]);
   });
@@ -706,7 +708,9 @@ describe("gateway send mirroring", () => {
     );
 
     const call = pollCall();
-    expect(call.cfg).toBeDefined();
+    if (call.cfg === undefined) {
+      throw new Error("Expected poll delivery config");
+    }
     expect(call.to).toBe("resolved");
     expect(call.gatewayClientScopes).toEqual([]);
   });
@@ -754,7 +758,9 @@ describe("gateway send mirroring", () => {
     expect(mocks.resolveMessageChannelSelection).toHaveBeenCalled();
     const response = firstRespondCall(respond);
     expect(response[0]).toBe(true);
-    expect(response[1]).toBeDefined();
+    if (response[1] === undefined) {
+      throw new Error("Expected poll missing-channel response payload");
+    }
     expect(response[2]).toBeUndefined();
     expect(response[3]).toEqual({ channel: "slack" });
   });

@@ -124,10 +124,13 @@ describe("tasks commands", () => {
         findings: Array<{ kind: string; code: string; token?: string }>;
       };
 
-      expect(limitedPayload.findings).toHaveLength(1);
-      expect(limitedPayload.findings[0]?.kind).toBe("task_flow");
-      expect(limitedPayload.findings[0]?.code).toBe("stale_running");
-      expect(limitedPayload.findings[0]?.token).toBe(runningFlow.flowId);
+      expect(limitedPayload.findings).toStrictEqual([
+        expect.objectContaining({
+          code: "stale_running",
+          kind: "task_flow",
+          token: runningFlow.flowId,
+        }),
+      ]);
     });
   });
 
@@ -270,9 +273,15 @@ describe("tasks commands", () => {
 
       const updated = JSON.parse(await fs.readFile(storePath, "utf-8")) as Record<string, unknown>;
       expect(updated["agent:main:cron:done-job:run:old-run"]).toBeUndefined();
-      expect(updated["agent:main:cron:running-job:run:old-run"]).toBeDefined();
-      expect(updated["agent:main:cron:done-job:run:recent-run"]).toBeDefined();
-      expect(updated["agent:main:telegram:dm:old"]).toBeDefined();
+      for (const key of [
+        "agent:main:cron:running-job:run:old-run",
+        "agent:main:cron:done-job:run:recent-run",
+        "agent:main:telegram:dm:old",
+      ]) {
+        if (updated[key] === undefined) {
+          throw new Error(`Expected preserved session ${key}`);
+        }
+      }
     });
   });
 });

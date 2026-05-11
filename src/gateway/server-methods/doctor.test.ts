@@ -232,7 +232,9 @@ describe("doctor.memory.status", () => {
     await invokeDoctorMemoryStatus(respond, { params: { probe: true } });
 
     const managerInput = mockCallArg(getMemorySearchManager);
-    expect(managerInput.cfg).toBeDefined();
+    if (managerInput.cfg === undefined) {
+      throw new Error("Expected memory search manager config");
+    }
     expectRecordFields(managerInput, {
       agentId: "main",
       purpose: "status",

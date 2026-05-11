@@ -224,15 +224,51 @@ describe("gateway status output", () => {
           ok?: unknown;
           degraded?: unknown;
           primaryTargetId?: unknown;
-          targets?: Array<{ connect?: { ok?: unknown; rpcOk?: unknown; error?: unknown } }>;
+          targets?: unknown;
+          warnings?: unknown;
         }
       | undefined;
-    expect(payload?.ok).toBe(true);
-    expect(payload?.degraded).toBe(true);
-    expect(payload?.primaryTargetId).toBe("detail-timeout");
-    expect(payload?.targets).toHaveLength(1);
-    expect(payload?.targets?.[0]?.connect?.ok).toBe(true);
-    expect(payload?.targets?.[0]?.connect?.rpcOk).toBe(false);
-    expect(payload?.targets?.[0]?.connect?.error).toBe("timeout");
+    expect(payload).toStrictEqual(
+      expect.objectContaining({
+        degraded: true,
+        ok: true,
+        primaryTargetId: "detail-timeout",
+        targets: [
+          expect.objectContaining({
+            active: true,
+            auth: {
+              capability: "read_only",
+              role: "operator",
+              scopes: ["operator.read"],
+            },
+            config: null,
+            connect: {
+              close: null,
+              error: "timeout",
+              latencyMs: 40,
+              ok: true,
+              rpcOk: false,
+              scopeLimited: false,
+            },
+            health: null,
+            id: "detail-timeout",
+            kind: "explicit",
+            presence: null,
+            self: null,
+            summary: null,
+            tunnel: null,
+            url: "ws://127.0.0.1:18789",
+          }),
+        ],
+        warnings: [
+          {
+            code: "probe_detail_failed",
+            message:
+              "Gateway accepted the WebSocket connection, but follow-up read diagnostics failed: timeout",
+            targetIds: ["detail-timeout"],
+          },
+        ],
+      }),
+    );
   });
 });

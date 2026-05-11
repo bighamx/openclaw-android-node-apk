@@ -89,9 +89,9 @@ const runDrySend = (params: {
   });
 
 function requireRecord(value: unknown): Record<string, unknown> {
-  expect(value).toBeTruthy();
-  expect(typeof value).toBe("object");
-  expect(Array.isArray(value)).toBe(false);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Expected a non-array record");
+  }
   return value as Record<string, unknown>;
 }
 
@@ -107,8 +107,10 @@ function requireActionPayload(
 
 function requireLoadWebMediaOptions(): Record<string, unknown> {
   const call = vi.mocked(loadWebMedia).mock.calls[0];
-  expect(call).toBeTruthy();
-  return requireRecord(call?.[1]);
+  if (!call) {
+    throw new Error("Expected loadWebMedia to be called");
+  }
+  return requireRecord(call[1]);
 }
 
 async function expectSandboxMediaRewrite(params: {
@@ -830,8 +832,10 @@ describe("runMessageAction media behavior", () => {
         if (result.kind !== "send") {
           throw new Error("expected send result");
         }
-        expect(result.sendResult).toBeTruthy();
-        expect(result.sendResult?.channel).toBe("profile-demo");
+        if (!result.sendResult) {
+          throw new Error("Expected send result payload");
+        }
+        expect(result.sendResult.channel).toBe("profile-demo");
       });
     });
   });

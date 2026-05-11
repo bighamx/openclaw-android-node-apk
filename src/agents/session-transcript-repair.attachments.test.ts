@@ -32,14 +32,24 @@ describe("sanitizeToolCallInputs redacts sessions_spawn attachments", () => {
     const secret = "SUPER_SECRET_SHOULD_NOT_PERSIST"; // pragma: allowlist secret
     const input = [mkSessionsSpawnToolCall(secret)];
     const out = sanitizeToolCallInputs(input);
-    expect(out).toHaveLength(1);
-    const msg = out[0] as { content?: unknown[] };
-    const tool = (msg.content?.[0] ?? null) as {
-      name?: string;
-      arguments?: { attachments?: Array<{ content?: string }> };
-    } | null;
-    expect(tool?.name).toBe("sessions_spawn");
-    expect(tool?.arguments?.attachments?.[0]?.content).toBe("__OPENCLAW_REDACTED__");
+    expect(out).toStrictEqual([
+      expect.objectContaining({
+        content: [
+          expect.objectContaining({
+            name: "sessions_spawn",
+            arguments: expect.objectContaining({
+              attachments: [
+                {
+                  name: "README.md",
+                  encoding: "utf8",
+                  content: "__OPENCLAW_REDACTED__",
+                },
+              ],
+            }),
+          }),
+        ],
+      }),
+    ]);
     expect(JSON.stringify(out)).not.toContain(secret);
   });
 

@@ -47,9 +47,10 @@ describe("createVideoGenerateTool status actions", () => {
     ]);
 
     const result = createVideoGenerateDuplicateGuardResult("agent:main:discord:direct:123");
-    const text = (result?.content?.[0] as { text: string } | undefined)?.text ?? "";
 
-    expect(result?.content).toHaveLength(1);
+    const [content] = result?.content ?? [];
+    expect(result?.content).toStrictEqual([expect.objectContaining({ type: "text" })]);
+    const text = content?.text ?? "";
     expect(text).toContain("Video generation task task-active is already running with openai.");
     expect(text).toContain("Do not call video_generate again for this request.");
     const details = result?.details as

@@ -329,8 +329,10 @@ describe("dispatchTelegramMessage draft streaming", () => {
   function expectDeliveredReply(index: number, expected: Record<string, unknown>, callIndex = 0) {
     const params = expectDeliverRepliesParams({}, callIndex);
     const replies = params.replies as Array<unknown> | undefined;
-    expect(replies).toBeDefined();
-    return expectRecordFields(replies?.[index], expected);
+    if (!Array.isArray(replies)) {
+      throw new Error("Expected delivered replies array");
+    }
+    return expectRecordFields(replies[index], expected);
   }
 
   function expectDispatchParams(expected: Record<string, unknown>) {
@@ -1795,7 +1797,10 @@ describe("dispatchTelegramMessage draft streaming", () => {
     const replies = deliverReplies.mock.calls[0]?.[0]?.replies as
       | Array<{ text?: string }>
       | undefined;
-    expect(replies?.[0]?.text?.trim()).toBeTruthy();
+    const replyText = replies?.[0]?.text?.trim();
+    if (!replyText) {
+      throw new Error("expected non-empty Telegram reply text");
+    }
     expect(replies?.[0]?.text).not.toBe("NO_REPLY");
   });
 

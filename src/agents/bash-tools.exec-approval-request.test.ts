@@ -63,8 +63,9 @@ function requireApprovalRequestPayload(callIndex: number): ApprovalRequestPayloa
   const call = vi.mocked(callGatewayTool).mock.calls[callIndex];
   expect(call?.[0]).toBe("exec.approval.request");
   const payload = call?.[2];
-  expect(typeof payload).toBe("object");
-  expect(payload).not.toBeNull();
+  if (!payload || typeof payload !== "object") {
+    throw new Error(`expected approval request payload ${callIndex}`);
+  }
   return payload as ApprovalRequestPayload;
 }
 
@@ -241,7 +242,23 @@ describe("requestExecApprovalDecision", () => {
     });
 
     expect(result).toBe("deny");
-    expect(vi.mocked(callGatewayTool).mock.calls).toHaveLength(1);
+    expect(vi.mocked(callGatewayTool).mock.calls).toStrictEqual([
+      [
+        "exec.approval.request",
+        { timeoutMs: DEFAULT_APPROVAL_REQUEST_TIMEOUT_MS },
+        expect.objectContaining({
+          ask: "on-miss",
+          command: "echo hi",
+          cwd: "/tmp",
+          host: "gateway",
+          id: "approval-id",
+          security: "allowlist",
+          timeoutMs: DEFAULT_APPROVAL_TIMEOUT_MS,
+          twoPhase: true,
+        }),
+        { expectFinal: false },
+      ],
+    ]);
   });
 
   it("adds command spans to host approval registration payloads", async () => {

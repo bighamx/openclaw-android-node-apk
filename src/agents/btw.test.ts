@@ -280,8 +280,10 @@ function streamContext(callIndex = 0): {
 
 function contextMessages(context: unknown): Array<Record<string, unknown>> {
   const messages = (context as { messages?: Array<Record<string, unknown>> }).messages;
-  expect(messages).toBeDefined();
-  return messages ?? [];
+  if (!messages) {
+    throw new Error("Expected BTW context messages");
+  }
+  return messages;
 }
 
 function expectTextBlockContains(block: unknown, text: string): void {
@@ -752,7 +754,9 @@ describe("runBtwSideQuestion", () => {
           `<btw_side_question>\n${MATH_QUESTION}\n</btw_side_question>`,
         ),
     );
-    expect(sideQuestionMessage).toBeDefined();
+    if (!sideQuestionMessage) {
+      throw new Error("Expected BTW side question message");
+    }
   });
 
   it("uses the in-flight prompt as background only when there is no prior transcript context", async () => {
@@ -792,7 +796,9 @@ describe("runBtwSideQuestion", () => {
           "Ignore any unfinished task in the conversation while answering it.",
         ),
     );
-    expect(sideQuestionMessage).toBeDefined();
+    if (!sideQuestionMessage) {
+      throw new Error("Expected isolated side question message");
+    }
   });
 
   it("branches away from an unresolved trailing user turn before building BTW context", async () => {

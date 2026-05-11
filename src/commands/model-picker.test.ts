@@ -170,8 +170,9 @@ type MockCallSource = {
 };
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
-  expect(value, label).toBeTypeOf("object");
-  expect(value, label).not.toBeNull();
+  if (!value || typeof value !== "object") {
+    throw new Error(`expected ${label}`);
+  }
   return value as Record<string, unknown>;
 }
 
@@ -1388,7 +1389,7 @@ describe("applyModelAllowlist", () => {
     expect(next.agents?.defaults?.models).toEqual({
       "google/gemini-3.1-pro-preview": { alias: "gemini" },
       "google-gemini-cli/gemini-3.1-pro-preview": {},
-      "openrouter/google/gemini-3-pro-preview": {},
+      "openrouter/google/gemini-3.1-pro-preview": {},
     });
   });
 
@@ -1511,10 +1512,11 @@ describe("applyModelFallbacksFromSelection", () => {
     const next = applyModelFallbacksFromSelection(config, [
       "openai/gpt-5.5",
       "google/gemini-3-pro-preview",
+      "openrouter/google/gemini-3-pro-preview",
     ]);
     expect(next.agents?.defaults?.model).toEqual({
       primary: "openai/gpt-5.5",
-      fallbacks: ["google/gemini-3.1-pro-preview"],
+      fallbacks: ["google/gemini-3.1-pro-preview", "openrouter/google/gemini-3.1-pro-preview"],
     });
   });
 

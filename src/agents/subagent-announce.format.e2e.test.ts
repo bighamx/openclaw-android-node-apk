@@ -74,7 +74,6 @@ function expectInputProvenance(
   sourceSessionKey: string,
 ) {
   const inputProvenance = params?.inputProvenance;
-  expect(inputProvenance).toBeTruthy();
   if (!inputProvenance || typeof inputProvenance !== "object") {
     throw new Error("Expected input provenance");
   }

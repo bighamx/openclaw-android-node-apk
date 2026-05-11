@@ -340,8 +340,10 @@ describe("Tool Search", () => {
     const entry = __testing.sessionCatalogs
       .get("session:session-hooks")
       ?.entries.find((candidate) => candidate.name === "fake_hooked");
-    expect(entry).toBeTruthy();
-    expect(isToolWrappedWithBeforeToolCallHook(entry!.tool as AnyAgentTool)).toBe(true);
+    if (!entry) {
+      throw new Error("Expected fake_hooked catalog entry");
+    }
+    expect(isToolWrappedWithBeforeToolCallHook(entry.tool as AnyAgentTool)).toBe(true);
 
     const [runtimeCodeTool] = createToolSearchTools({
       sessionId: "session-hooks",

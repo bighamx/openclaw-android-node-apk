@@ -553,7 +553,9 @@ describe("handleSystemRunInvoke mac app exec host routing", () => {
     });
 
     const shellWrapperCall = requireMacExecHostCall(shellWrapperInvoke.runViaMacAppExecHost);
-    expect(shellWrapperCall.approvals).toBeDefined();
+    if (shellWrapperCall.approvals === undefined) {
+      throw new Error("Expected shell-wrapper approvals");
+    }
     expect(shellWrapperCall.request?.command).toEqual([
       "/bin/sh",
       "-lc",
@@ -621,7 +623,9 @@ describe("handleSystemRunInvoke mac app exec host routing", () => {
           const canonicalCwd = fs.realpathSync(tmp);
           expect(invoke.runCommand).not.toHaveBeenCalled();
           const macHostCall = requireMacExecHostCall(invoke.runViaMacAppExecHost);
-          expect(macHostCall.approvals).toBeDefined();
+          if (macHostCall.approvals === undefined) {
+            throw new Error("Expected Mac host approvals");
+          }
           expect(macHostCall.request?.command).toEqual(["env", "sh", "-c", "echo SAFE"]);
           expect(macHostCall.request?.rawCommand).toBe('env sh -c "echo SAFE"');
           expect(macHostCall.request?.cwd).toBe(canonicalCwd);

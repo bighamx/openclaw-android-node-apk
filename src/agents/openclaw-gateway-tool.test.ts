@@ -66,7 +66,9 @@ function expectGatewayCallFields(
   expectedParams: Record<string, unknown>,
 ): Record<string, unknown> {
   const [, , params] = gatewayCall(method);
-  expect(params).toBeDefined();
+  if (params === undefined) {
+    throw new Error(`Expected gateway call params for ${method}`);
+  }
   const record = params as Record<string, unknown>;
   for (const [key, value] of Object.entries(expectedParams)) {
     expect(record[key]).toEqual(value);

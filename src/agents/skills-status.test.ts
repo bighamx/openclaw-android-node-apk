@@ -39,8 +39,14 @@ describe("buildWorkspaceSkillStatus", () => {
     };
 
     const report = buildWorkspaceSkillStatus("/tmp/ws", { entries: [entry] });
-    expect(report.skills).toHaveLength(1);
-    expect(report.skills[0]?.install).toStrictEqual([]);
+    expect(report.skills).toStrictEqual([
+      expect.objectContaining({
+        name: "os-scoped",
+        filePath: "/tmp/os-scoped",
+        baseDir: "/tmp",
+        install: [],
+      }),
+    ]);
   });
 
   it("does not expose raw config values in config checks", () => {

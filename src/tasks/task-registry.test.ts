@@ -253,7 +253,9 @@ async function flushAsyncWork(times = 4) {
 }
 
 function expectRecordFields(record: unknown, expected: Record<string, unknown>) {
-  expect(record).toBeDefined();
+  if (!record || typeof record !== "object") {
+    throw new Error("Expected record");
+  }
   const actual = record as Record<string, unknown>;
   for (const [key, value] of Object.entries(expected)) {
     expect(actual[key]).toEqual(value);
@@ -978,9 +980,11 @@ describe("task-registry", () => {
 
       await waitForAssertion(() => {
         const task = findTaskByRunId(runId);
-        expect(task).toBeDefined();
-        expect(task?.status).toBe("succeeded");
-        expect(task?.deliveryStatus).toBe("session_queued");
+        if (!task) {
+          throw new Error(`Expected task for run ${runId}`);
+        }
+        expect(task.status).toBe("succeeded");
+        expect(task.deliveryStatus).toBe("session_queued");
       });
       expect(hoisted.sendMessageMock).not.toHaveBeenCalled();
       expect(peekSystemEvents(ownerKey)).toEqual([
