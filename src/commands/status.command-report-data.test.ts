@@ -85,13 +85,9 @@ describe("buildStatusCommandReportData", () => {
       }),
     );
 
-    expect(result.overviewRows).toEqual(
-      expect.arrayContaining([
-        {
-          Item: "Model pricing",
-          Value: "warn(degraded · OpenRouter pricing fetch failed: TypeError: fetch failed)",
-        },
-      ]),
-    );
+    expect(result.overviewRows).toContainEqual({
+      Item: "Model pricing",
+      Value: "warn(degraded · OpenRouter pricing fetch failed: TypeError: fetch failed)",
+    });
   });
 });

@@ -995,7 +995,7 @@ describe("task-registry", () => {
       });
       expect(hoisted.sendMessageMock).not.toHaveBeenCalled();
       expect(peekSystemEvents(ownerKey)).toEqual([
-        expect.stringContaining("Background task done: ACP background task"),
+        "Background task done: ACP background task (run run-grou).",
       ]);
       expect(hasPendingHeartbeatWake()).toBe(true);
     });

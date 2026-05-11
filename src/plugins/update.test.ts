@@ -1978,6 +1978,9 @@ describe("updateNpmInstalledPlugins", () => {
       version: "0.2.6",
       resolvedSpec: "openclaw-codex-app-server@0.2.6",
     });
+    expect(result.outcomes[0]?.message).toBe(
+      "Updated openclaw-codex-app-server: unknown -> 0.2.6. (beta channel fallback: used openclaw-codex-app-server after openclaw-codex-app-server@beta failed).",
+    );
   });
 
   it("falls back to the default npm spec when the beta package exists but is invalid", async () => {
@@ -2020,6 +2023,9 @@ describe("updateNpmInstalledPlugins", () => {
       version: "0.2.6",
       resolvedSpec: "openclaw-codex-app-server@0.2.6",
     });
+    expect(result.outcomes[0]?.message).toBe(
+      "Updated openclaw-codex-app-server: unknown -> 0.2.6. (beta channel fallback: used openclaw-codex-app-server after openclaw-codex-app-server@beta failed).",
+    );
   });
 
   it("reports the fallback npm spec when beta fallback also fails", async () => {
@@ -2220,6 +2226,9 @@ describe("updateNpmInstalledPlugins", () => {
       version: "1.2.4",
       clawhubPackage: "demo",
     });
+    expect(result.outcomes[0]?.message).toBe(
+      "Updated demo: unknown -> 1.2.4. (beta channel fallback: used clawhub:demo after clawhub:demo@beta failed).",
+    );
   });
 
   it("preserves explicit ClawHub tags when updating on the beta channel", async () => {

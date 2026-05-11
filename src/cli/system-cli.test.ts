@@ -44,12 +44,11 @@ describe("system-cli", () => {
   it("runs system event with default wake mode and text output", async () => {
     await runCli(["system", "event", "--text", "  hello world  "]);
 
-    expect(callGatewayFromCli).toHaveBeenCalledWith(
-      "wake",
-      expect.objectContaining({ text: "  hello world  " }),
-      { mode: "next-heartbeat", text: "hello world" },
-      { expectFinal: false },
-    );
+    const [method, payload, options, requestOptions] = callGatewayFromCli.mock.calls[0] ?? [];
+    expect(method).toBe("wake");
+    expect((payload as { text?: string } | undefined)?.text).toBe("  hello world  ");
+    expect(options).toEqual({ mode: "next-heartbeat", text: "hello world" });
+    expect(requestOptions).toEqual({ expectFinal: false });
     expect(runtimeLogs).toEqual(["ok"]);
   });
 
@@ -66,6 +65,41 @@ describe("system-cli", () => {
 
     expect(callGatewayFromCli).not.toHaveBeenCalled();
     expect(runtimeErrors[0]).toContain("--mode must be now or next-heartbeat");
+  });
+
+  it("forwards --session-key on system event", async () => {
+    await runCli([
+      "system",
+      "event",
+      "--text",
+      "ping",
+      "--session-key",
+      "agent:main:telegram:dm:42",
+    ]);
+
+    expect(callGatewayFromCli).toHaveBeenCalledTimes(1);
+    expect(callGatewayFromCli).toHaveBeenCalledWith(
+      "wake",
+      expect.any(Object),
+      { mode: "next-heartbeat", text: "ping", sessionKey: "agent:main:telegram:dm:42" },
+      { expectFinal: false },
+    );
+  });
+
+  it("omits sessionKey from payload when --session-key not provided", async () => {
+    await runCli(["system", "event", "--text", "ping"]);
+
+    expect(callGatewayFromCli).toHaveBeenCalledTimes(1);
+    const [, , params] = callGatewayFromCli.mock.calls[0];
+    expect(params).not.toHaveProperty("sessionKey");
+  });
+
+  it("treats empty --session-key as omitted", async () => {
+    await runCli(["system", "event", "--text", "ping", "--session-key", "  "]);
+
+    expect(callGatewayFromCli).toHaveBeenCalledTimes(1);
+    const [, , params] = callGatewayFromCli.mock.calls[0];
+    expect(params).not.toHaveProperty("sessionKey");
   });
 
   it.each([
