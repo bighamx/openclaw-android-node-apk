@@ -71,7 +71,11 @@ function createRuntimeLoader(
 type MockCallSource = { mock: { calls: Array<Array<unknown>> } };
 
 function firstMockArg(source: MockCallSource, label: string, argIndex = 0) {
-  const arg = source.mock.calls[0]?.[argIndex];
+  const [call] = source.mock.calls;
+  if (!call) {
+    throw new Error(`expected ${label} call`);
+  }
+  const arg = call[argIndex];
   if (arg === undefined) {
     throw new Error(`expected ${label} arg`);
   }
@@ -109,7 +113,9 @@ function expectToolExecute(tool: unknown, name?: string) {
 }
 
 function firstAddedMemory(add: ReturnType<typeof vi.fn>) {
-  const batch = add.mock.calls[0]?.[0] as Array<Record<string, unknown>> | undefined;
+  const batch = firstMockArg(add as MockCallSource, "memory add") as
+    | Array<Record<string, unknown>>
+    | undefined;
   const memory = batch?.[0];
   if (!memory) {
     throw new Error("expected first added memory");

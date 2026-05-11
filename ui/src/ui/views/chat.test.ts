@@ -19,7 +19,7 @@ import { renderWelcomeState } from "../chat/chat-welcome.ts";
 import { renderChatSessionSelect } from "../chat/session-controls.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
 import type { ModelCatalogEntry } from "../types.ts";
-import type { ChatQueueItem } from "../ui-types.ts";
+import type { ChatAttachment, ChatQueueItem } from "../ui-types.ts";
 import { renderChat, resetChatViewState } from "./chat.ts";
 
 const refreshVisibleToolsEffectiveForCurrentSessionMock = vi.hoisted(() =>
@@ -43,6 +43,20 @@ const loadSessionsMock = vi.hoisted(() =>
     }
   }),
 );
+
+function requireFirstAttachmentsChange(
+  onAttachmentsChange: ReturnType<typeof vi.fn>,
+): ChatAttachment[] {
+  const [call] = onAttachmentsChange.mock.calls;
+  if (!call) {
+    throw new Error("expected attachments change call");
+  }
+  const [attachments] = call;
+  if (!Array.isArray(attachments)) {
+    throw new Error("expected attachments array");
+  }
+  return attachments as ChatAttachment[];
+}
 
 vi.mock("../icons.ts", () => ({
   icons: {},
@@ -777,16 +791,14 @@ describe("chat attachment picker", () => {
     input!.dispatchEvent(new Event("change", { bubbles: true }));
 
     await vi.waitFor(() => {
-      const attachments = onAttachmentsChange.mock.calls[0]?.[0] as
-        | Array<{ fileName?: string; mimeType?: string; sizeBytes?: number }>
-        | undefined;
+      const attachments = requireFirstAttachmentsChange(onAttachmentsChange);
       expect(attachments).toHaveLength(1);
-      expect(attachments?.[0]?.fileName).toBe("brief.pdf");
-      expect(attachments?.[0]?.mimeType).toBe("application/pdf");
-      expect(attachments?.[0]?.sizeBytes).toBe(file.size);
+      expect(attachments[0]?.fileName).toBe("brief.pdf");
+      expect(attachments[0]?.mimeType).toBe("application/pdf");
+      expect(attachments[0]?.sizeBytes).toBe(file.size);
     });
 
-    const nextAttachments = onAttachmentsChange.mock.calls[0]?.[0] ?? [];
+    const nextAttachments = requireFirstAttachmentsChange(onAttachmentsChange);
     expect(getChatAttachmentDataUrl(nextAttachments[0])).toMatch(/^data:application\/pdf;base64,/);
     const preview = renderChatView({ attachments: nextAttachments });
     expect(preview.querySelectorAll(".chat-attachment-thumb--file")).toHaveLength(1);

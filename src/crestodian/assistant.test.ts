@@ -47,7 +47,11 @@ function requireRecord(value: unknown): Record<string, unknown> {
 }
 
 function firstMockArg(mock: ReturnType<typeof vi.fn>): Record<string, unknown> {
-  return requireRecord(mock.mock.calls[0]?.[0]);
+  const [call] = mock.mock.calls;
+  if (!call) {
+    throw new Error("Expected mock to be called");
+  }
+  return requireRecord(call[0]);
 }
 
 describe("Crestodian assistant", () => {
