@@ -542,11 +542,8 @@ describe("doctor preview warnings", () => {
     });
 
     expect(warnings).toEqual([
-      expect.stringContaining('Agent "commander" is routed from channel "discord"'),
+      '- Agent "commander" is routed from channel "discord", but the message tool is unavailable for that agent; explicit channel actions such as sendAttachment, upload-file, thread-reply, or reply can fail. Add "message" to the agent tool allowlist, add "group:messaging", or switch the agent to a profile that includes messaging tools.',
     ]);
-    expect(warnings[0]).toContain("message tool is unavailable");
-    expect(warnings[0]).toContain("sendAttachment");
-    expect(warnings[0]).toContain("group:messaging");
     expect(warnings.join("\n")).not.toContain("support");
   });
 
@@ -568,7 +565,7 @@ describe("doctor preview warnings", () => {
     });
 
     expect(warnings).toEqual([
-      expect.stringContaining('Agent "main" is routed from channel "discord" and "telegram"'),
+      '- Agent "main" is routed from channel "discord" and "telegram", but the message tool is unavailable for that agent; explicit channel actions such as sendAttachment, upload-file, thread-reply, or reply can fail. Add "message" to the agent tool allowlist, add "group:messaging", or switch the agent to a profile that includes messaging tools.',
     ]);
     expect(warnings.join("\n")).not.toContain("slack");
     expect(warnings.join("\n")).not.toContain("defaults");
@@ -608,7 +605,7 @@ describe("doctor preview warnings", () => {
     });
 
     expect(warnings).toEqual([
-      expect.stringContaining('Agent "main" is routed from channel "telegram"'),
+      '- Agent "main" is routed from channel "telegram", but the message tool is unavailable for that agent; explicit channel actions such as sendAttachment, upload-file, thread-reply, or reply can fail. Add "message" to the agent tool allowlist, add "group:messaging", or switch the agent to a profile that includes messaging tools.',
     ]);
     expect(warnings.join("\n")).not.toContain("discord");
     expect(warnings.join("\n")).not.toContain("commander");
@@ -648,7 +645,7 @@ describe("doctor preview warnings", () => {
     });
 
     expect(warnings).toEqual([
-      expect.stringContaining('Agent "main" is routed from channel "discord"'),
+      '- Agent "main" is routed from channel "discord", but the message tool is unavailable for that agent; explicit channel actions such as sendAttachment, upload-file, thread-reply, or reply can fail. Add "message" to the agent tool allowlist, add "group:messaging", or switch the agent to a profile that includes messaging tools.',
     ]);
     expect(warnings.join("\n")).not.toContain("commander");
   });
@@ -776,7 +773,7 @@ describe("doctor preview warnings", () => {
     });
 
     expect(warnings).toEqual([
-      expect.stringContaining('Agent "main" is routed from channel "imessage"'),
+      '- Agent "main" is routed from channel "imessage", but the message tool is unavailable for that agent; explicit channel actions such as sendAttachment, upload-file, thread-reply, or reply can fail. Add "message" to the agent tool allowlist, add "group:messaging", or switch the agent to a profile that includes messaging tools.',
     ]);
     expect(warnings.join("\n")).not.toContain("ios-agent");
     expect(warnings.join("\n")).not.toContain("imsg");
@@ -821,7 +818,7 @@ describe("doctor preview warnings", () => {
     });
 
     expect(warnings).toEqual([
-      expect.stringContaining('Agent "main" is routed from channel "discord"'),
+      '- Agent "main" is routed from channel "discord", but the message tool is unavailable for that agent; explicit channel actions such as sendAttachment, upload-file, thread-reply, or reply can fail. Add "message" to the agent tool allowlist, add "group:messaging", or switch the agent to a profile that includes messaging tools.',
     ]);
     expect(warnings.join("\n")).not.toContain("personal-agent");
   });

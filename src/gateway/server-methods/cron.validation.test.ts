@@ -78,6 +78,7 @@ function createCronContext(currentJob?: CronJob) {
       getDefaultAgentId: vi.fn(() => "main"),
       getJob: vi.fn(() => currentJob),
       wake: vi.fn(() => ({ ok: true }) as const),
+      readJob: vi.fn(async (id: string) => (id === currentJob?.id ? currentJob : undefined)),
     },
     logGateway: {
       info: vi.fn(),
@@ -90,6 +91,20 @@ async function invokeCronAdd(params: Record<string, unknown>) {
   const context = createCronContext();
   const respond = vi.fn();
   await cronHandlers["cron.add"]({
+    req: {} as never,
+    params: params as never,
+    respond: respond as never,
+    context: context as never,
+    client: null,
+    isWebchatConnect: () => false,
+  });
+  return { context, respond };
+}
+
+async function invokeCronGet(params: Record<string, unknown>, currentJob?: CronJob) {
+  const context = createCronContext(currentJob);
+  const respond = vi.fn();
+  await cronHandlers["cron.get"]({
     req: {} as never,
     params: params as never,
     respond: respond as never,
@@ -229,6 +244,24 @@ describe("cron method validation", () => {
       threadId: 123,
     });
     expect(respond).toHaveBeenCalledWith(true, { id: "cron-1" }, undefined);
+  });
+
+  it("returns a single cron job for cron.get", async () => {
+    const job = createCronJob({ id: "cron-42", name: "single job" });
+
+    const { context, respond } = await invokeCronGet({ id: "cron-42" }, job);
+
+    expect(context.cron.readJob).toHaveBeenCalledWith("cron-42");
+    expect(respond).toHaveBeenCalledWith(true, job, undefined);
+  });
+
+  it("returns INVALID_REQUEST when cron.get cannot find the job", async () => {
+    const { respond } = await invokeCronGet({ jobId: "missing" });
+
+    expectResponseError(respond, {
+      code: "INVALID_REQUEST",
+      messageIncludes: "cron job not found: missing",
+    });
   });
 
   it("accepts threadId on announce delivery update params", async () => {
@@ -697,7 +730,7 @@ describe("cron method validation", () => {
         sessionKey: "",
       });
       expect(context.cron.wake).not.toHaveBeenCalled();
-      expect(respond).toHaveBeenCalledWith(false, undefined, expect.any(Object));
+      expectResponseError(respond, { code: "INVALID_REQUEST", messageIncludes: "sessionKey" });
     });
 
     it("treats whitespace-only sessionKey as omitted at the handler boundary", async () => {
@@ -720,7 +753,7 @@ describe("cron method validation", () => {
         sessionKey: 42,
       });
       expect(context.cron.wake).not.toHaveBeenCalled();
-      expect(respond).toHaveBeenCalledWith(false, undefined, expect.any(Object));
+      expectResponseError(respond, { code: "INVALID_REQUEST", messageIncludes: "sessionKey" });
     });
 
     it("rejects subagent sessionKey targets before enqueueing", async () => {
@@ -730,7 +763,7 @@ describe("cron method validation", () => {
         sessionKey: "agent:main:subagent:worker",
       });
       expect(context.cron.wake).not.toHaveBeenCalled();
-      expect(respond).toHaveBeenCalledWith(false, undefined, expect.any(Object));
+      expectResponseError(respond, { code: "INVALID_REQUEST", messageIncludes: "sessionKey" });
     });
   });
 });

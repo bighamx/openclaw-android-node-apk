@@ -78,12 +78,15 @@ describe("system-cli", () => {
     ]);
 
     expect(callGatewayFromCli).toHaveBeenCalledTimes(1);
-    expect(callGatewayFromCli).toHaveBeenCalledWith(
-      "wake",
-      expect.any(Object),
-      { mode: "next-heartbeat", text: "ping", sessionKey: "agent:main:telegram:dm:42" },
-      { expectFinal: false },
-    );
+    const [method, gatewayOptions, params, requestOptions] = callGatewayFromCli.mock.calls[0] ?? [];
+    expect(method).toBe("wake");
+    expect(typeof gatewayOptions).toBe("object");
+    expect(params).toEqual({
+      mode: "next-heartbeat",
+      text: "ping",
+      sessionKey: "agent:main:telegram:dm:42",
+    });
+    expect(requestOptions).toEqual({ expectFinal: false });
   });
 
   it("omits sessionKey from payload when --session-key not provided", async () => {
@@ -120,9 +123,13 @@ describe("system-cli", () => {
 
     await runCli(args);
 
-    expect(callGatewayFromCli).toHaveBeenCalledWith(method, expect.any(Object), params, {
-      expectFinal: false,
-    });
+    expect(callGatewayFromCli).toHaveBeenCalledTimes(1);
+    const [calledMethod, gatewayOptions, calledParams, requestOptions] =
+      callGatewayFromCli.mock.calls[0] ?? [];
+    expect(calledMethod).toBe(method);
+    expect(typeof gatewayOptions).toBe("object");
+    expect(calledParams).toEqual(params);
+    expect(requestOptions).toEqual({ expectFinal: false });
     expect(runtimeLogs).toEqual([JSON.stringify({ method }, null, 2)]);
   });
 });

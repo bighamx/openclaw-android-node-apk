@@ -45,8 +45,7 @@ vi.mock("../../infra/channel-activity.js", () => ({
 import { channelsHandlers } from "./channels.js";
 
 function getSuccessPayload(respond: ReturnType<typeof vi.fn>): Record<string, unknown> {
-  expect(respond).toHaveBeenCalledWith(true, expect.any(Object), undefined);
-  return respond.mock.calls[0]?.[1] as Record<string, unknown>;
+  return requireRespondPayload(respond);
 }
 
 function createOptions(
@@ -71,24 +70,28 @@ function createOptions(
 }
 
 function requireRecord(value: unknown): Record<string, unknown> {
-  expect(value).toBeTruthy();
-  expect(typeof value).toBe("object");
-  expect(Array.isArray(value)).toBe(false);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Expected record");
+  }
   return value as Record<string, unknown>;
 }
 
 function requireFirstCallArg(mock: { mock: { calls: readonly (readonly unknown[])[] } }) {
   const call = mock.mock.calls[0];
-  expect(call).toBeTruthy();
-  return call?.[0];
+  if (!call) {
+    throw new Error("Expected first mock call");
+  }
+  return call[0];
 }
 
 function requireRespondPayload(respond: ReturnType<typeof vi.fn>): Record<string, unknown> {
   const call = respond.mock.calls[0];
-  expect(call).toBeTruthy();
-  expect(call?.[0]).toBe(true);
-  expect(call?.[2]).toBeUndefined();
-  return requireRecord(call?.[1]);
+  if (!call) {
+    throw new Error("Expected respond call");
+  }
+  expect(call[0]).toBe(true);
+  expect(call[2]).toBeUndefined();
+  return requireRecord(call[1]);
 }
 
 describe("channelsHandlers channels.status", () => {
@@ -177,6 +180,58 @@ describe("channelsHandlers channels.status", () => {
     expect(probeArgs.cfg).toBe(autoEnabledConfig);
   });
 
+  it("filters channel status to a requested channel", async () => {
+    const autoEnabledConfig = { autoEnabled: true };
+    const whatsappProbe = vi.fn(async () => ({ ok: true }));
+    const imessageProbe = vi.fn(async () => ({ ok: true }));
+    mocks.applyPluginAutoEnable.mockReturnValue({ config: autoEnabledConfig, changes: [] });
+    mocks.buildChannelUiCatalog.mockImplementation((plugins: Array<{ id: string }>) => ({
+      order: plugins.map((plugin) => plugin.id),
+      labels: Object.fromEntries(plugins.map((plugin) => [plugin.id, plugin.id])),
+      detailLabels: Object.fromEntries(plugins.map((plugin) => [plugin.id, plugin.id])),
+      systemImages: {},
+      entries: Object.fromEntries(plugins.map((plugin) => [plugin.id, { id: plugin.id }])),
+    }));
+    mocks.listChannelPlugins.mockReturnValue([
+      {
+        id: "whatsapp",
+        config: {
+          listAccountIds: () => ["default"],
+          resolveAccount: () => ({}),
+          isEnabled: () => true,
+          isConfigured: async () => true,
+        },
+        status: { probeAccount: whatsappProbe },
+      },
+      {
+        id: "imessage",
+        config: {
+          listAccountIds: () => ["default"],
+          resolveAccount: () => ({}),
+          isEnabled: () => true,
+          isConfigured: async () => true,
+        },
+        status: { probeAccount: imessageProbe },
+      },
+    ]);
+    const respond = vi.fn();
+
+    await channelsHandlers["channels.status"](
+      createOptions({ channel: "imessage", probe: true, timeoutMs: 1000 }, { respond }),
+    );
+
+    expect(whatsappProbe).not.toHaveBeenCalled();
+    expect(imessageProbe).toHaveBeenCalledOnce();
+    const payload = requireRespondPayload(respond);
+    expect(payload.channelOrder).toEqual(["imessage"]);
+    expect(payload.channels).toEqual({
+      imessage: expect.any(Object),
+    });
+    expect(payload.channelAccounts).toEqual({
+      imessage: [expect.objectContaining({ accountId: "default" })],
+    });
+  });
+
   it("preserves channel account rows when a live probe throws", async () => {
     const autoEnabledConfig = { autoEnabled: true };
     const probeAccount = vi.fn(async () => {
@@ -209,21 +264,16 @@ describe("channelsHandlers channels.status", () => {
     );
 
     const payload = getSuccessPayload(respond);
-    const channelAccounts = payload.channelAccounts as Record<
-      string,
-      Array<Record<string, unknown>>
-    >;
-    expect(channelAccounts.whatsapp).toEqual([
-      expect.objectContaining({
-        accountId: "default",
-        lastError: expect.stringContaining("probe failed"),
-        lastProbeAt: expect.any(Number),
-        probe: expect.objectContaining({
-          ok: false,
-          error: expect.stringContaining("probe failed"),
-        }),
-      }),
-    ]);
+    const channelAccounts = requireRecord(payload.channelAccounts);
+    expect(Array.isArray(channelAccounts.whatsapp)).toBe(true);
+    const [whatsappAccount] = channelAccounts.whatsapp as unknown[];
+    const account = requireRecord(whatsappAccount);
+    expect(account.accountId).toBe("default");
+    expect(String(account.lastError)).toContain("probe failed");
+    expect(typeof account.lastProbeAt).toBe("number");
+    const accountProbe = requireRecord(account.probe);
+    expect(accountProbe.ok).toBe(false);
+    expect(String(accountProbe.error)).toContain("probe failed");
   });
 
   it("returns a partial snapshot when a channel probe exceeds the status budget", async () => {
@@ -295,15 +345,17 @@ describe("channelsHandlers channels.status", () => {
     );
 
     const payload = getSuccessPayload(respond);
-    expect(payload.channels).toEqual({
-      whatsapp: expect.objectContaining({
-        configured: true,
-        lastError: expect.stringContaining("summary failed"),
-      }),
-    });
-    expect(payload.channelAccounts).toEqual({
-      whatsapp: [expect.objectContaining({ accountId: "default", configured: true })],
-    });
+    const channels = requireRecord(payload.channels);
+    const whatsapp = requireRecord(channels.whatsapp);
+    expect(whatsapp.configured).toBe(true);
+    expect(String(whatsapp.lastError)).toContain("summary failed");
+
+    const channelAccounts = requireRecord(payload.channelAccounts);
+    expect(Array.isArray(channelAccounts.whatsapp)).toBe(true);
+    const [whatsappAccount] = channelAccounts.whatsapp as unknown[];
+    const account = requireRecord(whatsappAccount);
+    expect(account.accountId).toBe("default");
+    expect(account.configured).toBe(true);
   });
 
   it("annotates unhealthy channel snapshots and includes event-loop health", async () => {

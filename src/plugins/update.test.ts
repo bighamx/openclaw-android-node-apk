@@ -1970,7 +1970,7 @@ describe("updateNpmInstalledPlugins", () => {
     expect(npmInstallCall(0)?.spec).toBe("openclaw-codex-app-server@beta");
     expect(npmInstallCall(1)?.spec).toBe("openclaw-codex-app-server");
     expect(warnMessages).toEqual([
-      'Plugin "openclaw-codex-app-server" has no beta npm release for openclaw-codex-app-server@beta; falling back to openclaw-codex-app-server.',
+      'Plugin "openclaw-codex-app-server" has no beta npm release for openclaw-codex-app-server@beta; using openclaw-codex-app-server instead. Core update can still complete.',
     ]);
     expectCodexAppServerInstallState({
       result,
@@ -1979,7 +1979,7 @@ describe("updateNpmInstalledPlugins", () => {
       resolvedSpec: "openclaw-codex-app-server@0.2.6",
     });
     expect(result.outcomes[0]?.message).toBe(
-      "Updated openclaw-codex-app-server: unknown -> 0.2.6. (beta channel fallback: used openclaw-codex-app-server after openclaw-codex-app-server@beta failed).",
+      "Updated openclaw-codex-app-server: unknown -> 0.2.6. (warning: beta channel fallback used openclaw-codex-app-server because openclaw-codex-app-server@beta could not be used).",
     );
   });
 
@@ -2015,7 +2015,7 @@ describe("updateNpmInstalledPlugins", () => {
     expect(npmInstallCall(0)?.spec).toBe("openclaw-codex-app-server@beta");
     expect(npmInstallCall(1)?.spec).toBe("openclaw-codex-app-server");
     expect(warnMessages).toEqual([
-      'Plugin "openclaw-codex-app-server" failed beta npm update for openclaw-codex-app-server@beta; falling back to openclaw-codex-app-server.',
+      'Plugin "openclaw-codex-app-server" failed beta npm update for openclaw-codex-app-server@beta; using openclaw-codex-app-server instead. Core update can still complete.',
     ]);
     expectCodexAppServerInstallState({
       result,
@@ -2024,7 +2024,7 @@ describe("updateNpmInstalledPlugins", () => {
       resolvedSpec: "openclaw-codex-app-server@0.2.6",
     });
     expect(result.outcomes[0]?.message).toBe(
-      "Updated openclaw-codex-app-server: unknown -> 0.2.6. (beta channel fallback: used openclaw-codex-app-server after openclaw-codex-app-server@beta failed).",
+      "Updated openclaw-codex-app-server: unknown -> 0.2.6. (warning: beta channel fallback used openclaw-codex-app-server because openclaw-codex-app-server@beta could not be used).",
     );
   });
 
@@ -2217,7 +2217,7 @@ describe("updateNpmInstalledPlugins", () => {
     expect(clawHubInstallCall(0)?.spec).toBe("clawhub:demo@beta");
     expect(clawHubInstallCall(1)?.spec).toBe("clawhub:demo");
     expect(warnMessages).toEqual([
-      'Plugin "demo" has no beta ClawHub release for clawhub:demo@beta; falling back to clawhub:demo.',
+      'Plugin "demo" has no beta ClawHub release for clawhub:demo@beta; using clawhub:demo instead. Core update can still complete.',
     ]);
     expectRecordFields(result.config.plugins?.installs?.demo, {
       source: "clawhub",
@@ -2227,7 +2227,7 @@ describe("updateNpmInstalledPlugins", () => {
       clawhubPackage: "demo",
     });
     expect(result.outcomes[0]?.message).toBe(
-      "Updated demo: unknown -> 1.2.4. (beta channel fallback: used clawhub:demo after clawhub:demo@beta failed).",
+      "Updated demo: unknown -> 1.2.4. (warning: beta channel fallback used clawhub:demo because clawhub:demo@beta could not be used).",
     );
   });
 

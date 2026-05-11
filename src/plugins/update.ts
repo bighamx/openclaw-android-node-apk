@@ -451,7 +451,7 @@ function describeBetaNpmFallback(params: {
       params.result.error,
     );
   const reason = missingBeta ? "has no beta npm release" : "failed beta npm update";
-  return `Plugin "${params.pluginId}" ${reason} for ${betaSpec}; falling back to ${params.fallbackSpec}.`;
+  return `Plugin "${params.pluginId}" ${reason} for ${betaSpec}; using ${params.fallbackSpec} instead. Core update can still complete.`;
 }
 
 function formatBetaChannelFallbackOutcomeSuffix(params: {
@@ -463,7 +463,7 @@ function formatBetaChannelFallbackOutcomeSuffix(params: {
     return "";
   }
   const betaTarget = params.fallbackLabel ?? "beta target";
-  return ` (beta channel fallback: ${params.verb} ${params.fallbackSpec} after ${betaTarget} failed).`;
+  return ` (warning: beta channel fallback ${params.verb} ${params.fallbackSpec} because ${betaTarget} could not be used).`;
 }
 
 function npmUpdateFailureSpec(params: {
@@ -1211,7 +1211,7 @@ export async function updateNpmInstalledPlugins(params: {
           verb: "would use",
         });
         logger.warn?.(
-          `Plugin "${pluginId}" has no beta ClawHub release for ${clawhubSpecs.fallbackLabel ?? effectiveSpec}; falling back to ${clawhubSpecs.fallbackSpec}.`,
+          `Plugin "${pluginId}" has no beta ClawHub release for ${clawhubSpecs.fallbackLabel ?? effectiveSpec}; using ${clawhubSpecs.fallbackSpec} instead. Core update can still complete.`,
         );
         probe = await installPluginFromClawHub({
           spec: clawhubSpecs.fallbackSpec,
@@ -1408,7 +1408,7 @@ export async function updateNpmInstalledPlugins(params: {
         verb: "used",
       });
       logger.warn?.(
-        `Plugin "${pluginId}" has no beta ClawHub release for ${clawhubSpecs.fallbackLabel ?? effectiveSpec}; falling back to ${clawhubSpecs.fallbackSpec}.`,
+        `Plugin "${pluginId}" has no beta ClawHub release for ${clawhubSpecs.fallbackLabel ?? effectiveSpec}; using ${clawhubSpecs.fallbackSpec} instead. Core update can still complete.`,
       );
       result = await installPluginFromClawHub({
         spec: clawhubSpecs.fallbackSpec,

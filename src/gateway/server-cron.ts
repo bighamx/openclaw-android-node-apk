@@ -289,6 +289,9 @@ export function buildGatewayCronService(params: {
     sessionStorePath,
     enqueueSystemEvent: (text, opts) => {
       const { sessionKey } = resolveCronTarget(opts);
+      if (!sessionKey) {
+        throw new Error("Cron system event target did not resolve a session key.");
+      }
       enqueueSystemEvent(text, {
         sessionKey,
         contextKey: opts?.contextKey,

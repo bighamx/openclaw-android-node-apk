@@ -121,7 +121,7 @@ describe("agentsListCommand", () => {
 
     expect(buildProviderStatusIndexMock).toHaveBeenCalledOnce();
     expect(buildProviderSummaryMetadataIndexMock).toHaveBeenCalledOnce();
-    expect(runtime.log.mock.calls).toEqual([
+    expect(vi.mocked(runtime.log).mock.calls).toEqual([
       [
         [
           "Agents:",

@@ -1067,7 +1067,7 @@ describe("chat session controls", () => {
       key: "main",
       model: "openai/gpt-5-mini",
     });
-    expect(request).not.toHaveBeenCalledWith("chat.history", expect.anything());
+    expect(request.mock.calls.some(([method]) => method === "chat.history")).toBe(false);
     await flushTasks();
     expect(loadSessionsMock).toHaveBeenCalledTimes(1);
     expect(state.sessionsResult?.sessions[0]?.model).toBe("gpt-5-mini");

@@ -243,18 +243,7 @@ function createAcpSessionStoreEntry(params: {
 }
 
 async function waitForAssertion(assertion: () => void, timeoutMs = 2_000, stepMs = 5) {
-  const startedAt = Date.now();
-  for (;;) {
-    try {
-      assertion();
-      return;
-    } catch (error) {
-      if (Date.now() - startedAt >= timeoutMs) {
-        throw error;
-      }
-      await new Promise((resolve) => setTimeout(resolve, stepMs));
-    }
-  }
+  await vi.waitFor(assertion, { timeout: timeoutMs, interval: stepMs });
 }
 
 async function flushAsyncWork(times = 4) {
@@ -1776,6 +1765,43 @@ describe("task-registry", () => {
     });
   });
 
+  it("does not mark codex-native subagent tasks lost when they have no OpenClaw child session", async () => {
+    await withTaskRegistryTempDir(async (root) => {
+      process.env.OPENCLAW_STATE_DIR = root;
+      resetTaskRegistryForTests();
+      const now = Date.now();
+
+      const task = createTaskRecord({
+        runtime: "subagent",
+        taskKind: "codex-native",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        sourceId: "codex-thread:child-thread",
+        runId: "codex-thread:child-thread",
+        task: "Codex native child",
+        status: "running",
+        deliveryStatus: "not_applicable",
+        notifyPolicy: "silent",
+      });
+      setTaskTimingById({
+        taskId: task.taskId,
+        lastEventAt: now - 10 * 60_000,
+      });
+
+      expect(await runTaskRegistryMaintenance()).toEqual({
+        reconciled: 0,
+        recovered: 0,
+        cleanupStamped: 0,
+        pruned: 0,
+      });
+      expect(getTaskById(task.taskId)).toMatchObject({
+        status: "running",
+        taskKind: "codex-native",
+        runId: "codex-thread:child-thread",
+      });
+    });
+  });
+
   it("closes terminal parent-owned one-shot ACP sessions during maintenance", async () => {
     await withTaskRegistryTempDir(async (root) => {
       process.env.OPENCLAW_STATE_DIR = root;
@@ -3021,6 +3047,41 @@ describe("task-registry", () => {
         taskId: task.taskId,
         status: "cancelled",
       });
+    });
+  });
+
+  it("does not route codex-native task cancellation through OpenClaw subagent sessions", async () => {
+    await withTaskRegistryTempDir(async (root) => {
+      process.env.OPENCLAW_STATE_DIR = root;
+      resetTaskRegistryForTests();
+      const task = createTaskRecord({
+        runtime: "subagent",
+        taskKind: "codex-native",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        sourceId: "codex-thread:child-thread",
+        runId: "codex-thread:child-thread",
+        task: "Codex native child",
+        status: "running",
+        deliveryStatus: "not_applicable",
+        notifyPolicy: "silent",
+      });
+
+      const result = await cancelTaskById({
+        cfg: {} as never,
+        taskId: task.taskId,
+      });
+
+      expect(result).toMatchObject({
+        found: true,
+        cancelled: false,
+        reason: "Task has no cancellable child session.",
+        task: expect.objectContaining({
+          taskId: task.taskId,
+          status: "running",
+        }),
+      });
+      expect(hoisted.killSubagentRunAdminMock).not.toHaveBeenCalled();
     });
   });
 });
