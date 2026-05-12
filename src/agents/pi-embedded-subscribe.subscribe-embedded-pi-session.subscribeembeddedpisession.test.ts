@@ -338,7 +338,7 @@ describe("subscribeEmbeddedPiSession", () => {
     });
 
     await vi.waitFor(() => {
-      expect(onToolResult).toHaveBeenCalled();
+      expect(onToolResult).toHaveBeenCalledTimes(2);
     });
     const payload = onToolResult.mock.calls.at(-1)?.[0] as
       | { text?: string; mediaUrls?: string[] }
@@ -380,7 +380,7 @@ describe("subscribeEmbeddedPiSession", () => {
     });
 
     await vi.waitFor(() => {
-      expect(onToolResult).toHaveBeenCalled();
+      expect(onToolResult).toHaveBeenCalledTimes(2);
     });
     const toolPayload = onToolResult.mock.calls.at(-1)?.[0] as
       | { text?: string; mediaUrls?: string[] }
@@ -438,7 +438,7 @@ describe("subscribeEmbeddedPiSession", () => {
     });
 
     await vi.waitFor(() => {
-      expect(onToolResult).toHaveBeenCalled();
+      expect(onToolResult).toHaveBeenCalledTimes(2);
     });
 
     emit({ type: "message_start", message: { role: "assistant" } });
@@ -492,7 +492,7 @@ describe("subscribeEmbeddedPiSession", () => {
     });
 
     await vi.waitFor(() => {
-      expect(onToolResult).toHaveBeenCalled();
+      expect(onToolResult).toHaveBeenCalledTimes(2);
     });
 
     emit({ type: "message_start", message: { role: "assistant" } });

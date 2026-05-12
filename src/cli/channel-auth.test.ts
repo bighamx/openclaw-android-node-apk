@@ -308,7 +308,7 @@ describe("channel-auth", () => {
     await runChannelLogin({}, runtime);
 
     expect(mocks.normalizeChannelId).toHaveBeenCalledWith("whatsapp");
-    expect(mocks.login).toHaveBeenCalled();
+    expect(mocks.login).toHaveBeenCalledTimes(1);
   });
 
   it("propagates auth-channel ambiguity when multiple configured channels support login", async () => {
@@ -353,7 +353,7 @@ describe("channel-auth", () => {
     await runChannelLogin({}, runtime);
 
     expect(mocks.normalizeChannelId).toHaveBeenCalledWith("whatsapp");
-    expect(mocks.login).toHaveBeenCalled();
+    expect(mocks.login).toHaveBeenCalledTimes(1);
   });
 
   it("throws for unsupported channel aliases", async () => {
@@ -426,7 +426,7 @@ describe("channel-auth", () => {
       nextConfig: { channels: { whatsapp: {} } },
       baseHash: "config-1",
     });
-    expect(mocks.login).toHaveBeenCalled();
+    expect(mocks.login).toHaveBeenCalledTimes(1);
   });
 
   it("strips pending install records before persisting install-on-demand login config", async () => {
