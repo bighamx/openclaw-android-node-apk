@@ -505,7 +505,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
     expect(mocks.installPluginFromClawHub).not.toHaveBeenCalled();
     expect(mocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
     expect(mocks.writePersistedInstalledPluginIndexInstallRecords).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ changes: [], warnings: [] });
+    expect(result).toEqual({ changes: [], warnings: [], records: {} });
   });
 
   it.each([
@@ -536,7 +536,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
     expect(mocks.installPluginFromClawHub).not.toHaveBeenCalled();
     expect(mocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
     expect(mocks.writePersistedInstalledPluginIndexInstallRecords).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ changes: [], warnings: [] });
+    expect(result).toEqual({ changes: [], warnings: [], records: {} });
   });
 
   it("does not install channel plugins when the matching plugin entry is disabled", async () => {
@@ -570,7 +570,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
     expect(mocks.installPluginFromClawHub).not.toHaveBeenCalled();
     expect(mocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
     expect(mocks.writePersistedInstalledPluginIndexInstallRecords).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ changes: [], warnings: [] });
+    expect(result).toEqual({ changes: [], warnings: [], records: {} });
   });
 
   it("does not download configured channel plugins that are still bundled", async () => {
@@ -617,7 +617,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
     expect(mocks.installPluginFromClawHub).not.toHaveBeenCalled();
     expect(mocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
     expect(mocks.writePersistedInstalledPluginIndexInstallRecords).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ changes: [], warnings: [] });
+    expect(result).toEqual({ changes: [], warnings: [], records: {} });
   });
 
   it("removes stale managed install records when the configured plugin is bundled", async () => {
@@ -876,7 +876,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
       expect(mocks.installPluginFromClawHub).not.toHaveBeenCalled();
       expect(mocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
       expect(mocks.writePersistedInstalledPluginIndexInstallRecords).not.toHaveBeenCalled();
-      expect(result).toMatchObject({ changes: [], warnings: [] });
+      expect(result).toEqual({ changes: [], warnings: [], records });
     },
   );
 
@@ -1057,7 +1057,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
     expect(mocks.installPluginFromClawHub).not.toHaveBeenCalled();
     expect(mocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
     expect(mocks.writePersistedInstalledPluginIndexInstallRecords).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ changes: [], warnings: [] });
+    expect(result).toEqual({ changes: [], warnings: [], records: {} });
   });
 
   it("does not install configured plugins when plugins are globally disabled", async () => {
@@ -1115,7 +1115,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
     expect(mocks.installPluginFromClawHub).not.toHaveBeenCalled();
     expect(mocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
     expect(mocks.writePersistedInstalledPluginIndexInstallRecords).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ changes: [], warnings: [] });
+    expect(result).toEqual({ changes: [], warnings: [], records: {} });
   });
 
   it("does not install plugins merely listed in plugins.allow", async () => {
@@ -1132,7 +1132,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
 
     expect(mocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
     expect(mocks.writePersistedInstalledPluginIndexInstallRecords).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ changes: [], warnings: [] });
+    expect(result).toEqual({ changes: [], warnings: [], records: {} });
   });
 
   it("installs a missing third-party downloadable plugin from npm only", async () => {
@@ -1398,10 +1398,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
 
     expect(mocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
     expect(mocks.writePersistedInstalledPluginIndexInstallRecords).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
-      changes: [],
-      warnings: [],
-    });
+    expect(result).toEqual({ changes: [], warnings: [], records: {} });
   });
 
   it("does not install a blocked downloadable plugin from explicit channel ids", async () => {
@@ -1428,7 +1425,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
 
     expect(mocks.installPluginFromClawHub).not.toHaveBeenCalled();
     expect(mocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ changes: [], warnings: [] });
+    expect(result).toEqual({ changes: [], warnings: [], records: {} });
   });
 
   it("does not install a channel catalog plugin when a configured plugin already owns that channel", async () => {
@@ -1486,7 +1483,7 @@ describe("repairMissingConfiguredPluginInstalls", () => {
     expect(mocks.installPluginFromClawHub).not.toHaveBeenCalled();
     expect(mocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
     expect(mocks.writePersistedInstalledPluginIndexInstallRecords).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ changes: [], warnings: [] });
+    expect(result).toEqual({ changes: [], warnings: [], records: {} });
   });
 
   it("still installs a channel catalog plugin when the configured owner is blocked by the allowlist", async () => {
@@ -2339,6 +2336,6 @@ describe("repairMissingConfiguredPluginInstalls", () => {
     expect(mocks.installPluginFromClawHub).not.toHaveBeenCalled();
     expect(mocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
     expect(mocks.writePersistedInstalledPluginIndexInstallRecords).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ changes: [], warnings: [] });
+    expect(result).toEqual({ changes: [], warnings: [], records: {} });
   });
 });

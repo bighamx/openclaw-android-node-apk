@@ -384,7 +384,9 @@ describe("GatewayBrowserClient", () => {
     const closeError = requireRecord(close.error, "close error");
     const closeErrorDetails = requireRecord(closeError.details, "close error details");
     expect(closeError.code).toBe("BROWSER_WEBSOCKET_SECURITY_ERROR");
-    expect(String(closeError.message)).toContain("Use wss://");
+    expect(closeError.message).toBe(
+      "Browser refused the Gateway WebSocket for security reasons. Use wss:// when the Control UI is served over HTTPS/Tailscale Serve, or open the loopback dashboard at http://127.0.0.1:18789.",
+    );
     expect(closeErrorDetails.code).toBe("BROWSER_WEBSOCKET_SECURITY_ERROR");
     expect(closeErrorDetails.browserErrorName).toBe("SecurityError");
     expect(wsInstances).toHaveLength(0);
@@ -420,7 +422,7 @@ describe("GatewayBrowserClient", () => {
     const closeError = requireRecord(close.error, "close error");
     const closeErrorDetails = requireRecord(closeError.details, "close error details");
     expect(closeError.code).toBe("BROWSER_WEBSOCKET_CONSTRUCTOR_ERROR");
-    expect(String(closeError.message)).toContain("Could not create the Gateway WebSocket");
+    expect(closeError.message).toBe("Could not create the Gateway WebSocket: constructor failed");
     expect(closeErrorDetails.code).toBe("BROWSER_WEBSOCKET_CONSTRUCTOR_ERROR");
     expect(closeErrorDetails.browserErrorName).toBe("TypeError");
     expect(closeErrorDetails.browserMessage).toBe("constructor failed");
