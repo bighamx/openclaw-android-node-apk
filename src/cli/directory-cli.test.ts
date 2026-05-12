@@ -110,18 +110,18 @@ describe("registerDirectoryCli", () => {
     });
 
     expect(mocks.resolveInstallableChannelPlugin).toHaveBeenCalledTimes(1);
-    const installArgs = requireRecord(mocks.resolveInstallableChannelPlugin.mock.calls[0]?.[0]);
+    const installArgs = requireRecord(mocks.resolveInstallableChannelPlugin.mock.calls.at(0)?.[0]);
     expect(installArgs.rawChannel).toBe("demo-directory");
     expect(installArgs.allowInstall).toBe(true);
     expect(mocks.replaceConfigFile).toHaveBeenCalledTimes(1);
-    const replaceArgs = requireRecord(mocks.replaceConfigFile.mock.calls[0]?.[0]);
+    const replaceArgs = requireRecord(mocks.replaceConfigFile.mock.calls.at(0)?.[0]);
     expect(replaceArgs.nextConfig).toEqual({
       channels: {},
       plugins: { entries: { "demo-directory": { enabled: true } } },
     });
     expect(replaceArgs.baseHash).toBe("config-1");
     expect(self).toHaveBeenCalledTimes(1);
-    expect(requireRecord(self.mock.calls[0]?.[0]).accountId).toBe("default");
+    expect(requireRecord(self.mock.calls.at(0)?.[0]).accountId).toBe("default");
     expect(runtimeState.defaultRuntime.log).toHaveBeenCalledWith(
       JSON.stringify({ id: "self-1", name: "Family Phone" }, null, 2),
     );
@@ -159,7 +159,7 @@ describe("registerDirectoryCli", () => {
       channel: null,
     });
     expect(self).toHaveBeenCalledTimes(1);
-    expect(requireRecord(self.mock.calls[0]?.[0]).cfg).toBe(autoEnabledConfig);
+    expect(requireRecord(self.mock.calls.at(0)?.[0]).cfg).toBe(autoEnabledConfig);
     expect(mocks.replaceConfigFile).toHaveBeenCalledWith({
       nextConfig: autoEnabledConfig,
       baseHash: "config-1",
@@ -199,7 +199,7 @@ describe("registerDirectoryCli", () => {
     );
 
     expect(listPeersLive).toHaveBeenCalledTimes(1);
-    const listPeersLiveArgs = requireRecord(listPeersLive.mock.calls[0]?.[0]);
+    const listPeersLiveArgs = requireRecord(listPeersLive.mock.calls.at(0)?.[0]);
     expect(listPeersLiveArgs.accountId).toBe("default");
     expect(listPeersLiveArgs.query).toBe("ada");
     expect(listPeersLiveArgs.limit).toBe(5);
@@ -229,7 +229,7 @@ describe("registerDirectoryCli", () => {
     });
 
     expect(listGroups).toHaveBeenCalledTimes(1);
-    expect(requireRecord(listGroups.mock.calls[0]?.[0]).accountId).toBe("default");
+    expect(requireRecord(listGroups.mock.calls.at(0)?.[0]).accountId).toBe("default");
     expect(runtimeState.defaultRuntime.log).toHaveBeenCalledWith(
       JSON.stringify([{ id: "channel:config", kind: "group" }], null, 2),
     );
@@ -256,7 +256,7 @@ describe("registerDirectoryCli", () => {
     ).rejects.toThrow("exit:1");
 
     expect(mocks.resolveInstallableChannelPlugin).toHaveBeenCalledTimes(1);
-    const installArgs = requireRecord(mocks.resolveInstallableChannelPlugin.mock.calls[0]?.[0]);
+    const installArgs = requireRecord(mocks.resolveInstallableChannelPlugin.mock.calls.at(0)?.[0]);
     expect(installArgs.rawChannel).toBe("openclaw-weixin");
     expect(installArgs.allowInstall).toBe(true);
     expect(mocks.replaceConfigFile).not.toHaveBeenCalled();
