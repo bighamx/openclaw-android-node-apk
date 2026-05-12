@@ -172,6 +172,17 @@ function expectRecordFields(
   return record;
 }
 
+function firstMockCall(
+  mock: { mock: { calls: Array<readonly unknown[]> } },
+  label: string,
+): readonly unknown[] {
+  const call = mock.mock.calls[0];
+  if (!call) {
+    throw new Error(`expected ${label} call`);
+  }
+  return call;
+}
+
 function requireFetchRequest(callIndex = 0): Record<string, unknown> {
   return requireRecord(fetchWithSsrFGuardMock.mock.calls[callIndex]?.[0], "fetch request");
 }
@@ -457,8 +468,12 @@ describe("buildOpenAIRealtimeVoiceProvider", () => {
       instructions: "Be concise.",
     });
 
-    expect(execFileSyncMock.mock.calls.at(0)?.[0]).toBe("/usr/bin/security");
-    expect(execFileSyncMock.mock.calls.at(0)?.[1]).toEqual([
+    const [securityBinary, securityArgs, securityOptions] = firstMockCall(
+      execFileSyncMock,
+      "security keychain lookup",
+    );
+    expect(securityBinary).toBe("/usr/bin/security");
+    expect(securityArgs).toEqual([
       "find-generic-password",
       "-s",
       "openclaw",
@@ -466,7 +481,7 @@ describe("buildOpenAIRealtimeVoiceProvider", () => {
       "OPENAI_REALTIME_BROWSER_TEST",
       "-w",
     ]);
-    expectRecordFields(execFileSyncMock.mock.calls.at(0)?.[2], "security command options", {
+    expectRecordFields(securityOptions, "security command options", {
       encoding: "utf8",
       timeout: 5000,
     });
@@ -880,7 +895,7 @@ describe("buildOpenAIRealtimeVoiceProvider", () => {
 
     expect(onAudio).toHaveBeenCalledTimes(1);
     expect(onClearAudio).not.toHaveBeenCalled();
-    expect(parseSent(socket)).not.toContainEqual({ type: "response.cancel" });
+    expect(hasSentEventType(socket, "response.cancel")).toBe(false);
     expect(hasSentEventType(socket, "conversation.item.truncate")).toBe(false);
   });
 
@@ -926,7 +941,7 @@ describe("buildOpenAIRealtimeVoiceProvider", () => {
 
     expect(onAudio).toHaveBeenCalledTimes(1);
     expect(onClearAudio).not.toHaveBeenCalled();
-    expect(parseSent(socket)).not.toContainEqual({ type: "response.cancel" });
+    expect(hasSentEventType(socket, "response.cancel")).toBe(false);
     expect(hasSentEventType(socket, "conversation.item.truncate")).toBe(false);
   });
 
@@ -1389,7 +1404,7 @@ describe("buildOpenAIRealtimeVoiceProvider", () => {
         },
       },
     ]);
-    expect(parseSent(socket)).not.toContainEqual({ type: "response.create" });
+    expect(hasSentEventType(socket, "response.create")).toBe(false);
 
     bridge.submitToolResult("call_1", { text: "done" });
 
@@ -1443,7 +1458,7 @@ describe("buildOpenAIRealtimeVoiceProvider", () => {
         },
       },
     ]);
-    expect(parseSent(socket)).not.toContainEqual({ type: "response.create" });
+    expect(hasSentEventType(socket, "response.create")).toBe(false);
   });
 
   it("does not flush deferred response.create while a tool result is still continuing", async () => {
@@ -1481,7 +1496,7 @@ describe("buildOpenAIRealtimeVoiceProvider", () => {
     socket.emit("message", Buffer.from(JSON.stringify({ type: "response.done" })));
 
     expect(onError).not.toHaveBeenCalled();
-    expect(parseSent(socket).some((event) => event.type === "response.create")).toBe(false);
+    expect(parseSent(socket).filter((event) => event.type === "response.create")).toEqual([]);
 
     bridge.submitToolResult("call_1", { text: "done" });
 
@@ -1617,7 +1632,7 @@ describe("buildOpenAIRealtimeVoiceProvider", () => {
     bridge.handleBargeIn?.({ audioPlaybackActive: true });
 
     expect(onClearAudio).not.toHaveBeenCalled();
-    expect(parseSent(socket)).not.toContainEqual({ type: "response.cancel" });
+    expect(hasSentEventType(socket, "response.cancel")).toBe(false);
     expect(parseSent(socket).some((event) => event.type === "conversation.item.truncate")).toBe(
       false,
     );

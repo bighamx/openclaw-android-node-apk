@@ -417,7 +417,7 @@ describe("buildGatewayInstallPlan", () => {
       'Exec SecretRef passEnv ref "HOME" blocked by host-env security policy',
       "Config SecretRef",
     );
-    const warningMessages = warn.mock.calls.map(([message]) => message);
+    const warningOutput = warn.mock.calls.map(([message]) => message).join("\n");
     for (const blockedName of [
       "XDG_CONFIG_HOME",
       "XDG_CONFIG_DIRS",
@@ -427,7 +427,7 @@ describe("buildGatewayInstallPlan", () => {
       "DOCKER_HOST",
       "NODE_TLS_REJECT_UNAUTHORIZED",
     ]) {
-      expect(warningMessages.some((message) => message.includes(blockedName))).toBe(true);
+      expect(warningOutput).toContain(blockedName);
     }
     expect(warn.mock.calls.every(([, title]) => title === "Config SecretRef")).toBe(true);
   });
