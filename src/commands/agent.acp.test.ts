@@ -304,6 +304,12 @@ function expectPersistedAcpTranscript(params: { userContent: string; assistantTe
   expect(transcript?.finalText).toBe(params.assistantText);
 }
 
+function firstRunTurnInput(runTurn: { mock: { calls: unknown[][] } }) {
+  return runTurn.mock.calls[0]?.[0] as
+    | { mode?: string; sessionKey?: string; text?: string }
+    | undefined;
+}
+
 async function runAcpSessionWithPolicyOverridesAndExpectBlocked(params: {
   acpOverrides: Partial<NonNullable<OpenClawConfig["acp"]>>;
   resolveSession?: Parameters<typeof mockAcpManager>[0]["resolveSession"];
@@ -360,9 +366,7 @@ describe("agentCommand ACP runtime routing", () => {
         message: "  ping\n",
         chunks: ["  ACP_OK\n"],
       });
-      const runTurnInput = runTurn.mock.calls.at(0)?.[0] as
-        | { mode?: string; sessionKey?: string; text?: string }
-        | undefined;
+      const runTurnInput = firstRunTurnInput(runTurn);
       expect(runTurnInput?.sessionKey).toBe("agent:codex:acp:test");
       expect(runTurnInput?.text).toBe("  ping\n");
       expect(runTurnInput?.mode).toBe("prompt");
@@ -489,9 +493,7 @@ describe("agentCommand ACP runtime routing", () => {
 
       await agentCommand({ message: "ping", sessionKey: "agent:kimi:acp:test" }, runtime);
 
-      const runTurnInput = runTurn.mock.calls.at(0)?.[0] as
-        | { sessionKey?: string; text?: string }
-        | undefined;
+      const runTurnInput = firstRunTurnInput(runTurn);
       expect(runTurnInput?.sessionKey).toBe("agent:kimi:acp:test");
       expect(runTurnInput?.text).toBe("ping");
       expect(runEmbeddedPiAgentSpy).not.toHaveBeenCalled();
