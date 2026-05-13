@@ -6,7 +6,13 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Anthropic: reseed Claude CLI fresh-session retries from bounded OpenClaw transcript history after session rotation, preventing conversation amnesia. Fixes #80905. (#80934) Thanks @bitloi.
+- Require explicit browser device pairing [AI]. (#81289) Thanks @pgondhi987.
+- Require Control UI pairing before proxy-scoped access [AI]. (#81288) Thanks @pgondhi987.
+- Harden trusted-proxy source validation [AI]. (#81290) Thanks @pgondhi987.
+- Agents: add permissive item schemas to array tool parameters before provider submission, preventing OpenAI-compatible schema validation from rejecting plugin tools that omit `items`. Fixes #81175. (#81217) Thanks @JARVIS-Glasses.
 - Agents: escalate LLM idle watchdog timeouts through profile rotation and configured model fallback instead of leaving agent turns stuck after a silent model stream. Fixes #76877. (#80449) Thanks @jimdawdy-hub.
+- Discord voice: treat OpenAI Realtime startup auth failures as fatal, suppress duplicate realtime error logs, and stop autoJoin from retrying the same broken voice channel until credentials are fixed.
 - ACPX: stop forwarding unsupported timeout config options to Claude ACP while preserving OpenClaw's own turn timeout. (#80812) Thanks @sxxtony.
 - Session transcripts: redact sensitive message content in the centralized JSONL append path so CLI turns, gateway transcript injection, transcript mirrors, and guarded tool results use the same configured redaction behavior. Fixes #73565. Refs #73563. (#79645) Thanks @Ziy1-Tan.
 - Channels/iMessage: ignore Apple link-preview plugin payload attachments when users paste URLs, keeping the URL text while avoiding phantom media context. (#79374) Thanks @homer-byte.
@@ -19,6 +25,7 @@ Docs: https://docs.openclaw.ai
 - Validate node exec event provenance [AI]. (#81071) Thanks @pgondhi987.
 - Gateway: keep active reply runs visible to stuck-session diagnostics and clear no-active-work recovery state, preventing stale queued lanes after compaction or tool failures. Fixes #80677. (#81302)
 - Gateway/OpenAI HTTP: return OpenAI-compatible 400 errors for invalid sampling params and provider validation failures instead of collapsing them to 500s. (#81275) Thanks @Lellansin.
+- Telegram: publish plugin and skill command description localizations to native command menus while filtering unsupported locale codes and preserving Telegram command limits. (#81351) Thanks @jzakirov.
 - Limit hook CLI tool authority [AI]. (#81065) Thanks @pgondhi987.
 - Require admin scope for node device token management [AI]. (#81067) Thanks @pgondhi987.
 - Restrict chat sender allowlist matching [AI]. (#80898) Thanks @pgondhi987.
@@ -52,7 +59,8 @@ Docs: https://docs.openclaw.ai
 - Scrub streamable MCP redirect headers [AI]. (#80906) Thanks @pgondhi987.
 - fix(memory-wiki): require admin scope for ingest [AI]. (#80897) Thanks @pgondhi987.
 - memory-wiki: require write scope for Obsidian search [AI]. (#80904) Thanks @pgondhi987.
-- WhatsApp/install: allow Baileys' pinned libsignal git subdependency under pnpm 11 so source installs and local checks can complete.
+- WhatsApp: externalize the channel as a ClawHub/npm plugin outside the core npm runtime bundle, and bump Baileys to `7.0.0-rc11` so libsignal resolves from the registry instead of a GitHub tarball.
+- WhatsApp: keep optional audio decoding dependencies local to the external plugin so the core npm install no longer pulls WhatsApp-only media helpers.
 - Build: skip copied metadata for bundled plugins that are excluded from build entries, preventing update/status rebuilds from advertising missing QQ Bot runtime files. (#80925)
 - Control UI/sessions: nest subagent sessions under their parent session in the session picker dropdown using a visual `└─ ` prefix, making the parent-child relationship clear. Fixes #77628. (#78623) Thanks @chinar-amrutkar.
 - fix(config): reject auto-managed meta.lastTouched\* paths in config set/unset (#80856). Thanks @ai-hpc
@@ -62,9 +70,12 @@ Docs: https://docs.openclaw.ai
 - Agents: rewrite generic provider internal errors with support request IDs into user-friendly transient error copy. (#49401) Thanks @y471823206.
 - WhatsApp: finish handling pending debounced inbound messages before closing the socket. (#81246) Thanks @mcaxtr.
 - CLI/commitments: write `--json` output to stdout instead of diagnostic logs so automation can parse commitment list and dismiss results. (#81215) Thanks @giodl73-repo.
+- Update: allow pnpm GitHub-source OpenClaw updates to approve the OpenClaw package build, so source installs complete their prepare/prepack lifecycle. (#81294) Thanks @fuller-stack-dev.
 
 ### Changes
 
+- Maintainers: add a Clawdtributor skill for Discrawl-backed contributor PR triage, live status checks, and compact review formatting.
+- Telegram: support Mini App `web_app` buttons in generic message presentation payloads, allowing `openclaw message send --presentation` to render Telegram Web App inline buttons for private chats. (#81356) Thanks @jzakirov.
 - Scripts: add `OPENCLAW_HEAVY_CHECK_LOCK_SCOPE=worktree` so high-capacity local worktrees can use independent heavy-check locks while shared locks remain the default. Fixes #80729. (#80734) Thanks @samzong.
 - Agents/subagents: deliver native `sessions_spawn` tasks in the child session's first visible `[Subagent Task]` message instead of hiding the task in the sub-agent system prompt, keeping delegation auditable without duplicating tokens. Fixes #78592. Thanks @bradestes and @stainlu.
 - Voice Call/Telnyx: add realtime media-streaming call support for conversational voice calls. (#81024) Thanks @dynamite-bud.
@@ -79,6 +90,7 @@ Docs: https://docs.openclaw.ai
 - Google/Gemini: canonicalize provider-qualified retired Gemini 3 Pro Preview refs during Google forward-compatible model resolution, so emitted config uses `google/gemini-3.1-pro-preview` for Gemini 3.1 testing.
 - Google/Gemini: normalize proxy-prefixed retired Gemini 3 Pro Preview catalog rows, so emitted configs use `google/gemini-3.1-pro-preview` for Gemini 3.1 testing.
 - Google/Gemini: normalize retired Gemini 3 Pro Preview ids inside per-agent model overrides before writing config, so agent-specific config emits `google/gemini-3.1-pro-preview` for Gemini 3.1 testing.
+- Google/Gemini: normalize retired Gemini 3 Pro Preview ids in subagent, heartbeat, compaction, and subagent-tool model config during writes, so current config keeps emitting `google/gemini-3.1-pro-preview`.
 - Docs/subagents: document `agents.defaults.subagents.announceTimeoutMs` in the sub-agent and configuration references. (#75509) Thanks @akrimm702.
 - Cron: add direct `cron.get`, `openclaw cron get <id>`, and agent-tool `get` support for inspecting one stored cron job by id. (#75117) Thanks @samzong.
 - Agents/tools: add per-sender tool policies with canonical channel-scoped sender keys, so operators can restrict dangerous tools by requester identity across global, agent, group, core, bundled, and plugin tool surfaces. (#66933) Thanks @JerranC.
@@ -151,6 +163,7 @@ Docs: https://docs.openclaw.ai
 - CLI/media: render terminal QR codes with full-block characters by default so the bundled `qrcode` terminal renderer does not emit a pathologically dense ANSI final row in compact half-block mode that breaks scanning in some terminals. Fixes #77820. Thanks @KrasimirKralev.
 - Agents/compaction: read post-compaction AGENTS.md refresh context from the queued run workspace instead of the runner process cwd, so CLI-backed follow-up turns re-inject the correct workspace startup rules after compaction. Fixes #70541. (#75532) Thanks @vyctorbrzezowski.
 - Agents/read tool: treat positive offsets beyond EOF as empty ranges instead of surfacing the upstream read error, so stale pagination cursors no longer crash tool calls while unrelated read failures still fail loud. Fixes #62466. (#75536) Thanks @vyctorbrzezowski.
+- Agents/memory-flush: surface non-abort memory-flush failures (provider timeout, transport error, generic agent failure) as visible reply payloads so the outer reply loop short-circuits and isolated cron runs propagate the error into `meta.error` instead of completing silently with `status: "ok"` and an empty payload. Previously only the specific "Memory flush writes are restricted to ..." message was surfaced. Fixes #80755. Thanks @nailujac.
 - Google/Gemini: normalize retired Gemini 3 Pro Preview refs left in Google API-key onboarding model allowlists and fallbacks, so setup-emitted config keeps testing `google/gemini-3.1-pro-preview` instead of `google/gemini-3-pro-preview`.
 - Telegram/context: bound selected topic context to the active session so messages from before `/new` or `/reset` are not replayed into later turns. (#80848) Thanks @VACInc.
 - Google/Gemini: normalize retired nested Gemini 3 Pro Preview ids when resolving exact configured proxy-provider refs, so `kilocode/google/gemini-3-pro-preview` resolves to `kilocode/google/gemini-3.1-pro-preview` for Gemini 3.1 testing.
@@ -271,6 +284,7 @@ Docs: https://docs.openclaw.ai
 - System events: dedupe keyed events across the queue while preserving unkeyed, delivery-route, and trust-boundary event identity. (#73040) Thanks @statxc.
 - Agents/UI: compact exec and tool progress rows by hiding redundant shell tool names, replacing known workspace paths with short context markers, and preserving Discord trace scrubbing for compact command lines.
 - ACPX: run and await the embedded ACP backend startup probe by default so the gateway `ready` signal no longer fires before the acpx runtime has either become usable or reported a probe failure; set `OPENCLAW_ACPX_RUNTIME_STARTUP_PROBE=0` to restore lazy startup. Fixes #79596. Thanks @bzelones.
+- Agents/memory-flush: surface non-abort memory-flush failures (provider timeout, transport error, generic agent failure) as visible reply payloads so the outer reply loop short-circuits and isolated cron runs propagate the error into `meta.error` instead of completing silently with `status: "ok"` and an empty payload. Previously only the specific "Memory flush writes are restricted to ..." message was surfaced. Refs #80755. Thanks @kinjitakabe and @nailujac.
 - Gateway/status: surface model-pricing bootstrap and refresh failures as degraded health/status warnings while keeping Gateway liveness healthy. Fixes #79599. Thanks @bzelones.
 - OpenAI-compatible models: strip prior assistant reasoning fields from replayed Chat Completions history by default, preventing oMLX/vLLM Qwen follow-up turns from rejecting or stalling on stale `reasoning` payloads. Fixes #46637. Thanks @zipzagster and @lexhoefsloot.
 - CLI/onboarding: give non-Azure custom providers a safe generated context window and heal legacy 4k wizard entries without overwriting explicit valid small model limits, preventing first-turn compaction loops. Fixes #79428. (#79911) Thanks @Jefsky.
@@ -650,7 +664,7 @@ Docs: https://docs.openclaw.ai
 - Control UI/chat: hide retired and non-public Google Gemini model IDs from chat model catalogs and route the bare `gemini-3-pro` alias to Gemini 3.1 Pro Preview instead of the shut-down Gemini 3 Pro Preview. Thanks @BunsDev.
 - CLI/infer: canonicalize case-only catalog model refs in `infer model run --model` so mixed-case provider/model strings resolve to the canonical catalog entry instead of failing with `Unknown model`. (#78940) Thanks @ai-hpc.
 - CLI/infer: allow explicit local `infer model run --model <provider/model>` probes to use exact bundled static catalog rows before the provider is written to config, surfacing missing credentials as auth errors instead of `Unknown model`.
-- CLI/install: refuse state-mutating OpenClaw CLI runs as root by default, keep an explicit `OPENCLAW_ALLOW_ROOT=1` escape hatch for intentional root/container use, and update DigitalOcean setup guidance to run OpenClaw as a non-root user. Fixes #67478. Thanks @Jerry-Xin and @natechicago.
+- CLI/install: revert the beta-only global root-refusal guard so existing root-managed VPS installs keep working; the DigitalOcean split-brain protection will move to a narrower image/install-specific path. Refs #67478 and #67509. Thanks @vincentkoc.
 - Auto-reply/media: resolve `scp` from `PATH` when staging sandbox media so nonstandard OpenSSH installs can copy remote attachments.
 - Agents/PI: route PI-native OpenAI-compatible default streams through OpenClaw boundary-aware transports so local-compatible model runs keep API-key injection and transport policy.
 - Gateway/media: require authenticated owner or admin context for managed outgoing image bytes instead of trusting requester-session headers.
@@ -2136,6 +2150,7 @@ Docs: https://docs.openclaw.ai
 - QQBot: unify slash command auth and c2cOnly gating in the command registry, pass `allowQQBotDataDownloads` when sending slash command file attachments, align clear-storage with actual downloads directory, and add `/bot-me` to display sender user ID. (#73616) Thanks @cxyhhhhh.
 - CLI/agents/status: keep `openclaw agents`, text `agents list`, and plain text `status` on read-only metadata paths so human output no longer preloads plugin runtimes or live channel scans before printing. Fixes #74195. Thanks @NianJiuZst.
 - Agents/local models: derive context-window guard thresholds from the effective model window with 4k/8k safety floors, so small local models are no longer rejected by fixed 16k/32k preflight cutoffs. Fixes #42999. Thanks @chengjialu8888.
+- Providers/media: retry transient provider 5xx, timeout, and selected network failures on the same API key for opted-in media and Google embedding calls while preserving 429 key rotation. Fixes #60422. Thanks @sqsge.
 - PDF extraction: resolve PDF.js standard fonts from the installed package root and pass a filesystem path to the Node fallback extractor, so built-in font PDFs render without `file://` URL lookup failures. Fixes #51455; carries forward #70936, #54447, and #62175. Thanks @anyech, @JuanRdBO, and @solomonneas.
 - Media: treat legacy Word/OLE attachments with `application/msword` or `application/x-cfb` MIME as binary so printable-looking `.doc` files are not embedded into prompts as text. Fixes #54176; carries forward #54380. Thanks @andyliu.
 - Config: accept documented `browser.tabCleanup` keys in strict root config validation, so configured tab cleanup no longer fails before runtime reads it. Fixes #74577. Thanks @lonexreb and @ezdlp.
