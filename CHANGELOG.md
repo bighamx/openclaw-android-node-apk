@@ -10,6 +10,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- ACP: preserve redacted numeric JSON-RPC `RequestError` details in runtime failure text, so backend diagnostics are visible instead of only `Internal error`. Fixes #81126. (#81188) Thanks @vyctorbrzezowski.
 - Security/Windows ACL audit: classify Anonymous Logon, Guests, Interactive, Local, and Network SIDs as world-equivalent principals so broadly writable paths stay critical instead of being downgraded to group-writable. Fixes #74350. (#74383) Thanks @dwc1997.
 - Media-understanding: retry transient remote attachment fetch failures before audio or vision processing, so Discord voice notes are not lost after one network/CDN blip. Fixes #74316. Thanks @vyctorbrzezowski and @gabrielexito-stack.
 - Control UI: order timestamped live stream and tool items before untimestamped history fallbacks, keeping chat history in visible time order. Fixes #80759. (#81016) Thanks @akrimm702.
@@ -51,6 +52,7 @@ Docs: https://docs.openclaw.ai
 - Validate node exec event provenance [AI]. (#81071) Thanks @pgondhi987.
 - Gateway: keep active reply runs visible to stuck-session diagnostics and clear no-active-work recovery state, preventing stale queued lanes after compaction or tool failures. Fixes #80677. (#81302)
 - Codex app-server: rotate incompatible context-engine-managed native threads so Lossless-managed sessions do not resume stale hidden Codex history. (#81223) Thanks @jalehman.
+- Codex cron: execute scheduled command-style automation payloads before workspace bootstrap or memory review, preserving existing isolated cron jobs after Codex harness migration. (#81510) Thanks @jalehman.
 - Gateway/OpenAI HTTP: return OpenAI-compatible 400 errors for invalid sampling params and provider validation failures instead of collapsing them to 500s. (#81275) Thanks @Lellansin.
 - Telegram: publish plugin and skill command description localizations to native command menus while filtering unsupported locale codes and preserving Telegram command limits. (#81351) Thanks @jzakirov.
 - Limit hook CLI tool authority [AI]. (#81065) Thanks @pgondhi987.
@@ -105,6 +107,8 @@ Docs: https://docs.openclaw.ai
 - Plugins/runtime: attribute deprecated runtime config load/write warnings to the plugin id and source that triggered them so logs and plugin doctor runs are actionable. Refs #81394. (#81425) Thanks @BKF-Gitty.
 - Memory/LanceDB: make auto-capture recognize short CJK memory phrases and configurable literal triggers, so Chinese, Japanese, and Korean users can capture memories without regex or LLM intent detection. Fixes #75680. Thanks @vyctorbrzezowski and @guokewuming.
 - Plugins doctor: report stale plugin config warnings and avoid claiming full plugin health when config warnings remain. (#81515) Thanks @BKF-Gitty.
+- Sessions: display `model: "<agentId>-acp"` / `modelProvider: "acpx"` (ACP-runtime sentinel) for ACP control-plane sessions in `openclaw sessions` output, instead of the agent's configured model which was misleading. Catalog finding 20. (#79543)
+- Slack: normalize message read `before` and `after` timestamp bounds before calling Slack history or thread reply APIs. Fixes #80835. (#81338) Thanks @honor2030.
 
 ### Changes
 
