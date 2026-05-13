@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { TALK_TEST_PROVIDER_ID } from "../../test-utils/talk-test-provider.js";
 import {
   formatValidationErrors,
+  validateChatEvent,
   validateModelsListParams,
   validateNodeEventResult,
   validateNodePairRequestParams,
@@ -446,6 +447,53 @@ describe("validateWakeParams", () => {
         anotherExtra: true,
       }),
     ).toBe(true);
+  });
+});
+
+describe("validateChatEvent", () => {
+  it("accepts v4 chat delta text and replacement markers", () => {
+    expect(
+      validateChatEvent({
+        runId: "run-chat",
+        sessionKey: "agent:main:main",
+        seq: 1,
+        state: "delta",
+        deltaText: "hello",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "hello" }],
+        },
+      }),
+    ).toBe(true);
+    expect(
+      validateChatEvent({
+        runId: "run-chat",
+        sessionKey: "agent:main:main",
+        seq: 2,
+        state: "delta",
+        deltaText: "replacement",
+        replace: true,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "replacement" }],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects v3-style chat deltas without deltaText", () => {
+    expect(
+      validateChatEvent({
+        runId: "run-chat",
+        sessionKey: "agent:main:main",
+        seq: 1,
+        state: "delta",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "hello" }],
+        },
+      }),
+    ).toBe(false);
   });
 });
 
