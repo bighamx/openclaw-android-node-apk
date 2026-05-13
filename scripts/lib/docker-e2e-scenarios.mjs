@@ -236,6 +236,16 @@ export const mainLanes = [
     "OPENCLAW_NPM_ONBOARD_CHANNEL=slack OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:npm-onboard-channel-agent",
     { resources: ["service"], stateScenario: "empty", weight: 3 },
   ),
+  npmLane(
+    "release-user-journey",
+    "OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:release-user-journey",
+    {
+      resources: ["npm", "service"],
+      stateScenario: "empty",
+      timeoutMs: 20 * 60 * 1000,
+      weight: 4,
+    },
+  ),
   serviceLane("gateway-network", "OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:gateway-network"),
   serviceLane(
     "agents-delete-shared-workspace",
