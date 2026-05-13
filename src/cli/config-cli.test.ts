@@ -496,6 +496,116 @@ describe("config cli", () => {
       expectErrorIncludes("openclaw plugins update <plugin-id>");
     });
 
+    it("rejects auto-managed meta.lastTouchedVersion config updates (#80849)", async () => {
+      await expect(
+        runConfigCommand([
+          "config",
+          "set",
+          "meta.lastTouchedVersion",
+          "BOGUS-NOT-A-VERSION",
+          "--dry-run",
+        ]),
+      ).rejects.toThrow("__exit__:1");
+
+      expect(mockWriteConfigFile).not.toHaveBeenCalled();
+      expectErrorIncludes("meta.lastTouchedVersion");
+      expectErrorIncludes("auto-managed");
+    });
+
+    it("rejects auto-managed meta.lastTouchedAt config updates (#80849)", async () => {
+      await expect(
+        runConfigCommand([
+          "config",
+          "set",
+          "meta.lastTouchedAt",
+          "1999-01-01T00:00:00.000Z",
+          "--dry-run",
+        ]),
+      ).rejects.toThrow("__exit__:1");
+
+      expect(mockWriteConfigFile).not.toHaveBeenCalled();
+      expectErrorIncludes("meta.lastTouchedAt");
+      expectErrorIncludes("auto-managed");
+    });
+
+    it("rejects auto-managed meta paths via config unset (#80849)", async () => {
+      await expect(runConfigCommand(["config", "unset", "meta.lastTouchedAt"])).rejects.toThrow(
+        "__exit__:1",
+      );
+
+      expect(mockWriteConfigFile).not.toHaveBeenCalled();
+      expectErrorIncludes("meta.lastTouchedAt");
+      expectErrorIncludes("auto-managed");
+    });
+
+    it("rejects parent meta path mutations when payload merges an auto-managed child (#80849)", async () => {
+      await expect(
+        runConfigCommand([
+          "config",
+          "set",
+          "meta",
+          '{"lastTouchedVersion":"BOGUS-NOT-A-VERSION"}',
+          "--strict-json",
+          "--merge",
+          "--dry-run",
+        ]),
+      ).rejects.toThrow("__exit__:1");
+
+      expect(mockWriteConfigFile).not.toHaveBeenCalled();
+      expectErrorIncludes("meta.lastTouchedVersion");
+      expectErrorIncludes("auto-managed");
+    });
+
+    it("rejects parent meta path replacement that would clobber auto-managed children (#80849)", async () => {
+      await expect(
+        runConfigCommand([
+          "config",
+          "set",
+          "meta",
+          '{"lastTouchedAt":"1999-01-01T00:00:00.000Z"}',
+          "--strict-json",
+          "--replace",
+          "--dry-run",
+        ]),
+      ).rejects.toThrow("__exit__:1");
+
+      expect(mockWriteConfigFile).not.toHaveBeenCalled();
+      expectErrorIncludes("meta.lastTouchedAt");
+      expectErrorIncludes("auto-managed");
+    });
+
+    it("rejects config unset meta because deleting the parent removes auto-managed children (#80849)", async () => {
+      await expect(runConfigCommand(["config", "unset", "meta"])).rejects.toThrow("__exit__:1");
+
+      expect(mockWriteConfigFile).not.toHaveBeenCalled();
+      expectErrorIncludes("meta.lastTouchedVersion");
+      expectErrorIncludes("auto-managed");
+    });
+
+    it("does not auto-managed-reject parent meta merges that leave the managed children alone (#80849)", async () => {
+      // The merge payload only references a non-auto-managed key; the auto-managed
+      // guard MUST NOT fire — otherwise a future schema-valid sibling of
+      // meta.lastTouched* would be collateral-rejected. Downstream layers (schema
+      // validator, etc.) may still legitimately reject this; we only care that the
+      // rejection was NOT from our auto-managed guard.
+      setSnapshot({}, {});
+      try {
+        await runConfigCommand([
+          "config",
+          "set",
+          "meta",
+          '{"unrelated":"x"}',
+          "--strict-json",
+          "--merge",
+          "--dry-run",
+        ]);
+      } catch {
+        // Tolerated: any downstream rejection. Inspected below.
+      }
+      const errorMessages = mockError.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(errorMessages).not.toContain("auto-managed");
+    });
+
     it("rejects protected model map replacement unless explicitly requested", async () => {
       const resolved: OpenClawConfig = {
         agents: {
