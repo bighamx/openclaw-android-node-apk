@@ -226,7 +226,7 @@ type MigrationSelectionPrompt = {
 };
 
 function mockCall(source: MockCallSource, callIndex = 0): ReadonlyArray<unknown> {
-  const call = source.mock.calls.at(callIndex);
+  const call = source.mock.calls[callIndex];
   if (!call) {
     throw new Error(`Expected mock call ${callIndex}`);
   }

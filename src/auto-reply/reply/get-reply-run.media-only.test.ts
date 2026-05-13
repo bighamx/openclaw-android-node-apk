@@ -260,6 +260,15 @@ function requireRunReplyAgentCall(index = 0) {
   return call;
 }
 
+function requireLastRunReplyAgentCall() {
+  const calls = vi.mocked(runReplyAgent).mock.calls;
+  const call = calls[calls.length - 1]?.[0];
+  if (!call) {
+    throw new Error("last runReplyAgent call missing");
+  }
+  return call;
+}
+
 describe("runPreparedReply media-only handling", () => {
   beforeAll(async () => {
     ({ runPreparedReply } = await import("./get-reply-run.js"));
@@ -308,7 +317,7 @@ describe("runPreparedReply media-only handling", () => {
   it("propagates non-visible assistant silence for group runs", async () => {
     await runPreparedReply(baseParams());
 
-    let call = vi.mocked(runReplyAgent).mock.calls.at(-1)?.[0];
+    let call = requireLastRunReplyAgentCall();
     expect(call?.followupRun.run.allowEmptyAssistantReplyAsSilent).toBe(true);
 
     await runPreparedReply(
@@ -317,7 +326,7 @@ describe("runPreparedReply media-only handling", () => {
       }),
     );
 
-    call = vi.mocked(runReplyAgent).mock.calls.at(-1)?.[0];
+    call = requireLastRunReplyAgentCall();
     expect(call?.followupRun.run.allowEmptyAssistantReplyAsSilent).toBe(true);
   });
 
@@ -346,7 +355,7 @@ describe("runPreparedReply media-only handling", () => {
       }),
     );
 
-    const call = vi.mocked(runReplyAgent).mock.calls.at(-1)?.[0];
+    const call = requireLastRunReplyAgentCall();
     expect(call?.followupRun.run.allowEmptyAssistantReplyAsSilent).toBe(false);
   });
 
@@ -445,7 +454,7 @@ describe("runPreparedReply media-only handling", () => {
         }),
       );
 
-      const call = vi.mocked(runReplyAgent).mock.calls.at(-1)?.[0];
+      const call = requireLastRunReplyAgentCall();
       expect(call?.followupRun.run.allowEmptyAssistantReplyAsSilent).toBe(true);
     },
   );
@@ -482,7 +491,7 @@ describe("runPreparedReply media-only handling", () => {
       }),
     );
 
-    const call = vi.mocked(runReplyAgent).mock.calls.at(-1)?.[0];
+    const call = requireLastRunReplyAgentCall();
     expect(call?.followupRun.run.allowEmptyAssistantReplyAsSilent).toBe(false);
   });
 
@@ -1044,7 +1053,7 @@ describe("runPreparedReply media-only handling", () => {
     previousRun.complete();
 
     await expect(runPromise).resolves.toEqual({ text: "ok" });
-    const call = vi.mocked(runReplyAgent).mock.calls.at(-1)?.[0];
+    const call = requireLastRunReplyAgentCall();
     expect(call?.followupRun.run.authProfileId).toBe("profile-after-wait");
     expect(vi.mocked(resolveSessionAuthProfileOverride)).toHaveBeenCalledTimes(1);
   });
@@ -1105,7 +1114,7 @@ describe("runPreparedReply media-only handling", () => {
     rotatedRun.complete();
 
     await expect(runPromise).resolves.toEqual({ text: "ok" });
-    const call = vi.mocked(runReplyAgent).mock.calls.at(-1)?.[0];
+    const call = requireLastRunReplyAgentCall();
     expect(call?.followupRun.run.sessionId).toBe("session-after-rotation");
   });
   it("continues when the original owner clears before an unrelated run appears", async () => {
@@ -1166,7 +1175,7 @@ describe("runPreparedReply media-only handling", () => {
     previousRun.complete();
 
     await expect(runPromise).resolves.toEqual({ text: "ok" });
-    const call = vi.mocked(runReplyAgent).mock.calls.at(-1)?.[0];
+    const call = requireLastRunReplyAgentCall();
     expect(call?.commandBody).toContain("System: [t] Initial event.");
     expect(call?.commandBody).not.toContain("System: [t] Post-compaction context.");
     expect(call?.transcriptCommandBody).not.toContain("System: [t] Initial event.");
@@ -1204,7 +1213,7 @@ describe("runPreparedReply media-only handling", () => {
       }),
     );
 
-    const call = vi.mocked(runReplyAgent).mock.calls.at(-1)?.[0];
+    const call = requireLastRunReplyAgentCall();
     expect(call?.commandBody).toContain("what does this mean?");
     expect(call?.commandBody).not.toContain("Reply target of current user message");
     expect(call?.transcriptCommandBody).toBe("what does this mean?");
@@ -1244,7 +1253,7 @@ describe("runPreparedReply media-only handling", () => {
       }),
     );
 
-    const call = vi.mocked(runReplyAgent).mock.calls.at(-1)?.[0];
+    const call = requireLastRunReplyAgentCall();
     expect(call?.commandBody).toContain(heartbeatPrompt);
     expect(call?.followupRun.prompt).toContain(heartbeatPrompt);
     expect(call?.transcriptCommandBody).toBe("[OpenClaw heartbeat poll]");
@@ -1293,7 +1302,7 @@ describe("runPreparedReply media-only handling", () => {
       }),
     );
 
-    const call = vi.mocked(runReplyAgent).mock.calls.at(-1)?.[0];
+    const call = requireLastRunReplyAgentCall();
     expect(buildGroupChatContext).toHaveBeenCalledTimes(1);
     const groupContextParams = requireMockCallArg(
       vi.mocked(buildGroupChatContext),
@@ -1360,7 +1369,7 @@ describe("runPreparedReply media-only handling", () => {
         }),
       );
 
-      const call = vi.mocked(runReplyAgent).mock.calls.at(-1)?.[0];
+      const call = requireLastRunReplyAgentCall();
       expect(call?.commandBody).toContain("A new session was started via /new or /reset.");
       expect(call?.commandBody).toContain("Conversation info (untrusted metadata):");
       expect(call?.commandBody).toContain("Sender (untrusted metadata):");
@@ -1406,7 +1415,7 @@ describe("runPreparedReply media-only handling", () => {
       }),
     );
 
-    const call = vi.mocked(runReplyAgent).mock.calls.at(-1)?.[0];
+    const call = requireLastRunReplyAgentCall();
     expect(call?.commandBody).toContain("A new session was started via /new or /reset.");
     expect(call?.commandBody).toContain("summarize my workspace");
     expect(call?.transcriptCommandBody).toBe("summarize my workspace");

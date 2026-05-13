@@ -135,6 +135,21 @@ function firstMockArg(mock: { mock: { calls: ReadonlyArray<ReadonlyArray<unknown
   return call[0];
 }
 
+function lastMockArg(mock: { mock: { calls: ReadonlyArray<ReadonlyArray<unknown>> } }): unknown {
+  const calls = mock.mock.calls;
+  const call = calls[calls.length - 1];
+  if (!call) {
+    throw new Error("expected mock to have at least one call");
+  }
+  return call[0];
+}
+
+function parseLastLogPayload(): unknown {
+  const raw = lastMockArg(mockLog);
+  expect(typeof raw).toBe("string");
+  return JSON.parse(String(raw)) as unknown;
+}
+
 async function runValidateJsonAndGetPayload() {
   await expect(runConfigCommand(["config", "validate", "--json"])).rejects.toThrow("__exit__:1");
   const raw = firstMockArg(mockLog);
@@ -775,9 +790,7 @@ describe("config cli", () => {
       expect(mockExit).not.toHaveBeenCalled();
       expect(mockError).not.toHaveBeenCalled();
       expect(defaultRuntime.writeJson).toHaveBeenCalledTimes(1);
-      const raw = mockLog.mock.calls.at(-1)?.[0];
-      expect(typeof raw).toBe("string");
-      const payload = JSON.parse(String(raw)) as {
+      const payload = parseLastLogPayload() as {
         properties?: Record<string, unknown>;
       };
       const gateway = payload.properties?.gateway as
@@ -826,7 +839,7 @@ describe("config cli", () => {
       await runConfigCommand(["config", "schema"]);
 
       expect(defaultRuntime.writeJson).toHaveBeenCalledTimes(1);
-      const payload = JSON.parse(String(mockLog.mock.calls.at(-1)?.[0])) as {
+      const payload = parseLastLogPayload() as {
         properties?: Record<string, unknown>;
       };
       expect(payload.properties?.$schema).toEqual({ type: "string" });
@@ -1154,9 +1167,7 @@ describe("config cli", () => {
       ).rejects.toThrow("__exit__:1");
 
       expect(mockWriteConfigFile).not.toHaveBeenCalled();
-      const raw = mockLog.mock.calls.at(-1)?.[0];
-      expect(typeof raw).toBe("string");
-      const payload = JSON.parse(String(raw)) as {
+      const payload = parseLastLogPayload() as {
         ok: boolean;
         checks: { schema: boolean; resolvability: boolean; resolvabilityComplete: boolean };
         errors?: Array<{ kind: string; message: string; ref?: string }>;
@@ -1980,9 +1991,7 @@ describe("config cli", () => {
         "--json",
       ]);
 
-      const raw = mockLog.mock.calls.at(-1)?.[0];
-      expect(typeof raw).toBe("string");
-      const payload = JSON.parse(String(raw)) as {
+      const payload = parseLastLogPayload() as {
         ok: boolean;
         checks: { schema: boolean; resolvability: boolean; resolvabilityComplete: boolean };
         refsChecked: number;
@@ -2029,9 +2038,7 @@ describe("config cli", () => {
         "--json",
       ]);
 
-      const raw = mockLog.mock.calls.at(-1)?.[0];
-      expect(typeof raw).toBe("string");
-      const payload = JSON.parse(String(raw)) as {
+      const payload = parseLastLogPayload() as {
         ok: boolean;
         checks: { resolvability: boolean; resolvabilityComplete: boolean };
         refsChecked: number;
@@ -2072,9 +2079,7 @@ describe("config cli", () => {
         ]),
       ).rejects.toThrow("__exit__:1");
 
-      const raw = mockLog.mock.calls.at(-1)?.[0];
-      expect(typeof raw).toBe("string");
-      const payload = JSON.parse(String(raw)) as {
+      const payload = parseLastLogPayload() as {
         ok: boolean;
         errors?: Array<{ kind: string; message: string; ref?: string }>;
       };
@@ -2107,9 +2112,7 @@ describe("config cli", () => {
         ]),
       ).rejects.toThrow("__exit__:1");
 
-      const raw = mockLog.mock.calls.at(-1)?.[0];
-      expect(typeof raw).toBe("string");
-      const payload = JSON.parse(String(raw)) as {
+      const payload = parseLastLogPayload() as {
         ok: boolean;
         errors?: Array<{ kind: string; message: string; ref?: string }>;
       };
@@ -2148,9 +2151,7 @@ describe("config cli", () => {
         ]),
       ).rejects.toThrow("__exit__:1");
 
-      const raw = mockLog.mock.calls.at(-1)?.[0];
-      expect(typeof raw).toBe("string");
-      const payload = JSON.parse(String(raw)) as {
+      const payload = parseLastLogPayload() as {
         ok: boolean;
         errors?: Array<{ kind: string; message: string; ref?: string }>;
       };

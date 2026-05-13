@@ -297,7 +297,8 @@ async function runAcpTurnWithTextDeltas(params: { message?: string; chunks: stri
 }
 
 function expectPersistedAcpTranscript(params: { userContent: string; assistantText: string }) {
-  const transcript = attemptExecutionMocks.persistAcpTurnTranscript.mock.calls.at(-1)?.[0] as
+  const calls = attemptExecutionMocks.persistAcpTurnTranscript.mock.calls;
+  const transcript = calls[calls.length - 1]?.[0] as
     | { body?: string; finalText?: string }
     | undefined;
   expect(transcript?.body).toBe(params.userContent);

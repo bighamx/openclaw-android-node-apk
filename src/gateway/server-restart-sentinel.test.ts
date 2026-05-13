@@ -316,7 +316,8 @@ function mockCallArg(mock: { mock: { calls: Array<Array<unknown>> } }, callIndex
 }
 
 function lastMockCallArg(mock: { mock: { calls: Array<Array<unknown>> } }): unknown {
-  const call = mock.mock.calls.at(-1);
+  const calls = mock.mock.calls;
+  const call = calls[calls.length - 1];
   if (!call) {
     throw new Error("Expected last mock call");
   }
@@ -1118,7 +1119,7 @@ describe("scheduleRestartSentinelWake", () => {
     await scheduleRestartSentinelWake({ deps: {} as never });
 
     expect(mocks.recordInboundSessionAndDispatchReply).not.toHaveBeenCalled();
-    expect(mocks.enqueueSystemEvent.mock.calls.at(1)?.[0]).toBe("continue");
+    expect(mockCallArg(mocks.enqueueSystemEvent, 1)).toBe("continue");
     expectNthSystemEventFields(1, {
       sessionKey: "agent:main:main",
     });
