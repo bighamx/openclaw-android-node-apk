@@ -6,15 +6,19 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Agents: escalate LLM idle watchdog timeouts through profile rotation and configured model fallback instead of leaving agent turns stuck after a silent model stream. Fixes #76877. (#80449) Thanks @jimdawdy-hub.
 - ACPX: stop forwarding unsupported timeout config options to Claude ACP while preserving OpenClaw's own turn timeout. (#80812) Thanks @sxxtony.
+- Session transcripts: redact sensitive message content in the centralized JSONL append path so CLI turns, gateway transcript injection, transcript mirrors, and guarded tool results use the same configured redaction behavior. Fixes #73565. Refs #73563. (#79645) Thanks @Ziy1-Tan.
 - Channels/iMessage: ignore Apple link-preview plugin payload attachments when users paste URLs, keeping the URL text while avoiding phantom media context. (#79374) Thanks @homer-byte.
 - Telegram: detect polling stalls from `getUpdates` liveness only, so outbound API calls no longer mask dead inbound polling; log polling-cycle starts after transport rebuilds. Fixes #78473.
 - fix(plugins): scan installed dependency runtime code [AI]. (#81066) Thanks @pgondhi987.
 - Inherit tool restrictions for delegated sessions [AI]. (#80979) Thanks @pgondhi987.
+- Codex harness: make the live test wrapper portable to Windows and defer locked temp cleanup so native Windows and WSL2 live runs complete.
 - Telegram: discard legacy long-poll update offsets that cannot be tied to the current bot token, so token rotation no longer leaves bots silently skipping new messages. (#80671) Thanks @sxxtony.
 - browser: enforce navigation checks for act interactions [AI]. (#81070) Thanks @pgondhi987.
 - Validate node exec event provenance [AI]. (#81071) Thanks @pgondhi987.
 - Gateway: keep active reply runs visible to stuck-session diagnostics and clear no-active-work recovery state, preventing stale queued lanes after compaction or tool failures. Fixes #80677. (#81302)
+- Gateway/OpenAI HTTP: return OpenAI-compatible 400 errors for invalid sampling params and provider validation failures instead of collapsing them to 500s. (#81275) Thanks @Lellansin.
 - Limit hook CLI tool authority [AI]. (#81065) Thanks @pgondhi987.
 - Require admin scope for node device token management [AI]. (#81067) Thanks @pgondhi987.
 - Restrict chat sender allowlist matching [AI]. (#80898) Thanks @pgondhi987.
@@ -61,13 +65,17 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Scripts: add `OPENCLAW_HEAVY_CHECK_LOCK_SCOPE=worktree` so high-capacity local worktrees can use independent heavy-check locks while shared locks remain the default. Fixes #80729. (#80734) Thanks @samzong.
+- Agents/subagents: deliver native `sessions_spawn` tasks in the child session's first visible `[Subagent Task]` message instead of hiding the task in the sub-agent system prompt, keeping delegation auditable without duplicating tokens. Fixes #78592. Thanks @bradestes and @stainlu.
 - Voice Call/Telnyx: add realtime media-streaming call support for conversational voice calls. (#81024) Thanks @dynamite-bud.
 - Gateway/OpenAI HTTP: honor `max_completion_tokens` and `max_tokens` on inbound `/v1/chat/completions` requests so client-provided token caps reach the upstream provider via `streamParams.maxTokens`, with `max_completion_tokens` taking precedence when both are sent. Thanks @Lellansin.
 - Models/OpenAI CLI auth: make `openclaw models auth login --provider openai` start the ChatGPT/Codex account login by default, while `--method api-key` remains the explicit OpenAI API-key setup path.
 - Google/Gemini: normalize retired Gemini 3 Pro Preview ids inside explicit SDK OAuth auth-result config patches, so provider helpers emit `google/gemini-3.1-pro-preview` for Gemini 3.1 testing.
 - Google/Gemini: normalize retired Gemini 3 Pro Preview ids inside SDK OAuth auth-result default config patches, so helper-built provider auth flows emit `google/gemini-3.1-pro-preview` for Gemini 3.1 testing.
 - Google/Gemini: normalize retired Gemini 3 Pro Preview ids returned by direct `openclaw models auth login --set-default` provider auth flows before writing config, so Gemini testing targets `google/gemini-3.1-pro-preview`.
+- Google/Gemini: normalize retired Gemini 3 Pro Preview ids in per-agent config defaults and auth patches, so agent-specific emitted config keeps targeting `google/gemini-3.1-pro-preview`.
 - Google/Gemini: normalize retired Gemini 3 Pro Preview ids in provider catalog rows when API-key onboarding only reapplies the agent default, so emitted config keeps testing `google/gemini-3.1-pro-preview`.
+- Google/Gemini: normalize retired Gemini 3 Pro Preview ids in `config set` mutation output for agent overrides and provider catalog rows, so current config emits `google/gemini-3.1-pro-preview`.
 - Google/Gemini: canonicalize provider-qualified retired Gemini 3 Pro Preview refs during Google forward-compatible model resolution, so emitted config uses `google/gemini-3.1-pro-preview` for Gemini 3.1 testing.
 - Google/Gemini: normalize proxy-prefixed retired Gemini 3 Pro Preview catalog rows, so emitted configs use `google/gemini-3.1-pro-preview` for Gemini 3.1 testing.
 - Google/Gemini: normalize retired Gemini 3 Pro Preview ids inside per-agent model overrides before writing config, so agent-specific config emits `google/gemini-3.1-pro-preview` for Gemini 3.1 testing.
@@ -120,6 +128,7 @@ Docs: https://docs.openclaw.ai
 - Dependencies: refresh workspace pins and patch targets, including ACPX `@agentclientprotocol/claude-agent-acp` `0.33.1`, Codex ACP `0.14.0`, Baileys `7.0.0-rc10`, Google GenAI `2.0.1`, OpenAI `6.37.0`, AWS SDK `3.1045.0`, Kysely `0.29.0`, Tlon skill `0.3.6`, Aimock `1.19.5`, and tsdown `0.22.0`.
 - Dependencies: refresh workspace pins for Anthropic SDK, Smithy shared ini loading, Playwright, YAML, Aimock, TypeScript native preview, Vitest, Oxlint/Oxfmt, Vite, and pnpm 11.1.0.
 - Dependencies: hard-pin non-peer direct dependency specs across bundled packages and add a changed-check guard so runtime installs resolve the exact versions tested by maintainers.
+- Dependencies: add release dependency evidence reports, npm advisory gating, and PR dependency-change awareness so maintainers can review dependency risk before and during releases. Thanks @joshavant.
 - Dependencies: move embedded Pi packages to the `@earendil-works` namespace, refresh Twitch Twurple packages, and move `@openclaw/fs-safe` from the GitHub release pin to the published npm package.
 - Build: route Testbox changed-check delegation through Crabbox and remove the OpenClaw-specific Blacksmith Testbox helper scripts.
 - Agents/compaction: preserve scoped background exec/process session references across embedded compaction and after-turn runtime contexts without exposing sessions from unrelated scopes. Fixes #79284. (#79307) Thanks @TurboTheTurtle.
