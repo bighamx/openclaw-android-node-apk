@@ -6,19 +6,60 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Control UI/WebChat: add a persisted auto-scroll mode selector so users can keep the current near-bottom behavior, always follow streaming output, or turn automatic streaming scroll off and use the New messages button manually. Fixes #7648 and #81287. Thanks @BunsDev.
 - ACP: add `acp.fallbacks` so ACP turns can try configured backup runtime backends when the primary backend is unavailable before any output is emitted. (#69542) Thanks @kaseonedge.
 
 ### Fixes
 
+- Plugins: discover provider plugins from `setup.providers[].envVars` credentials during provider discovery while keeping the deprecated `providerAuthEnvVars` fallback. (#81542) Thanks @JARVIS-Glasses.
+- Docs/Codex harness: clarify that per-agent `CODEX_HOME` isolates `~/.codex` while inherited `HOME` intentionally keeps `.agents` discovery and subprocess user-home state available.
+- CLI/plugins: keep bare plugin and parent-command help on the lightweight path, avoiding plugin registry discovery before rendering help.
+- CLI tables: preserve muted/color styling on wrapped continuation lines after multiline cells, keeping `openclaw plugins list` descriptions readable.
+- iOS: restore first-use Contacts, Calendar, and Reminders permission prompts and add Privacy & Access status/actions in Settings. Thanks @BunsDev.
+- Canvas: return not found for malformed percent-encoded Canvas/A2UI/document asset paths and keep decoded parent traversal blocked before path normalization.
+- Telegram: allow trusted local Bot API media files whose filenames start with dots instead of falling back to remote download.
+- Agents/Codex app-server: remap injected context files under dot-dot-prefixed workspace directories when a run switches to an effective sandbox workspace.
+- Control UI/i18n: use the installed workspace pi runtime for locale refreshes, update the fallback package pin, and skip scheduled refreshes with invalid provider credentials instead of failing main.
+- Plugins: preserve installed package metadata and persisted registry freshness checks for plugin package paths under dot-dot-prefixed directories.
+- Agents: allow dot-dot-prefixed filenames such as `..note.txt` through sandbox FS bridge, remote sandbox reads, and apply_patch summaries without mistaking the name for parent traversal.
+- CLI/migrate: hide per-item source/plugin hints on non-conflicting Codex skill and plugin selection prompts, keeping the hint text reserved for rows that actually need attention. Thanks @sjf.
+- Codex harness: treat high-confidence app-server OAuth refresh invalidation as a terminal auth-profile failure, stopping repeated raw token-refresh errors without turning entitlement or usage-limit payloads into re-auth prompts.
+- CLI/migrate: humanize Codex conflict-status messaging across the migrate UI so selection prompts and plan/result rows say "Codex skill already installed in workspace" instead of surfacing internal `MIGRATION_REASON_*` codes. Thanks @sjf.
+- CLI/migrate: render migrate result rows with distinct glyphs for manual-review (🔍) and archive (📖) items instead of the misleading "skipped" and "migrated" checkmarks, so users can see which entries still need attention versus which were filed away. Thanks @sjf.
+- CLI/migrate: split Codex migrate output into separate preview and result phases so the Before plan and After result render through clack with independently tunable copy. Thanks @sjf.
+- Codex app-server: project bundle and user MCP servers into Codex threads, rotate threads when an MCP server is disabled, scope bundle MCP injection to bundled servers, and resend user MCP config on resume so MCP changes take effect mid-session without restarting the agent. (#81551) Thanks @jalehman.
+- Codex migration: invoke the managed Codex binary instead of a stale system `codex` for source-config migration plans, so users running the bundled Codex runtime get plan output that matches the binary the gateway will actually use. (#81582) Thanks @fuller-stack-dev.
+- Subagents/maintenance: preserve pending subagent registry sessions during session-store cleanup, pruning, and disk-budget enforcement so in-flight subagent runs are not deleted by background maintenance before they complete. (#81498) Thanks @ai-hpc.
+- Plugin SDK: restore the deprecated `openclaw/plugin-sdk/memory-core` package subpath as an alias of `memory-host-core`, so published memory companion plugins that still import it resolve on current hosts.
+- Control UI/chat: reconcile terminal and reconnect run cleanup with cached session activity, stale compaction/fallback indicators, and a compact composer run-status chip so completed or interrupted turns do not leave Stop active. Fixes #76874 and #64220; refs #71630. Thanks @BunsDev.
+- Maintainer tooling: clarify which pnpm test/check commands are safe locally versus inside Codex worktrees, routing linked-worktree gates through node wrappers and Crabbox/Testbox.
+- Auto-reply: preserve same-key ordering when debounced inbound work falls back to immediate flushes, so follow-up turns cannot overtake an active buffered flush.
+- Telegram/WhatsApp: keep Telegram same-chat replies ordered behind active no-delay turns without blocking WhatsApp follow-up message dispatch.
+- Codex migration: avoid duplicate cached plugin bundle warnings when app-server plugin inventory is available.
+- Agents: suppress aborted embedded assistant partials, reasoning text, reply directives, and stale prior replies before user-facing delivery while preserving clean timeout/error payloads. Fixes #48241. Thanks @BunsDev, @andyliu, and @yassinebkr.
+- Agents: allow dot-dot-prefixed filenames such as `..file.txt` inside workspace and sandbox path policy while still rejecting real parent traversal.
+- Native image input: detect Windows drive image paths in plain prompts so `C:\...\screenshot.png` references are not missed.
+- Media: normalize Windows-style filename hints before staging attachments, remote media, audio transcodes, and saved-media display names, so POSIX hosts do not preserve drive or directory text in generated filenames.
+- Media references: resolve first-level inbound media files whose IDs start with dots instead of treating names like `..photo.png` as parent traversal.
+- iOS/chat: resize PhotosPicker image attachments to capped JPEGs before staging and sending, stripping source metadata and keeping oversized camera photos under the chat upload budget. Fixes #68524. Thanks @BunsDev.
+- Control UI: keep shared form, config, and usage text-entry controls at 16px on touch-primary devices while preserving chat composer input sizing, so iOS Safari no longer auto-zooms focused fields. Fixes #64651; carries forward #64673. Thanks @NianJiuZst and @BunsDev.
+- Codex harness: classify native app-server token-refresh logout and relogin failures as authentication refresh errors, so users get re-authentication guidance instead of a raw runtime failure.
+- Agents/trajectory: make the trajectory flush cleanup timeout configurable with `OPENCLAW_TRAJECTORY_FLUSH_TIMEOUT_MS`, preserving the 10s default while slower stores drain. Refs #75839. Thanks @BunsDev.
 - Codex startup: treat selectable configured OpenAI agent models as Codex runtime requirements during plugin auto-enable, startup planning, and doctor install repair, so Anthropic-primary configs can still switch to OpenAI/Codex cleanly.
 - Agents: preserve source-reply delivery metadata when merging tool-returned media into the final reply, keeping message-tool-only replies deliverable and mirrored. Thanks @pashpashpash and @vincentkoc.
+- Replies: treat rich presentation, interactive controls, and channel-native payload data as outbound content across follow-up, heartbeat, cron, ACP, and block-streaming delivery paths, preventing card/button-only replies from being dropped as empty.
+- Replies: deliver rich-only block replies even when block-streaming coalescing is enabled, keeping card and button payloads from being dropped by the text coalescer. Thanks @pashpashpash.
 - macOS/companion: require system TLS trust before pinning a first-use direct `wss://` gateway certificate and honor `gateway.remote.tlsFingerprint` as the explicit pin for remote node-mode sessions, so fresh endpoints fail closed when macOS cannot trust the certificate unless configured out of band. Fixes #50642. Thanks @BunsDev.
+- Update: snapshot config before update-time repair and restart writes, preserve plugin install records through doctor cleanup, and keep update-time config size drops from blocking the update while pointing users to the pre-update backup. Fixes #80077. (#80257) Thanks @Jerry-Xin and @vincentkoc.
+- WebChat/TUI: route Codex `tools.message` source replies to the active internal UI turn and mirror them to session history, so message-tool-only harness replies, including rich presentation and button-only replies, no longer disappear while WebChat and TUI remain non-targetable outbound channels. (#81586) Thanks @pashpashpash.
+- Codex auth: accept OAuth profiles backed by `oauthRef` during runtime auth selection, so official Codex OAuth logins are used by app-server agent runs. (#81633) Thanks @obviyus.
 - Sessions/status: classify ACP spawn-child sessions as `kind: "spawn-child"` instead of `"direct"` in `openclaw sessions` and status output; extract the duplicated session-kind classifier into a shared helper (`src/sessions/classify-session-kind.ts`) so both surfaces stay in sync. Fixes catalog #19. (#79544)
 - Sessions/Gateway: report `agentRuntime.id: "acpx"` (or stored backend id) with `source: "session-key"` for ACP control-plane session rows in `openclaw sessions --json`, `openclaw status`, and Gateway session RPC responses instead of the incorrect `"auto"` / `"pi"` implicit fallback. Fixes catalog #18. (#79550)
 - Telegram: delete tool-progress-only draft bubbles before rotating to the real answer, preventing orphaned progress messages in streamed replies.
 - Codex app-server: keep per-agent `CODEX_HOME` isolation without rewriting `HOME` by default, so Codex-run subprocesses can still find normal user-home config, tokens, and CLI state unless the launch explicitly overrides `HOME`. Thanks @pashpashpash.
 - ACP: preserve redacted numeric JSON-RPC `RequestError` details in runtime failure text, so backend diagnostics are visible instead of only `Internal error`. Fixes #81126. (#81188) Thanks @vyctorbrzezowski.
 - Agents: cache unchanged PI model discovery stores and model lookups, reducing repeated model-resolution startup latency under large model configs. Fixes #78851.
+- Onboarding: carry returned Codex plugin migration config through the OpenAI model wizard so accepted plugin migrations are saved with the final config write.
 - Security/Windows ACL audit: classify Anonymous Logon, Guests, Interactive, Local, and Network SIDs as world-equivalent principals so broadly writable paths stay critical instead of being downgraded to group-writable. Fixes #74350. (#74383) Thanks @dwc1997.
 - Media-understanding: retry transient remote attachment fetch failures before audio or vision processing, so Discord voice notes are not lost after one network/CDN blip. Fixes #74316. Thanks @vyctorbrzezowski and @gabrielexito-stack.
 - Control UI: order timestamped live stream and tool items before untimestamped history fallbacks, keeping chat history in visible time order. Fixes #80759. (#81016) Thanks @akrimm702.
@@ -61,6 +102,7 @@ Docs: https://docs.openclaw.ai
 - Gateway: keep active reply runs visible to stuck-session diagnostics and clear no-active-work recovery state, preventing stale queued lanes after compaction or tool failures. Fixes #80677. (#81302)
 - Codex app-server: rotate incompatible context-engine-managed native threads so Lossless-managed sessions do not resume stale hidden Codex history. (#81223) Thanks @jalehman.
 - Codex cron: execute scheduled command-style automation payloads before workspace bootstrap or memory review, preserving existing isolated cron jobs after Codex harness migration. (#81510) Thanks @jalehman.
+- Plugin LLM completions: honor Codex agent-runtime policy for canonical OpenAI model refs, so context-engine summarizers can use Codex OAuth instead of requiring direct `OPENAI_API_KEY` auth. (#81511) Thanks @jalehman.
 - Gateway/OpenAI HTTP: return OpenAI-compatible 400 errors for invalid sampling params and provider validation failures instead of collapsing them to 500s. (#81275) Thanks @Lellansin.
 - Telegram: publish plugin and skill command description localizations to native command menus while filtering unsupported locale codes and preserving Telegram command limits. (#81351) Thanks @jzakirov.
 - Limit hook CLI tool authority [AI]. (#81065) Thanks @pgondhi987.
@@ -118,6 +160,7 @@ Docs: https://docs.openclaw.ai
 - Plugins doctor: report stale plugin config warnings and avoid claiming full plugin health when config warnings remain. (#81515) Thanks @BKF-Gitty.
 - Sessions: display `model: "<agentId>-acp"` / `modelProvider: "acpx"` (ACP-runtime sentinel) for ACP control-plane sessions in `openclaw sessions` output, instead of the agent's configured model which was misleading. Catalog finding 20. (#79543)
 - Slack: normalize message read `before` and `after` timestamp bounds before calling Slack history or thread reply APIs. Fixes #80835. (#81338) Thanks @honor2030.
+- Gateway: throttle assistant/thinking agent event fanout during streaming bursts without dropping buffered deltas. (#80335) Thanks @samzong.
 
 ### Changes
 
@@ -577,6 +620,7 @@ Docs: https://docs.openclaw.ai
 - CLI/migrate: show native Codex plugin names before truncated plan items and prompt for plugin activation explicitly during interactive Codex migration instead of silently keeping every planned plugin. Thanks @kevinslin.
 - CLI/migrate: leave already configured target Codex plugins unchecked in the interactive plugin selector and show a `plugin exists` conflict hint while keeping new plugin activations selected by default. Thanks @kevinslin.
 - CLI/migrate: return cleanly without apply confirmation when interactive Codex migration leaves both skill copies and native plugin activations unselected. Thanks @kevinslin.
+- Gateway/sessions: extend the per-call sessions-list `rowContext` cache with memoization for `resolveSessionDisplayModelIdentityRef`, thinking metadata, and `resolveModelCostConfig` so deterministic per-row resolvers run once per unique `(provider, model[, agentId])` tuple instead of once per session. Cuts CPU on `sessions.list` for stores with many sessions sharing a small set of model tuples; behavior is unchanged for callers that pass no `rowContext`. Thanks @rolandrscheel.
 - Cron CLI: add `openclaw cron list --agent <id>`, normalize the requested agent id, and include jobs without a stored agent id under the configured default agent while keeping `cron list` unfiltered when no agent is supplied. Fixes #77118. Thanks @zhanggttry.
 - Slack/performance: reduce message preparation, stream recipient lookup, and thread-context allocation overhead on Slack reply hot paths. Thanks @vincentkoc.
 - Control UI/chat: strip untrusted sender metadata from live streams and transcript display, preserve canvas preview anchors, and stop operator UI clients from injecting their internal client id as sender identity. Fixes #78739. Thanks @tmimmanuel, @guguangxin-eng, @hclsys, and @BunsDev.
