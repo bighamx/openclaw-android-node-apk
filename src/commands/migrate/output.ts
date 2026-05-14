@@ -178,6 +178,12 @@ const RESULT_STATUS_GLYPHS: Record<string, string> = {
 };
 
 function formatItemPrefix(item: MigrationItem, mode: FormatMode): string {
+  if (item.kind === "manual") {
+    return "🔍 ";
+  }
+  if (item.kind === "archive") {
+    return "📖 ";
+  }
   if (mode === "result") {
     const glyph = RESULT_STATUS_GLYPHS[item.status];
     if (glyph) {
