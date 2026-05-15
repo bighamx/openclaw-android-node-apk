@@ -16,9 +16,13 @@ import { hasControlCommand } from "openclaw/plugin-sdk/command-detection";
 import { shouldHandleTextCommands } from "openclaw/plugin-sdk/command-surface";
 import { ensureConfiguredBindingRouteReady } from "openclaw/plugin-sdk/conversation-runtime";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
+import { mimeTypeFromFilePath } from "openclaw/plugin-sdk/media-mime";
 import { finalizeInboundContext } from "openclaw/plugin-sdk/reply-dispatch-runtime";
 import {
+  buildInboundHistoryFromMap,
   buildPendingHistoryContextFromMap,
+  type HistoryMediaEntry,
+  recordPendingHistoryEntryWithMedia,
   recordPendingHistoryEntryIfEnabled,
 } from "openclaw/plugin-sdk/reply-history";
 import type { FinalizedMsgContext } from "openclaw/plugin-sdk/reply-runtime";
@@ -36,7 +40,7 @@ import { reactSlackMessage } from "../../actions.js";
 import { formatSlackError } from "../../errors.js";
 import { formatSlackFileReference } from "../../file-reference.js";
 import { hasSlackThreadParticipationWithPersistence } from "../../sent-thread-cache.js";
-import type { SlackMessageEvent } from "../../types.js";
+import type { SlackAttachment, SlackFile, SlackMessageEvent } from "../../types.js";
 import { normalizeAllowListLower, normalizeSlackAllowOwnerEntry } from "../allow-list.js";
 import {
   authorizeSlackBotRoomMessage,
@@ -59,7 +63,7 @@ import { resolveConversationLabel } from "../conversation.runtime.js";
 import { authorizeSlackDirectMessage } from "../dm-auth.js";
 import { resolveSlackRoomContextHints } from "../room-context.js";
 import { sendMessageSlack } from "../send.runtime.js";
-import { resolveSlackThreadStarter } from "../thread.js";
+import { resolveSlackThreadStarter, type SlackThreadStarter } from "../thread.js";
 import { resolveSlackMessageContent } from "./prepare-content.js";
 import { resolveSlackDmHistoryContext, resolveSlackDmHistoryLimit } from "./prepare-dm-history.js";
 import { resolveSlackRoutingContext } from "./prepare-routing.js";
@@ -72,6 +76,10 @@ const SLACK_ANY_MENTION_RE = /<@[^>]+>|<!subteam\^[^>]+>/;
 const SLACK_USER_MENTION_RE = /<@([^>|]+)(?:\|[^>]+)?>/g;
 const SLACK_SUBTEAM_MENTION_RE = /<!subteam\^([^>|]+)(?:\|[^>]+)?>/g;
 const SLACK_SUBTEAM_MENTION_MARKER = "<!subteam^";
+const SLACK_HISTORY_MEDIA_MAX_ATTACHMENTS = 4;
+const SLACK_HISTORY_MEDIA_MAX_BYTES = 10 * 1024 * 1024;
+const SLACK_HISTORY_MEDIA_IDLE_TIMEOUT_MS = 1_000;
+const SLACK_HISTORY_MEDIA_TOTAL_TIMEOUT_MS = 3_000;
 
 function resolveCachedMentionRegexes(
   ctx: SlackMonitorContext,
@@ -90,6 +98,99 @@ function resolveCachedMentionRegexes(
   const built = buildMentionRegexes(ctx.cfg, agentId);
   byAgent.set(key, built);
   return built;
+}
+
+function isSlackImageFileCandidate(file: SlackFile): boolean {
+  const mime = file.mimetype?.split(";")[0]?.trim().toLowerCase();
+  if (mime?.startsWith("image/")) {
+    return true;
+  }
+  return Boolean(mimeTypeFromFilePath(file.name)?.startsWith("image/"));
+}
+
+function sliceSlackImageFileCandidates(files: SlackFile[] | undefined, limit: number): SlackFile[] {
+  if (limit <= 0 || !files?.length) {
+    return [];
+  }
+  return files.filter(isSlackImageFileCandidate).slice(0, limit);
+}
+
+function sliceSlackHistoryAttachmentCandidates(
+  attachments: SlackAttachment[] | undefined,
+  limit: number,
+): SlackAttachment[] {
+  if (limit <= 0 || !attachments?.length) {
+    return [];
+  }
+  const out: SlackAttachment[] = [];
+  let remaining = limit;
+  for (const attachment of attachments) {
+    if (attachment.is_share !== true) {
+      continue;
+    }
+    const hasImageUrl = Boolean(normalizeOptionalString(attachment.image_url));
+    const files = sliceSlackImageFileCandidates(
+      attachment.files,
+      remaining - (hasImageUrl ? 1 : 0),
+    );
+    if (!hasImageUrl && files.length === 0) {
+      continue;
+    }
+    out.push({ ...attachment, files });
+    remaining -= (hasImageUrl ? 1 : 0) + files.length;
+    if (remaining <= 0) {
+      break;
+    }
+  }
+  return out;
+}
+
+function buildSlackHistoryMediaCandidateMessage(
+  message: SlackMessageEvent,
+): SlackMessageEvent | null {
+  const files = sliceSlackImageFileCandidates(message.files, SLACK_HISTORY_MEDIA_MAX_ATTACHMENTS);
+  const attachments = sliceSlackHistoryAttachmentCandidates(
+    message.attachments,
+    Math.max(0, SLACK_HISTORY_MEDIA_MAX_ATTACHMENTS - files.length),
+  );
+  if (files.length === 0 && attachments.length === 0) {
+    return null;
+  }
+  return {
+    ...message,
+    files,
+    attachments,
+  };
+}
+
+async function resolveSlackHistoryMediaForPendingRecord(params: {
+  ctx: SlackMonitorContext;
+  message: SlackMessageEvent;
+  isThreadReply: boolean;
+  threadStarter: SlackThreadStarter | null;
+  isBotMessage: boolean;
+}): Promise<HistoryMediaEntry[]> {
+  const mediaMessage = buildSlackHistoryMediaCandidateMessage(params.message);
+  if (!mediaMessage) {
+    return [];
+  }
+  const content = await resolveSlackMessageContent({
+    message: mediaMessage,
+    isThreadReply: params.isThreadReply,
+    threadStarter: params.threadStarter,
+    isBotMessage: params.isBotMessage,
+    client: params.ctx.app.client,
+    botToken: params.ctx.botToken,
+    mediaMaxBytes: Math.min(params.ctx.mediaMaxBytes, SLACK_HISTORY_MEDIA_MAX_BYTES),
+    mediaReadIdleTimeoutMs: SLACK_HISTORY_MEDIA_IDLE_TIMEOUT_MS,
+    mediaTotalTimeoutMs: SLACK_HISTORY_MEDIA_TOTAL_TIMEOUT_MS,
+  });
+  return (content?.effectiveDirectMedia ?? []).map((media) => ({
+    path: media.path,
+    contentType: media.contentType,
+    kind: "image" as const,
+    messageId: params.message.ts,
+  }));
 }
 
 type SlackConversationContext = {
@@ -697,11 +798,22 @@ export async function prepareSlackMessage(params: {
   if (isRoom && shouldRequireMention && messageIngress.activationAccess.shouldSkip) {
     ctx.logger.info({ channel: message.channel, reason: "no-mention" }, "skipping channel message");
     const pendingText = (message.text ?? "").trim();
+    const historyMediaCandidate = buildSlackHistoryMediaCandidateMessage(message);
     const fallbackFile = message.files?.length
       ? `[Slack file: ${formatSlackFileReference(message.files[0])}]`
       : "";
-    const pendingBody = pendingText || fallbackFile;
-    recordPendingHistoryEntryIfEnabled({
+    const fallbackSharedMedia =
+      !fallbackFile && historyMediaCandidate ? "[Slack media attachment]" : "";
+    const pendingBody = pendingText || fallbackFile || fallbackSharedMedia;
+    const skippedThreadStarter =
+      historyMediaCandidate && isThreadReply && threadTs
+        ? await resolveSlackThreadStarter({
+            channelId: message.channel,
+            threadTs,
+            client: ctx.app.client,
+          })
+        : null;
+    await recordPendingHistoryEntryWithMedia({
       historyMap: ctx.channelHistories,
       historyKey,
       limit: ctx.historyLimit,
@@ -713,6 +825,16 @@ export async function prepareSlackMessage(params: {
             messageId: message.ts,
           }
         : null,
+      mediaLimit: SLACK_HISTORY_MEDIA_MAX_ATTACHMENTS,
+      messageId: message.ts,
+      media: () =>
+        resolveSlackHistoryMediaForPendingRecord({
+          ctx,
+          message,
+          isThreadReply,
+          threadStarter: skippedThreadStarter,
+          isBotMessage,
+        }),
     });
     return null;
   }
@@ -807,6 +929,7 @@ export async function prepareSlackMessage(params: {
   enqueueSystemEvent(`${inboundLabel}: ${preview}`, {
     sessionKey,
     contextKey: `slack:message:${message.channel}:${message.ts ?? "unknown"}`,
+    forceSenderIsOwnerFalse: true,
     trusted: false,
   });
 
@@ -920,11 +1043,11 @@ export async function prepareSlackMessage(params: {
 
   const inboundHistory =
     isRoomish && ctx.historyLimit > 0
-      ? (ctx.channelHistories.get(historyKey) ?? []).map((entry) => ({
-          sender: entry.sender,
-          body: entry.body,
-          timestamp: entry.timestamp,
-        }))
+      ? buildInboundHistoryFromMap({
+          historyMap: ctx.channelHistories,
+          historyKey,
+          limit: ctx.historyLimit,
+        })
       : dmHistoryContext.inboundHistory;
   const commandBody = textForCommandDetection.trim();
 

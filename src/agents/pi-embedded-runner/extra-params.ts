@@ -752,6 +752,17 @@ function applyPostPluginStreamWrappers(
       shouldPatchModel: isDeepSeekV4OpenAICompatibleModel,
     });
 
+    // MiMo reasoning models use the same DeepSeek-style reasoning_content wire
+    // format. When MiMo is reached through an unowned proxy/custom provider
+    // (e.g. `xiaomi-orbit` pointed at token-plan-*.xiaomimimo.com), the bundled
+    // xiaomi plugin's wrapStreamFn does not fire, so apply the shared wrapper
+    // here as a fallback so multi-turn tool calls succeed.
+    ctx.agent.streamFn = createDeepSeekV4OpenAICompatibleThinkingWrapper({
+      baseStreamFn: ctx.agent.streamFn,
+      thinkingLevel: ctx.thinkingLevel,
+      shouldPatchModel: isMiMoReasoningOpenAICompatibleModel,
+    });
+
     // Guard Google-family payloads against invalid negative thinking budgets
     // emitted by upstream model-ID heuristics for Gemini 3.1 variants.
     ctx.agent.streamFn = createGoogleThinkingPayloadWrapper(ctx.agent.streamFn, ctx.thinkingLevel);
@@ -828,6 +839,22 @@ function isDeepSeekV4OpenAICompatibleModel(model: Parameters<StreamFn>[0]): bool
   return (
     model.api === "openai-completions" &&
     (normalizedModelId === "deepseek-v4-flash" || normalizedModelId === "deepseek-v4-pro")
+  );
+}
+
+const MIMO_REASONING_OPENAI_COMPATIBLE_MODEL_IDS = new Set([
+  "mimo-v2-pro",
+  "mimo-v2-omni",
+  "mimo-v2.5",
+  "mimo-v2.5-pro",
+]);
+
+function isMiMoReasoningOpenAICompatibleModel(model: Parameters<StreamFn>[0]): boolean {
+  const normalizedModelId = normalizeDeepSeekV4CandidateId(model.id);
+  return (
+    model.api === "openai-completions" &&
+    normalizedModelId !== undefined &&
+    MIMO_REASONING_OPENAI_COMPATIBLE_MODEL_IDS.has(normalizedModelId)
   );
 }
 

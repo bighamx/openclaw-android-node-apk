@@ -480,6 +480,10 @@
       "types": "./dist/plugin-sdk/security-runtime.d.ts",
       "default": "./dist/plugin-sdk/security-runtime.js"
     },
+    "./plugin-sdk/gateway-method-runtime": {
+      "types": "./dist/plugin-sdk/gateway-method-runtime.d.ts",
+      "default": "./dist/plugin-sdk/gateway-method-runtime.js"
+    },
     "./plugin-sdk/gateway-runtime": {
       "types": "./dist/plugin-sdk/gateway-runtime.d.ts",
       "default": "./dist/plugin-sdk/gateway-runtime.js"
@@ -1792,6 +1796,7 @@
     "tokenjuice": "0.7.0",
     "tree-sitter-bash": "0.25.1",
     "tslog": "4.10.2",
+    "typescript": "6.0.3",
     "typebox": "1.1.38",
     "undici": "8.3.0",
     "web-push": "3.6.7",
@@ -1822,7 +1827,6 @@
     "signal-utils": "0.21.1",
     "tsdown": "0.22.0",
     "tsx": "4.22.0",
-    "typescript": "6.0.3",
     "unrun": "0.3.0",
     "vitest": "4.1.6"
   },
