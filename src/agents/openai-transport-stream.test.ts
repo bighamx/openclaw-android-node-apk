@@ -5460,6 +5460,19 @@ describe("buildOpenAICompletionsParams sanitizes reasoning replay fields", () =>
     baseUrl: "https://proxy.example.com/v1",
   } satisfies Model<"openai-completions">;
 
+  const customKimiProxyModel = {
+    id: "moonshotai/kimi-k2.6",
+    name: "Kimi K2.6",
+    api: "openai-completions",
+    provider: "custom-openai-proxy",
+    baseUrl: "https://proxy.example.com/v1",
+    reasoning: true,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 262_144,
+    maxTokens: 32_000,
+  } satisfies Model<"openai-completions">;
+
   function getAssistantMessage(params: { messages: unknown }) {
     expect(Array.isArray(params.messages)).toBe(true);
     const list = params.messages as Array<Record<string, unknown>>;
@@ -5527,6 +5540,55 @@ describe("buildOpenAICompletionsParams sanitizes reasoning replay fields", () =>
     },
   );
 
+  it("strips empty-string reasoning_content from OpenRouter assistant replay", () => {
+    const params = buildOpenAICompletionsParams(
+      openRouterModel,
+      {
+        systemPrompt: "system",
+        messages: [
+          { role: "user", content: "read config" },
+          {
+            role: "assistant",
+            provider: "openrouter",
+            api: "openai-completions",
+            model: "deepseek/deepseek-v4-pro",
+            stopReason: "toolUse",
+            timestamp: 0,
+            content: [
+              {
+                type: "thinking",
+                thinking: "",
+                thinkingSignature: "reasoning_content",
+              },
+              {
+                type: "toolCall",
+                id: "call_1",
+                name: "read_file",
+                arguments: { path: "config.json" },
+              },
+            ],
+          },
+          {
+            role: "toolResult",
+            toolCallId: "call_1",
+            toolName: "read_file",
+            content: [{ type: "text", text: "{ }" }],
+            isError: false,
+            timestamp: 1,
+          },
+          { role: "user", content: "continue" },
+        ],
+        tools: [],
+      } as never,
+      undefined,
+    ) as { messages: Array<Record<string, unknown>> };
+
+    const assistantMessages = params.messages.filter((msg) => msg.role === "assistant");
+    for (const msg of assistantMessages) {
+      expect(msg).not.toHaveProperty("reasoning_content");
+    }
+  });
+
   it("normalizes OpenRouter reasoning_text to reasoning", () => {
     const assistant = getAssistantMessage(buildReplayParams(openRouterModel, "reasoning_text"));
 
@@ -5546,6 +5608,34 @@ describe("buildOpenAICompletionsParams sanitizes reasoning replay fields", () =>
   it("preserves reasoning_content replay for custom MiMo proxy routes", () => {
     const assistant = getAssistantMessage(
       buildReplayParams(customMiMoProxyModel, "reasoning_content"),
+    );
+
+    expect(assistant.reasoning_content).toBe("Need to answer politely.");
+    expect(assistant).not.toHaveProperty("reasoning_details");
+    expect(assistant).not.toHaveProperty("reasoning");
+    expect(assistant).not.toHaveProperty("reasoning_text");
+  });
+
+  it("preserves reasoning_content replay for custom MiMo V2.6 proxy routes", () => {
+    const assistant = getAssistantMessage(
+      buildReplayParams(
+        {
+          ...customMiMoProxyModel,
+          id: "xiaomi/mimo-v2.6-pro",
+        },
+        "reasoning_content",
+      ),
+    );
+
+    expect(assistant.reasoning_content).toBe("Need to answer politely.");
+    expect(assistant).not.toHaveProperty("reasoning_details");
+    expect(assistant).not.toHaveProperty("reasoning");
+    expect(assistant).not.toHaveProperty("reasoning_text");
+  });
+
+  it("preserves reasoning_content replay for custom Kimi K2 proxy routes", () => {
+    const assistant = getAssistantMessage(
+      buildReplayParams(customKimiProxyModel, "reasoning_content"),
     );
 
     expect(assistant.reasoning_content).toBe("Need to answer politely.");
