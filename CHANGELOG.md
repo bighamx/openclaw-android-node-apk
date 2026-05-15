@@ -6,6 +6,8 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Channels/SDK: add normalized command turn facts to channel turn construction and expose command-turn helpers for plugin inbound contexts.
+- Agents/config: support per-agent bootstrap profile overrides for `contextInjection`, `bootstrapMaxChars`, and `bootstrapTotalMaxChars`, inheriting from `agents.defaults` when omitted. Fixes #69966. Thanks @BunsDev.
 - Dependencies: route root ambient Node proxy agents through `@openclaw/proxyline` and drop root `proxy-agent`, `https-proxy-agent`, and `minimatch` dependencies.
 - Canvas: lazy-load HTTP host, hosted media resolver, CLI implementation, and tool runtime modules so Gateway startup only pays Canvas implementation cost on first use. (#82001) Thanks @samzong.
 - Control UI/i18n: add a `pnpm ui:i18n:report` baseline report for hardcoded-copy focus areas and locale fallback metadata. (#81320) Thanks @samzong.
@@ -33,11 +35,33 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Bind shell script operands after combined options [AI]. (#81882) Thanks @pgondhi987.
+- fix(canvas): validate snapshot response formats [AI]. (#81881) Thanks @pgondhi987.
+- Constrain provider catalog entry paths [AI]. (#81884) Thanks @pgondhi987.
+- Require canonical node platform IDs [AI]. (#81880) Thanks @pgondhi987.
+- Agents/Azure OpenAI Responses: default unset Azure OpenAI API versions to `preview` so `/openai/v1/responses` calls use Azure's current Responses API route. (#82026) Thanks @leoge007.
+- Control UI/WebChat: compact the desktop chat header controls into a single aligned row so the session, model, thinking, and action controls no longer waste vertical space. Thanks @BunsDev.
+- Agents: retry empty final turns for generic `anthropic-messages` providers instead of limiting non-visible recovery to Kimi, so custom/proxied Anthropic-compatible routes can recover with a visible answer. Addresses #46080. Thanks @wmgx, @w1tv, and @iFwu.
+- Agents/replies: strip workflow `<function_response>` scaffolding from user-visible sanitizer paths so raw tool output does not leak into chat history, transcript mirrors, or channel replies. Fixes #47444. Thanks @5toCode.
+- Agents/media: deliver generated image, music, and video results through structured attachments, keep message-tool-only Codex completions on the message tool, and fail completion handoff when expected media is not actually sent.
+- Diagnostics/Codex: recover stalled embedded Codex app-server runs after the shorter default stalled-run window so queued turns resume sooner.
+- Control UI: rotate browser service-worker caches per build so updated Gateways are less likely to keep serving stale dashboard bundles that trigger protocol mismatch errors.
+- Gateway/protocol: lazy-compile protocol validators on first use instead of compiling every AJV schema during cold import, reducing startup CPU and RSS. (#82064) Thanks @samzong.
+- Discord: report unresolved configured bot-token SecretRefs during startup instead of treating the account as unconfigured. (#82009) Thanks @giodl73-repo.
+- CLI/config: preserve numeric-looking object keys such as Discord guild IDs during `config patch` recursive merges. (#81999) Thanks @giodl73-repo.
+- Gateway/OpenAI-compatible HTTP: forward `response_format` from `/v1/chat/completions` requests through agent stream params to upstream Chat Completions and Responses transports, restoring structured-output support. Fixes #82003. (#82004) Thanks @Lellansin.
+- Control UI/WebChat: let sidebar markdown code-block Copy buttons use the same delegated clipboard handler as chat messages. (#58709) Thanks @tikitoki.
+- Discord/streaming: only mark partial draft previews delivered after final edit or fallback delivery succeeds, so failed finalization cleanup removes stale truncated drafts instead of leaving them as the visible reply. Fixes #82035. Thanks @compoodment.
+- macOS/Gateway: surface leftover `ai.openclaw.update.*` launchd updater jobs in `openclaw gateway status --deep` and doctor so post-update launchd loops point at the stale job cleanup. Fixes #81859. Thanks @BKF-Gitty.
+- macOS/screen snapshots: reject malformed `screen.snapshot` params before capture, bound base64 results against the projected `node.invoke.result` frame, and preserve stable caller-facing errors for oversized payloads and capture failures. Fixes #68181. Thanks @shaun0927 and @BunsDev.
 - Config/doctor: rotate capped `.clobbered.*` repair snapshots by artifact timestamp so repeated repairs keep the newest forensic copy instead of preserving only the first capped set. (#82012) Thanks @Kaspre.
+- Telegram: initialize the bot before isolated polling drains spooled updates so default isolated polling no longer retries every update with `Bot not initialized` and stalls replies. Fixes #81973. (#81975) Thanks @neeravmakwana.
 - Telegram: apply method-aware Bot API request timeouts to direct message/action clients so `openclaw message delete --channel telegram` no longer waits on grammY's 500-second default when the API request wedges. Fixes #81908. Thanks @DashLabsDev.
 - Cron: treat attempt dispatch and assembled context as execution-start milestones so isolated agent jobs that have reached backend dispatch are governed by their configured job timeout instead of the 60s pre-execution watchdog. Fixes #81368. (#81871) Thanks @alexph-dev.
 - Doctor/auth: warn about stale per-agent OAuth auth profile shadows and let `openclaw doctor --fix` remove the local shadow so agents inherit the fresher main-agent credential.
 - Status/channels: show configured channels whose plugin setup failed to load as `plugin load failed: dependency tree corrupted; run openclaw doctor --fix` instead of silently dropping them from `openclaw status`.
+- Status/update: show pending or failed update restart handoffs in `openclaw status` and make `openclaw update` print explicit gateway restart verified, skipped, or failed guidance.
+- QA/update: add an E2E corrupt plugin dependency lane that verifies `status --all` guidance, `doctor --fix` cleanup, and channel status recovery.
 - Discord/channels: make `openclaw channels list --all` prefer reachable Gateway runtime account status and mark configured-but-unavailable credentials, avoiding false `not configured` output when Discord is running from service-only env. Fixes #79343. Thanks @EricY019.
 - WhatsApp: mark text slash commands as command turns so authorized group command replies stay visible under message-tool-only group reply mode. (#81972) Thanks @barbarhan.
 - Providers/OpenCode Go: stop sending unsupported reasoning parameters to Kimi K2.5/K2.6, avoiding OpenCode Go payload-validation failures while preserving DeepSeek V4 reasoning support.
@@ -606,6 +630,7 @@ Docs: https://docs.openclaw.ai
 - Plugins/runtime: attribute deprecated runtime config load/write warnings to the plugin id and source that triggered them so logs and plugin doctor runs are actionable. Refs #81394. (#81425) Thanks @BKF-Gitty.
 - Agents/cron: honor a cron payload's explicit `timeoutSeconds` for the LLM idle watchdog even when it numerically equals `agents.defaults.timeoutSeconds`, preserving explicit per-run timeout intent and preventing stalled streaming replies from being cut to the implicit 120s cap. (#79426) Thanks @legolaz8451.
 - Codex app-server: keep the short post-tool completion watchdog armed across dynamic tool completion bookkeeping so embedded Codex runs fail fast and release their session lane when Codex goes quiet after a tool result. (#81697) Thanks @mbelinky.
+- Control UI/WebChat: wrap long inline code tokens inside chat bubbles instead of clipping them at the bubble edge. Fixes #81932. (#81931) Thanks @galiniliev.
 - CLI/media: render terminal QR codes with full-block characters by default so the bundled `qrcode` terminal renderer does not emit a pathologically dense ANSI final row in compact half-block mode that breaks scanning in some terminals. Fixes #77820. Thanks @KrasimirKralev.
 - Agents/compaction: read post-compaction AGENTS.md refresh context from the queued run workspace instead of the runner process cwd, so CLI-backed follow-up turns re-inject the correct workspace startup rules after compaction. Fixes #70541. (#75532) Thanks @vyctorbrzezowski.
 - Agents/read tool: treat positive offsets beyond EOF as empty ranges instead of surfacing the upstream read error, so stale pagination cursors no longer crash tool calls while unrelated read failures still fail loud. Fixes #62466. (#75536) Thanks @vyctorbrzezowski.
