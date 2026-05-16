@@ -14,10 +14,13 @@ Docs: https://docs.openclaw.ai
 - Telegram/group chat: add opt-in `messages.groupChat.ambientTurns: "room_event"` handling so always-on ambient chatter can run as quiet room context and speak visibly only via the message tool. (#81317) Thanks @obviyus.
 - Codex/context engines: bind thread-bootstrap projection epochs to Codex app-server threads, carry redacted tool-result context into fresh threads, and rotate backend threads when projection state changes. (#82351) Thanks @jalehman.
 - Gateway: add opt-in restart trace logs for restart signal, active-work drain, close, next-start, ready, and memory spans. (#82396) Thanks @samzong.
+- Gateway/performance: split startup benchmark HTTP-listen timing from full gateway-ready timing and add post-bind plugin and sidecar diagnostics to restart-readiness traces. (#82603) Thanks @samzong.
 
 ### Fixes
 
+- Agents/media: accept generated media attachments on internal completion events and report delivery-loss failures as errors, so completed background music/video tasks do not disappear after provider success.
 - Matrix/approvals: release in-flight reaction bindings when the channel approval handler stops mid-delivery, preventing stale approval targets after restart. Fixes #82485. (#82482) Thanks @Feelw00.
+- Matrix/E2EE: stop requesting MSC4222 `state_after` sync responses so homeservers with incomplete state-after data do not leave fresh encrypted rooms without outbound room encryptors. Fixes #82515. Thanks @nickdecooman.
 - TUI: update the displayed model in real time when an auto-fallback resolution swaps in a different model mid-turn, so the status line reflects the actual model handling the run. Fixes #82296. Thanks @giodl73-repo.
 - Gateway/sessions: estimate context usage from local/OpenAI-compatible transcripts when provider usage telemetry is missing, so status no longer shows empty usage for real local-model sessions. Fixes #73990. (#82317) Thanks @giodl73-repo.
 - Agents/sessions: preserve fresh post-compaction token snapshots across stale usage updates, preventing repeated auto-compaction after every message. Fixes #82576. (#82578) Thanks @njuboy11.
@@ -31,15 +34,18 @@ Docs: https://docs.openclaw.ai
 - Gateway/WebChat: route image attachments through a configured vision-capable `imageModel` plan before inlining images, and carry that image-model fallback chain through runtime retries. (#82524) Thanks @frankekn.
 - WebChat: show progress while manual `/compact` is running by streaming a session operation event to subscribed Control UI clients. Fixes #82407. Thanks @Conan-Scott.
 - Codex app-server: limit canonical OpenAI Codex app-server attribution rewrites to local transcript and trajectory records, leaving runtime/tool routing on the selected OpenAI model metadata so OpenAI API-key backup profiles keep their billing path.
+- Codex app-server: hide native tool-search control tools from dynamic tool exposure while preserving the message tool.
 - Android/chat: make bare and markdown URLs in chat messages tappable by preserving Compose URL annotations in rendered markdown. Fixes #82187. (#82392) Thanks @neeravmakwana.
 - Plugins/doctor: migrate legacy top-level plugin `tools` declarations into `contracts.tools`, so `openclaw doctor --fix` repairs local plugins for the manifest tool contract. (#81112) Thanks @100yenadmin.
 - Slack: guide agents to use stable `<@USER_ID>` mention tokens from context instead of plain `@name` text, so user mentions link and notify correctly. Fixes #82090. (#82152) Thanks @neeravmakwana.
 - Auth: serialize provider login writes through the auth-profile lock for OpenAI Codex, Anthropic, Cloudflare AI Gateway, GitHub Copilot, and z.ai, preserving upsert semantics so a live Gateway cannot overwrite freshly refreshed OAuth credentials with an expired in-memory snapshot.
 - Slack: keep DM thread replies on the main direct-message session instead of routing them to invisible thread-scoped sessions. Refs #82390. (#82418) Thanks @kagura-agent.
+- Auth/macOS: avoid creating the OAuth profile master key in Keychain automatically, falling back to the file-backed secret key so headless agents do not trigger a Keychain prompt.
 - Codex app-server: release raw assistant completions when `turn/completed` is missing while keeping commentary/status items as progress, preventing completed Codex runs from hanging until timeout. Fixes #82343. (#82403) Thanks @IWhatsskill.
 - Agents/sessions: remove the transient `*.bak-<pid>-<ts>` backup written by `repairSessionFileIfNeeded` once the atomic replace succeeds, so a stuck session with a persistently malformed JSONL line no longer accumulates one snapshot per repair invocation. Fixes #80960. (#80969) Thanks @100yenadmin. Co-authored by @tynamite.
 - CLI/status: show plain empty-state messages instead of empty Channels and Sessions tables when no channels or sessions exist.
 - CLI/dashboard: probe Gateway readiness before handing out the dashboard URL, prompting to start or install the managed service when the Gateway is stopped and printing recovery commands instead of opening a dead browser tab.
+- CLI/dashboard: treat Gateway `device identity required` probes as proof that the dashboard listener is reachable, so `openclaw dashboard` can still open the Control UI.
 - CLI: hide decorative startup and status emoji on terminals that are unlikely to render them correctly, keeping semantic message and identity emoji intact.
 - CLI/gateway: recover the Linux user systemd bus environment when `openclaw dashboard` starts the Gateway from stripped desktop shells such as VNC terminals.
 - Gateway/WebSocket: log expected startup `1013 gateway starting` retry closes at debug instead of warn while preserving WARN for unexpected pre-connect failures. Fixes #76361. (#82457) Thanks @IWhatsskill.
