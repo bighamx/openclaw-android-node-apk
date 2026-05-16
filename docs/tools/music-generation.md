@@ -161,7 +161,6 @@ Direct generation example:
   Output format hint when the provider supports it.
 </ParamField>
 <ParamField path="filename" type="string">Output filename hint.</ParamField>
-<ParamField path="timeoutMs" type="number">Optional provider request timeout in milliseconds. When omitted, OpenClaw uses `agents.defaults.musicGenerationModel.timeoutMs` if configured. Values below 10000ms are raised to 10000ms and reported in the tool result.</ParamField>
 
 <Note>
 Not all providers support all parameters. OpenClaw still validates hard
@@ -172,6 +171,11 @@ are ignored with a warning when the selected provider or model cannot honor
 them. Tool results report applied settings; `details.normalization`
 captures any requested-to-applied mapping.
 </Note>
+
+Provider request timeouts are operator configuration only. OpenClaw uses
+`agents.defaults.musicGenerationModel.timeoutMs` when configured, raises values
+below 120000ms to 120000ms, and otherwise defaults provider requests to
+300000ms.
 
 ## Async behavior
 
