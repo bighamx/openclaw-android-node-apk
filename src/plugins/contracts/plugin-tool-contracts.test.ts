@@ -1,8 +1,12 @@
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { expectNoReaddirSyncDuring } from "../../test-utils/fs-scan-assertions.js";
+import {
+  listGitTrackedFiles,
+  toRepoPath,
+  toRepoRelativePath,
+} from "../../test-utils/repo-files.js";
 
 type PluginManifestFile = {
   id?: unknown;
@@ -33,7 +37,7 @@ function walkFiles(dir: string): string[] {
 }
 
 function repoRelativePath(filePath: string): string {
-  return path.relative(process.cwd(), filePath).split(path.sep).join("/");
+  return toRepoRelativePath(process.cwd(), filePath);
 }
 
 function isSkippedRepoPath(relativePath: string): boolean {
@@ -47,19 +51,14 @@ function listGitFiles(dir: string): string[] | null {
   if (!relativeDir || relativeDir.startsWith("..") || path.isAbsolute(relativeDir)) {
     return null;
   }
-  const result = spawnSync("git", ["ls-files", "--", relativeDir], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-  });
-  if (result.status !== 0) {
+  const files = listGitTrackedFiles({ pathspecs: relativeDir });
+  if (!files) {
     return null;
   }
-  return result.stdout
-    .split("\n")
-    .map((line) => line.trim().replaceAll("\\", "/"))
-    .filter((line) => line.length > 0 && !isSkippedRepoPath(line))
+  return files
+    .filter((line) => !isSkippedRepoPath(line))
     .map((line) => path.join(process.cwd(), ...line.split("/")))
+    .filter((filePath) => fs.existsSync(filePath))
     .toSorted();
 }
 
@@ -68,19 +67,14 @@ function listGitPluginManifestPaths(extensionsDir: string): string[] | null {
   if (!relativeDir || relativeDir.startsWith("..") || path.isAbsolute(relativeDir)) {
     return null;
   }
-  const result = spawnSync("git", ["ls-files", "--", relativeDir], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-  });
-  if (result.status !== 0) {
+  const files = listGitTrackedFiles({ pathspecs: relativeDir });
+  if (!files) {
     return null;
   }
-  return result.stdout
-    .split("\n")
-    .map((line) => line.trim().replaceAll("\\", "/"))
+  return files
     .filter((line) => /^extensions\/[^/]+\/openclaw\.plugin\.json$/u.test(line))
     .map((line) => path.join(process.cwd(), ...line.split("/")))
+    .filter((filePath) => fs.existsSync(filePath))
     .toSorted();
 }
 
@@ -101,7 +95,7 @@ function isProductionSource(filePath: string): boolean {
   if (!/\.(?:cjs|mjs|js|ts|tsx)$/.test(filePath)) {
     return false;
   }
-  const normalized = filePath.split(path.sep).join("/");
+  const normalized = toRepoPath(filePath);
   return !/(\.test\.|\.spec\.|\/__tests__\/|\/test-support\/)/.test(normalized);
 }
 
