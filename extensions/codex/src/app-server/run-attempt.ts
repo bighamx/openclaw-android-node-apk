@@ -2062,7 +2062,9 @@ export async function runCodexAppServerAttempt(
   });
   projector = new CodexAppServerEventProjector(params, thread.threadId, activeTurnId, {
     nativePostToolUseRelayEnabled:
-      nativeHookRelay?.allowedEvents.includes("post_tool_use") === true,
+      nativeHookRelay?.allowedEvents.includes("post_tool_use") === true &&
+      nativeHookRelay.shouldRelayEvent("post_tool_use"),
+    trajectoryRecorder,
   });
   if (
     isTerminalTurnStatus(turn.turn.status) ||
