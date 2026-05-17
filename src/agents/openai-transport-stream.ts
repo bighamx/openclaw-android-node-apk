@@ -66,6 +66,7 @@ import {
   buildGuardedModelFetch,
   resolveModelRequestTimeoutMs,
 } from "./provider-transport-fetch.js";
+import { sanitizeResponsesImagePayload } from "./responses-image-payload-sanitizer.js";
 import { stripSystemPromptCacheBoundary } from "./system-prompt-cache-boundary.js";
 import { transformTransportMessages } from "./transport-message-transform.js";
 import { mergeTransportMetadata, sanitizeTransportPayloadText } from "./transport-stream-shared.js";
@@ -1450,6 +1451,7 @@ export function createOpenAIResponsesTransportStreamFn(): StreamFn {
           model,
           params as Record<string, unknown>,
         ) as typeof params;
+        params = sanitizeResponsesImagePayload(params as Record<string, unknown>) as typeof params;
         if (
           (options as { openclawCodeModeToolSurface?: unknown } | undefined)
             ?.openclawCodeModeToolSurface === true
@@ -1849,6 +1851,7 @@ export function createAzureOpenAIResponsesTransportStreamFn(): StreamFn {
           model,
           params as Record<string, unknown>,
         ) as typeof params;
+        params = sanitizeResponsesImagePayload(params as Record<string, unknown>) as typeof params;
         if (
           (options as { openclawCodeModeToolSurface?: unknown } | undefined)
             ?.openclawCodeModeToolSurface === true
@@ -2652,6 +2655,21 @@ function applyQwenOpenAICompletionsThinkingParams(params: {
   return true;
 }
 
+function applyTogetherOpenAICompletionsThinkingParams(params: {
+  compatThinkingFormat: string;
+  modelReasoning: boolean;
+  payload: Record<string, unknown>;
+  requestedEffort: OpenAIReasoningEffort;
+}): boolean {
+  if (!params.modelReasoning || params.compatThinkingFormat !== "together") {
+    return false;
+  }
+  params.payload.reasoning = {
+    enabled: isOpenAICompletionsThinkingEnabled(params.requestedEffort),
+  };
+  return true;
+}
+
 function convertTools(
   tools: NonNullable<Context["tools"]>,
   compat: ReturnType<typeof getCompat>,
@@ -3014,6 +3032,12 @@ export function buildOpenAICompletionsParams(
   const omitGpt54MiniToolReasoningEffort =
     isOpenAIGpt54MiniModel(model) && Array.isArray(params.tools) && params.tools.length > 0;
   const handledQwenThinkingFormat = applyQwenOpenAICompletionsThinkingParams({
+    compatThinkingFormat: compat.thinkingFormat,
+    modelReasoning: model.reasoning,
+    payload: params,
+    requestedEffort: completionsReasoningEffort,
+  });
+  applyTogetherOpenAICompletionsThinkingParams({
     compatThinkingFormat: compat.thinkingFormat,
     modelReasoning: model.reasoning,
     payload: params,
