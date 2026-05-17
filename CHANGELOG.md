@@ -9,6 +9,7 @@ Docs: https://docs.openclaw.ai
 - Mac app: redesign Settings pages with consistent card layouts, cached navigation, cleaner permissions/voice/skills/cron/exec/debug panes, and steadier spacing around the native sidebar.
 - Skills: rename the repo-local Codex closeout review skill and helper to `autoreview` while preserving the Codex-first fallback behavior.
 - Skills: add a meme-maker skill for curated template search, local SVG/PNG rendering, Imgflip hosted rendering, and Know Your Meme provenance links.
+- Browser: surface pending and recently handled modal dialogs in snapshots, return `blockedByDialog` when an action opens a modal, and allow `browser dialog --dialog-id` to answer pending dialogs.
 - Agents/tools: shorten built-in tool descriptions and schema hints across media, messaging, sessions, cron, Gateway, web, image/PDF, TTS, nodes, and plan tools while preserving routing guardrails.
 - Skills: add node inspector debugging, fused diagram generation, and throwaway spike workflow skills.
 - CLI/plugins: add `defineToolPlugin` plus `openclaw plugins build`, `validate`, and `init` for typed simple tool plugins with generated manifest metadata, optional tool declarations, and context factories.
@@ -27,7 +28,10 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Mac app: align the Sessions settings pane with the standard Settings page gutter and row spacing.
 - Codex app-server: preserve streamed native command output in mirrored transcripts and trajectory exports when final snapshots omit aggregated output. (#83200) Thanks @rozmiarD.
+- Codex app-server: fail closed when chat or sender policy denies tools, disabling native code, app, environment, and user MCP surfaces for restricted turns. (#82374) Thanks @VACInc.
+- Codex app-server: keep recent context-engine messages when oversized projected history is truncated, so short follow-ups in long channel sessions do not fall back to stale earlier turns. (#83127) Thanks @VACInc.
 - Feishu: return bound subagent delivery origins from session thread setup so Feishu subagent completions route back to the same DM or topic. (#83190) Thanks @100menotu001.
 - CLI/update: tailor post-update Gateway recovery hints by platform, showing systemd, LaunchAgent, Scheduled Task, or generic service-manager guidance instead of macOS-only recovery text. (#83096) Thanks @rubencu.
 - Plugins: apply a default 15-second timeout to legacy `before_agent_start` hooks so hung plugin handlers no longer block agent startup. Fixes #48534. (#83136) Thanks @therahul-yo.
@@ -42,6 +46,7 @@ Docs: https://docs.openclaw.ai
 - Mac app: avoid a SwiftUI metadata crash when rendering the Cron Jobs settings pane.
 - Agents/subagents: preserve run-mode keep subagent registry entries past the session sweep TTL, so kept subagent runs remain visible after cleanup completes. Fixes #83132. (#83168) Thanks @yetval.
 - Agents/OpenAI streams: yield via `setTimeout(0)` instead of `setImmediate` between bursty Responses chunks so abort timers can fire during the yield, keeping cancel-on-timeout responsive on hot streams. Refs #82462.
+- Agents/Codex: keep legacy `oauthRef`-backed OAuth profiles usable while `openclaw doctor --fix` migrates them back to inline credentials, without creating new sidecar credentials. (#83312) Thanks @joshavant.
 - CLI/config: send SecretRef diagnostics to stderr so JSON command stdout remains parseable.
 - CLI/plugins: ship the bundled memory CLI as a package entry so package-installed `openclaw memory` commands register correctly.
 - CLI/update: defer doctor-time plugin package installs during package swaps and seed post-core repair from the updated install registry, preventing duplicate reinstall failures.
@@ -124,6 +129,7 @@ Docs: https://docs.openclaw.ai
 - CLI/status: render extra gateway-like service diagnostics as warning/info output instead of error output. Fixes #46930. (#82922) thanks @giodl73-repo.
 - Agents/failover: classify Moonshot/Kimi exhausted-balance HTTP 429 payloads as billing instead of generic rate limits, preserving billing guidance and fallback behavior. Fixes #43447. (#83079) Thanks @leno23.
 - Plugin SDK: bundle `openclaw/plugin-sdk/zod` into the published package artifact and verify the packed zod subpath stays self-contained, so pnpm global installs can register plugins without a package-local `zod` symlink. Fixes #78398. (#78515) Thanks @ggzeng.
+- Providers/Google: drop compaction-truncated Gemini thought signatures before replay so malformed Base64 no longer aborts the next assistant turn. (#82995) Thanks @wAngByg.
 
 ## 2026.5.17
 
