@@ -27,6 +27,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Codex app-server: preserve streamed native command output in mirrored transcripts and trajectory exports when final snapshots omit aggregated output. (#83200) Thanks @rozmiarD.
 - Feishu: return bound subagent delivery origins from session thread setup so Feishu subagent completions route back to the same DM or topic. (#83190) Thanks @100menotu001.
 - CLI/update: tailor post-update Gateway recovery hints by platform, showing systemd, LaunchAgent, Scheduled Task, or generic service-manager guidance instead of macOS-only recovery text. (#83096) Thanks @rubencu.
 - Plugins: apply a default 15-second timeout to legacy `before_agent_start` hooks so hung plugin handlers no longer block agent startup. Fixes #48534. (#83136) Thanks @therahul-yo.
@@ -38,6 +39,7 @@ Docs: https://docs.openclaw.ai
 - QA-Lab: make mock parity dispatch provider-aware for source discovery and subagent scenarios so OpenAI and Anthropic lanes no longer share identical canned plans. Fixes #64879. Thanks @100yenadmin.
 - QA-Lab: stop returning Control UI bearer tokens from unauthenticated bootstrap payloads and bind Docker harness ports to loopback-only host addresses. (#66355) Thanks @pgondhi987.
 - Mac app: avoid a SwiftUI metadata crash when rendering the Cron Jobs settings pane.
+- Agents/subagents: preserve run-mode keep subagent registry entries past the session sweep TTL, so kept subagent runs remain visible after cleanup completes. Fixes #83132. (#83168) Thanks @yetval.
 - Agents/OpenAI streams: yield via `setTimeout(0)` instead of `setImmediate` between bursty Responses chunks so abort timers can fire during the yield, keeping cancel-on-timeout responsive on hot streams. Refs #82462.
 - CLI/config: send SecretRef diagnostics to stderr so JSON command stdout remains parseable.
 - CLI/plugins: ship the bundled memory CLI as a package entry so package-installed `openclaw memory` commands register correctly.
@@ -81,6 +83,7 @@ Docs: https://docs.openclaw.ai
 - Codex: avoid spawning native hook relay subprocesses for post-tool/finalize events with no registered hook handlers while preserving pre-tool safety and approval relays. Fixes #76552. (#78004) Thanks @evgyur.
 - Channel accounts: keep top-level default channel accounts visible when named accounts are added alongside default credential material, so mixed legacy/new account configs keep resolving `default` instead of silently dropping it.
 - Codex/Telegram: synthesize native Codex tool progress from final turn snapshots so Telegram `/verbose` stays visible when command events arrive only at completion.
+- Codex/Telegram: deliver Codex verbose tool summaries in direct message-tool-only turns while suppressing message-send and activity-log noise. (#83186) Thanks @kurplunkin.
 - Mac app: make Channels settings open faster by deferring config-schema work, avoiding startup channel probes, caching decoded channel status rows, and showing only compact quick settings instead of the full generated channel schema.
 - Control UI: include the Control UI and Gateway protocol versions in protocol-mismatch errors so stale app/dashboard pairings identify which side needs rebuilding or restarting.
 - Gateway/protocol: restore Gateway WS protocol v4 and keep `message.action` room-event metadata on the existing `inboundTurnKind` wire field while preserving internal inbound-event classification.
