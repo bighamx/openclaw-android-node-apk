@@ -4,10 +4,8 @@ import { selectApplicableRuntimeConfig } from "../config/config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { callGateway } from "../gateway/call.js";
 import { isEmbeddedMode } from "../infra/embedded-mode.js";
-import {
-  getActiveRuntimeWebToolsMetadata,
-  getActiveSecretsRuntimeSnapshot,
-} from "../secrets/runtime.js";
+import { getActiveSecretsRuntimeSnapshot } from "../secrets/runtime-state.js";
+import { getActiveRuntimeWebToolsMetadata } from "../secrets/runtime-web-tools-state.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
 import type { GatewayMessageChannel } from "../utils/message-channel.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentIds } from "./agent-scope.js";
@@ -346,6 +344,7 @@ export function createOpenClawTools(
     !embedded ||
     options?.sourceReplyDeliveryMode === "message_tool_only" ||
     messageExplicitlyAllowed;
+  const includeSubagentSpawnTool = !embedded || options?.allowGatewaySubagentBinding === true;
   const effectiveCallGateway = embedded
     ? createEmbeddedCallGateway()
     : openClawToolsDeps.callGateway;
@@ -424,6 +423,9 @@ export function createOpenClawTools(
             config: resolvedConfig,
             callGateway: openClawToolsDeps.callGateway,
           }),
+        ]),
+    ...(includeSubagentSpawnTool
+      ? [
           createSessionsSpawnTool({
             agentSessionKey: options?.agentSessionKey,
             agentChannel: options?.agentChannel,
@@ -441,7 +443,8 @@ export function createOpenClawTools(
             inheritedToolAllowlist: options?.inheritedToolAllowlist,
             inheritedToolDenylist: options?.inheritedToolDenylist,
           }),
-        ]),
+        ]
+      : []),
     createSessionsYieldTool({
       sessionId: options?.sessionId,
       onYield: options?.onYield,
