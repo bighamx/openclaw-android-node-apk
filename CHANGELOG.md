@@ -6,11 +6,13 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Mac app: redesign Settings pages with consistent card layouts, cached navigation, cleaner permissions/voice/skills/cron/exec/debug panes, and steadier spacing around the native sidebar.
 - Skills: add a meme-maker skill for curated template search, local SVG/PNG rendering, Imgflip hosted rendering, and Know Your Meme provenance links.
 - Agents/tools: shorten built-in tool descriptions and schema hints across media, messaging, sessions, cron, Gateway, web, image/PDF, TTS, nodes, and plan tools while preserving routing guardrails.
 - Skills: add node inspector debugging, fused diagram generation, and throwaway spike workflow skills.
 - CLI/plugins: add `defineToolPlugin` plus `openclaw plugins build`, `validate`, and `init` for typed simple tool plugins with generated manifest metadata, optional tool declarations, and context factories.
 - Agents/skills: tighten bundled skill prompts and metadata, quote skill descriptions, refresh current CLI/API guidance, and update embedded sherpa-onnx runtime downloads.
+- Skills: update the Obsidian skill to target the official `obsidian` CLI and require its registered binary instead of the third-party `obsidian-cli`.
 - Skills: add a Python debugging skill for pdb, breakpoint(), post-mortem inspection, and debugpy remote attach.
 - Proxy: support HTTPS managed forward-proxy endpoints and scoped `proxy.tls.caFile` CA trust for proxy endpoint TLS. (#79171) Thanks @jesse-merhi.
 - QA-Lab: add first-hour 20-turn and optional 100-turn runtime parity scenarios, with tier metadata for standard and soak QA gates. (#80323) Thanks @100yenadmin.
@@ -21,12 +23,18 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Agents/OpenAI streams: yield via `setTimeout(0)` instead of `setImmediate` between bursty Responses chunks so abort timers can fire during the yield, keeping cancel-on-timeout responsive on hot streams. Refs #82462.
 - Feishu: detect SecretRef top-level credentials as a configured default account instead of treating object-backed app secrets as missing.
+- CLI/completion: resolve concrete PowerShell profile paths and reload commands during setup and doctor completion installation. Fixes #44296. (#83059) Thanks @yu-xin-c.
 - Providers/Google: preserve and recover Gemini 3 tool-call thought signatures during native replay so function-calling turns no longer fail with missing `thought_signature` 400s. Fixes #72879. (#80358) Thanks @abnershang.
+- Memory-core: distinguish sqlite-vec load failures from missing semantic vector embeddings in degraded `memory index` warnings, so vector recall diagnostics point at unresolved dimensions instead of blaming sqlite-vec when the store is ready. Fixes #75624. (#83056) Thanks @xuruiray and @Noah3521.
+- Agents/subagents: preserve sandbox-peer controller ownership while routing completion announcements back to the originating run session, keeping subagent control and completion delivery scoped correctly. Fixes #80201. (#80242) Thanks @Jerry-Xin.
+- Gateway: continue restarting remaining channels when one hot-reload channel restart fails, while still reporting aggregate reload failure and rolling back plugin pre-replace stops. Fixes #83054. Thanks @zqchris.
 - Gateway/secrets: split the lightweight secrets runtime state and auth-store cache from the full secrets runtime and take a startup fast path when the gateway startup config has no SecretRef values, speeding up secrets startup while preserving cleanup and refresh semantics.
 - Codex app-server: rotate oversized native Codex threads before resume and cap dynamic tool-result text entering native Codex sessions, preventing stale oversized context from surviving OpenClaw compaction. (#82981) Thanks @hansolo949.
 - Gateway/restart: drain pending replies and active chat runs during restart shutdown before sockets and channels close, aborting timed-out chat runs through the normal cleanup path. (#69121) Thanks @alexlomt.
 - Agents/Codex: use the Codex runtime context window for OpenAI-model preflight compaction and memory flush checks, so GPT-5.5 Codex sessions compact before hitting the smaller native context limit. Fixes #82982. Thanks @vliuyt.
+- QA-Lab: clean orphaned gateway temp roots when a suite parent exits and wait on gateway plus transport readiness after config restarts, reducing stale `qa-channel` noise from interrupted runs. Fixes #65506. Thanks @100yenadmin.
 - QA-Lab: wake qa-bus long polls that arrive with stale future cursors after a bus restart, preserving reconnect readiness for harness clients. (#67142) Thanks @hxy91819.
 - QA-Lab: stage Multipass transfer scripts under OpenClaw's preferred temp root instead of raw OS temp paths, keeping the VM runner inside temp-path guardrails. (#64098) Thanks @ImLukeF.
 - Agents/replies: keep surviving reply media and append a warning when other media references fail, so partial media normalization no longer drops failures silently. Thanks @Jerry-Xin.
@@ -58,6 +66,7 @@ Docs: https://docs.openclaw.ai
 - Control UI: include the Control UI and Gateway protocol versions in protocol-mismatch errors so stale app/dashboard pairings identify which side needs rebuilding or restarting.
 - Gateway/protocol: restore Gateway WS protocol v4 and keep `message.action` room-event metadata on the existing `inboundTurnKind` wire field while preserving internal inbound-event classification.
 - Agents/tools: prefer non-webchat session-key routes when the message tool has stale webchat context, so message-tool-only replies keep delivering to the originating channel. Fixes #82911. (#83004) Thanks @joshavant.
+- Channels: keep direct-message last-route writes on isolated `per-channel-peer` sessions instead of contaminating the agent main session with channel delivery context. Fixes #36614. Thanks @aspenas.
 - Mac app: move the Settings sidebar toggle into the native titlebar and tighten the General pane width.
 - Mac app: keep visited Settings panes mounted so switching tabs no longer blanks and reloads their content.
 - Mac app: make Config settings open from shallow schema lookups and load selected paths on demand instead of fetching and rendering the full generated config schema up front.
@@ -118,6 +127,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Codex/app-server: cover `/btw` side-question native hooks and app-server command approvals without relying on unsupported turn-scoped hook config. (#82559) Thanks @Kaspre.
 - Gateway/Docker: fail closed for non-loopback gateway starts without explicit shared-secret or trusted-proxy auth, and stop the image default command from bypassing config validation. Fixes #82865. (#82866) Thanks @coygeek.
 - Agents/followups: route queued followup turns through CLI runtime backends instead of embedded harness lookup, preventing `claude-cli`/`google-gemini-cli` followups from failing before delivery. Fixes #82847. (#82857) Thanks @hclsys.
 - CLI/sessions: let `openclaw sessions cleanup --fix-missing` prune malformed rows with unresolvable transcript metadata instead of throwing. Fixes #80970. (#82745) Thanks @IWhatsskill.
@@ -219,6 +229,7 @@ Docs: https://docs.openclaw.ai
 - Update/installers: override npm `min-release-age` quarantine for OpenClaw-managed package installs, so `openclaw update`, plugin updates, and hosted installer scripts can install the requested latest release immediately.
 - Agents/sessions: preserve fresh post-compaction token snapshots across stale usage updates, preventing repeated auto-compaction after every message. Fixes #82576. (#82578) Thanks @njuboy11.
 - Agents/replies: preserve active inbound reply context at the LLM boundary so Discord referenced-message turns do not answer from stale session history. Fixes #82608. (#82801) Thanks @joshavant.
+- Agents/sessions: expose session transcript lock stale and max-hold tuning, and release the embedded run's coarse transcript lock before model I/O while locking persistence and cleanup separately. Fixes #13744. Thanks @amknight.
 - Agents/OpenAI Responses: log redacted diagnostics for detail-less `response.failed` events while preserving failed response ids, so operators can correlate provider-side failures. Fixes #82558.
 - Agents/OpenRouter: strip non-replayable Anthropic/xAI reasoning provenance tags from follow-up requests, preventing poisoned thinking signatures from breaking second turns. Fixes #82335. (#82380) Thanks @hclsys.
 - Providers/xAI: send configurable reasoning effort only for Grok 4.3, preserving xAI's default low reasoning while omitting unsupported controls for Grok 4.20 reasoning models. (#81227) Thanks @jason-allen-oneal.
