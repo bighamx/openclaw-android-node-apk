@@ -22,12 +22,17 @@ Docs: https://docs.openclaw.ai
 - QA-Lab: add live-only harness self-health scenarios for plugin hook crashes, manifest contract errors, and WebChat direct-reply self-message routing. (#80323) Thanks @100yenadmin.
 - QA-Lab: add runtime tool fixture scenarios and coverage reporting for Codex-native workspace tools, OpenClaw dynamic tools, and optional plugin-backed tools. (#80323) Thanks @100yenadmin.
 - QA-Lab: expose runtime tool fixture coverage through `openclaw qa coverage --runtime-tools`, with optional suite-summary evaluation for parity gate artifacts. (#80323) Thanks @100yenadmin.
+- QA-Lab: add the personal-agent approval-denial scenario so the benchmark pack verifies denied local reads stop cleanly without tool progress or fixture leaks. (#83150) Thanks @iFiras-Max1.
 
 ### Fixes
 
+- Plugins: apply a default 15-second timeout to legacy `before_agent_start` hooks so hung plugin handlers no longer block agent startup. Fixes #48534. (#83136) Thanks @therahul-yo.
 - Feishu: refresh inbound session delivery context for DM, group, and broadcast turns so later replies do not inherit stale WebChat routing. Fixes #78274.
 - QA-Lab/qa-channel: attach redacted agent tool-start traces to outbound `QaBusMessage` records so scenarios can assert actual tool use instead of relying only on reply text. Fixes #67637. Thanks @100yenadmin.
 - QA-Lab: fail live runtime parity reports when assistant-message usage is missing, preventing `0 vs 0` live token rows from being reported as passing proof. Fixes #80411. Thanks @100yenadmin.
+- QA-Lab: fail Codex-backed OpenAI live runtime-pair runs before launching isolated workers when no portable Codex auth is available, while staging API-key fallbacks and configured Codex keys for isolated QA agents. Fixes #80412. Thanks @100yenadmin.
+- QA-Lab: refresh parity gates, mock frontier fixtures, model scenarios, and workflow artifact lanes to compare GPT-5.5 against Claude Opus 4.7. Fixes #74262. Thanks @100yenadmin.
+- QA-Lab: make mock parity dispatch provider-aware for source discovery and subagent scenarios so OpenAI and Anthropic lanes no longer share identical canned plans. Fixes #64879. Thanks @100yenadmin.
 - QA-Lab: stop returning Control UI bearer tokens from unauthenticated bootstrap payloads and bind Docker harness ports to loopback-only host addresses. (#66355) Thanks @pgondhi987.
 - Mac app: avoid a SwiftUI metadata crash when rendering the Cron Jobs settings pane.
 - Agents/OpenAI streams: yield via `setTimeout(0)` instead of `setImmediate` between bursty Responses chunks so abort timers can fire during the yield, keeping cancel-on-timeout responsive on hot streams. Refs #82462.
@@ -107,6 +112,8 @@ Docs: https://docs.openclaw.ai
 - Agents/replies: classify provider conversation-state rejections and return a clear message-channel error instead of auto-resetting or falling back to a generic runner failure. (#82616) Thanks @dutifulbob.
 - Browser plugin: trust managed Chrome CDP diagnostics when launch HTTP probes race cold-start readiness, avoiding false startup failures. Fixes #82904. (#82986) Thanks @kmanan and @hclsys.
 - Android: prompt before replacing a changed Gateway TLS thumbprint, showing the old and new SHA-256 fingerprints so users can accept expected certificate rotations instead of hard failing on pin mismatch. (#83077) Thanks @sliekens.
+- CLI/status: render extra gateway-like service diagnostics as warning/info output instead of error output. Fixes #46930. (#82922) thanks @giodl73-repo.
+- Agents/failover: classify Moonshot/Kimi exhausted-balance HTTP 429 payloads as billing instead of generic rate limits, preserving billing guidance and fallback behavior. Fixes #43447. (#83079) Thanks @leno23.
 
 ## 2026.5.17
 
