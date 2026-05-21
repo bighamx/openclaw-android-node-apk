@@ -13,6 +13,8 @@ Docs: https://docs.openclaw.ai
 - Agents/tools: remove the old sender-owner tool gating path so configured tools stay visible for trusted sessions while command and channel-action auth still carry real sender identity.
 - QA-Lab: add curated mock JSONL replay fixtures and first-drift reporting for runtime-parity audits. (#80323, refs #80176) Thanks @100yenadmin.
 - QA-Lab: include the optional 100-turn runtime parity soak in release-soak artifacts so long-run Codex/Pi transcript drift stays visible outside the default gate. (#80395) Thanks @100yenadmin.
+- QA-Lab: add a live-only long-context progress watchdog scenario for Codex app-server timeout and stalled-run sentinels. (#80323) Thanks @100yenadmin.
+- QA-Lab: tag gateway restart recovery and streaming final-integrity scenarios as live-only runtime parity lanes. (#80323) Thanks @100yenadmin.
 - QA-Lab: add a personal-agent failure recovery scenario that checks honest partial status, retry boundaries, and local recovery artifacts. (#83872) Thanks @iFiras-Max1.
 - QA-Lab: include an opt-in `update.run` package self-upgrade sentinel for destructive latest-package recovery checks.
 - QA-Lab: add Codex plugin lifecycle and auth-profile fixture coverage for missing installs, pinned-version drift, first-turn install ordering, and doctor migration safety. (#80323, refs #80174) Thanks @100yenadmin.
@@ -21,7 +23,9 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Agents/subagents: surface blocked child-run completions as errors instead of successful subagent finishes. (#80886) Thanks @TurboTheTurtle.
 - WhatsApp: update Baileys to `7.0.0-rc13` and drop the obsolete logger type patch.
+- Install/update: reject OpenClaw GitHub source package targets early and point moving-main users at the dev/git install path instead of the broken npm source-install flow.
 - Infra/json: retry transient `File changed during read` races while loading JSON state so config and state reads recover instead of failing the turn. (#84285)
 - Providers/Ollama: resolve configured Ollama Cloud `OLLAMA_API_KEY` markers to the real discovery key so cloud provider entries keep authenticated model catalog access. (#85037)
 - Discord: keep persistent component registry fallback warnings actionable by forwarding structured error and cause metadata through the runtime logger. Fixes #84185. (#84190) Thanks @100menotu001.
@@ -75,7 +79,7 @@ Docs: https://docs.openclaw.ai
 - Discord/voice: include bounded `IDENTITY.md`, `USER.md`, and `SOUL.md` profile context in realtime voice session instructions by default, with `voice.realtime.bootstrapContextFiles: []` available to disable it. (#84499) Thanks @fuller-stack-dev.
 - Dependencies: bump the bundled Codex harness to `@openai/codex` `0.132.0` and refresh the app-server model-list docs for the new catalog.
 - CLI/policy: add the bundled Policy plugin for policy-backed channel conformance checks, doctor lint findings, and opt-in workspace repair. (#80407) Thanks @giodl73-repo.
-- Agents/config: allow `agents.list[].experimental.localModelLean` so lean local-model mode can be enabled for one configured agent instead of globally.
+- Agents/config: allow `agents.list[].experimental.localModelLean` so lean local-model mode can be enabled for one configured agent instead of globally. (#84073) Thanks @dutifulbob.
 - Providers/xAI: add device-code OAuth login so remote and headless setups can authorize xAI without a localhost browser callback. (#84005) Thanks @fuller-stack-dev.
 - Providers/OpenRouter: honor provider-level `params.provider` routing policy for OpenRouter requests, with model and agent params overriding the defaults. Thanks @amknight.
 
@@ -130,6 +134,7 @@ Docs: https://docs.openclaw.ai
 - Matrix/config: accept `messages.queue.byChannel.matrix` queue overrides and keep queue provider schema/type keys aligned for Matrix, Google Chat, and Mattermost. Thanks @bdjben.
 - CLI: format `openclaw acp client` failures through the shared error formatter so object-shaped errors stay readable instead of printing `[object Object]`. Fixes #83904. (#84080)
 - Providers/Ollama: default unknown-capabilities models to tool-capable so discovered native Ollama models can use tools when `/api/show` omits capabilities. (#84055) Thanks @dutifulbob.
+- Codex app-server: disable native Code Mode, user MCP, and app-backed plugin execution while OpenClaw sandboxing is active, routing shell access through `sandbox_exec`/`sandbox_process` instead. (#84388) Thanks @joshavant.
 - Installer/Windows: launch `install.ps1` onboarding as an attached child process so fresh native Windows installs do not freeze visibly at `Starting setup...` or corrupt the wizard's terminal rendering.
 - CLI/update: keep restart health checks working across one-version CLI/Gateway protocol skew and use the managed Gateway service Node for all follow-up commands even when the package root is unchanged, so `openclaw update` no longer silently switches the gateway to a different Node binary when multiple Node installations are present. Thanks @amknight.
 - CLI/gateway: include the running Gateway version in `gateway status` JSON output, preserving existing server metadata while falling back to status RPC data for read probes. Fixes #56222. Thanks @galiniliev.
