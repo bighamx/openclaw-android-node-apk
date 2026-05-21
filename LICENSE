@@ -1,193 +1,21 @@
+MIT License
 
-SELECTIVE FREEDOM LICENSE (SFL)
-Version 1.0
+Copyright (c) 2026 OpenClaw Foundation
 
-Copyright (c) 2026 chuckie
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-1. DEFINITIONS
-
-1.1 "Huawei" means Huawei Technologies Co., Ltd., and its global network
-of parent companies, subsidiaries, branches, and affiliates, including
-but not limited to any entity that Huawei Technologies Co., Ltd. directly
-or indirectly controls, is controlled by, or is under common control with.
-
-1.2 "Association" includes, but is not limited to, direct or indirect
-equity ownership, investment relationships, shareholding, or any form of
-corporate control or joint venture.
-
-1.3 "Restricted Entity" means:
-    (a) Huawei, as defined in Section 1.1;
-    (b) Any entity in which Huawei holds, directly or indirectly, a
-        significant interest, whether through equity, debt, or any other
-        financial instrument, or over which Huawei exercises managerial
-        or operational control;
-    (c) Any individual currently employed by, or acting as a representative,
-        agent, consultant, or contractor for, any of the aforementioned
-        entities while performing duties related to their role;
-    (d) Any entity or individual acting on behalf of or in coordination
-        with any of the aforementioned entities.
-
-1.4 "Software" means the software and associated documentation files
-distributed under this License.
-
-1.5 "Licensee" means any individual or entity exercising the rights
-granted under this License, excluding any Restricted Entity.
-
-1.6 "Copyright Holder" means the original author(s) or copyright owner(s)
-of the Software.
-
-2. GRANT OF LICENSE
-
-Subject to the terms and conditions of this License, the Copyright Holder
-hereby grants to any person or entity (other than a Restricted Entity as
-defined in Section 1.3) a perpetual, worldwide, non-exclusive, no-charge,
-royalty-free, irrevocable license to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to permit
-persons to whom the Software is furnished to do so, subject to the
-following conditions:
-
-    (a) The above copyright notice and this permission notice shall be
-        included in all copies or substantial portions of the Software.
-    (b) The Licensee shall not be a Restricted Entity.
-
-3. EXCLUSION OF RESTRICTED ENTITIES
-
-NOTWITHSTANDING ANY OTHER PROVISION OF THIS LICENSE, NO LICENSE,
-PERMISSION, OR RIGHTS OF ANY KIND ARE GRANTED TO ANY RESTRICTED ENTITY.
-
-Any use, reproduction, modification, distribution, or exploitation of the
-Software by a Restricted Entity is strictly prohibited and shall be deemed
-a direct infringement of the Copyright Holder's intellectual property
-rights, without any requirement of prior notice.
-
-This exclusion is a fundamental term of this License and shall survive
-any termination or expiration of this License.
-
-4. CONDITIONS AND OBLIGATIONS
-
-4.1 The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-4.2 Licensees who distribute the Software must ensure that all
-distributions include this License in its entirety, including all
-definitions and exclusion clauses.
-
-4.3 Licensees shall take reasonable measures to ensure that the Software
-is not made available to Restricted Entities, including but not limited
-to compliance with applicable export control laws and regulations.
-
-5. INTELLECTUAL PROPERTY
-
-5.1 The Software is protected by copyright law and international treaties.
-
-5.2 This License does not grant permission to use the trade names,
-trademarks, service marks, or product names of the Copyright Holder,
-except as required for reasonable and customary use in describing the
-origin of the Software.
-
-6. TERMINATION
-
-6.1 This License and the rights granted hereunder will terminate
-automatically upon any breach of the terms of this License by a Licensee.
-
-6.2 Notwithstanding termination, the following provisions shall survive:
-    (a) The exclusion of Restricted Entities (Section 3);
-    (b) The disclaimer of warranties (Section 7);
-    (c) The limitation of liability (Section 8);
-    (d) The right to seek legal remedies (Section 9).
-
-6.3 In the event of termination, the Licensee must cease all use of the
-Software and destroy all copies in their possession.
-
-7. DISCLAIMER OF WARRANTY
-
-THE SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
-INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT ARE DISCLAIMED.
-IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY DIRECT,
-INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
-IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-POSSIBILITY OF SUCH DAMAGE.
-
-8. LIMITATION OF LIABILITY
-
-IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
-OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
-IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-POSSIBILITY OF SUCH DAMAGE.
-
-9. LEGAL REMEDIES AND ENFORCEMENT
-
-9.1 The Copyright Holder reserves the right to pursue all available
-legal remedies, at law or in equity, for any breach of this License.
-
-9.2 In the event of a breach by a Restricted Entity, the Copyright
-Holder shall be entitled to:
-    (a) Seek immediate injunctive relief, including temporary restraining
-        orders and preliminary and permanent injunctions, without the
-        necessity of proving actual damages or posting any bond;
-    (b) Recover all actual damages suffered as a result of the breach;
-    (c) Recover all profits, gains, and advantages obtained by the
-        Restricted Entity through unauthorized use of the Software;
-    (d) Recover statutory damages as permitted by applicable law;
-    (e) Recover reasonable attorneys' fees and costs of enforcement.
-
-9.3 The rights and remedies provided herein are cumulative and are in
-addition to any other rights and remedies available under applicable law.
-
-10. GOVERNING LAW AND DISPUTE RESOLUTION
-
-10.1 This License shall be governed by and construed in accordance with
-the laws of the jurisdiction in which the Copyright Holder resides,
-without regard to its conflict of laws provisions.
-
-10.2 Any dispute arising out of or relating to this License shall be
-subject to the exclusive jurisdiction of the courts in the jurisdiction
-of the Copyright Holder's residence, and the parties hereby consent to
-the personal jurisdiction of such courts.
-
-11. SEVERABILITY
-
-If any provision of this License is held to be unenforceable or invalid,
-such provision shall be modified to the minimum extent necessary to make
-it enforceable, and the remaining provisions shall continue in full force
-and effect.
-
-12. ENTIRE AGREEMENT
-
-This License constitutes the entire agreement between the parties
-relating to the subject matter hereof and supersedes all prior or
-contemporaneous oral or written agreements concerning such subject matter.
-
-13. AMENDMENT
-
-The Copyright Holder may publish revised and/or new versions of this
-License from time to time. Such new versions will be similar in spirit
-to the present version but may differ in detail to address new problems
-or concerns.
-
-END OF LICENSE TERMS AND CONDITIONS
-
-HOW TO APPLY THIS LICENSE TO YOUR WORK
-
-To apply this license to your software project, include the following
-notice in each source file or in a prominent location in your project:
-
-    Copyright (c) 2026 chuckie
-
-    This software is licensed under the Selective Freedom License (SFL) v1.0.
-See the LICENSE file for full terms and conditions.
-
-    For the avoidance of doubt, this software is NOT licensed to Huawei
-    Technologies Co., Ltd. or any of its affiliates, subsidiaries,
-    employees, representatives, or contractors.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
