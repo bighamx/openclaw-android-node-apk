@@ -17,7 +17,7 @@ import {
   setRuntimeConfigSnapshot,
   type ReadConfigFileSnapshotWithPluginMetadataResult,
 } from "../config/io.js";
-import { isNixMode } from "../config/paths.js";
+import { isNixMode, normalizeStateDirEnv } from "../config/paths.js";
 import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
 import { applyConfigOverrides } from "../config/runtime-overrides.js";
 import { resolveMainSessionKey } from "../config/sessions.js";
@@ -538,6 +538,7 @@ export async function startGatewayServer(
   port = 18789,
   opts: GatewayServerOptions = {},
 ): Promise<GatewayServer> {
+  normalizeStateDirEnv(process.env);
   const { bootstrapGatewayNetworkRuntime } = await import("./server-network-runtime.js");
   bootstrapGatewayNetworkRuntime();
 
@@ -829,6 +830,10 @@ export async function startGatewayServer(
   const readinessEventLoopHealth = createGatewayEventLoopHealthMonitor();
   let startupSidecarsReady = minimalTestGateway;
   let startupPendingReason = "startup-sidecars";
+  let releaseStartupAccountStarts = () => {};
+  const startupAccountStartsReady = new Promise<void>((resolve) => {
+    releaseStartupAccountStarts = resolve;
+  });
   const { createChannelManager } = await import("./server-channels.js");
   const channelManager = createChannelManager({
     getRuntimeConfig: () =>
@@ -842,6 +847,7 @@ export async function startGatewayServer(
     resolveStartupChannelRuntime: getStartupChannelRuntime,
     getPluginHttpRouteRegistry: () => pluginRegistry,
     startupTrace,
+    deferStartupAccountStartsUntil: startupAccountStartsReady,
   });
   const getReadiness = createReadinessChecker({
     channelManager,
@@ -1581,6 +1587,7 @@ export async function startGatewayServer(
             },
             onSidecarsReady: () => {
               startupSidecarsReady = true;
+              releaseStartupAccountStarts();
               activateScheduledServicesWhenReady();
             },
             startupTrace,
