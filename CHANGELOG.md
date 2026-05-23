@@ -6,6 +6,9 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Meeting Notes: add a source-only external meeting-notes plugin and SDK source-provider contract outside the core npm package, with auto-start capture config, manual transcript imports, read-only `openclaw meeting-notes` CLI access, and Discord voice as the first live source.
+- Docs/channels/config: add Signal `configPath`, Telegram wildcard topic defaults, local-time backup archive names, Termux home fallback, include-path validation, secret-scanner-safe placeholder guidance, Gemini CLI/Antigravity media guidance, and macOS VM auto-login guidance. Thanks @NorseGaud, @yudistiraashadi, @huangqian8, @VibhorGautam, @maweibin, @tianxingleo, @IgnacioPro, and @xzcxzcyy-claw.
+- Docs: clarify model-usage portability, Codex migration prerequisites, status bootstrap wording, thread-bound subagent limits, hook ownership, and config-preserving safety guidance. Thanks @aniruddhaadak80, @leno23, @TomDjerry, @matthewxmurphy, @vincentkoc, and @stablegenius49.
 - Docs: clarify README onboarding and Gateway startup paths, WhatsApp QR/408 recovery, cron output language prompts, skill advanced features, gateway upstream 403 troubleshooting, and plugin fallback override guidance. Thanks @deepujain, @Zacxxx, @Jah-yee, @neyric, @usimic, @Renu-Cybe, @BigUncle, and @SeashoreShi.
 - Docs: clarify context-pruning ratio bounds, local dashboard recovery, CLI env markers, remote onboarding token behavior, and Peekaboo Bridge permissions for subprocess agents. Thanks @ayesha-aziz123, @dishraters, @hougangdev, and @brandonlipman.
 - Docs: clarify browser CDP diagnostics, Plugin SDK allowlist imports, status-reaction timing defaults, queue steering behavior, limited-tool troubleshooting, cron HEARTBEAT handling, Telegram multi-agent groups, Bitwarden SecretRef setup, and EasyRunner deployments. Thanks @Quratulain-bilal, @mbelinky, @Mickey-, @vancece, @xenouzik, @posigit, @surlymochan, @janaka, and @choiking.
@@ -15,6 +18,8 @@ Docs: https://docs.openclaw.ai
 - Docs: clarify media provider credentials, Codex/OpenClaw code-mode boundaries, Slack and Telegram ack reactions, Feishu dynamic agents, secrets plaintext boundaries, memory guidance, and Chinese glossary terms. Thanks @nielskaspers, @cosmopolitan033, @drclaw-iq, @alexgduarte, @zccyman, @chengoak, and @cassthebandit.
 - Packaging: exclude documentation images and assets from the npm tarball, reducing published package size without affecting runtime docs search or CLI behavior. Thanks @SebTardif.
 - Media understanding: stop auto-probing Gemini CLI and use Antigravity CLI only as a lower-priority image/video fallback after configured provider APIs.
+- Diagnostics: emit sanitized `secrets.prepare` timeline spans for Gateway secret preparation so operators can distinguish secret startup latency without exposing provider names, secret ids, or secret values. (#83019) Thanks @samzong.
+- Diagnostics: export bounded skill usage metrics/spans and tool source/owner labels for core, plugin, MCP, and channel tool execution without exposing raw paths or session identifiers. (#80370) Thanks @gauravprasadgp.
 - Agents/subagents: limit default sub-agent bootstrap context to `AGENTS.md` and `TOOLS.md`, keeping persona, identity, user, memory, heartbeat, and setup files out of delegated workers by default. (#85283) Thanks @100yenadmin.
 - Maintainer skills: exclude plugin SDK/API boundary work from `openclaw-landable-bug-sweep` so bugbash sweeps stay focused on small paper-cut fixes.
 - QA-Lab/diagnostics: extend the OpenTelemetry smoke harness to prove trace, metric, and log export, and add first-class Prometheus and observability smoke aliases.
@@ -48,6 +53,8 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Memory/LanceDB: expose public memory artifacts through the active memory provider bridge so memory-wiki imports durable memory files, daily notes, dream reports, and event logs without depending on memory-core internals. Fixes #83604. (#85060) Thanks @brokemac79.
+- Agents: let embedded compaction fallback retries proceed when PI-compatible candidates do not need agent harness plugin preparation.
 - Agents/tools: honor configured custom provider API keys when deciding whether media, image-generation, video-generation, music-generation, and PDF tools are available. (#85570)
 - StepFun: stop advertising stale generic API key auth choices so onboarding only offers runtime-backed Standard and Step Plan choices.
 - Diagnostics: keep OpenTelemetry log bodies behind explicit content capture and scrub scoped agent-session keys from OpenTelemetry and Prometheus labels while preserving bounded queue-lane prefixes.
@@ -99,9 +106,10 @@ Docs: https://docs.openclaw.ai
 - Gateway chat: broadcast returned agent-run error payloads after an agent starts so ACP/WebChat clients receive terminal idle-timeout errors. Fixes #84945.
 - Gateway chat display: preserve OpenAI-compatible `prompt_tokens`, `completion_tokens`, and `total_tokens` usage fields in sanitized chat history so llama.cpp sessions keep context counts. Fixes #77992. Thanks @MarTT79.
 - Dashboard/CLI: allow macOS browser launching through `open` even when SSH environment variables are present, while preserving Linux SSH no-display protection. Fixes #67088. Thanks @theglove44.
-- Codex app-server: keep native web search observations out of mirrored chat transcripts while preserving tool progress telemetry. Fixes #85109. Thanks @ugitmebaby.
+- Codex app-server: keep native web search observations out of mirrored chat transcripts while preserving available action query metadata in tool progress telemetry. Fixes #85109. Thanks @ugitmebaby.
 - OpenCode Go: strip unsupported Kimi reasoning replay fields before provider requests so repeated `kimi-k2.6` turns do not fail schema validation. Fixes #83812. Thanks @Sleeck.
 - Browser/CDP: add a WSL2 portproxy self-loop hint when Chrome DevTools endpoints accept connections but return an empty HTTP reply. Fixes #59209. Thanks @Owlock.
+- Agents/tools: add bounded tool-policy audit log entries that identify which allow/deny rule removed tools or blocked a sandboxed tool call. Fixes #55801. Thanks @justinjkline.
 - Agents/OpenAI: preserve structured provider error code, type, and redacted body metadata on boundary-aware transport failures.
 - Doctor/Codex: point native Codex asset warnings at the canonical `openclaw migrate plan codex` preview command. Fixes #84948. Thanks @markoa.
 - CLI/models: make `capability model auth logout --agent` remove auth profiles from the selected non-default agent store. Fixes #85092. Thanks @islandpreneur007.
