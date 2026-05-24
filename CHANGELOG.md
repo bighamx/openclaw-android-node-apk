@@ -73,6 +73,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Gateway/update: avoid fetching unrelated tags during dev-channel git updates so moved release tags do not block branch-based updates. (#84737) Thanks @rubencu.
 - MiniMax: store OAuth token expiry as an absolute millisecond timestamp so OAuth profiles no longer appear expired on every request. (#83480) Thanks @NianJiuZst.
 - Agents/Anthropic: strip missing or blank thinking signatures for signed-thinking providers even when recovery supplies a narrow replay policy without signature preservation. Fixes #84430. (#84448) Thanks @NianJiuZst.
 - Agents/channels: send a visible notice when an aborted main session cannot be resumed after restart, including Telegram group targets. (#85805) Thanks @pfrederiksen.
@@ -114,6 +115,9 @@ Docs: https://docs.openclaw.ai
 - Release: align generated config/API baselines and the meeting-notes plugin version so release preflight stays green on native Windows.
 - Install/Windows: run Git hook setup through a Node prepare helper so native Windows installs no longer print POSIX shell errors.
 - Checks/Windows: chunk and serialize extension oxlint shards on native Windows so changed gates avoid Go-backed linter memory spikes.
+- Release/Windows: run installed `openclaw.cmd` verification through explicit `cmd.exe` wrapping so npm prepublish/postpublish checks avoid Node shell-argv warnings.
+- Release/Windows: run release-check npm pack/install/root probes through the shared npm runner so native Windows avoids bare `npm` lookup and `.cmd` shell-argv handling.
+- Plugins/Windows: run plugin npm package staging through the shared npm runner so native Windows release checks avoid bare `npm` lookup and `.cmd` shell-argv handling.
 - Checks/Windows: route full `pnpm check` stage commands through the managed child runner so Windows avoids Node shell-argv deprecation warnings there too.
 - Agents/fs: allow workspace-only host write/edit tools to write through in-workspace symlink directory parents while preserving outside-workspace symlink rejection. Fixes #84696. Thanks @garbagenetwork.
 - Checks/Windows: run managed child commands through explicit `cmd.exe` wrapping instead of Node shell mode with argv, avoiding Node 24 subprocess deprecation warnings during changed checks.
