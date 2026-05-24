@@ -8,8 +8,11 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Agents/MCP: bound bundled MCP `tools/list` catalog discovery so hung MCP servers do not block session tool materialization. (#85063) Thanks @nxmxbbd.
+- Scripts: run generated-module formatting through the shared pnpm launcher and Windows CI coverage so native Windows generator checks avoid shell-mode package-manager shims.
 - Channels/iMessage: advance the startup catchup cursor from live-handled rows after a completed catchup pass, including rows received while catchup is still running, so restarts do not replay them. (#85475) Thanks @TurboTheTurtle.
 - Tests: mount the shared Windows command helper into bare Docker E2E harness containers so published upgrade-survivor config walks can start on Linux.
+- Tests: keep the plugin binding command escape Docker smoke focused on its intended Vitest cases and skip source-only install lifecycle scripts.
 - Tests: let the generic plugin install E2E assertions use a configurable temp root and Windows home-relative install paths.
 - Tests: keep kitchen-sink plugin assertion fixtures on a configurable temp root so native Windows runs no longer skip full-surface diagnostic coverage.
 - Tests: fail Gateway startup benchmarks when a child startup never produces ready probes or process metrics instead of reporting all `n/a` samples as passing.
@@ -33,6 +36,7 @@ Docs: https://docs.openclaw.ai
 - Crabbox: install Corepack shims into the writable hydration `PNPM_HOME` so local AWS runner hydration no longer tries to overwrite `/usr/local/bin/pnpm`.
 - Live tests: fail Gateway live model sweeps when selected coverage is lost to timeouts or stale high-signal filters instead of reporting false missing-profile coverage, and pin Docker OpenAI gateway coverage to the current `gpt-5.5` lane.
 - Tests: fail Docker resource-ceiling checks when stats samples or configured limits are invalid instead of silently reporting zero peaks.
+- Agents: fail closed when provider-less session models match multiple provider-prefixed runtime policies so CLI runtime routing no longer depends on config order. (#85970) Thanks @potterdigital.
 
 ## 2026.5.24
 
