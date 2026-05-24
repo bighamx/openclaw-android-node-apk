@@ -8,11 +8,18 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Channels/iMessage: advance the startup catchup cursor from live-handled rows after a completed catchup pass, including rows received while catchup is still running, so restarts do not replay them. (#85475) Thanks @TurboTheTurtle.
+- Tests: mount the shared Windows command helper into bare Docker E2E harness containers so published upgrade-survivor config walks can start on Linux.
+- Tests: let the generic plugin install E2E assertions use a configurable temp root and Windows home-relative install paths.
 - Tests: keep kitchen-sink plugin assertion fixtures on a configurable temp root so native Windows runs no longer skip full-surface diagnostic coverage.
 - Tests: fail Gateway startup benchmarks when a child startup never produces ready probes or process metrics instead of reporting all `n/a` samples as passing.
 - Config/secrets: allow exec SecretRef ids to include `#` selectors so AWS-style `secret#json_key` ids validate consistently. (#80731) Thanks @TurboTheTurtle.
 - Tests: keep the Telegram user credential helper on platform temp and path APIs so native Windows credential export and restore commands do not write through POSIX-only paths.
 - Installer: include the optional verify phase in the progress counter so `--verify` shows `[4/4] Verifying installation` instead of `[4/3]`.
+- Crabbox: let the wrapper find a sibling Crabbox checkout from linked Git worktrees so Codex worktrees can run remote gates without a PATH shim.
+- Scripts: tolerate the standard `--` option separator in shared script flag parsing so perf/test helpers accept package-manager argument forwarding.
+- Tests: preserve `--` passthrough arguments in live-media, live-shard, and extension batch harnesses so Vitest filters are not misread or silently ignored.
+- Crabbox: default AWS macOS runner requests to on-demand capacity so EC2 Mac proof commands do not fail on the unsupported Spot market default.
 - Tests: run upgrade-survivor config recipe commands through the Windows npm shim so native Windows package walks keep baseline config coverage.
 - Image tool: use bundled Anthropic media limits when resolving image compression policy without provider-runtime hooks.
 - Tests: fail the kitchen-sink RPC Docker walk when gateway RSS sampling is unavailable instead of silently disabling the per-process memory guard.
@@ -31,6 +38,7 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- iMessage: support thumb-approval reactions — `👍` (Like tapback) resolves an approval as `allow-once` and `👎` resolves as `deny`, with the explicit-approver allowlist read from `channels.imessage.allowFrom`; `allow-always` stays on the manual `/approve <id> allow-always` text fallback. Mirrors the WhatsApp behavior from #85477.
 - Gateway/perf: reuse process-stable channel catalog reads, avoid repeated bundled-channel boundary checks, and rotate gateway watch CPU profiles so benchmark runs do not accumulate unbounded artifacts.
 - Gateway/perf: cache stable install-record, channel-catalog, bundled-channel, and Telegram session-store metadata during process-local hot paths to reduce repeated JSON and manifest reads.
 - Gateway/perf: reuse immutable plugin metadata snapshots across startup, config, model, channel, setup, and secret metadata readers so hot paths avoid repeated plugin file stats and manifest registry reloads.
