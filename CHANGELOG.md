@@ -8,9 +8,15 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Scripts: use `git grep` to prefilter tracked conflict-marker scans so changed checks avoid reading every repository file on clean runs.
+- Installer: install Node.js through `apk` on Alpine Linux instead of falling through to the NodeSource package-manager path.
 - Installer: detect musl Linux shells such as Alpine as Linux instead of rejecting them before npm install.
 - Control UI: split large build-time runtime dependencies into stable chunks so Linux/Docker install and package builds stay below the app chunk warning threshold.
+- Tests: retry transient loopback HTTP resets in the kitchen-sink RPC walk so native Windows readiness probes do not fail after the gateway is already ready.
+- Tests: run `test:serial` through a Node wrapper so targeted serial Vitest commands work on native Windows.
+- Tests: normalize Vitest config path assertions so the infra config suite runs on native Windows paths.
 - Scripts: run the optional Discord native opus installer through the shared pnpm launcher and Windows CI coverage so native Windows installs avoid shell-mode package-manager shims.
+- Installer: avoid the incompatible generated `--before` install filter when raw npm `min-release-age` config is present. (#85491) Thanks @TurboTheTurtle.
 - Agents/MCP: bound bundled MCP `tools/list` catalog discovery so hung MCP servers do not block session tool materialization. (#85063) Thanks @nxmxbbd.
 - Scripts: run generated-module formatting through the shared pnpm launcher and Windows CI coverage so native Windows generator checks avoid shell-mode package-manager shims.
 - Channels/iMessage: advance the startup catchup cursor from live-handled rows after a completed catchup pass, including rows received while catchup is still running, so restarts do not replay them. (#85475) Thanks @TurboTheTurtle.
