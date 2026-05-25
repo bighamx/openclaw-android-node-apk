@@ -3,9 +3,12 @@ import type { DiscordAccountConfig, OpenClawConfig } from "openclaw/plugin-sdk/c
 import {
   buildRealtimeVoiceAgentConsultChatMessage,
   buildRealtimeVoiceAgentConsultPolicyInstructions,
+  classifySkippableRealtimeVoiceConsultTranscript,
   controlRealtimeVoiceAgentRun,
   createRealtimeVoiceAgentTalkbackQueue,
   createRealtimeVoiceBridgeSession,
+  matchRealtimeVoiceActivationName,
+  normalizeSupportedRealtimeVoiceActivationName,
   REALTIME_VOICE_AGENT_CONSULT_TOOL_NAME,
   REALTIME_VOICE_AGENT_CONTROL_TOOL,
   REALTIME_VOICE_AGENT_CONTROL_TOOL_NAME,
@@ -22,9 +25,12 @@ import {
   type RealtimeVoiceBridgeSession,
   type RealtimeVoiceProviderConfig,
   type RealtimeVoiceToolCallEvent,
+  sortRealtimeVoiceActivationNames,
+  type RealtimeVoiceActivationNameTranscriptResult,
 } from "openclaw/plugin-sdk/realtime-voice";
 import { createSubsystemLogger } from "openclaw/plugin-sdk/runtime-env";
 import { formatErrorMessage } from "openclaw/plugin-sdk/ssrf-runtime";
+import { asBoolean, uniqueStrings } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { maybeControlDiscordVoiceAgentRun } from "./agent-control.js";
 import {
   convertDiscordPcm48kStereoToRealtimePcm24kMono,
@@ -65,35 +71,13 @@ const DISCORD_REALTIME_FORCED_CONSULT_FALLBACK_DELAY_MS = 200;
 const DISCORD_REALTIME_DUPLICATE_ERROR_SUPPRESS_MS = 60_000;
 const DISCORD_REALTIME_CONTROL_SPEECH_DEDUPE_MS = 5_000;
 const DISCORD_REALTIME_OUTPUT_PLAYBACK_WATCHDOG_MARGIN_MS = 1_500;
-const DISCORD_REALTIME_WAKE_NAME_EDGE_WORDS = 2;
+const DISCORD_REALTIME_WAKE_ACKS = ["Yeah.", "Mm-hmm.", "Got it.", "One sec."];
+const DISCORD_REALTIME_PARTIAL_TRANSCRIPT_MAX_CHARS = 240;
 const REALTIME_PCM16_BYTES_PER_SAMPLE = 2;
 const DISCORD_RAW_PCM_FRAME_BYTES = 3_840;
 const DISCORD_REALTIME_OUTPUT_PREROLL_FRAMES = 25;
 const DISCORD_REALTIME_TRAILING_SILENCE_MIN_MS = 700;
 const DISCORD_REALTIME_TRAILING_SILENCE_MAX_MS = 3_000;
-const DISCORD_REALTIME_FORCED_CONSULT_TRAILING_FRAGMENT_WORDS = new Set([
-  "a",
-  "about",
-  "an",
-  "and",
-  "as",
-  "at",
-  "because",
-  "but",
-  "by",
-  "for",
-  "from",
-  "in",
-  "of",
-  "on",
-  "or",
-  "so",
-  "that",
-  "the",
-  "then",
-  "to",
-  "with",
-]);
 const DISCORD_REALTIME_FORCED_CONSULT_REASON =
   "provider_final_transcript_without_openclaw_agent_consult";
 const DISCORD_REALTIME_VERBOSE_OMITTED_EVENTS = new Set([
@@ -204,28 +188,6 @@ function shouldLogRealtimeVerboseEvent(event: RealtimeVoiceBridgeEvent): boolean
   return !DISCORD_REALTIME_VERBOSE_OMITTED_EVENTS.has(event.type);
 }
 
-function classifySkippableForcedAgentProxyTranscript(text: string): string | undefined {
-  const normalized = text.replace(/\s+/g, " ").trim().toLowerCase();
-  if (!normalized) {
-    return "empty";
-  }
-  if (/(\.\.\.|…)\s*$/.test(normalized)) {
-    return "incomplete-transcript";
-  }
-  const lastWord = normalized.match(/[a-z']+$/)?.[0]?.replace(/^'+|'+$/g, "");
-  if (lastWord && DISCORD_REALTIME_FORCED_CONSULT_TRAILING_FRAGMENT_WORDS.has(lastWord)) {
-    return "trailing-fragment";
-  }
-  if (
-    !normalized.includes("?") &&
-    (/^(i'?ll|i will) be (right )?back\b/.test(normalized) ||
-      /\b(see you|bye(?:-bye)?|goodbye)\b/.test(normalized))
-  ) {
-    return "non-actionable-closing";
-  }
-  return undefined;
-}
-
 function readProviderConfigString(
   config: RealtimeVoiceProviderConfig,
   key: string,
@@ -238,8 +200,7 @@ function readProviderConfigBoolean(
   config: RealtimeVoiceProviderConfig | undefined,
   key: string,
 ): boolean | undefined {
-  const value = config?.[key];
-  return typeof value === "boolean" ? value : undefined;
+  return asBoolean(config?.[key]);
 }
 
 export function resolveDiscordVoiceMode(voice: DiscordAccountConfig["voice"]): DiscordVoiceMode {
@@ -355,281 +316,13 @@ function normalizeControlSpeechText(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function normalizeWakeName(value: string): string | undefined {
-  const normalized = value.toLowerCase().replace(/\s+/g, " ").trim();
-  return normalized || undefined;
-}
-
-function normalizeSupportedWakeName(value: string | undefined): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
+function mergeRealtimePartialTranscript(previous: string, next: string): string {
+  const trimmed = next.trim();
+  if (!trimmed) {
+    return previous;
   }
-  const normalized = normalizeWakeName(value);
-  const wordCount = normalized ? Array.from(normalized.matchAll(/[a-z0-9]+/gi)).length : 0;
-  return wordCount >= 1 && wordCount <= DISCORD_REALTIME_WAKE_NAME_EDGE_WORDS
-    ? normalized
-    : undefined;
-}
-
-function normalizeWakeNameCandidate(value: string): string | undefined {
-  const normalized = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return normalized || undefined;
-}
-
-function compactWakeName(value: string): string {
-  return value.replace(/[^a-z0-9]+/g, "");
-}
-
-type EdgeWakeNameCandidate = {
-  edge: "leading" | "trailing";
-  heardName: string;
-  startIndex: number;
-  endIndex: number;
-  strongBoundary: boolean;
-};
-
-type WakeNameTranscriptResult =
-  | { allowed: true; text: string; wakeName: string; heardName: string; match: "exact" | "fuzzy" }
-  | { allowed: false; text: string };
-type AllowedWakeNameTranscriptResult = Extract<WakeNameTranscriptResult, { allowed: true }>;
-
-function leadingWakeNameCandidates(text: string, maxWords: number): EdgeWakeNameCandidate[] {
-  const opener = /^\s*(?:(?:hey|ok|okay)(?:\s*[-,:;]+\s*|\s+))?/i.exec(text);
-  const nameStart = opener?.[0].length ?? 0;
-  const candidates: EdgeWakeNameCandidate[] = [];
-  const candidateStarts = nameStart > 0 ? [0, nameStart] : [0];
-
-  for (const startIndex of candidateStarts) {
-    const tokenPattern = /[a-z0-9]+/gi;
-    tokenPattern.lastIndex = startIndex;
-    const startCandidates: EdgeWakeNameCandidate[] = [];
-
-    for (let wordCount = 0; wordCount < maxWords; wordCount += 1) {
-      const token = tokenPattern.exec(text);
-      if (!token) {
-        break;
-      }
-      const previousEndIndex =
-        wordCount === 0 ? startIndex : startCandidates[wordCount - 1]?.endIndex;
-      const between = text.slice(previousEndIndex, token.index);
-      if (wordCount > 0 && !/^[\s'-]+$/.test(between)) {
-        break;
-      }
-      const endIndex = token.index + token[0].length;
-      const heardName = normalizeWakeNameCandidate(text.slice(startIndex, endIndex));
-      if (!heardName) {
-        break;
-      }
-      const boundary = text.slice(endIndex).match(/^\s*([,.:;!?-]|$)/);
-      startCandidates.push({
-        edge: "leading",
-        heardName,
-        startIndex,
-        endIndex,
-        strongBoundary: Boolean(boundary),
-      });
-    }
-
-    candidates.push(...startCandidates);
-  }
-
-  return candidates;
-}
-
-function trailingWakeNameCandidates(text: string, maxWords: number): EdgeWakeNameCandidate[] {
-  const tokens = Array.from(text.matchAll(/[a-z0-9]+/gi));
-  const candidates: EdgeWakeNameCandidate[] = [];
-  const tokenCount = Math.min(tokens.length, maxWords);
-
-  for (let wordCount = 1; wordCount <= tokenCount; wordCount += 1) {
-    const startToken = tokens[tokens.length - wordCount];
-    const endToken = tokens[tokens.length - 1];
-    if (!startToken || !endToken?.[0]) {
-      break;
-    }
-    const startIndex = startToken.index ?? 0;
-    const endIndex = (endToken.index ?? 0) + endToken[0].length;
-    if (!/^\s*(?:[,.:;!?-]+\s*)?$/.test(text.slice(endIndex))) {
-      break;
-    }
-    if (!/(^|[\s,.:;!?-])$/.test(text.slice(0, startIndex))) {
-      break;
-    }
-    if (wordCount > 1) {
-      const previousToken = tokens[tokens.length - wordCount + 1];
-      const between = previousToken
-        ? text.slice(startIndex + startToken[0].length, previousToken.index)
-        : "";
-      if (!/^[\s'-]+$/.test(between)) {
-        break;
-      }
-    }
-    const heardName = normalizeWakeNameCandidate(text.slice(startIndex, endIndex));
-    if (!heardName) {
-      break;
-    }
-    candidates.push({
-      edge: "trailing",
-      heardName,
-      startIndex,
-      endIndex,
-      strongBoundary: true,
-    });
-  }
-
-  return candidates;
-}
-
-function levenshteinDistance(left: string, right: string): number {
-  if (left === right) {
-    return 0;
-  }
-  if (!left) {
-    return right.length;
-  }
-  if (!right) {
-    return left.length;
-  }
-
-  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
-  for (let leftIndex = 0; leftIndex < left.length; leftIndex += 1) {
-    const current = [leftIndex + 1];
-    for (let rightIndex = 0; rightIndex < right.length; rightIndex += 1) {
-      const cost = left[leftIndex] === right[rightIndex] ? 0 : 1;
-      current[rightIndex + 1] = Math.min(
-        current[rightIndex] + 1,
-        previous[rightIndex + 1] + 1,
-        previous[rightIndex] + cost,
-      );
-    }
-    previous = current;
-  }
-  return previous[right.length] ?? Math.max(left.length, right.length);
-}
-
-function hasOnlyPhoneticSubstitutions(left: string, right: string): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-  const vowels = new Set(["a", "e", "i", "o", "u", "y"]);
-  const liquids = new Set(["l", "r"]);
-  let substitutions = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    const leftChar = left[index];
-    const rightChar = right[index];
-    if (leftChar === rightChar) {
-      continue;
-    }
-    const vowelLike = vowels.has(leftChar ?? "") && vowels.has(rightChar ?? "");
-    const liquidLike = liquids.has(leftChar ?? "") && liquids.has(rightChar ?? "");
-    if (!vowelLike && !liquidLike) {
-      return false;
-    }
-    substitutions += 1;
-  }
-  return substitutions > 0;
-}
-
-function commonPrefixLength(left: string, right: string): number {
-  const limit = Math.min(left.length, right.length);
-  for (let index = 0; index < limit; index += 1) {
-    if (left[index] !== right[index]) {
-      return index;
-    }
-  }
-  return limit;
-}
-
-function isFuzzyWakeNameMatch(candidate: EdgeWakeNameCandidate, wakeName: string): boolean {
-  const normalizedWakeName = normalizeWakeNameCandidate(wakeName);
-  if (!normalizedWakeName) {
-    return false;
-  }
-  const heardCompact = compactWakeName(candidate.heardName);
-  const wakeCompact = compactWakeName(normalizedWakeName);
-  if (!heardCompact || !wakeCompact || wakeCompact.length < 5) {
-    return false;
-  }
-  if (!candidate.strongBoundary) {
-    return false;
-  }
-  if (heardCompact[0] !== wakeCompact[0]) {
-    return false;
-  }
-  const distance = levenshteinDistance(heardCompact, wakeCompact);
-  if (distance <= 1) {
-    return true;
-  }
-  if (
-    distance === 2 &&
-    heardCompact.length >= 4 &&
-    wakeCompact.length >= 5 &&
-    (heardCompact.length !== wakeCompact.length ||
-      hasOnlyPhoneticSubstitutions(heardCompact, wakeCompact) ||
-      commonPrefixLength(heardCompact, wakeCompact) >= 6)
-  ) {
-    return true;
-  }
-  if (
-    distance === 3 &&
-    heardCompact.length >= 7 &&
-    wakeCompact.length >= 7 &&
-    heardCompact.length !== wakeCompact.length &&
-    commonPrefixLength(heardCompact, wakeCompact) >= 5
-  ) {
-    return true;
-  }
-  return false;
-}
-
-function stripEdgeWakeNameCandidate(text: string, candidate: EdgeWakeNameCandidate): string {
-  if (candidate.edge === "leading") {
-    return text
-      .slice(candidate.endIndex)
-      .replace(/^\s*(?:[-,:;.!?]+\s*)?/, "")
-      .trim();
-  }
-  return text
-    .slice(0, candidate.startIndex)
-    .replace(/\s*(?:[-,:;.!?]+\s*)?$/, "")
-    .trim();
-}
-
-function matchEdgeWakeName(
-  text: string,
-  wakeNames: string[],
-): AllowedWakeNameTranscriptResult | undefined {
-  const candidates = [
-    ...leadingWakeNameCandidates(text, DISCORD_REALTIME_WAKE_NAME_EDGE_WORDS),
-    ...trailingWakeNameCandidates(text, DISCORD_REALTIME_WAKE_NAME_EDGE_WORDS),
-  ].toSorted(
-    (left, right) =>
-      compactWakeName(right.heardName).length - compactWakeName(left.heardName).length,
-  );
-  for (const candidate of candidates) {
-    for (const wakeName of wakeNames) {
-      const normalizedWakeName = normalizeWakeNameCandidate(wakeName);
-      if (!normalizedWakeName) {
-        continue;
-      }
-      const heardCompact = compactWakeName(candidate.heardName);
-      const wakeCompact = compactWakeName(normalizedWakeName);
-      if (heardCompact === wakeCompact || isFuzzyWakeNameMatch(candidate, wakeName)) {
-        return {
-          allowed: true,
-          text: stripEdgeWakeNameCandidate(text, candidate),
-          wakeName,
-          heardName: candidate.heardName,
-          match: heardCompact === wakeCompact ? "exact" : "fuzzy",
-        };
-      }
-    }
-  }
-  return undefined;
+  const merged = trimmed.startsWith(previous) ? trimmed : `${previous}${next}`;
+  return merged.slice(-DISCORD_REALTIME_PARTIAL_TRANSCRIPT_MAX_CHARS);
 }
 
 function resolveDiscordRealtimeWakeNames(params: {
@@ -640,30 +333,24 @@ function resolveDiscordRealtimeWakeNames(params: {
   const rawConfigured = params.config?.wakeNames;
   if (rawConfigured) {
     const configured = rawConfigured
-      .map((name) => normalizeSupportedWakeName(name))
+      .map((name) => normalizeSupportedRealtimeVoiceActivationName(name))
       .filter((name): name is string => Boolean(name));
-    return sortWakeNames(Array.from(new Set(configured)));
+    return sortRealtimeVoiceActivationNames(uniqueStrings(configured));
   }
   const agent = params.cfg.agents?.list?.find((candidate) => candidate.id === params.agentId);
   const configuredAgentNames = [agent?.name, agent?.identity?.name]
-    .map((name) => normalizeSupportedWakeName(name))
+    .map((name) => normalizeSupportedRealtimeVoiceActivationName(name))
     .filter((name): name is string => Boolean(name));
-  const productWakeNames = [normalizeSupportedWakeName("OpenClaw")].filter((name): name is string =>
-    Boolean(name),
+  const productWakeNames = [normalizeSupportedRealtimeVoiceActivationName("OpenClaw")].filter(
+    (name): name is string => Boolean(name),
   );
   const defaults =
     configuredAgentNames.length > 0
       ? [...configuredAgentNames, ...productWakeNames]
-      : [normalizeSupportedWakeName(params.agentId), ...productWakeNames].filter(
+      : [normalizeSupportedRealtimeVoiceActivationName(params.agentId), ...productWakeNames].filter(
           (name): name is string => Boolean(name),
         );
-  return sortWakeNames(Array.from(new Set(defaults)));
-}
-
-function sortWakeNames(wakeNames: string[]): string[] {
-  return wakeNames.toSorted(
-    (left, right) => right.length - left.length || left.localeCompare(right),
-  );
+  return sortRealtimeVoiceActivationNames(uniqueStrings(defaults));
 }
 
 function matchesPendingAgentProxyQuestion(consultMessage: string, question: string): boolean {
@@ -704,6 +391,9 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
   private queuedExactSpeechMessages: string[] = [];
   private exactSpeechResponseActive = false;
   private exactSpeechAudioStarted = false;
+  private partialUserTranscript = "";
+  private wakeNameAckedForTurn = false;
+  private wakeNameAckIndex = 0;
   private lastControlSpeech:
     | { normalizedText: string; sentAt: number; assistantTranscriptCount: number }
     | undefined;
@@ -823,7 +513,11 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
         if (isFinal && role === "assistant") {
           this.suppressDuplicateControlSpeech(text);
         }
-        if (!isFinal || role !== "user") {
+        if (role !== "user") {
+          return;
+        }
+        if (!isFinal) {
+          this.handlePartialUserTranscript(text);
           return;
         }
         void this.handleFinalUserTranscript(text, { usesRealtimeAgentHandoff });
@@ -831,6 +525,9 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
       onToolCall: (event, session) => this.handleToolCall(event, session),
       onEvent: (event) => {
         const detail = event.detail ? ` ${event.detail}` : "";
+        if (event.direction === "server" && event.type === "input_audio_buffer.speech_started") {
+          this.resetPartialWakeNameTracking();
+        }
         if (shouldLogRealtimeVerboseEvent(event)) {
           logVoiceVerbose(`realtime ${event.direction}:${event.type}${detail}`);
         }
@@ -891,6 +588,7 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
     this.queuedExactSpeechMessages = [];
     this.exactSpeechResponseActive = false;
     this.exactSpeechAudioStarted = false;
+    this.resetPartialWakeNameTracking();
     this.clearOutputAudio("session-close");
     this.bridge?.close();
     this.bridge = null;
@@ -924,6 +622,7 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
   }
 
   beginSpeakerTurn(context: VoiceRealtimeSpeakerContext, userId: string): VoiceRealtimeSpeakerTurn {
+    this.resetPartialWakeNameTracking();
     const turn: PendingSpeakerTurn = {
       context: { ...context, userId },
       hasAudio: false,
@@ -1206,6 +905,25 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
     this.bridge?.sendUserMessage(buildDiscordSpeakExactUserMessage(text));
   }
 
+  private sendWakeNameAck(result: RealtimeVoiceActivationNameTranscriptResult): void {
+    if (!result.allowed || this.stopped || this.exactSpeechResponseActive) {
+      return;
+    }
+    if (this.hasInterruptibleOutputAudio()) {
+      logger.info(
+        `discord voice: realtime wake-name ack skipped outputActive=true voiceSession=${this.params.entry.voiceSessionKey} agent=${this.params.entry.route.agentId}`,
+      );
+      return;
+    }
+    const ack =
+      DISCORD_REALTIME_WAKE_ACKS[this.wakeNameAckIndex % DISCORD_REALTIME_WAKE_ACKS.length];
+    this.wakeNameAckIndex += 1;
+    logger.info(
+      `discord voice: realtime wake-name ack canonical=${result.activationName} heard=${result.heardName} match=${result.match} voiceSession=${this.params.entry.voiceSessionKey} agent=${this.params.entry.route.agentId}`,
+    );
+    this.sendExactSpeechMessage(ack ?? "Yeah.");
+  }
+
   private speakControlResult(text: string): void {
     const trimmed = text.trim();
     if (this.stopped || !trimmed) {
@@ -1475,6 +1193,7 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
     if (!trimmed) {
       return;
     }
+    this.partialUserTranscript = "";
     const meetingNotesTurn = this.peekPendingSpeakerTurn();
     this.recordMeetingNotesUtterance(trimmed, meetingNotesTurn);
     const wakeNameResult = this.resolveWakeNameTranscript(trimmed);
@@ -1524,14 +1243,42 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
     this.talkback.enqueue(acceptedText, this.consumePendingSpeakerContext());
   }
 
-  private resolveWakeNameTranscript(text: string): WakeNameTranscriptResult {
-    if (!this.requireWakeName) {
-      return { allowed: true, text, wakeName: "", heardName: "", match: "exact" };
+  private handlePartialUserTranscript(text: string): void {
+    if (!this.requireWakeName || this.wakeNameAckedForTurn) {
+      return;
     }
-    const wakeNameResult = matchEdgeWakeName(text, this.wakeNames);
+    this.partialUserTranscript = mergeRealtimePartialTranscript(this.partialUserTranscript, text);
+    const wakeNameResult = matchRealtimeVoiceActivationName(
+      this.partialUserTranscript,
+      this.wakeNames,
+    );
+    if (!wakeNameResult || wakeNameResult.edge !== "leading") {
+      return;
+    }
+    this.wakeNameAckedForTurn = true;
+    this.sendWakeNameAck(wakeNameResult);
+  }
+
+  private resetPartialWakeNameTracking(): void {
+    this.partialUserTranscript = "";
+    this.wakeNameAckedForTurn = false;
+  }
+
+  private resolveWakeNameTranscript(text: string): RealtimeVoiceActivationNameTranscriptResult {
+    if (!this.requireWakeName) {
+      return {
+        allowed: true,
+        text,
+        activationName: "",
+        heardName: "",
+        match: "exact",
+        edge: "leading",
+      };
+    }
+    const wakeNameResult = matchRealtimeVoiceActivationName(text, this.wakeNames);
     if (wakeNameResult) {
       logger.info(
-        `discord voice: realtime wake-name gate matched canonical=${wakeNameResult.wakeName} heard=${wakeNameResult.heardName} match=${wakeNameResult.match} voiceSession=${this.params.entry.voiceSessionKey} agent=${this.params.entry.route.agentId}`,
+        `discord voice: realtime wake-name gate matched canonical=${wakeNameResult.activationName} heard=${wakeNameResult.heardName} match=${wakeNameResult.match} voiceSession=${this.params.entry.voiceSessionKey} agent=${this.params.entry.route.agentId}`,
       );
       return wakeNameResult;
     }
@@ -1585,7 +1332,7 @@ export class DiscordRealtimeVoiceSession implements VoiceRealtimeSession {
     if (!question) {
       return undefined;
     }
-    const skipReason = classifySkippableForcedAgentProxyTranscript(question);
+    const skipReason = classifySkippableRealtimeVoiceConsultTranscript(question);
     if (skipReason) {
       const context = this.consumePendingSpeakerContext();
       logger.info(
@@ -1989,6 +1736,7 @@ function buildDiscordRealtimeInstructions(params: {
       "Delegate substantive requests, actions, tool work, current facts, memory, workspace context, and user-specific context with openclaw_agent_consult.",
       "Do not block, refuse, or downscope at the voice layer. Delegate to OpenClaw and treat its result as authoritative.",
       "Answer directly only for greetings, acknowledgements, brief latency tests, or filler while waiting.",
+      'While waiting for OpenClaw data or tool results, use at most one short natural backchannel such as "yeah", "mm-hmm", "got it", or "one sec"; vary it and do not treat it as the final answer.',
       "When OpenClaw sends an internal exact answer to speak, do not call tools. Say only that answer.",
       buildRealtimeVoiceAgentConsultPolicyInstructions({
         toolPolicy: params.toolPolicy,
@@ -1999,6 +1747,7 @@ function buildDiscordRealtimeInstructions(params: {
   return [
     base,
     params.bootstrapContextInstructions?.trim(),
+    'While waiting for OpenClaw data or tool results, use at most one short natural backchannel such as "yeah", "mm-hmm", "got it", or "one sec"; vary it and do not treat it as the final answer.',
     buildRealtimeVoiceAgentConsultPolicyInstructions({
       toolPolicy: params.toolPolicy,
       consultPolicy: params.consultPolicy,
