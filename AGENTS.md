@@ -56,7 +56,7 @@ Skills own workflows; root owns hard policy and routing.
 - Internal bundled plugins ship in core dist; bundled-only facade loader ok only for them.
 - External official plugins own package/deps and are excluded from core dist; core uses registry-aware `facade-runtime` or generic contracts.
 - Externalizing a bundled plugin: update package excludes, official catalogs, docs, tests, and prove core runtime paths resolve installed plugin roots before root-dep removal.
-- Legacy config repair belongs in `openclaw doctor --fix`, not startup/load-time core migrations. Runtime paths use canonical contracts.
+- Runtime reads canonical config only. No silent compat for old/malformed config keys. If a config change invalidates existing files, add a matching `openclaw doctor --fix` migration. Core/auth config repairs live in core doctor; plugin-owned config repairs live in that plugin's doctor contract (`legacyConfigRules` / `normalizeCompatibilityConfig`).
 - Fix shape: default to clean bounded refactor, not smallest patch. Move ownership to right boundary; delete stale abstractions, duplicate policy, dead branches, wrappers, fallback stacks.
 - Lean code is a goal. No internal shims, aliases, legacy names, broad fallbacks, or defensive branches just to reduce diff or handle unrealistic edge cases.
 - Handle real production states, shipped upgrade paths, security boundaries, and dependency contracts. Public/hostile/observed malformed input gets care; hypothetical malformed input does not.
@@ -141,6 +141,15 @@ Skills own workflows; root owns hard policy and routing.
 - Calls should be boring: complex decisions happen above; call args/object fields are names, literals, or simple property reads.
 - Prefer early returns over nested condition pyramids. Split code into gather -> normalize -> decide -> act.
 - Use named intermediates only for domain meaning or readability; avoid temp-variable soup.
+- Code size matters. Prefer small clear code; maintainability includes not growing LOC without payoff.
+- Refactors should delete about as much local complexity as they add. If LOC grows, the new ownership/API needs to clearly pay for it.
+- Before adding helpers/files, check whether existing code can absorb the behavior with less new surface.
+- Keep APIs narrow: export only current caller needs; keep types/helpers local by default.
+- Return the smallest useful shape. Avoid broad result objects, flags, metadata unless callers use them.
+- Avoid adapter layers that only rename fields. Move real responsibility or leave code local.
+- Inline simple one-use objects/spreads when clearer. Extract only when it removes duplication or hard logic.
+- Tests prove behavior/regressions, not every internal branch.
+- For non-trivial refactors, check `git diff --numstat` before closeout. If LOC grew, trim or explain why.
 - Dynamic import: no static+dynamic import for same prod module. Use `*.runtime.ts` lazy boundary. After edits: `pnpm build`; check `[INEFFECTIVE_DYNAMIC_IMPORT]`.
 - Cycles: keep `pnpm check:import-cycles` + architecture/madge green.
 - Classes: no prototype mixins/mutations. Prefer inheritance/composition. Tests prefer per-instance stubs.
@@ -188,7 +197,7 @@ Skills own workflows; root owns hard policy and routing.
 - Dependency patches/overrides/vendor changes need explicit approval. `pnpm-workspace.yaml` patched dependencies use exact versions only.
 - Lockfiles/shrinkwrap are security surface: review `pnpm-lock.yaml`, `npm-shrinkwrap.json`, `package-lock.json`; root/plugin npm packages ship shrinkwrap, not package-lock.
 - Carbon pins owner-only: do not change `@buape/carbon` unless Shadow (`@thewilloftheshadow`, verified by `gh`) asks.
-- Releases/publish/version bumps need explicit approval. Use `$openclaw-release-maintainer`.
+- Releases/publish/version bumps need explicit approval. Use `$release-openclaw-maintainer`.
 - GHSA/advisories: `$openclaw-ghsa-maintainer` / `$security-triage`. Secret scanning: `$openclaw-secret-scanning-maintainer`.
 - Beta tag/version match: `vYYYY.M.D-beta.N` -> npm `YYYY.M.D-beta.N --tag beta`.
 
@@ -199,7 +208,7 @@ Skills own workflows; root owns hard policy and routing.
 - SwiftUI: Observation (`@Observable`, `@Bindable`) over new `ObservableObject`.
 - Mac gateway: dev watch = `pnpm gateway:watch`; managed installs = `openclaw gateway restart/status --deep`; logs = `./scripts/clawlog.sh`. No launchd/ad-hoc tmux.
 - Mac app permission testing: stable app path + real signing identity required. No `--no-sign`, `SIGN_IDENTITY=-`, or raw debug binary; TCC prompts/listing won't stick.
-- Version bump surfaces live in `$openclaw-release-maintainer`.
+- Version bump surfaces live in `$release-openclaw-maintainer`.
 - Parallels: `$openclaw-parallels-smoke`; Discord roundtrip: `$parallels-discord-roundtrip`.
 - Crabbox/WebVNC human demos: keep remote desktop visible/windowed; no fullscreen remote browser unless video/capture-style output.
 - ClawSweeper ops: `$clawsweeper`. Deployed hook sessions may post one concise `#clawsweeper` note only when surprising/actionable/risky; if using message tool, reply exactly `NO_REPLY`.

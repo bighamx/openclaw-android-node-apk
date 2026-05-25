@@ -1,11 +1,11 @@
 ---
-name: openclaw-release-ci
+name: release-openclaw-ci
 description: "Run, watch, debug, and summarize OpenClaw full release CI, release checks, live provider gates, install/update proofs, and release-secret preflights."
 ---
 
 # OpenClaw Release CI
 
-Use this with `$openclaw-release-maintainer` and `$openclaw-testing` when a release candidate needs full validation, install/update proof, live provider checks, or CI recovery.
+Use this with `$release-openclaw-maintainer` and `$openclaw-testing` when a release candidate needs full validation, install/update proof, live provider checks, or CI recovery.
 
 ## Guardrails
 
@@ -22,7 +22,7 @@ Use this with `$openclaw-release-maintainer` and `$openclaw-testing` when a rele
 Before full release validation:
 
 ```bash
-node .agents/skills/openclaw-release-ci/scripts/verify-provider-secrets.mjs --required openai,anthropic,fireworks
+node .agents/skills/release-openclaw-ci/scripts/verify-provider-secrets.mjs --required openai,anthropic,fireworks
 gh api rate_limit --jq '.resources.core'
 git status --short --branch
 git rev-parse HEAD
@@ -34,6 +34,30 @@ ambient env only when it was already intentionally injected for this release.
 The script prints only provider status and HTTP class, never tokens.
 
 ## Dispatch
+
+Start product performance evidence as early as the release SHA exists, in
+parallel with other release work:
+
+```bash
+gh workflow run openclaw-performance.yml \
+  --repo openclaw/openclaw \
+  --ref main \
+  -f target_ref=<release-sha> \
+  -f profile=release \
+  -f repeat=3 \
+  -f deep_profile=false \
+  -f live_openai_candidate=false \
+  -f fail_on_regression=false
+```
+
+- Do not wait for full release validation to start this early perf signal.
+- Compare available Kova, gateway startup, and CLI startup metrics with earlier
+  release evidence or clawgrit reports before publish/closeout.
+- Call out any regression in the release proof. Treat a major regression as a
+  release blocker until it is fixed, waived by the operator, or proven to be
+  infrastructure noise.
+- Full Release Validation also records advisory product-performance evidence;
+  the early standalone run is for overlap and faster regression discovery.
 
 Prefer the trusted workflow on `main`, target the exact release SHA:
 
@@ -55,7 +79,7 @@ Use `release_profile=stable` unless the operator explicitly asks for the broad a
 Use the summary helper instead of repeated raw polling:
 
 ```bash
-node .agents/skills/openclaw-release-ci/scripts/release-ci-summary.mjs <full-release-run-id>
+node .agents/skills/release-openclaw-ci/scripts/release-ci-summary.mjs <full-release-run-id>
 ```
 
 Then watch only when useful:
@@ -85,7 +109,8 @@ Record:
 
 - release SHA
 - full parent run URL
-- child run IDs and conclusions: CI, Release Checks, Plugin Prerelease, NPM Telegram
+- child run IDs and conclusions: CI, Release Checks, Plugin Prerelease, NPM Telegram, Product Performance
+- performance comparison result versus earlier releases when available
 - targeted local proof commands
 - provider-secret preflight result
 - known gaps or unrelated failures
