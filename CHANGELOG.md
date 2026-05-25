@@ -6,6 +6,8 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Voice: expose shared realtime turn-context tracking through the realtime voice SDK and reuse it for Discord speaker attribution and wake-name context recovery.
+- Voice: expose shared realtime consult question matching, speakable-result extraction, and forced-consult coordination through the realtime voice SDK, then reuse it in Gateway Talk, Voice Call, and Discord voice paths.
 - Voice: share activation-name matching and consult-transcript screening through the realtime voice SDK so Discord, browser voice, and meeting surfaces can reuse one implementation.
 - Cron: default `cron.maxConcurrentRuns` to 8 so scheduled automations and their isolated agent turns can make progress in parallel without explicit configuration.
 - QA-Lab: add `qa coverage --match <query>` so focused proof selection can discover matching scenarios from existing metadata before running live or remote lanes.
@@ -17,6 +19,10 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- IRC: store inbound channel routes with the canonical `channel:#name` target and join transient channel sends before writing. (#85906) Thanks @Kailigithub.
+- Usage: surface unknown all-zero model pricing as missing cost entries instead of a confident `$0` total. (#85882) Thanks @MichaelZelbel.
+- Agents/Codex: honor yolo app-server approval policy only for the full `never` plus `danger-full-access` case. (#85909) Thanks @earlvanze.
+- Gateway/Gmail: clear Gmail watcher renewal intervals on re-entry so hot reloads do not leak lifecycle timers. (#82947) Thanks @SebTardif.
 - Logging: exit cleanly on broken stdout/stderr pipes without masking existing failure exit codes. (#80059) Thanks @pavelzak.
 - Gateway/security: escape transcript metadata field names while extracting oversized session line prefixes. (#85934) Thanks @SebTardif.
 - Plugins/security: validate manifest model pattern regexes with the safe-regex compiler so unsafe patterns are ignored before matching. (#86046) Thanks @SebTardif.
@@ -33,6 +39,7 @@ Docs: https://docs.openclaw.ai
 - Agents: derive overflow compaction budgets from provider-reported and synthetic over-budget token counts so confirmed context overflows compact before retrying. (#70473) Thanks @fuller-stack-dev.
 - Agents/Codex: recover Codex context-window prompt errors through overflow compaction and surface reset guidance when recovery is exhausted. (#85542) Thanks @fuller-stack-dev.
 - Agents/Codex: allow Codex app-server runs to bootstrap from `CODEX_API_KEY` or `OPENAI_API_KEY` when no Codex auth profile is configured.
+- Agents/Codex: keep selected Codex runtime routing on OpenAI-Codex while preserving direct OpenAI API-key compaction fallback. (#86408) Thanks @funmerlin and @VACInc.
 - Agent transcript: include OpenClaw agent session logs when finding local transcript candidates.
 - Crabbox: bootstrap raw AWS macOS shell commands wrapped in absolute `time` paths so RSS probes can run Node and pnpm on fresh macOS runners.
 - Crabbox: bootstrap raw AWS macOS shell commands even when setup statements precede Node or pnpm usage.
@@ -76,6 +83,7 @@ Docs: https://docs.openclaw.ai
 - Cron: accept leading-plus relative durations such as `+5m` for one-shot `--at` schedules. (#86341) Thanks @mushuiyu886.
 - Agents/media: preserve async-started media tool metadata so background generation starts no longer surface generic incomplete-turn warnings while replay stays unsafe. (#85933) Thanks @fuller-stack-dev.
 - Docker E2E: dedupe scheduler lane resources so npm/service package lanes are not over-counted and serialized unnecessarily.
+- QA/diagnostics: add a collector-backed OpenTelemetry smoke lane, make the OTLP payload leak check scenario-aware, and keep source QA builds from failing on optional dependency imports resolved through pnpm's temp module path.
 - Crabbox: bootstrap Git metadata for sparse remote changed gates so raw synced workspaces can run `pnpm check:changed` from the intended diff.
 - xAI/LM Studio: avoid buffering ordinary bracketed or `final` prose until stream completion while watching for plain-text tool-call fallbacks.
 - Doctor: warn and continue when the cron job store exists but cannot be read so later health checks still run. Fixes #86102. (#86384) Thanks @1052326311.
@@ -85,6 +93,8 @@ Docs: https://docs.openclaw.ai
 - Tests: avoid rebuilding the Control UI twice during the installer Docker smoke now that `pnpm build` includes `ui:build`.
 - Tests: give QA config mutation RPCs enough native Windows budget to finish gateway config writes and restart settle after hot scenario runs.
 - Tests: keep the gateway restart-inflight QA scenario focused on restart recovery on native Windows by allowing expected embedded prompt handoff errors and using the Windows-safe timeout budget.
+- QA-Lab: make the synthetic OpenAI provider honor generic `reply exactly:` directives after required kickoff reads so restart-recovery scenarios do not fall through to generic repo-summary prose.
+- Gateway: abort active `agent` RPC runs during forced restart shutdown so stale in-process turns cannot keep writing a session after the Gateway lifecycle restarts.
 - Crabbox: sync clean sparse worktrees through a temporary full checkout even when reusing an existing lease so tracked build-time files are not omitted.
 - Build: route `scripts/ui.js` through the shared pnpm runner and keep Control UI chunking helpers in sparse-included source so native Windows Corepack builds can produce `dist/control-ui`.
 - Tests: give the memory fallback QA scenario enough turn budget to exercise native Windows gateway runs instead of failing on the client timeout while the mock agent is still dispatching.

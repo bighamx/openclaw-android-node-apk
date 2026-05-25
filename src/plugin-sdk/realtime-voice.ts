@@ -68,6 +68,29 @@ export {
   type SkippableRealtimeVoiceConsultTranscriptReason,
 } from "../talk/consult-transcript.js";
 export {
+  matchRealtimeVoiceConsultQuestions,
+  normalizeRealtimeVoiceConsultQuestion,
+  readRealtimeVoiceConsultQuestion,
+  readSpeakableRealtimeVoiceToolResult,
+  type RealtimeVoiceConsultQuestionMatchOptions,
+  type RealtimeVoiceSpeakableToolResultOptions,
+} from "../talk/consult-question.js";
+export {
+  createRealtimeVoiceForcedConsultCoordinator,
+  type RealtimeVoiceForcedConsultCoordinator,
+  type RealtimeVoiceForcedConsultCoordinatorOptions,
+  type RealtimeVoiceForcedConsultHandle,
+  type RealtimeVoiceForcedConsultNativeMatch,
+  type RealtimeVoiceForcedConsultNativeRecentOptions,
+  type RealtimeVoiceForcedConsultTimer,
+} from "../talk/forced-consult-coordinator.js";
+export {
+  createRealtimeVoiceTurnContextTracker,
+  type RealtimeVoiceTurnContextHandle,
+  type RealtimeVoiceTurnContextTracker,
+  type RealtimeVoiceTurnContextTrackerOptions,
+} from "../talk/turn-context-tracker.js";
+export {
   buildRealtimeVoiceAgentConsultChatMessage,
   buildRealtimeVoiceAgentConsultPolicyInstructions,
   buildRealtimeVoiceAgentConsultPrompt,
