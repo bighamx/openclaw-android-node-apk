@@ -514,20 +514,6 @@
         "node": ">=22.19.0"
       }
     },
-    "node_modules/@earendil-works/pi-ai/node_modules/@smithy/node-http-handler": {
-      "version": "4.7.3",
-      "resolved": "https://registry.npmjs.org/@smithy/node-http-handler/-/node-http-handler-4.7.3.tgz",
-      "integrity": "sha512-/jPhevcTFPMVl6KNjbaI47iOg1zxC7IsnX4PQDGVZKMFceOXtB8IEYaB7a9VvkP/3oC60WzTeKocvSI7vLT0vA==",
-      "license": "Apache-2.0",
-      "dependencies": {
-        "@smithy/core": "^3.24.3",
-        "@smithy/types": "^4.14.2",
-        "tslib": "^2.6.2"
-      },
-      "engines": {
-        "node": ">=18.0.0"
-      }
-    },
     "node_modules/@google/genai": {
       "version": "1.52.0",
       "resolved": "https://registry.npmjs.org/@google/genai/-/genai-1.52.0.tgz",

@@ -22,11 +22,7 @@ docker_e2e_docker_cmd() {
 }
 
 docker_e2e_docker_run_cmd() {
-  if [ -n "${DOCKER_COMMAND_TIMEOUT:-}" ]; then
-    docker_e2e_timeout_cmd "$DOCKER_COMMAND_TIMEOUT" docker "$@"
-    return
-  fi
-  docker "$@"
+  docker_e2e_timeout_cmd "${DOCKER_COMMAND_TIMEOUT:-${OPENCLAW_DOCKER_E2E_RUN_TIMEOUT:-3600s}}" docker "$@"
 }
 
 docker_e2e_container_running() {
