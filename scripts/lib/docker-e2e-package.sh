@@ -10,6 +10,26 @@ ROOT_DIR="${ROOT_DIR:-$(cd "$DOCKER_E2E_PACKAGE_LIB_DIR/../.." && pwd)}"
 if ! declare -F run_logged >/dev/null 2>&1; then
   source "$DOCKER_E2E_PACKAGE_LIB_DIR/docker-e2e-logs.sh"
 fi
+if ! declare -F docker_e2e_docker_cmd >/dev/null 2>&1; then
+  source "$DOCKER_E2E_PACKAGE_LIB_DIR/docker-e2e-container.sh"
+fi
+if ! declare -F docker_e2e_docker_run_cmd >/dev/null 2>&1; then
+  docker_e2e_docker_run_cmd() {
+    if [ -n "${DOCKER_COMMAND_TIMEOUT:-}" ] && declare -F docker_e2e_timeout_cmd >/dev/null 2>&1; then
+      docker_e2e_timeout_cmd "$DOCKER_COMMAND_TIMEOUT" docker "$@"
+      return
+    fi
+    if [ -n "${DOCKER_COMMAND_TIMEOUT:-}" ] && command -v timeout >/dev/null 2>&1; then
+      if timeout --kill-after=1s 1s true >/dev/null 2>&1; then
+        timeout --kill-after=30s "$DOCKER_COMMAND_TIMEOUT" docker "$@"
+      else
+        timeout "$DOCKER_COMMAND_TIMEOUT" docker "$@"
+      fi
+      return
+    fi
+    docker "$@"
+  }
+fi
 
 docker_e2e_abs_path() {
   local file="$1"
@@ -69,6 +89,9 @@ docker_e2e_package_mount_args() {
   local package_tgz="$1"
   local target="${2:-/tmp/openclaw-current.tgz}"
   DOCKER_E2E_PACKAGE_ARGS=(-v "$package_tgz:$target:ro" -e "OPENCLAW_CURRENT_PACKAGE_TGZ=$target")
+  if [ -n "${OPENCLAW_E2E_NPM_INSTALL_TIMEOUT:-}" ]; then
+    DOCKER_E2E_PACKAGE_ARGS+=(-e "OPENCLAW_E2E_NPM_INSTALL_TIMEOUT=$OPENCLAW_E2E_NPM_INSTALL_TIMEOUT")
+  fi
 }
 
 docker_e2e_cleanup_package_tgz() {
@@ -109,14 +132,14 @@ docker_e2e_harness_mount_args() {
 docker_e2e_run_with_harness() {
   docker_e2e_harness_mount_args
   local run_status=0
-  docker run --rm "${DOCKER_E2E_HARNESS_ARGS[@]}" "$@" || run_status="$?"
+  docker_e2e_docker_run_cmd run --rm "${DOCKER_E2E_HARNESS_ARGS[@]}" "$@" || run_status="$?"
   docker_e2e_cleanup_package_mount_args
   return "$run_status"
 }
 
 docker_e2e_run_detached_with_harness() {
   docker_e2e_harness_mount_args
-  docker run -d "${DOCKER_E2E_HARNESS_ARGS[@]}" "$@"
+  docker_e2e_docker_cmd run -d "${DOCKER_E2E_HARNESS_ARGS[@]}" "$@"
 }
 
 docker_e2e_run_logged_with_harness() {

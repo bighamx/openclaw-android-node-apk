@@ -66,7 +66,7 @@ import { handleCodexAppServerApprovalRequest } from "./approval-bridge.js";
 import {
   refreshCodexAppServerAuthTokens,
   resolveCodexAppServerAuthAccountCacheKey,
-  resolveCodexAppServerEnvApiKeyCacheKey,
+  resolveCodexAppServerFallbackApiKeyCacheKey,
   resolveCodexAppServerHomeDir,
   resolveCodexAppServerAuthProfileId,
   resolveCodexAppServerAuthProfileIdForAgent,
@@ -1067,7 +1067,7 @@ export async function runCodexAppServerAttempt(
   });
   const startupEnvApiKeyCacheKey = startupAuthProfileId
     ? undefined
-    : resolveCodexAppServerEnvApiKeyCacheKey({
+    : resolveCodexAppServerFallbackApiKeyCacheKey({
         startOptions: appServer.start,
       });
   const nodeExecBlocksNativeExecution = isCodexNativeExecutionBlockedByNodeExecHost(params, {
@@ -2722,9 +2722,8 @@ export async function runCodexAppServerAttempt(
   const codexDiagnosticToolDefinitions = codexModelContentCapture.toolDefinitions
     ? buildCodexDiagnosticToolDefinitions(tools)
     : undefined;
-  const codexModelContentPrivateData = (
-    modelContent: DiagnosticModelCallContent | undefined,
-  ) => (modelContent && Object.keys(modelContent).length > 0 ? { modelContent } : undefined);
+  const codexModelContentPrivateData = (modelContent: DiagnosticModelCallContent | undefined) =>
+    modelContent && Object.keys(modelContent).length > 0 ? { modelContent } : undefined;
   const buildCodexModelCallDiagnosticContent = (): DiagnosticModelCallContent | undefined => {
     const modelContent = {
       ...(codexModelContentCapture.inputMessages
@@ -2768,9 +2767,7 @@ export async function runCodexAppServerAttempt(
         ...buildCodexModelCallDiagnosticContent(),
         ...(codexModelContentCapture.outputMessages
           ? {
-              outputMessages: result.lastAssistant
-                ? [result.lastAssistant]
-                : result.assistantTexts,
+              outputMessages: result.lastAssistant ? [result.lastAssistant] : result.assistantTexts,
             }
           : {}),
       }),
