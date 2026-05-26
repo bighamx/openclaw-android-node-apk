@@ -5,6 +5,7 @@ import { createSuiteTempRootTracker } from "../test-helpers/temp-dir.js";
 import {
   getSerializedSessionStore,
   getSerializedSessionStoreCacheStatsForTest,
+  getSessionStoreSnapshotCacheStatsForTest,
   getSessionStoreStringInternStatsForTest,
   readSessionStoreCache,
   setSerializedSessionStore,
@@ -436,6 +437,29 @@ describe("Session Store Cache", () => {
     parseSpy.mockRestore();
   });
 
+  it("builds a snapshot from disk without reparsing the mutable clone", async () => {
+    const testStore = createSingleSessionStore(
+      createSessionEntry({
+        skillsSnapshot: {
+          prompt: "snapshot skill prompt ".repeat(200),
+          skills: [{ name: "alpha" }],
+        },
+      }),
+    );
+
+    await saveSessionStore(storePath, testStore);
+    clearSessionStoreCacheForTest();
+
+    const parseSpy = vi.spyOn(JSON, "parse");
+
+    const snapshot = readSessionStoreSnapshot(storePath);
+
+    expect(snapshot["session:1"].sessionId).toBe("id-1");
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+
+    parseSpy.mockRestore();
+  });
+
   it("serves immutable session snapshots without cloning cache hits", async () => {
     const testStore = createSingleSessionStore(
       createSessionEntry({
@@ -529,6 +553,35 @@ describe("Session Store Cache", () => {
     expect(after).not.toBe(before);
     expect(before["session:1"].displayName).toBe("Test Session 1");
     expect(after["session:1"].displayName).toBe("Updated Session");
+  });
+
+  it("builds immutable session snapshots lazily after writes", async () => {
+    await saveSessionStore(storePath, createSingleSessionStore());
+
+    expect(getSessionStoreSnapshotCacheStatsForTest().entries).toBe(0);
+
+    const first = readSessionStoreSnapshot(storePath);
+    const statsAfterRead = getSessionStoreSnapshotCacheStatsForTest();
+    const second = readSessionStoreSnapshot(storePath);
+
+    expect(first).toBe(second);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(statsAfterRead.entries).toBe(1);
+
+    await updateSessionStore(
+      storePath,
+      (store) => {
+        store["session:1"] = {
+          ...store["session:1"],
+          displayName: "Updated lazily",
+          updatedAt: Date.now() + 1,
+        };
+      },
+      { skipMaintenance: true },
+    );
+
+    expect(getSessionStoreSnapshotCacheStatsForTest().entries).toBe(0);
+    expect(readSessionStoreSnapshot(storePath)["session:1"].displayName).toBe("Updated lazily");
   });
 
   it("should refresh cache when store file changes on disk", async () => {
