@@ -31,15 +31,22 @@ docker_e2e_prepare_package_tgz() {
 
   local pack_dir
   pack_dir="$(mktemp -d "${TMPDIR:-/tmp}/openclaw-docker-e2e-pack.XXXXXX")"
+  local pack_status=0
   package_tgz="$(
     node "$ROOT_DIR/scripts/package-openclaw-for-docker.mjs" \
       --output-dir "$pack_dir" \
       --output-name openclaw-current.tgz
-  )"
+  )" || pack_status="$?"
+  if [ "$pack_status" -ne 0 ]; then
+    rm -rf "$pack_dir"
+    return "$pack_status"
+  fi
   if [ -z "$package_tgz" ]; then
     echo "missing packed OpenClaw tarball" >&2
+    rm -rf "$pack_dir"
     return 1
   fi
+  touch "$pack_dir/.openclaw-docker-e2e-generated-package"
   docker_e2e_abs_path "$package_tgz"
 }
 
@@ -49,7 +56,12 @@ docker_e2e_prepare_package_context() {
   context_dir="$(mktemp -d "${TMPDIR:-/tmp}/openclaw-docker-e2e-package-context.XXXXXX")"
   # BuildKit named contexts must be directories, so expose the tarball as a
   # stable filename inside a tiny temporary context.
-  cp "$package_tgz" "$context_dir/openclaw-current.tgz"
+  local copy_status=0
+  cp "$package_tgz" "$context_dir/openclaw-current.tgz" || copy_status="$?"
+  if [ "$copy_status" -ne 0 ]; then
+    rm -rf "$context_dir"
+    return "$copy_status"
+  fi
   printf '%s\n' "$context_dir"
 }
 
@@ -57,6 +69,33 @@ docker_e2e_package_mount_args() {
   local package_tgz="$1"
   local target="${2:-/tmp/openclaw-current.tgz}"
   DOCKER_E2E_PACKAGE_ARGS=(-v "$package_tgz:$target:ro" -e "OPENCLAW_CURRENT_PACKAGE_TGZ=$target")
+}
+
+docker_e2e_cleanup_package_tgz() {
+  local package_tgz="${1:-}"
+  [ -n "$package_tgz" ] || return 0
+  [ "$(basename "$package_tgz")" = "openclaw-current.tgz" ] || return 0
+
+  local pack_dir
+  pack_dir="$(dirname "$package_tgz")"
+  if [ -f "$pack_dir/.openclaw-docker-e2e-generated-package" ]; then
+    rm -rf "$pack_dir"
+  fi
+}
+
+docker_e2e_cleanup_package_mount_args() {
+  local expect_volume_path=0
+  local arg
+  for arg in "${DOCKER_E2E_PACKAGE_ARGS[@]:-}"; do
+    if [ "$expect_volume_path" = "1" ]; then
+      docker_e2e_cleanup_package_tgz "${arg%%:*}"
+      expect_volume_path=0
+      continue
+    fi
+    if [ "$arg" = "-v" ]; then
+      expect_volume_path=1
+    fi
+  done
 }
 
 docker_e2e_harness_mount_args() {
@@ -69,7 +108,10 @@ docker_e2e_harness_mount_args() {
 
 docker_e2e_run_with_harness() {
   docker_e2e_harness_mount_args
-  docker run --rm "${DOCKER_E2E_HARNESS_ARGS[@]}" "$@"
+  local run_status=0
+  docker run --rm "${DOCKER_E2E_HARNESS_ARGS[@]}" "$@" || run_status="$?"
+  docker_e2e_cleanup_package_mount_args
+  return "$run_status"
 }
 
 docker_e2e_run_detached_with_harness() {

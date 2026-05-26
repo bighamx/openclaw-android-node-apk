@@ -15,11 +15,9 @@ docker_e2e_package_mount_args "$PACKAGE_TGZ"
 docker_e2e_build_or_reuse "$IMAGE_NAME" skill-install "$ROOT_DIR/scripts/e2e/Dockerfile" "$ROOT_DIR" "bare"
 
 echo "Running live ClawHub skill install Docker E2E..."
-docker_e2e_harness_mount_args
 run_logged_print \
   skill-install-run \
-  docker run --rm \
-  "${DOCKER_E2E_HARNESS_ARGS[@]}" \
+  docker_e2e_run_with_harness \
   -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
   -e "OPENCLAW_TEST_STATE_SCRIPT_B64=$OPENCLAW_TEST_STATE_SCRIPT_B64" \
   -e "OPENCLAW_SKILL_INSTALL_E2E_QUERY=${OPENCLAW_SKILL_INSTALL_E2E_QUERY:-homeassistant}" \

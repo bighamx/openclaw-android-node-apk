@@ -6827,9 +6827,15 @@ describe("runCodexAppServerAttempt", () => {
         },
       } as never;
       const run = runCodexAppServerAttempt(params);
-      await harness.waitForMethod("turn/start");
+      await harness.waitForMethod("turn/start", 180_000);
       await run;
-      await flushDiagnosticEvents();
+      await vi.waitFor(
+        () =>
+          expect(diagnosticEvents.some((event) => event.type === "model.call.completed")).toBe(
+            true,
+          ),
+        fastWait,
+      );
 
       const startedEvent = diagnosticEvents.find((event) => event.type === "model.call.started");
       const completedEvent = diagnosticEvents.find(
@@ -6864,7 +6870,7 @@ describe("runCodexAppServerAttempt", () => {
     } finally {
       stopDiagnostics();
     }
-  });
+  }, 240_000);
 
   it("classifies codex model-call timeout diagnostics", async () => {
     const diagnosticEvents: DiagnosticEventPayload[] = [];

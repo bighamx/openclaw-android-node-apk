@@ -30,6 +30,7 @@ STATS_LOG="$(mktemp "${TMPDIR:-/tmp}/openclaw-kitchen-sink-plugin-stats.XXXXXX")
 
 cleanup() {
   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  rm -f "$RUN_LOG" "$STATS_LOG"
 }
 trap cleanup EXIT
 
@@ -76,5 +77,4 @@ cat "$RUN_LOG"
 
 node scripts/e2e/lib/docker-stats/assert-resource-ceiling.mjs "$STATS_LOG" "$MAX_MEMORY_MIB" "$MAX_CPU_PERCENT" kitchen-sink
 
-rm -f "$RUN_LOG" "$STATS_LOG"
 exit "$run_status"
