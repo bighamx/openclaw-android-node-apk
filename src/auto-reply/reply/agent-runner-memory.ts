@@ -26,6 +26,7 @@ import {
   resolveSessionFilePath,
   resolveSessionFilePathOptions,
   type SessionEntry,
+  applySessionStoreEntryPatch,
   updateSessionStoreEntry,
 } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -1038,10 +1039,10 @@ export async function runMemoryFlushIfNeeded(params: {
     }
     if (params.storePath && params.sessionKey) {
       try {
-        const updatedEntry = await updateSessionStoreEntry({
+        const updatedEntry = await applySessionStoreEntryPatch({
           storePath: params.storePath,
           sessionKey: params.sessionKey,
-          update: async () => ({ totalTokens: transcriptPromptTokens, totalTokensFresh: true }),
+          patch: { totalTokens: transcriptPromptTokens, totalTokensFresh: true },
         });
         if (updatedEntry) {
           entry = updatedEntry;

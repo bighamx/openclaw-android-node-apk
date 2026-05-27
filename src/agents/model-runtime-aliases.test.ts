@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { testing as cliBackendsTesting } from "./cli-backends.js";
-import { resolveCliRuntimeExecutionProvider } from "./model-runtime-aliases.js";
+import { createModelPickerVisibleProviderPredicate } from "./model-picker-visibility.js";
+import {
+  isCliRuntimeProvider,
+  resolveCliRuntimeExecutionProvider,
+} from "./model-runtime-aliases.js";
 
 function createAnthropicAuthConfig(params: {
   order?: string[];
@@ -126,5 +130,30 @@ describe("resolveCliRuntimeExecutionProvider", () => {
         modelId: "opus-4.7",
       }),
     ).toBeUndefined();
+  });
+
+  it("keeps standalone CLI backend provider refs visible", () => {
+    cliBackendsTesting.setDepsForTest({
+      resolveRuntimeCliBackends: () => [
+        {
+          id: "claude-cli",
+          modelProvider: "anthropic",
+          pluginId: "anthropic",
+          config: { command: "claude" },
+        },
+        {
+          id: "acme-cli",
+          pluginId: "acme",
+          config: { command: "acme" },
+        },
+      ],
+    });
+
+    const isVisibleProvider = createModelPickerVisibleProviderPredicate();
+
+    expect(isCliRuntimeProvider("claude-cli")).toBe(true);
+    expect(isVisibleProvider("claude-cli")).toBe(false);
+    expect(isCliRuntimeProvider("acme-cli")).toBe(false);
+    expect(isVisibleProvider("acme-cli")).toBe(true);
   });
 });

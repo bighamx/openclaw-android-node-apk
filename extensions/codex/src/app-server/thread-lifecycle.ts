@@ -1,5 +1,6 @@
 import {
   embeddedAgentLog,
+  formatErrorMessage,
   isActiveHarnessContextEngine,
   type EmbeddedRunAttemptParams,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
@@ -7,7 +8,11 @@ import { buildCodexUserMcpServersThreadConfigPatch } from "openclaw/plugin-sdk/c
 import { listRegisteredPluginAgentPromptGuidance } from "openclaw/plugin-sdk/plugin-runtime";
 import { CODEX_GPT5_HEARTBEAT_PROMPT_OVERLAY } from "../../prompt-overlay.js";
 import { isModernCodexModel } from "../../provider.js";
-import { isCodexAppServerConnectionClosedError, type CodexAppServerClient } from "./client.js";
+import {
+  CodexAppServerRpcError,
+  isCodexAppServerConnectionClosedError,
+  type CodexAppServerClient,
+} from "./client.js";
 import { codexSandboxPolicyForTurn, type CodexAppServerRuntimeOptions } from "./config.js";
 import {
   resolveCodexContextEngineProjectionMaxChars,
@@ -55,6 +60,17 @@ export type CodexAppServerThreadLifecycle = {
 export type CodexAppServerThreadLifecycleBinding = CodexAppServerThreadBinding & {
   lifecycle: CodexAppServerThreadLifecycle;
 };
+
+class CodexThreadStartRequestError extends Error {
+  constructor(cause: unknown) {
+    super(formatErrorMessage(cause), { cause });
+    this.name = "CodexThreadStartRequestError";
+  }
+}
+
+export function isCodexThreadStartRequestError(error: unknown): boolean {
+  return error instanceof CodexThreadStartRequestError;
+}
 
 export type CodexThreadFinalConfigPatchDecision =
   | { action: "resume"; binding: CodexAppServerThreadBinding }
@@ -548,11 +564,17 @@ export async function startOrResumeThread(params: {
       environmentSelection: params.environmentSelection,
     }),
   );
-  const response = assertCodexThreadStartResponse(
-    await lifecycleTiming.measure("thread_start_request", () =>
-      params.client.request("thread/start", startParams),
-    ),
-  );
+  const threadStartResponse = await lifecycleTiming.measure("thread_start_request", async () => {
+    try {
+      return await params.client.request("thread/start", startParams);
+    } catch (error) {
+      if (error instanceof CodexAppServerRpcError) {
+        throw new CodexThreadStartRequestError(error);
+      }
+      throw error;
+    }
+  });
+  const response = assertCodexThreadStartResponse(threadStartResponse);
   const modelProvider = resolveCodexAppServerModelProvider({
     provider: params.params.provider,
     authProfileId: params.params.authProfileId,

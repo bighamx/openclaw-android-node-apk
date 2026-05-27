@@ -3,6 +3,7 @@ import { normalizeOptionalLowercaseString } from "../shared/string-coerce.js";
 import {
   isCliRuntimeModelBackendForProvider,
   listCliRuntimeModelBackendBindings,
+  listCliRuntimeProviderIds,
   resolveCliRuntimeModelBackendBinding,
 } from "./cli-backends.js";
 import { resolveModelRuntimePolicy } from "./model-runtime-policy.js";
@@ -17,12 +18,12 @@ export function isCliRuntimeProvider(
   params: { config?: OpenClawConfig; env?: NodeJS.ProcessEnv; includeSetupRegistry?: boolean } = {},
 ): boolean {
   const normalized = normalizeProviderId(provider);
-  return listCliRuntimeModelBackendBindings({
+  return listCliRuntimeProviderIds({
     config: params.config,
     env: params.env,
     includeSetupRegistry:
       params.includeSetupRegistry ?? (params.config !== undefined || params.env !== undefined),
-  }).some((binding) => binding.runtime === normalized);
+  }).includes(normalized);
 }
 
 export function isCliRuntimeAlias(runtime: string | undefined): boolean {

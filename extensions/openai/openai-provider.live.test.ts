@@ -39,7 +39,7 @@ function resolveLiveModelCase(modelId: string): LiveModelCase {
         templateId: "gpt-5.5",
         templateName: "GPT-5.5",
         cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0 },
-        contextWindow: 272_000,
+        contextWindow: 1_000_000,
         maxTokens: 128_000,
         reasoning: true,
         textVerbosity: "low",

@@ -213,6 +213,25 @@ export function listCliRuntimeModelBackendBindings(
   );
 }
 
+export function listCliRuntimeProviderIds(
+  params: {
+    config?: OpenClawConfig;
+    env?: NodeJS.ProcessEnv;
+    includeSetupRegistry?: boolean;
+  } = {},
+): string[] {
+  // Only CLI backends with a canonical modelProvider are runtime aliases that
+  // should be hidden from model-provider pickers. Standalone CLI backends own
+  // direct refs such as acme-cli/model and must remain selectable.
+  return [
+    ...new Set(
+      listCliRuntimeModelBackendBindings(params)
+        .map((binding) => normalizeBackendKey(binding.runtime))
+        .filter(Boolean),
+    ),
+  ].toSorted();
+}
+
 export function resolveCliRuntimeModelBackendBinding(params: {
   provider: string | undefined;
   runtime: string | undefined;

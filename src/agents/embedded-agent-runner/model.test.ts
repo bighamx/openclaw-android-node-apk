@@ -2967,6 +2967,26 @@ describe("resolveModel", () => {
     });
   });
 
+  it("builds an openai fallback for gpt-5.5 when the live catalog cache is cold", () => {
+    const result = resolveModelForTest("openai", "gpt-5.5", "/tmp/agent");
+
+    expect(result.error).toBeUndefined();
+    expectRecordFields(result.model, {
+      provider: "openai",
+      id: "gpt-5.5",
+      api: "openai-responses",
+      baseUrl: "https://api.openai.com/v1",
+      reasoning: true,
+      input: ["text", "image"],
+      contextWindow: 1_000_000,
+      contextTokens: 272_000,
+      maxTokens: 128_000,
+      mediaInput: {
+        image: { maxSidePx: 6000, preferredSidePx: 2048, tokenMode: "detail" },
+      },
+    });
+  });
+
   it("builds an openai fallback for gpt-5.4 mini from the gpt-5.4-mini template", () => {
     mockDiscoveredModel(discoverModels, {
       provider: "openai",

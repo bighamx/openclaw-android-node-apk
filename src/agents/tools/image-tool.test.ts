@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { ModelDefinitionConfig } from "../../config/types.models.js";
+import { isInboundPathAllowed } from "../../media/inbound-path-policy.js";
 import { encodePngRgba, fillPixel } from "../../media/png-encode.js";
 import type {
   ImageDescriptionRequest,
@@ -537,7 +538,17 @@ const moonshotProvider = {
   describeImages: describeMoonshotImages,
 } satisfies MediaUnderstandingProvider;
 
-function installImageUnderstandingProviderStubs(...providers: MediaUnderstandingProvider[]) {
+function installImageUnderstandingProviderDeps(
+  providers: MediaUnderstandingProvider[],
+  options?: {
+    loadImageWebMediaRuntime?: NonNullable<
+      Parameters<typeof testing.setProviderDepsForTest>[0]
+    >["loadImageWebMediaRuntime"];
+    resolveModelAsync?: NonNullable<
+      Parameters<typeof testing.setProviderDepsForTest>[0]
+    >["resolveModelAsync"];
+  },
+) {
   imageProviderHarness.setProviders(providers);
   const defaultImageModels = new Map<string, string>([
     ["anthropic", "claude-opus-4-6"],
@@ -563,6 +574,56 @@ function installImageUnderstandingProviderStubs(...providers: MediaUnderstanding
       capability === "image" ? ["openai", "anthropic"] : [],
     resolveDefaultMediaModel: ({ providerId, capability }) =>
       capability === "image" ? defaultImageModels.get(providerId.toLowerCase()) : undefined,
+    ...(options?.resolveModelAsync ? { resolveModelAsync: options.resolveModelAsync } : {}),
+    ...(options?.loadImageWebMediaRuntime
+      ? { loadImageWebMediaRuntime: options.loadImageWebMediaRuntime }
+      : {}),
+  });
+}
+
+function installImageUnderstandingProviderStubs(...providers: MediaUnderstandingProvider[]) {
+  installImageUnderstandingProviderDeps(providers);
+}
+
+function installFastLocalImageProviderStubs(...providers: MediaUnderstandingProvider[]) {
+  installImageUnderstandingProviderDeps(providers, {
+    resolveModelAsync: async (provider, model) => ({
+      model: {
+        id: model,
+        provider,
+        input: ["text", "image"],
+      } as never,
+      authStorage: {} as never,
+      modelRegistry: {} as never,
+    }),
+    loadImageWebMediaRuntime: async () => ({
+      loadWebMedia: async (mediaUrl, options) => {
+        const inboundRoots =
+          options && typeof options === "object" && "inboundRoots" in options
+            ? options.inboundRoots
+            : [];
+        if (
+          !isInboundPathAllowed({
+            filePath: mediaUrl,
+            roots: inboundRoots ?? [],
+          })
+        ) {
+          throw new Error(`Local media path is not under an allowed directory: ${mediaUrl}`);
+        }
+        return {
+          buffer: await fs.readFile(mediaUrl),
+          contentType: "image/png",
+          kind: "image",
+          fileName: path.basename(mediaUrl),
+        };
+      },
+      optimizeImageBufferForWebMedia: async ({ buffer, contentType, fileName }) => ({
+        buffer,
+        contentType: contentType ?? "image/png",
+        kind: "image",
+        fileName,
+      }),
+    }),
   });
 }
 
@@ -1644,14 +1705,34 @@ describe("image tool implicit imageModel config", () => {
   });
 
   it("allows image paths from the current iMessage account attachment roots", async () => {
-    const fetch = stubMinimaxOkFetch();
     await withTempAgentDir(async (agentDir) => {
+      const describeImage = vi.fn(async (params: ImageDescriptionRequest) => ({
+        text: "ok",
+        model: params.model,
+      }));
+      installFastLocalImageProviderStubs({
+        id: "ollama",
+        capabilities: ["image"],
+        describeImage,
+      });
       const attachmentRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-imessage-root-"));
       const imagePath = path.join(attachmentRoot, "photo.png");
       await fs.writeFile(imagePath, Buffer.from(ONE_PIXEL_PNG_B64, "base64"));
       try {
         const cfg: OpenClawConfig = {
-          ...createMinimaxImageConfig(),
+          agents: {
+            defaults: {
+              imageModel: { primary: "ollama/moondream" },
+            },
+          },
+          models: {
+            providers: {
+              ollama: {
+                baseUrl: "http://localhost:11434",
+                models: [makeModelDefinition("moondream", ["text", "image"])],
+              },
+            },
+          },
           channels: {
             imessage: {
               accounts: {
@@ -1676,7 +1757,7 @@ describe("image tool implicit imageModel config", () => {
         });
 
         await expectImageToolExecOk(withImessage, imagePath);
-        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(describeImage).toHaveBeenCalledTimes(1);
       } finally {
         await fs.rm(attachmentRoot, { recursive: true, force: true });
       }
@@ -1684,8 +1765,16 @@ describe("image tool implicit imageModel config", () => {
   }, 240_000);
 
   it("allows image paths from current iMessage wildcard attachment roots", async () => {
-    const fetch = stubMinimaxOkFetch();
     await withTempAgentDir(async (agentDir) => {
+      const describeImage = vi.fn(async (params: ImageDescriptionRequest) => ({
+        text: "ok",
+        model: params.model,
+      }));
+      installFastLocalImageProviderStubs({
+        id: "ollama",
+        capabilities: ["image"],
+        describeImage,
+      });
       const attachmentRootParent = await fs.mkdtemp(
         path.join(os.tmpdir(), "openclaw-imessage-wildcard-root-"),
       );
@@ -1695,7 +1784,19 @@ describe("image tool implicit imageModel config", () => {
       await fs.writeFile(imagePath, Buffer.from(ONE_PIXEL_PNG_B64, "base64"));
       try {
         const cfg: OpenClawConfig = {
-          ...createMinimaxImageConfig(),
+          agents: {
+            defaults: {
+              imageModel: { primary: "ollama/moondream" },
+            },
+          },
+          models: {
+            providers: {
+              ollama: {
+                baseUrl: "http://localhost:11434",
+                models: [makeModelDefinition("moondream", ["text", "image"])],
+              },
+            },
+          },
           channels: {
             imessage: {
               accounts: {
@@ -1715,7 +1816,7 @@ describe("image tool implicit imageModel config", () => {
         });
 
         await expectImageToolExecOk(withImessage, imagePath);
-        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(describeImage).toHaveBeenCalledTimes(1);
       } finally {
         await fs.rm(attachmentRootParent, { recursive: true, force: true });
       }

@@ -56,9 +56,11 @@ import {
   buildCodexOpenClawPromptContext,
   buildCodexSystemPromptReport,
   buildCodexWorkspaceBootstrapContext,
+  getCodexWorkspaceMemoryToolNames,
   prependCodexOpenClawPromptContext,
   readContextEngineThreadBootstrapProjection,
   readMirroredSessionHistoryMessages,
+  renderCodexWorkspaceMemoryReference,
   resolveContextEngineBootstrapProjectionDecision,
   shouldProjectMirroredHistoryForCodexStart,
 } from "./attempt-context.js";
@@ -615,12 +617,14 @@ export async function runCodexAppServerAttempt(
     historyMessages =
       (await readMirroredSessionHistoryMessages(activeSessionFile)) ?? historyMessages;
   }
+  const memoryToolNames = getCodexWorkspaceMemoryToolNames(toolBridge.availableSpecs);
   const workspaceBootstrapContext = await buildCodexWorkspaceBootstrapContext({
     params,
     resolvedWorkspace,
     effectiveWorkspace,
     sessionKey: contextSessionKey,
     sessionAgentId,
+    memoryToolNames,
   });
   const baseDeveloperInstructions = joinPresentSections(
     buildDeveloperInstructions(params, {
@@ -632,6 +636,10 @@ export async function runCodexAppServerAttempt(
     params,
     skillsPrompt: params.skillsSnapshot?.prompt,
     workspacePromptContext: workspaceBootstrapContext.promptContext,
+    workspaceMemoryReference: renderCodexWorkspaceMemoryReference({
+      files: workspaceBootstrapContext.memoryReferenceFiles ?? [],
+      toolNames: workspaceBootstrapContext.memoryToolNames,
+    }),
   });
   let promptText = params.prompt;
   let developerInstructions = baseDeveloperInstructions;
@@ -864,6 +872,7 @@ export async function runCodexAppServerAttempt(
       onStartupTimeout: () => {
         runAbortController.abort("codex_startup_timeout");
       },
+      spawnedBy: params.spawnedBy,
     });
     client = startupResult.client;
     thread = startupResult.thread;

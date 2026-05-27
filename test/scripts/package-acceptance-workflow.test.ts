@@ -1251,10 +1251,13 @@ describe("package artifact reuse", () => {
     expect(npmWorkflow).toContain("preflight-manifest.json");
     expect(npmWorkflow).toContain("Verify full release validation run metadata");
     expect(npmWorkflow).toContain("Verify full release validation target");
-    expect(npmWorkflow).not.toContain("Verify Docker runtime-assets prune path");
+    expect(npmWorkflow).not.toContain("Build and smoke test final Docker runtime image");
     expect(fullReleaseWorkflow).toContain("docker_runtime_assets_preflight");
-    expect(fullReleaseWorkflow).toContain("Verify Docker runtime-assets prune path");
-    expect(fullReleaseWorkflow).toContain("--target runtime-assets");
+    expect(fullReleaseWorkflow).toContain("Build and smoke test final Docker runtime image");
+    expect(fullReleaseWorkflow).toContain("docker build");
+    expect(fullReleaseWorkflow).toContain("node /app/openclaw.mjs agent");
+    expect(fullReleaseWorkflow).toContain('OPENCLAW_EXTENSIONS="diagnostics-otel,codex"');
+    expect(fullReleaseWorkflow).toContain("/app/src/agents/templates/HEARTBEAT.md");
     expect(fullReleaseWorkflow).toContain("inputs.rerun_group == 'all'");
     expect(fullReleaseWorkflow).toContain(
       "needs.docker_runtime_assets_preflight.result == 'success'",
