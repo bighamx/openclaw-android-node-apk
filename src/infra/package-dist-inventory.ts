@@ -77,6 +77,15 @@ const OMITTED_DIST_SUBTREE_PATTERNS = [
 ] as const;
 const INSTALL_STAGE_DEBRIS_DIR_PATTERN = /^\.openclaw-install-stage(?:-[^/]+)?$/iu;
 type ExternalizedBundledExtensionIds = ReadonlySet<string>;
+type PackageDistExclusionRules = {
+  files: ReadonlySet<string>;
+  prefixes: readonly string[];
+  patterns: readonly RegExp[];
+};
+type PackageDistInventoryRules = {
+  externalizedExtensionIds: ExternalizedBundledExtensionIds;
+  exclusions: PackageDistExclusionRules;
+};
 type PackageDistInventoryScanContext = {
   activeFsOps: number;
   fsConcurrency: number;
@@ -115,8 +124,12 @@ function isInstallStageDirName(value: string): boolean {
   return INSTALL_STAGE_DEBRIS_DIR_PATTERN.test(value);
 }
 
+function splitRelativePath(relativePath: string): string[] {
+  return normalizeRelativePath(relativePath).split("/");
+}
+
 function isLegacyPluginDependencyDirPath(relativePath: string): boolean {
-  const parts = normalizeRelativePath(relativePath).split("/");
+  const parts = splitRelativePath(relativePath);
   if (parts[0]?.toLowerCase() !== "dist" || parts[1]?.toLowerCase() !== "extensions") {
     return false;
   }
@@ -131,7 +144,7 @@ function isLegacyPluginDependencyDirPath(relativePath: string): boolean {
 }
 
 export function isLegacyPluginDependencyInstallStagePath(relativePath: string): boolean {
-  const parts = normalizeRelativePath(relativePath).split("/");
+  const parts = splitRelativePath(relativePath);
   return (
     parts.length >= 4 &&
     parts[0]?.toLowerCase() === "dist" &&
@@ -141,25 +154,81 @@ export function isLegacyPluginDependencyInstallStagePath(relativePath: string): 
   );
 }
 
-function collectExcludedPackagedExtensionDirs(rootPackageJson: unknown): Set<string> {
+function escapeRegExp(value: string): string {
+  return value.replace(/[\\^$+?.()|[\]{}]/g, "\\$&");
+}
+
+function compilePackageFilesExclusionPattern(pattern: string): RegExp {
+  let source = "^";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === "*") {
+      if (pattern[index + 1] === "*") {
+        if (pattern[index + 2] === "/") {
+          source += "(?:[^/]+/)*";
+          index += 2;
+        } else {
+          source += ".*";
+          index += 1;
+        }
+      } else {
+        source += "[^/]*";
+      }
+      continue;
+    }
+    source += escapeRegExp(char ?? "");
+  }
+  source += "$";
+  return new RegExp(source, "u");
+}
+
+function collectPackageDistInventoryRules(rootPackageJson: unknown): PackageDistInventoryRules {
   if (!rootPackageJson || typeof rootPackageJson !== "object") {
-    return new Set();
+    return {
+      externalizedExtensionIds: new Set(),
+      exclusions: { files: new Set(), prefixes: [], patterns: [] },
+    };
   }
   const files = (rootPackageJson as { files?: unknown }).files;
   if (!Array.isArray(files)) {
-    return new Set();
+    return {
+      externalizedExtensionIds: new Set(),
+      exclusions: { files: new Set(), prefixes: [], patterns: [] },
+    };
   }
-  const excluded = new Set<string>();
+  const externalizedExtensionIds = new Set<string>();
+  const excludedFiles = new Set<string>();
+  const excludedPrefixes: string[] = [];
+  const excludedPatterns: RegExp[] = [];
   for (const entry of files) {
     if (typeof entry !== "string") {
       continue;
     }
-    const match = /^!dist\/extensions\/([^/]+)\/\*\*$/u.exec(entry);
+    const normalized = normalizeRelativePath(entry);
+    const match = /^!dist\/extensions\/([^/]+)\/\*\*$/u.exec(normalized);
     if (match?.[1]) {
-      excluded.add(match[1]);
+      externalizedExtensionIds.add(match[1]);
+    }
+    if (!normalized.startsWith("!dist/")) {
+      continue;
+    }
+    const excludedPath = normalized.slice(1);
+    if (excludedPath.endsWith("/**") && !excludedPath.slice(0, -3).includes("*")) {
+      excludedPrefixes.push(excludedPath.slice(0, -2));
+    } else if (excludedPath.includes("*")) {
+      excludedPatterns.push(compilePackageFilesExclusionPattern(excludedPath));
+    } else {
+      excludedFiles.add(excludedPath);
     }
   }
-  return excluded;
+  return {
+    externalizedExtensionIds,
+    exclusions: {
+      files: excludedFiles,
+      prefixes: excludedPrefixes.toSorted((left, right) => left.localeCompare(right)),
+      patterns: excludedPatterns,
+    },
+  };
 }
 
 function isExternalizedBundledExtensionDistPath(
@@ -188,21 +257,35 @@ function isOmittedPluginSdkTestPath(relativePath: string): boolean {
   );
 }
 
-async function collectExternalizedBundledExtensionIds(
+async function collectPackageDistInventoryRulesForRoot(
   packageRoot: string,
-): Promise<ExternalizedBundledExtensionIds> {
+): Promise<PackageDistInventoryRules> {
   const packageJsonPath = path.join(packageRoot, "package.json");
-  return collectExcludedPackagedExtensionDirs(await readJsonIfExists<unknown>(packageJsonPath));
+  return collectPackageDistInventoryRules(await readJsonIfExists<unknown>(packageJsonPath));
+}
+
+function isPackageFilesExcludedDistPath(
+  relativePath: string,
+  exclusions: PackageDistExclusionRules,
+): boolean {
+  return (
+    exclusions.files.has(relativePath) ||
+    exclusions.prefixes.some((prefix) => relativePath.startsWith(prefix)) ||
+    exclusions.patterns.some((pattern) => pattern.test(relativePath))
+  );
 }
 
 function isPackagedDistPath(
   relativePath: string,
-  externalizedExtensionIds: ExternalizedBundledExtensionIds,
+  rules: PackageDistInventoryRules,
 ): boolean {
   if (!relativePath.startsWith("dist/")) {
     return false;
   }
-  if (isExternalizedBundledExtensionDistPath(relativePath, externalizedExtensionIds)) {
+  if (isExternalizedBundledExtensionDistPath(relativePath, rules.externalizedExtensionIds)) {
+    return false;
+  }
+  if (isPackageFilesExcludedDistPath(relativePath, rules.exclusions)) {
     return false;
   }
   if (isLegacyPluginDependencyDirPath(relativePath)) {
@@ -238,10 +321,10 @@ function isPackagedDistPath(
 
 function isOmittedDistSubtree(
   relativePath: string,
-  externalizedExtensionIds: ExternalizedBundledExtensionIds,
+  rules: PackageDistInventoryRules,
 ): boolean {
   return (
-    isExternalizedBundledExtensionDistPath(relativePath, externalizedExtensionIds) ||
+    isExternalizedBundledExtensionDistPath(relativePath, rules.externalizedExtensionIds) ||
     isLegacyPluginDependencyDirPath(relativePath) ||
     isOmittedPluginSdkTestPath(relativePath) ||
     OMITTED_DIST_SUBTREE_PATTERNS.some((pattern) => pattern.test(relativePath))
@@ -251,11 +334,11 @@ function isOmittedDistSubtree(
 async function collectRelativeFiles(
   rootDir: string,
   baseDir: string,
-  externalizedExtensionIds: ExternalizedBundledExtensionIds,
+  rules: PackageDistInventoryRules,
   context: PackageDistInventoryScanContext,
 ): Promise<string[]> {
   const rootRelativePath = normalizeRelativePath(path.relative(baseDir, rootDir));
-  if (rootRelativePath && isOmittedDistSubtree(rootRelativePath, externalizedExtensionIds)) {
+  if (rootRelativePath && isOmittedDistSubtree(rootRelativePath, rules)) {
     return [];
   }
   try {
@@ -276,10 +359,10 @@ async function collectRelativeFiles(
           throw new Error(`Unsafe package dist path: ${relativePath}`);
         }
         if (entry.isDirectory()) {
-          return await collectRelativeFiles(entryPath, baseDir, externalizedExtensionIds, context);
+          return await collectRelativeFiles(entryPath, baseDir, rules, context);
         }
         if (entry.isFile()) {
-          return isPackagedDistPath(relativePath, externalizedExtensionIds) ? [relativePath] : [];
+          return isPackagedDistPath(relativePath, rules) ? [relativePath] : [];
         }
         return [];
       }),
@@ -294,12 +377,12 @@ async function collectRelativeFiles(
 }
 
 export async function collectPackageDistInventory(packageRoot: string): Promise<string[]> {
-  const externalizedExtensionIds = await collectExternalizedBundledExtensionIds(packageRoot);
+  const rules = await collectPackageDistInventoryRulesForRoot(packageRoot);
   const scanContext = createPackageDistInventoryScanContext();
   return await collectRelativeFiles(
     path.join(packageRoot, "dist"),
     packageRoot,
-    externalizedExtensionIds,
+    rules,
     scanContext,
   );
 }

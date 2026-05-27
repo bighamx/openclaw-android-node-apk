@@ -13,15 +13,9 @@ describe("createMatrixRoomMessageHandler inbound body formatting", () => {
     MessageThreadId?: string;
     RawBody?: string;
     ReplyToId?: string;
-    SupplementalContext?: {
-      quote?: {
-        body?: string;
-        sender?: string;
-      };
-      thread?: {
-        starterBody?: string;
-      };
-    };
+    ReplyToBody?: string;
+    ReplyToSender?: string;
+    ThreadStarterBody?: string;
   };
 
   function createQuotedReplyVisibilityHarness(contextVisibility: "allowlist" | "allowlist_quote") {
@@ -127,7 +121,7 @@ describe("createMatrixRoomMessageHandler inbound body formatting", () => {
 
     const finalized = latestFinalizedReplyContext(finalizeInboundContext);
     expect(finalized.MessageThreadId).toBe("$thread-root");
-    expect(finalized.SupplementalContext?.thread?.starterBody).toBe(
+    expect(finalized.ThreadStarterBody).toBe(
       "Matrix thread root $thread-root from Alice:\nRoot topic",
     );
     // Thread messages get thread-scoped session keys (thread isolation feature).
@@ -277,9 +271,9 @@ describe("createMatrixRoomMessageHandler inbound body formatting", () => {
     const finalized = latestFinalizedReplyContext(finalizeInboundContext);
     expect(finalized.MessageThreadId).toBe("$thread-root");
     expect(finalized.ReplyToId).toBeUndefined();
-    expect(finalized.SupplementalContext?.quote?.sender).toBe("Alice");
-    expect(finalized.SupplementalContext?.quote?.body).toBe("[Poll]\nLunch?\n\n1. Pizza\n2. Sushi");
-    expect(finalized.SupplementalContext?.thread?.starterBody).toBe(
+    expect(finalized.ReplyToSender).toBe("Alice");
+    expect(finalized.ReplyToBody).toBe("[Poll]\nLunch?\n\n1. Pizza\n2. Sushi");
+    expect(finalized.ThreadStarterBody).toBe(
       "Matrix thread root $thread-root from Bob:\nRoot topic",
     );
   });
@@ -319,9 +313,9 @@ describe("createMatrixRoomMessageHandler inbound body formatting", () => {
     const finalized = latestFinalizedReplyContext(finalizeInboundContext);
     expect(finalized.MessageThreadId).toBe("$thread-root");
     expect(finalized.ReplyToId).toBeUndefined();
-    expect(finalized.SupplementalContext?.quote?.sender).toBe("Alice");
-    expect(finalized.SupplementalContext?.quote?.body).toBe("Root topic");
-    expect(finalized.SupplementalContext?.thread?.starterBody).toBe(
+    expect(finalized.ReplyToSender).toBe("Alice");
+    expect(finalized.ReplyToBody).toBe("Root topic");
+    expect(finalized.ThreadStarterBody).toBe(
       "Matrix thread root $thread-root from Alice:\nRoot topic",
     );
     expect(getEvent).toHaveBeenCalledTimes(1);
@@ -370,9 +364,9 @@ describe("createMatrixRoomMessageHandler inbound body formatting", () => {
     );
 
     const finalized = latestFinalizedReplyContext(finalizeInboundContext);
-    expect(finalized.SupplementalContext?.thread?.starterBody).toBeUndefined();
-    expect(finalized.SupplementalContext?.quote?.body).toBeUndefined();
-    expect(finalized.SupplementalContext?.quote?.sender).toBeUndefined();
+    expect(finalized.ThreadStarterBody).toBeUndefined();
+    expect(finalized.ReplyToBody).toBeUndefined();
+    expect(finalized.ReplyToSender).toBeUndefined();
   });
 
   it("drops quoted reply context fetched from non-allowlisted room senders", async () => {
@@ -381,8 +375,8 @@ describe("createMatrixRoomMessageHandler inbound body formatting", () => {
     await sendQuotedReply(handler);
 
     const finalized = latestFinalizedReplyContext(finalizeInboundContext);
-    expect(finalized.SupplementalContext?.quote?.body).toBeUndefined();
-    expect(finalized.SupplementalContext?.quote?.sender).toBeUndefined();
+    expect(finalized.ReplyToBody).toBeUndefined();
+    expect(finalized.ReplyToSender).toBeUndefined();
   });
 
   it("keeps quoted reply context in allowlist_quote mode", async () => {
@@ -392,7 +386,7 @@ describe("createMatrixRoomMessageHandler inbound body formatting", () => {
     await sendQuotedReply(handler);
 
     const finalized = latestFinalizedReplyContext(finalizeInboundContext);
-    expect(finalized.SupplementalContext?.quote?.body).toBe("Quoted payload");
-    expect(finalized.SupplementalContext?.quote?.sender).toBe("Mallory");
+    expect(finalized.ReplyToBody).toBe("Quoted payload");
+    expect(finalized.ReplyToSender).toBe("Mallory");
   });
 });

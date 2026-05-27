@@ -14,6 +14,7 @@ import { formatErrorMessage } from "../../dist/infra/errors.js";
 import { rawDataToString } from "../../dist/infra/ws.js";
 import { readStringValue } from "../../dist/shared/string-coerce.js";
 import { connectMcpWithTimeout } from "./mcp-connect-timeout.ts";
+import { waitForWebSocketOpen } from "./mcp-websocket-open.ts";
 
 export const ClaudeChannelNotificationSchema = z.object({
   method: z.literal("notifications/claude/channel"),
@@ -131,21 +132,7 @@ async function connectGatewayOnce(params: {
   token: string;
 }): Promise<GatewayRpcClient> {
   const ws = new WebSocket(params.url);
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      ws.close();
-      reject(new Error("gateway ws open timeout"));
-    }, GATEWAY_WS_OPEN_TIMEOUT_MS);
-    timeout.unref?.();
-    ws.once("open", () => {
-      clearTimeout(timeout);
-      resolve();
-    });
-    ws.once("error", (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-  });
+  await waitForWebSocketOpen(ws, GATEWAY_WS_OPEN_TIMEOUT_MS, "gateway ws open timeout");
 
   const pending = new Map<
     string,

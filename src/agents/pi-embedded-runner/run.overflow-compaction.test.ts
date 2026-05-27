@@ -72,6 +72,14 @@ function makeForwardingCase(internalEvents: AgentInternalEvent[]) {
   };
 }
 
+function codexHarnessSupportsKnownProviders(
+  ctx: Parameters<AgentHarness["supports"]>[0],
+): ReturnType<AgentHarness["supports"]> {
+  return ctx.provider === "codex" || ctx.provider === "openai" || ctx.provider === "openai-codex"
+    ? { supported: true, priority: 100 }
+    : { supported: false };
+}
+
 function makeForwardedRuntimePlan(overrides: RuntimePlanOverrides = {}): AgentRuntimePlan {
   const transcriptPolicy = {
     sanitizeMode: "full",
@@ -755,8 +763,7 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     registerAgentHarness({
       id: "codex",
       label: "Codex",
-      supports: (ctx) =>
-        ctx.provider === "codex" ? { supported: true, priority: 100 } : { supported: false },
+      supports: codexHarnessSupportsKnownProviders,
       runAttempt: pluginRunAttempt,
     });
     mockedBuildAgentRuntimePlan.mockReturnValueOnce(runtimePlan);
@@ -869,7 +876,7 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     registerAgentHarness({
       id: "codex",
       label: "Codex",
-      supports: () => ({ supported: false }),
+      supports: codexHarnessSupportsKnownProviders,
       runAttempt: pluginRunAttempt,
     });
     mockedBuildAgentRuntimePlan.mockReturnValueOnce(runtimePlan);
@@ -963,7 +970,7 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     registerAgentHarness({
       id: "codex",
       label: "Codex",
-      supports: () => ({ supported: false }),
+      supports: codexHarnessSupportsKnownProviders,
       runAttempt: pluginRunAttempt,
     });
     mockedEnsureAuthProfileStoreWithoutExternalProfiles.mockReturnValueOnce(codexAuthStore);
@@ -1077,7 +1084,7 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     registerAgentHarness({
       id: "codex",
       label: "Codex",
-      supports: () => ({ supported: false }),
+      supports: codexHarnessSupportsKnownProviders,
       runAttempt: pluginRunAttempt,
     });
     mockedEnsureAuthProfileStore.mockReturnValueOnce(codexAuthStore);
@@ -1268,7 +1275,7 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     registerAgentHarness({
       id: "codex",
       label: "Codex",
-      supports: () => ({ supported: false }),
+      supports: codexHarnessSupportsKnownProviders,
       runAttempt: pluginRunAttempt,
     });
     mockedEnsureAuthProfileStore.mockReturnValueOnce(codexAuthStore);
@@ -1382,7 +1389,7 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     registerAgentHarness({
       id: "codex",
       label: "Codex",
-      supports: () => ({ supported: false }),
+      supports: codexHarnessSupportsKnownProviders,
       runAttempt: pluginRunAttempt,
     });
     mockedBuildAgentRuntimePlan.mockReturnValueOnce(runtimePlan);
@@ -1453,7 +1460,7 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     registerAgentHarness({
       id: "codex",
       label: "Codex",
-      supports: () => ({ supported: false }),
+      supports: codexHarnessSupportsKnownProviders,
       runAttempt: pluginRunAttempt,
     });
     mockedBuildAgentRuntimePlan.mockReturnValueOnce(runtimePlan);
@@ -1526,7 +1533,7 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     registerAgentHarness({
       id: "codex",
       label: "Codex",
-      supports: () => ({ supported: false }),
+      supports: codexHarnessSupportsKnownProviders,
       runAttempt: pluginRunAttempt,
     });
     mockedBuildAgentRuntimePlan.mockReturnValueOnce(runtimePlan);
@@ -1646,7 +1653,7 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     registerAgentHarness({
       id: "codex",
       label: "Codex",
-      supports: () => ({ supported: false }),
+      supports: codexHarnessSupportsKnownProviders,
       runAttempt: pluginRunAttempt,
     });
     mockedBuildAgentRuntimePlan

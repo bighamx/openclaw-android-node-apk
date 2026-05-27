@@ -85,6 +85,7 @@
     "!dist/extensions/nextcloud-talk/**",
     "!dist/extensions/nostr/**",
     "!dist/extensions/qqbot/**",
+    "!dist/extensions/pixverse/**",
     "!dist/extensions/qa-channel/**",
     "!dist/extensions/qa-lab/**",
     "!dist/extensions/qa-matrix/**",

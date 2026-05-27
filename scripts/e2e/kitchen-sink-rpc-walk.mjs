@@ -36,6 +36,7 @@ const OUTPUT_CAPTURE_CHARS = readPositiveInt(
   1024 * 1024,
 );
 const DEFAULT_PORT = 19000 + Math.floor(Math.random() * 1000);
+const LOG_SCAN_CHUNK_BYTES = 64 * 1024;
 
 let callGatewayModulePromise;
 
@@ -600,9 +601,61 @@ function signalGateway(child, signal) {
   child.kill(signal);
 }
 
+export function createGatewayReadyLogScanner(logPath, marker = "[gateway] ready") {
+  let offset = 0;
+  let tail = "";
+  let found = false;
+
+  return () => {
+    if (found) {
+      return true;
+    }
+
+    let stat;
+    try {
+      stat = fs.statSync(logPath);
+    } catch {
+      offset = 0;
+      tail = "";
+      return false;
+    }
+
+    if (stat.size < offset) {
+      offset = 0;
+      tail = "";
+    }
+    if (stat.size === offset) {
+      return false;
+    }
+
+    const fd = fs.openSync(logPath, "r");
+    try {
+      const buffer = Buffer.allocUnsafe(Math.min(LOG_SCAN_CHUNK_BYTES, stat.size - offset));
+      while (offset < stat.size) {
+        const bytesToRead = Math.min(buffer.length, stat.size - offset);
+        const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, offset);
+        if (bytesRead <= 0) {
+          break;
+        }
+        offset += bytesRead;
+        const text = `${tail}${buffer.subarray(0, bytesRead).toString("utf8")}`;
+        if (text.includes(marker)) {
+          found = true;
+          return true;
+        }
+        tail = text.slice(-Math.max(0, marker.length - 1));
+      }
+      return false;
+    } finally {
+      fs.closeSync(fd);
+    }
+  };
+}
+
 async function waitForGatewayReady(child, port, logPath) {
   const started = Date.now();
   let lastError = "";
+  const logReportedReady = createGatewayReadyLogScanner(logPath);
   while (Date.now() - started < READY_TIMEOUT_MS) {
     if (child.exitCode !== null) {
       throw new Error(`gateway exited before ready\n${tailFile(logPath)}`);
@@ -616,7 +669,7 @@ async function waitForGatewayReady(child, port, logPath) {
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }
-    if (fs.existsSync(logPath) && fs.readFileSync(logPath, "utf8").includes("[gateway] ready")) {
+    if (logReportedReady()) {
       lastError = `${lastError}; gateway log reported ready before HTTP readiness`;
     }
     await delay(250);

@@ -59,6 +59,7 @@ Docs: https://docs.openclaw.ai
 - Agents/hooks/subagents: enforce default hook agent allowlists, recover failed subagent lifecycle completions, and keep node task lifecycle cleanup from closing the Gateway listener. (#86101)
 - Codex: project newer OpenClaw chat history into resumed app-server threads and keep Codex turn timeouts inside the Codex runtime boundary so timeouts do not poison shared app-server clients or fall through to unrelated provider fallback. (#86677, #86476) Thanks @TurboTheTurtle and @pashpashpash.
 - Config/doctor/update: narrow profiled tool-section doctor repair, keep runtime-injected legacy web-search provider config out of user-authored config validation, and keep prerelease tags excluded from stable updater resolution. (#87030, #86818, #86559) Thanks @joshavant, @luoyanglang, and @stevenepalmer.
+- Doctor/runtime: validate active bundled MCP tool schemas through the same runtime projection path so unsupported MCP input schemas are reported and quarantined instead of poisoning assistant startup.
 - CLI/Windows: add a Windows-only stack-size respawn for stack-heavy startup paths, default CLI logs to local timestamps, and validate timeout/banner TTY state more strictly. (#87031, #85387) Thanks @giodl73-repo and @vincentkoc.
 - Locking/security: require owner identity proof before stale plugin lock removal, memoize session lock owner arguments, and avoid writing default exec approval stores unless policy state actually changed. (#86814, #86964) Thanks @Alix-007 and @vincentkoc.
 - Install/release: bound Docker package build, inventory, pack, and tarball preparation with process-group timeouts; pin shrinkwrap patch drift to the pnpm lock; harden macOS restart and dSYM packaging; and run release Docker/live timeout wrappers in the foreground so child processes cannot wedge gates.
@@ -489,6 +490,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Agents: validate a forced plugin harness against the candidate provider/model before pinning it, so unsupported fallback-chain candidates fail with a clear harness error instead of producing a late `Model provider X not found` from the underlying harness. Codex harness `supports()` now also accepts the canonical `openai` and `openai-codex` routing ids so documented Codex configs keep working. Thanks @cathrynlavery.
 - Control UI/WebChat: keep selected external-channel sessions live by mirroring Codex prompts at turn start, streaming hidden runs only to exact selected-session subscribers, and deduplicating accumulated stream snapshots around tool cards. Fixes #83528, #82611, refs #83949. Thanks @BunsDev.
 - CLI/tasks: include stale-running task maintenance decisions in `openclaw tasks maintenance --json` so retained and reconcile candidates explain backing-session, cron, CLI, and wedged-subagent state. (#84691) Thanks @efpiva.
 - Codex app-server: keep system-prompt reports working when bootstrap hooks provide workspace files with only a path and content, so hook-supplied SOUL/IDENTITY/TOOLS/USER context still reports injected characters correctly. (#84736) Thanks @JARVIS-Glasses.

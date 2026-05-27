@@ -1211,14 +1211,16 @@ function normalizeVideoResolution(raw: string | undefined): VideoGenerationResol
     return undefined;
   }
   if (
+    normalized === "360P" ||
     normalized === "480P" ||
+    normalized === "540P" ||
     normalized === "720P" ||
     normalized === "768P" ||
     normalized === "1080P"
   ) {
     return normalized;
   }
-  throw new Error("video resolution must be one of 480P, 720P, 768P, or 1080P");
+  throw new Error("video resolution must be one of 360P, 480P, 540P, 720P, 768P, or 1080P");
 }
 
 async function runVideoGenerate(params: {
@@ -2330,7 +2332,7 @@ export function registerCapabilityCli(program: Command) {
     .option("--model <provider/model>", "Model override")
     .option("--size <size>", "Size hint like 1280x720")
     .option("--aspect-ratio <ratio>", "Aspect ratio hint like 16:9")
-    .option("--resolution <value>", "Resolution hint: 480P, 720P, 768P, or 1080P")
+    .option("--resolution <value>", "Resolution hint: 360P, 480P, 540P, 720P, 768P, or 1080P")
     .option("--duration <seconds>", "Target duration in seconds")
     .option("--audio", "Enable generated audio when supported")
     .option("--watermark", "Request provider watermark when supported")

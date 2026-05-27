@@ -9,6 +9,7 @@ import {
   assertDiagnosticStabilityClean,
   assertResourceCeiling,
   cleanupKitchenSinkEnv,
+  createGatewayReadyLogScanner,
   extractPluginCommandNames,
   fetchJson,
   findDistCallGatewayModuleFiles,
@@ -72,6 +73,44 @@ describe("kitchen-sink RPC gateway teardown", () => {
     expect(child.stdout.destroy).toHaveBeenCalledOnce();
     expect(child.stderr.destroy).toHaveBeenCalledOnce();
     expect(child.unref).toHaveBeenCalledOnce();
+  });
+});
+
+describe("kitchen-sink RPC gateway readiness logs", () => {
+  it("scans gateway readiness logs incrementally across appended chunks", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "openclaw-kitchen-rpc-log-scan-"));
+    try {
+      const logPath = path.join(root, "gateway.log");
+      writeFileSync(logPath, "booting\n".repeat(1000));
+      const scanner = createGatewayReadyLogScanner(logPath, "[gateway] ready");
+
+      expect(scanner()).toBe(false);
+
+      writeFileSync(logPath, "[gateway] rea", { flag: "a" });
+      expect(scanner()).toBe(false);
+
+      writeFileSync(logPath, "dy\n", { flag: "a" });
+      expect(scanner()).toBe(true);
+      expect(scanner()).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("resets the readiness scanner after log rotation", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "openclaw-kitchen-rpc-log-rotate-"));
+    try {
+      const logPath = path.join(root, "gateway.log");
+      writeFileSync(logPath, "older log contents without readiness\n");
+      const scanner = createGatewayReadyLogScanner(logPath, "[gateway] ready");
+
+      expect(scanner()).toBe(false);
+
+      writeFileSync(logPath, "[gateway] ready\n");
+      expect(scanner()).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
