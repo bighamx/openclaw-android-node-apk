@@ -21,6 +21,10 @@ const RPC_READY_TIMEOUT_MS = readPositiveInt(
   process.env.OPENCLAW_BUNDLED_PLUGIN_RUNTIME_RPC_READY_MS,
   210000,
 );
+const COMMAND_TIMEOUT_MS = readPositiveInt(
+  process.env.OPENCLAW_BUNDLED_PLUGIN_RUNTIME_COMMAND_MS,
+  120000,
+);
 
 function readPositiveInt(raw, fallback) {
   const parsed = Number.parseInt(String(raw || ""), 10);
@@ -38,9 +42,7 @@ function writeJson(file, value) {
 
 function manifestPath(pluginDir, pluginRoot) {
   const candidates = [
-    ...(isNonEmptyString(pluginRoot)
-      ? [path.join(pluginRoot, "openclaw.plugin.json")]
-      : []),
+    ...(isNonEmptyString(pluginRoot) ? [path.join(pluginRoot, "openclaw.plugin.json")] : []),
     path.join(process.cwd(), "dist", "extensions", pluginDir, "openclaw.plugin.json"),
     path.join(process.cwd(), "dist-runtime", "extensions", pluginDir, "openclaw.plugin.json"),
   ];
@@ -161,22 +163,47 @@ function formatCapturedOutput(label, buffer) {
   return `${prefix}${buffer.text}`;
 }
 
-function runCommand(command, args, options = {}) {
+export function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
+    const { timeoutMs = COMMAND_TIMEOUT_MS, ...spawnOptions } = options;
     const child = childProcess.spawn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
-      ...options,
+      ...spawnOptions,
     });
     let stdout = { text: "", truncatedChars: 0 };
     let stderr = { text: "", truncatedChars: 0 };
+    let timedOut = false;
+    let settled = false;
     child.stdout?.on("data", (chunk) => {
       stdout = appendBoundedOutput(stdout, chunk);
     });
     child.stderr?.on("data", (chunk) => {
       stderr = appendBoundedOutput(stderr, chunk);
     });
-    child.on("error", reject);
+    const clearCommandTimer = timeoutMs
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill("SIGKILL");
+        }, timeoutMs)
+      : undefined;
+    child.on("error", (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (clearCommandTimer) {
+        clearTimeout(clearCommandTimer);
+      }
+      reject(error);
+    });
     child.on("close", (status, signal) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (clearCommandTimer) {
+        clearTimeout(clearCommandTimer);
+      }
       if (status === 0) {
         resolve({
           stdout: stdout.text,
@@ -193,11 +220,10 @@ function runCommand(command, args, options = {}) {
         .filter(Boolean)
         .join("\n")
         .trim();
-      reject(
-        new Error(
-          `${command} ${args.join(" ")} failed with ${signal || status}${detail ? `\n${detail}` : ""}`,
-        ),
-      );
+      const outcome = timedOut
+        ? `timed out after ${timeoutMs}ms`
+        : `failed with ${signal || status}`;
+      reject(new Error(`${command} ${args.join(" ")} ${outcome}${detail ? `\n${detail}` : ""}`));
     });
   });
 }

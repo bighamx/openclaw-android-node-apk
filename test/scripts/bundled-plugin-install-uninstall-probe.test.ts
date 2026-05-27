@@ -117,6 +117,24 @@ describe("bundled plugin install/uninstall probe", () => {
     expect(second).toEqual({ text: "fghij", truncatedChars: 5 });
   });
 
+  it("bounds runtime smoke child commands and preserves captured output", async () => {
+    const runtimeSmoke = await import(pathToFileURL(runtimeSmokePath).href);
+    const startedAt = Date.now();
+
+    await expect(
+      runtimeSmoke.runCommand(
+        process.execPath,
+        [
+          "-e",
+          "process.stdout.write('partial\\n'); process.stderr.write('problem\\n'); setInterval(() => {}, 1000);",
+        ],
+        { timeoutMs: 200 },
+      ),
+    ).rejects.toThrow(/timed out after 200ms[\s\S]*partial[\s\S]*problem/u);
+
+    expect(Date.now() - startedAt).toBeLessThan(2_500);
+  });
+
   it("creates runtime smoke state with OPENCLAW_HOME at the test home", async () => {
     const runtimeSmoke = await import(pathToFileURL(runtimeSmokePath).href);
     const env = runtimeSmoke.createIsolatedStateEnv("runtime-env");
