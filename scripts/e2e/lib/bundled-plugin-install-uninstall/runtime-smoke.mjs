@@ -25,6 +25,10 @@ const COMMAND_TIMEOUT_MS = readPositiveInt(
   process.env.OPENCLAW_BUNDLED_PLUGIN_RUNTIME_COMMAND_MS,
   120000,
 );
+const HTTP_PROBE_TIMEOUT_MS = readPositiveInt(
+  process.env.OPENCLAW_BUNDLED_PLUGIN_RUNTIME_HTTP_MS,
+  5000,
+);
 
 function readPositiveInt(raw, fallback) {
   const parsed = Number.parseInt(String(raw || ""), 10);
@@ -279,7 +283,7 @@ async function waitForReady(params) {
       throw new Error(`gateway exited before ready\n${tailFile(params.logPath)}`);
     }
     try {
-      const res = await fetch(`http://127.0.0.1:${params.port}/readyz`);
+      const res = await fetchHttpProbeStatus(params.port, "/readyz");
       if (res.ok) {
         return;
       }
@@ -300,9 +304,31 @@ function logShowsGatewayReady(logPath) {
   return log.includes("[gateway] ready");
 }
 
-async function httpOk(port, pathName) {
+async function fetchHttpProbeStatus(port, pathName, options = {}) {
+  const { timeoutMs = HTTP_PROBE_TIMEOUT_MS } = options;
+  const controller = new AbortController();
+  const clearProbeTimer = timeoutMs
+    ? setTimeout(() => {
+        controller.abort();
+      }, timeoutMs)
+    : undefined;
   try {
-    const res = await fetch(`http://127.0.0.1:${port}${pathName}`);
+    const res = await fetch(`http://127.0.0.1:${port}${pathName}`, {
+      signal: controller.signal,
+    });
+    const status = { ok: res.ok, status: res.status };
+    await res.body?.cancel().catch(() => {});
+    return status;
+  } finally {
+    if (clearProbeTimer) {
+      clearTimeout(clearProbeTimer);
+    }
+  }
+}
+
+export async function httpOk(port, pathName, options = {}) {
+  try {
+    const res = await fetchHttpProbeStatus(port, pathName, options);
     return res.ok;
   } catch {
     return false;
@@ -314,7 +340,7 @@ async function assertHttpOk(port, pathName) {
   let lastError;
   while (Date.now() - started < RPC_READY_TIMEOUT_MS) {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}${pathName}`);
+      const res = await fetchHttpProbeStatus(port, pathName);
       if (res.ok) {
         return;
       }
@@ -332,7 +358,7 @@ async function assertReadyzProbe(options) {
   let lastError;
   while (Date.now() - started < RPC_READY_TIMEOUT_MS) {
     try {
-      const res = await fetch(`http://127.0.0.1:${options.port}/readyz`);
+      const res = await fetchHttpProbeStatus(options.port, "/readyz");
       if (res.ok) {
         return;
       }

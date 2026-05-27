@@ -27,6 +27,7 @@ const INSTALL_TIMEOUT_MS = readPositiveInt(
   Math.max(COMMAND_TIMEOUT_MS, 600000),
 );
 const RPC_TIMEOUT_MS = readPositiveInt(process.env.OPENCLAW_KITCHEN_SINK_RPC_CALL_MS, 60000);
+const FETCH_TIMEOUT_MS = readPositiveInt(process.env.OPENCLAW_KITCHEN_SINK_RPC_FETCH_MS, 10000);
 const MAX_RSS_MIB = readPositiveInt(process.env.OPENCLAW_KITCHEN_SINK_MAX_RSS_MIB, 2048);
 const GATEWAY_TEARDOWN_GRACE_MS = 10000;
 const GATEWAY_TEARDOWN_KILL_GRACE_MS = 2000;
@@ -439,11 +440,27 @@ function isRetryableTransientNetworkError(error, seen = new Set()) {
 
 export async function fetchJson(url, options = {}) {
   const attempts = Math.max(1, options.attempts ?? 3);
+  const timeoutMs = Math.max(1, options.timeoutMs ?? FETCH_TIMEOUT_MS);
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutError = Object.assign(new Error(`fetch ${url} timed out after ${timeoutMs}ms`), {
+      code: "ETIMEDOUT",
+    });
+    let timeout;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeout = setTimeout(() => {
+        controller.abort(timeoutError);
+        reject(timeoutError);
+      }, timeoutMs);
+      timeout.unref?.();
+    });
     try {
-      const response = await (options.fetchImpl ?? fetch)(url);
-      const text = await response.text();
+      const response = await Promise.race([
+        (options.fetchImpl ?? fetch)(url, { signal: controller.signal }),
+        timeoutPromise,
+      ]);
+      const text = await Promise.race([response.text(), timeoutPromise]);
       let body = null;
       try {
         body = text ? JSON.parse(text) : null;
@@ -457,6 +474,10 @@ export async function fetchJson(url, options = {}) {
         throw error;
       }
       await delay(options.retryDelayMs ?? 250);
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
     }
   }
   throw lastError ?? new Error(`fetch ${url} failed`);
