@@ -1,8 +1,12 @@
 import type { TSchema } from "typebox";
 import { readLocalFileSafely } from "../../infra/fs-safe.js";
-import { parseStrictFiniteNumber } from "../../infra/parse-finite-number.js";
 import { detectMime } from "../../media/mime.js";
 import { readSnakeCaseParamRaw } from "../../param-key.js";
+import {
+  asPositiveSafeInteger,
+  asSafeIntegerInRange,
+  parseStrictFiniteNumber,
+} from "../../shared/number-coercion.js";
 import { normalizeStringEntries } from "../../shared/string-normalization.js";
 import type { ImageSanitizationLimits } from "../image-sanitization.js";
 import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "../runtime/index.js";
@@ -157,9 +161,23 @@ export function readStringOrNumberParam(
 export function readNumberParam(
   params: Record<string, unknown>,
   key: string,
-  options: { required?: boolean; label?: string; integer?: boolean; strict?: boolean } = {},
+  options: {
+    required?: boolean;
+    label?: string;
+    integer?: boolean;
+    strict?: boolean;
+    positiveInteger?: boolean;
+    nonNegativeInteger?: boolean;
+  } = {},
 ): number | undefined {
-  const { required = false, label = key, integer = false, strict = false } = options;
+  const {
+    required = false,
+    label = key,
+    integer = false,
+    strict = false,
+    positiveInteger = false,
+    nonNegativeInteger = false,
+  } = options;
   const raw = readParamRaw(params, key);
   let value: number | undefined;
   if (typeof raw === "number" && Number.isFinite(raw)) {
@@ -178,6 +196,12 @@ export function readNumberParam(
       throw new ToolInputError(`${label} required`);
     }
     return undefined;
+  }
+  if (positiveInteger) {
+    return asPositiveSafeInteger(value);
+  }
+  if (nonNegativeInteger) {
+    return asSafeIntegerInRange(value, { min: 0 });
   }
   return integer ? Math.trunc(value) : value;
 }

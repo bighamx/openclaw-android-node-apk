@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
 import path from "node:path";
+import { readBoundedResponseText } from "./lib/bounded-response-text.mjs";
 
 const groupId = process.env.OPENCLAW_QA_TELEGRAM_GROUP_ID;
 const driverToken = process.env.OPENCLAW_QA_TELEGRAM_DRIVER_BOT_TOKEN;
@@ -62,41 +63,6 @@ function readPositiveInt(raw, fallback) {
 
 function taggedError(message, code) {
   return Object.assign(new Error(message), { code });
-}
-
-async function readBoundedResponseText(response, label, byteLimit, timeoutPromise) {
-  const contentLength = response.headers.get("content-length");
-  if (contentLength) {
-    const parsedLength = Number(contentLength);
-    if (Number.isSafeInteger(parsedLength) && parsedLength > byteLimit) {
-      await response.body?.cancel().catch(() => {});
-      throw taggedError(`${label} response body exceeded ${byteLimit} bytes`, "ETOOBIG");
-    }
-  }
-  if (!response.body) {
-    return "";
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let byteCount = 0;
-  let text = "";
-  try {
-    while (true) {
-      const { done, value } = await Promise.race([reader.read(), timeoutPromise]);
-      if (done) {
-        return text + decoder.decode();
-      }
-      byteCount += value.byteLength;
-      if (byteCount > byteLimit) {
-        await reader.cancel().catch(() => {});
-        throw taggedError(`${label} response body exceeded ${byteLimit} bytes`, "ETOOBIG");
-      }
-      text += decoder.decode(value, { stream: true });
-    }
-  } finally {
-    reader.releaseLock();
-  }
 }
 
 function parseJsonPayload(rawPayload, label) {

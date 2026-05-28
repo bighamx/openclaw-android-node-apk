@@ -1797,6 +1797,7 @@ export async function runEmbeddedAttempt(
     let trajectoryRecorder: ReturnType<typeof createTrajectoryRuntimeRecorder> | null = null;
     let trajectoryEndRecorded = false;
     let buildAbortSettlePromise: () => Promise<void> | null = () => null;
+    let cleanupYieldAborted = false;
     try {
       await repairSessionFileIfNeeded({
         sessionFile: params.sessionFile,
@@ -4011,6 +4012,7 @@ export async function runEmbeddedAttempt(
             isRunnerAbortError(err) &&
             err instanceof Error &&
             err.cause === "sessions_yield";
+          cleanupYieldAborted = yieldAborted;
           if (yieldAborted) {
             aborted = false;
             await waitForSessionsYieldAbortSettle({
@@ -4762,6 +4764,7 @@ export async function runEmbeddedAttempt(
           timedOut ||
           idleTimedOut ||
           timedOutDuringCompaction;
+        const cleanupAbortLike = cleanupAborted || cleanupYieldAborted;
         const cleanupSessionLock = await sessionLockController.acquireForCleanup({ session });
         await cleanupEmbeddedAttemptResources({
           removeToolResultContextGuard,
@@ -4771,9 +4774,10 @@ export async function runEmbeddedAttempt(
           bundleMcpRuntime,
           bundleLspRuntime,
           sessionLock: cleanupSessionLock,
-          // PERF: If the run was aborted (user stop, timeout, etc.), skip the idle wait
-          // and flush pending results synchronously so we can release the session lock ASAP.
-          aborted: cleanupAborted,
+          // PERF: If the run was aborted (user stop, timeout, sessions_yield, etc.),
+          // skip the idle wait and flush pending results synchronously so we can
+          // release the session lock ASAP.
+          aborted: cleanupAbortLike,
           abortSettlePromise: cleanupAborted ? buildAbortSettlePromise() : null,
           skipSessionFlush: sessionLockController.hasSessionTakeover(),
           runId: params.runId,

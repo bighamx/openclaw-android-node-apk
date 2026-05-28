@@ -343,8 +343,10 @@ export async function executePerplexitySearch(
   const rawDateAfter = readStringParam(args, "date_after");
   const rawDateBefore = readStringParam(args, "date_before");
   const domainFilter = readStringArrayParam(args, "domain_filter");
-  const maxTokens = readNumberParam(args, "max_tokens", { integer: true });
-  const maxTokensPerPage = readNumberParam(args, "max_tokens_per_page", { integer: true });
+  const maxTokens = readNumberParam(args, "max_tokens", { positiveInteger: true });
+  const maxTokensPerPage = readNumberParam(args, "max_tokens_per_page", {
+    positiveInteger: true,
+  });
 
   if (!structured) {
     if (country) {

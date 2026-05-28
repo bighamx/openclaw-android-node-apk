@@ -471,7 +471,9 @@ vi.mock("openclaw/plugin-sdk/channel-outbound", async (importOriginal) => {
               : params.status;
         return {
           kind: "command-output",
-          ...((params.itemId ?? params.toolCallId) ? { id: params.itemId ?? params.toolCallId } : {}),
+          ...((params.itemId ?? params.toolCallId)
+            ? { id: params.itemId ?? params.toolCallId }
+            : {}),
           text: status ?? params.title ?? params.name ?? "exec",
           label: params.name ?? "exec",
           ...(status ? { status } : {}),
@@ -482,7 +484,9 @@ vi.mock("openclaw/plugin-sdk/channel-outbound", async (importOriginal) => {
       return text
         ? {
             kind: "item",
-            ...((params.itemId ?? params.toolCallId) ? { id: params.itemId ?? params.toolCallId } : {}),
+            ...((params.itemId ?? params.toolCallId)
+              ? { id: params.itemId ?? params.toolCallId }
+              : {}),
             text,
             label: params.title ?? params.name ?? "Update",
           }
