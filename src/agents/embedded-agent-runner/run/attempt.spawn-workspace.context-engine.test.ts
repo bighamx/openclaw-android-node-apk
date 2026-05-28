@@ -251,7 +251,12 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
         name: "dofbot_move_angles",
         label: "Dofbot Move Angles",
         description: "Move robot joints.",
-        parameters: { type: "array", items: { type: "number" } },
+        parameters: {
+          type: "object",
+          properties: {
+            target: { $dynamicRef: "#target" },
+          },
+        },
         execute: async () => ({ text: "bad" }),
       },
     ]);
