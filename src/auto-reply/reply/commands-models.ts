@@ -345,8 +345,8 @@ function parseListArgs(tokens: string[]): Extract<ParsedModelsCommand, { action:
       continue;
     }
     if (lower.startsWith("page=")) {
-      const value = Number.parseInt(lower.slice("page=".length), 10);
-      if (Number.isFinite(value) && value > 0) {
+      const value = parsePositiveIntegerToken(lower.slice("page=".length));
+      if (value !== undefined) {
         page = value;
       }
       continue;
@@ -364,8 +364,8 @@ function parseListArgs(tokens: string[]): Extract<ParsedModelsCommand, { action:
     const lower = normalizeLowercaseStringOrEmpty(token);
     if (lower.startsWith("limit=") || lower.startsWith("size=")) {
       const rawValue = lower.slice(lower.indexOf("=") + 1);
-      const value = Number.parseInt(rawValue, 10);
-      if (Number.isFinite(value) && value > 0) {
+      const value = parsePositiveIntegerToken(rawValue);
+      if (value !== undefined) {
         pageSize = Math.min(PAGE_SIZE_MAX, value);
       }
     }
@@ -378,6 +378,15 @@ function parseListArgs(tokens: string[]): Extract<ParsedModelsCommand, { action:
     pageSize,
     all,
   };
+}
+
+function parsePositiveIntegerToken(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function parseModelsArgs(raw: string): ParsedModelsCommand {

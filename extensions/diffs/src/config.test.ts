@@ -541,33 +541,36 @@ describe("viewer assets", () => {
 });
 
 describe("resolveDiffsLanguagePackAvailability", () => {
-  it("requires both the sibling language-pack manifest and generated runtime asset", () => {
-    const root = fs.mkdtempSync(join(os.tmpdir(), "openclaw-diffs-language-pack-"));
-    try {
-      const diffsRoot = join(root, "diffs");
-      const languagePackRoot = join(root, "diffs-language-pack");
-      fs.mkdirSync(diffsRoot, { recursive: true });
-      fs.mkdirSync(languagePackRoot, { recursive: true });
-      fs.writeFileSync(
-        join(languagePackRoot, "openclaw.plugin.json"),
-        '{"id":"diffs-language-pack"}\n',
-      );
-      const api = {
-        rootDir: diffsRoot,
-        config: { plugins: {} },
-        runtime: { config: { current: () => ({ plugins: {} }) } },
-      } as Parameters<typeof resolveDiffsLanguagePackAvailability>[0];
+  it.each(["assets", "dist/assets"])(
+    "requires both the sibling language-pack manifest and generated runtime asset in %s",
+    (assetDir) => {
+      const root = fs.mkdtempSync(join(os.tmpdir(), "openclaw-diffs-language-pack-"));
+      try {
+        const diffsRoot = join(root, "diffs");
+        const languagePackRoot = join(root, "diffs-language-pack");
+        fs.mkdirSync(diffsRoot, { recursive: true });
+        fs.mkdirSync(languagePackRoot, { recursive: true });
+        fs.writeFileSync(
+          join(languagePackRoot, "openclaw.plugin.json"),
+          '{"id":"diffs-language-pack"}\n',
+        );
+        const api = {
+          rootDir: diffsRoot,
+          config: { plugins: {} },
+          runtime: { config: { current: () => ({ plugins: {} }) } },
+        } as Parameters<typeof resolveDiffsLanguagePackAvailability>[0];
 
-      expect(resolveDiffsLanguagePackAvailability(api)).toBe(false);
+        expect(resolveDiffsLanguagePackAvailability(api)).toBe(false);
 
-      fs.mkdirSync(join(languagePackRoot, "assets"), { recursive: true });
-      fs.writeFileSync(join(languagePackRoot, "assets", "viewer-runtime.js"), "export {};\n");
+        fs.mkdirSync(join(languagePackRoot, assetDir), { recursive: true });
+        fs.writeFileSync(join(languagePackRoot, assetDir, "viewer-runtime.js"), "export {};\n");
 
-      expect(resolveDiffsLanguagePackAvailability(api)).toBe(true);
-    } finally {
-      fs.rmSync(root, { force: true, recursive: true });
-    }
-  });
+        expect(resolveDiffsLanguagePackAvailability(api)).toBe(true);
+      } finally {
+        fs.rmSync(root, { force: true, recursive: true });
+      }
+    },
+  );
 });
 
 describe("parseViewerPayloadJson", () => {

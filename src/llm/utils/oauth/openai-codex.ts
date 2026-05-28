@@ -5,6 +5,12 @@
  * It is only intended for CLI use, not browser environments.
  */
 
+import {
+  buildOAuthRequestSignal,
+  createOAuthLoginCancelledError,
+  throwIfOAuthLoginAborted,
+  withOAuthLoginAbort,
+} from "./abort.js";
 import { oauthErrorHtml, oauthSuccessHtml } from "./oauth-page.js";
 import { resolveOpenAICodexAccountId } from "./openai-codex-jwt.js";
 import { generatePKCE } from "./pkce.js";
@@ -40,6 +46,7 @@ type NodeOAuthRuntime = {
   http: typeof import("node:http");
 };
 type TokenRequestOptions = {
+  signal?: AbortSignal;
   timeoutMs?: number;
 };
 
@@ -79,9 +86,27 @@ function createState(randomBytes: typeof import("node:crypto").randomBytes): str
   return randomBytes(16).toString("hex");
 }
 
-function waitForManualPromptFallback(): Promise<null> {
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => resolve(null), MANUAL_PROMPT_FALLBACK_MS);
+function waitForManualPromptFallback(signal?: AbortSignal): Promise<null> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(createOAuthLoginCancelledError());
+      return;
+    }
+
+    const cleanup = () => {
+      signal?.removeEventListener("abort", abort);
+    };
+    const abort = () => {
+      clearTimeout(timeout);
+      cleanup();
+      reject(createOAuthLoginCancelledError());
+    };
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve(null);
+    }, MANUAL_PROMPT_FALLBACK_MS);
+
+    signal?.addEventListener("abort", abort, { once: true });
     timeout.unref?.();
   });
 }
@@ -150,7 +175,11 @@ function formatTokenRequestError(
   operation: "exchange" | "refresh",
   error: unknown,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): string {
+  if (signal?.aborted) {
+    return "Login cancelled";
+  }
   if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
     return `OpenAI Codex token ${operation} timed out after ${timeoutMs}ms`;
   }
@@ -166,6 +195,7 @@ async function exchangeAuthorizationCode(
   const timeoutMs = options.timeoutMs ?? TOKEN_REQUEST_TIMEOUT_MS;
   let response: Response;
   try {
+    throwIfOAuthLoginAborted(options.signal);
     response = await fetch(TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -176,12 +206,12 @@ async function exchangeAuthorizationCode(
         code_verifier: verifier,
         redirect_uri: redirectUri,
       }),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: buildOAuthRequestSignal({ signal: options.signal, timeoutMs }),
     });
   } catch (error) {
     return {
       type: "failed",
-      message: formatTokenRequestError("exchange", error, timeoutMs),
+      message: formatTokenRequestError("exchange", error, timeoutMs, options.signal),
     };
   }
 
@@ -217,6 +247,7 @@ async function refreshAccessToken(
 ): Promise<TokenResult> {
   try {
     const timeoutMs = options.timeoutMs ?? TOKEN_REQUEST_TIMEOUT_MS;
+    throwIfOAuthLoginAborted(options.signal);
     const response = await fetch(TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -225,7 +256,7 @@ async function refreshAccessToken(
         refresh_token: refreshToken,
         client_id: CLIENT_ID,
       }),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: buildOAuthRequestSignal({ signal: options.signal, timeoutMs }),
     });
 
     if (!response.ok) {
@@ -259,6 +290,7 @@ async function refreshAccessToken(
         "refresh",
         error,
         options.timeoutMs ?? TOKEN_REQUEST_TIMEOUT_MS,
+        options.signal,
       ),
     };
   }
@@ -391,14 +423,21 @@ export async function loginOpenAICodex(options: {
   onProgress?: (message: string) => void;
   onManualCodeInput?: () => Promise<string>;
   originator?: string;
+  signal?: AbortSignal;
 }): Promise<OAuthCredentials> {
+  throwIfOAuthLoginAborted(options.signal);
   const { verifier, redirectUri, state, url } = await createAuthorizationFlow(options.originator);
   const server = await startLocalOAuthServer(state);
 
-  options.onAuth({ url, instructions: "A browser window should open. Complete login to finish." });
-
   let code: string | undefined;
   try {
+    throwIfOAuthLoginAborted(options.signal);
+    options.onAuth({
+      url,
+      instructions: "A browser window should open. Complete login to finish.",
+    });
+    throwIfOAuthLoginAborted(options.signal);
+
     if (options.onManualCodeInput) {
       // Race between browser callback and manual input
       let manualCode: string | undefined;
@@ -414,7 +453,11 @@ export async function loginOpenAICodex(options: {
           server.cancelWait();
         });
 
-      const result = await server.waitForCode();
+      const result = await withOAuthLoginAbort(
+        server.waitForCode(),
+        options.signal,
+        server.cancelWait,
+      );
 
       // If manual input was cancelled, throw that error
       if (manualError) {
@@ -435,7 +478,7 @@ export async function loginOpenAICodex(options: {
 
       // If still no code, wait for manual promise to complete and try that
       if (!code) {
-        await manualPromise;
+        await withOAuthLoginAbort(manualPromise, options.signal, server.cancelWait);
         if (manualError) {
           throw manualError;
         }
@@ -449,7 +492,11 @@ export async function loginOpenAICodex(options: {
       }
     } else {
       const callbackPromise = server.waitForCode();
-      const result = await Promise.race([callbackPromise, waitForManualPromptFallback()]);
+      const result = await withOAuthLoginAbort(
+        Promise.race([callbackPromise, waitForManualPromptFallback(options.signal)]),
+        options.signal,
+        server.cancelWait,
+      );
       if (result?.code) {
         code = result.code;
       } else {
@@ -459,23 +506,30 @@ export async function loginOpenAICodex(options: {
             return promptCode;
           },
         );
-        code = await Promise.race([
-          callbackPromise.then((callback) => callback?.code),
-          promptCodePromise,
-        ]);
+        code = await withOAuthLoginAbort(
+          Promise.race([callbackPromise.then((callback) => callback?.code), promptCodePromise]),
+          options.signal,
+          server.cancelWait,
+        );
       }
     }
 
     // Fallback to onPrompt if still no code
     if (!code) {
-      code = await promptForAuthorizationCode(options.onPrompt, state);
+      code = await withOAuthLoginAbort(
+        promptForAuthorizationCode(options.onPrompt, state),
+        options.signal,
+        server.cancelWait,
+      );
     }
 
     if (!code) {
       throw new Error("Missing authorization code");
     }
 
-    const tokenResult = await exchangeAuthorizationCode(code, verifier, redirectUri);
+    const tokenResult = await exchangeAuthorizationCode(code, verifier, redirectUri, {
+      signal: options.signal,
+    });
     if (tokenResult.type !== "success") {
       throw new Error(tokenResult.message);
     }
@@ -529,6 +583,7 @@ export const openaiCodexOAuthProvider: OAuthProviderInterface = {
       onPrompt: callbacks.onPrompt,
       onProgress: callbacks.onProgress,
       onManualCodeInput: callbacks.onManualCodeInput,
+      signal: callbacks.signal,
     });
   },
 
@@ -545,6 +600,7 @@ export const testing = {
   callbackHost: CALLBACK_HOST,
   createAuthorizationFlow,
   exchangeAuthorizationCode,
+  loginOpenAICodex,
   refreshAccessToken,
   resolveCallbackHost,
   resolveRedirectUri,
