@@ -568,13 +568,14 @@ importers:
         version: link:../../packages/plugin-sdk
 
   extensions/copilot:
+    dependencies:
+      '@github/copilot-sdk':
+        specifier: 1.0.0-beta.4
+        version: 1.0.0-beta.4
     devDependencies:
       '@github/copilot':
         specifier: 1.0.48
         version: 1.0.48
-      '@github/copilot-sdk':
-        specifier: 1.0.0-beta.4
-        version: 1.0.0-beta.4
       '@openclaw/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
@@ -1697,6 +1698,10 @@ importers:
         version: link:../..
 
   extensions/workboard:
+    dependencies:
+      typebox:
+        specifier: 1.1.38
+        version: 1.1.38
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*

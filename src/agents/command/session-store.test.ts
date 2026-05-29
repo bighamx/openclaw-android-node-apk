@@ -13,6 +13,10 @@ import {
 } from "./session-store.js";
 import { resolveSession } from "./session.js";
 
+const sessionStoreMocks = vi.hoisted(() => ({
+  updateSessionStore: vi.fn(),
+}));
+
 vi.mock("../model-selection.js", () => ({
   isCliProvider: (provider: string, cfg?: OpenClawConfig) =>
     Object.hasOwn(cfg?.agents?.defaults?.cliBackends ?? {}, provider),
@@ -80,19 +84,8 @@ vi.mock("../../config/sessions.js", async () => {
     await fs.mkdir(path.dirname(storePath), { recursive: true });
     await fs.writeFile(storePath, JSON.stringify(store, null, 2), "utf8");
   };
-  return {
-    mergeSessionEntry: (existing: SessionEntry | undefined, patch: Partial<SessionEntry>) => ({
-      ...existing,
-      ...patch,
-      sessionId: patch.sessionId ?? existing?.sessionId ?? "mock-session",
-      updatedAt: Math.max(existing?.updatedAt ?? 0, patch.updatedAt ?? 0, Date.now()),
-    }),
-    setSessionRuntimeModel: (entry: SessionEntry, runtime: { provider: string; model: string }) => {
-      entry.modelProvider = runtime.provider;
-      entry.model = runtime.model;
-      return true;
-    },
-    updateSessionStore: async <T>(
+  sessionStoreMocks.updateSessionStore.mockImplementation(
+    async <T>(
       storePath: string,
       mutator: (store: Record<string, SessionEntry>) => Promise<T> | T,
     ) => {
@@ -115,6 +108,20 @@ vi.mock("../../config/sessions.js", async () => {
       await writeStore(storePath, store);
       return result;
     },
+  );
+  return {
+    mergeSessionEntry: (existing: SessionEntry | undefined, patch: Partial<SessionEntry>) => ({
+      ...existing,
+      ...patch,
+      sessionId: patch.sessionId ?? existing?.sessionId ?? "mock-session",
+      updatedAt: Math.max(existing?.updatedAt ?? 0, patch.updatedAt ?? 0, Date.now()),
+    }),
+    setSessionRuntimeModel: (entry: SessionEntry, runtime: { provider: string; model: string }) => {
+      entry.modelProvider = runtime.provider;
+      entry.model = runtime.model;
+      return true;
+    },
+    updateSessionStore: sessionStoreMocks.updateSessionStore,
     loadSessionStore: (storePath: string) => {
       try {
         return JSON.parse(fsSync.readFileSync(storePath, "utf8")) as Record<string, SessionEntry>;
@@ -157,6 +164,72 @@ async function withTempSessionStore<T>(
 }
 
 describe("updateSessionStoreAfterAgentRun", () => {
+  it("passes resolved maintenance config to the gateway turn store write", async () => {
+    sessionStoreMocks.updateSessionStore.mockClear();
+    await withTempSessionStore(async ({ storePath }) => {
+      const cfg = {
+        session: {
+          maintenance: {
+            mode: "enforce",
+            maxEntries: 42,
+          },
+        },
+      } as OpenClawConfig;
+      const sessionKey = "agent:main:explicit:test-maintenance-config";
+      const sessionId = "test-maintenance-config-session";
+      const sessionStore: Record<string, SessionEntry> = {
+        [sessionKey]: {
+          sessionId,
+          updatedAt: 1,
+        },
+      };
+      await fs.writeFile(storePath, JSON.stringify(sessionStore, null, 2));
+      const result: EmbeddedAgentRunResult = {
+        meta: {
+          durationMs: 1,
+          agentMeta: {
+            sessionId,
+            provider: "openai",
+            model: "gpt-5.5",
+          },
+        },
+      };
+
+      await updateSessionStoreAfterAgentRun({
+        cfg,
+        sessionId,
+        sessionKey,
+        storePath,
+        sessionStore,
+        defaultProvider: "openai",
+        defaultModel: "gpt-5.5",
+        result,
+      });
+
+      const updateOptions = sessionStoreMocks.updateSessionStore.mock.calls.at(-1)?.[2];
+      expect(updateOptions).toMatchObject({
+        takeCacheOwnership: true,
+        maintenanceConfig: {
+          mode: "enforce",
+          maxEntries: 42,
+        },
+      });
+      expect(typeof updateOptions?.resolveSingleEntryPersistence).toBe("function");
+      expect(
+        updateOptions?.resolveSingleEntryPersistence?.({
+          sessionId,
+          updatedAt: 2,
+        } as SessionEntry),
+      ).toEqual({
+        sessionKey,
+        entry: {
+          sessionId,
+          updatedAt: 2,
+        },
+      });
+    });
+  });
+
   it("persists the selected embedded harness id on the session", async () => {
     await withTempSessionStore(async ({ storePath }) => {
       const cfg = {} as OpenClawConfig;

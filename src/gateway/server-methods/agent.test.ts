@@ -526,6 +526,30 @@ describe("gateway agent handler", () => {
     resetExecApprovalFollowupRuntimeHandoffsForTests();
   });
 
+  it("passes resolved maintenance config to the gateway admission store write", async () => {
+    primeMainAgentRun({
+      cfg: {
+        session: {
+          maintenance: {
+            mode: "enforce",
+            maxEntries: 42,
+          },
+        },
+      },
+    });
+
+    await runMainAgent("hi", "idem-maintenance-config");
+
+    const updateOptions = mocks.updateSessionStore.mock.calls.at(-1)?.[2];
+    expect(updateOptions).toMatchObject({
+      takeCacheOwnership: true,
+      maintenanceConfig: {
+        mode: "enforce",
+        maxEntries: 42,
+      },
+    });
+  });
+
   it("preserves ACP metadata from the current stored session entry", async () => {
     const existingAcpMeta = {
       backend: "acpx",

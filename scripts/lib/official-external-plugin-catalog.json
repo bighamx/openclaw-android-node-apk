@@ -51,6 +51,24 @@
       }
     },
     {
+      "name": "@openclaw/copilot",
+      "description": "OpenClaw GitHub Copilot agent runtime plugin",
+      "source": "official",
+      "kind": "plugin",
+      "openclaw": {
+        "plugin": {
+          "id": "copilot",
+          "label": "GitHub Copilot agent runtime"
+        },
+        "install": {
+          "clawhubSpec": "clawhub:@openclaw/copilot",
+          "npmSpec": "@openclaw/copilot",
+          "defaultChoice": "npm",
+          "minHostVersion": ">=2026.5.28"
+        }
+      }
+    },
+    {
       "name": "@openclaw/diagnostics-otel",
       "description": "OpenClaw diagnostics OpenTelemetry exporter",
       "source": "official",

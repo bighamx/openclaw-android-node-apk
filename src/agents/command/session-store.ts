@@ -9,6 +9,7 @@ import {
   updateSessionStore,
   rewriteSessionFileForNewSessionId,
 } from "../../config/sessions.js";
+import { resolveMaintenanceConfigFromInput } from "../../config/sessions/store-maintenance.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
@@ -268,6 +269,7 @@ export async function updateSessionStoreAfterAgentRun(params: {
         ...(touchInteraction ? { lastInteractionAt: next.lastInteractionAt } : {}),
       }
     : removeLifecycleStateFromMetadataPatch(next);
+  const maintenanceConfig = resolveMaintenanceConfigFromInput(cfg.session?.maintenance);
   const persisted = await updateSessionStore(
     storePath,
     (store) => {
@@ -278,7 +280,11 @@ export async function updateSessionStoreAfterAgentRun(params: {
       store[sessionKey] = merged;
       return merged;
     },
-    { takeCacheOwnership: true },
+    {
+      takeCacheOwnership: true,
+      maintenanceConfig,
+      resolveSingleEntryPersistence: (entry) => (entry ? { sessionKey, entry } : undefined),
+    },
   );
   if (persisted) {
     sessionStore[sessionKey] = persisted;

@@ -65,6 +65,7 @@ import {
   type SessionEntry,
   updateSessionStore,
 } from "../../config/sessions.js";
+import { resolveMaintenanceConfigFromInput } from "../../config/sessions/store-maintenance.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { registerAgentRunContext } from "../../infra/agent-events.js";
 import { formatUncaughtError, readErrorName } from "../../infra/errors.js";
@@ -1336,6 +1337,9 @@ export const agentHandlers: GatewayRequestHandlers = {
           clone: false,
         });
         cfgForAgent = cfg;
+        const sessionMaintenanceConfig = resolveMaintenanceConfigFromInput(
+          cfg.session?.maintenance,
+        );
         const now = Date.now();
         const resetPolicy = resolveSessionResetPolicy({
           sessionCfg: cfg.session,
@@ -1599,7 +1603,7 @@ export const agentHandlers: GatewayRequestHandlers = {
               store[primaryKey] = merged;
               return merged;
             },
-            { takeCacheOwnership: true },
+            { takeCacheOwnership: true, maintenanceConfig: sessionMaintenanceConfig },
           );
           if (persisted) {
             sessionEntry = persisted;
