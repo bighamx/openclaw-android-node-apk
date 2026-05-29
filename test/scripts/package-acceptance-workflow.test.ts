@@ -1304,6 +1304,9 @@ describe("package artifact reuse", () => {
     expect(workflow).toContain(
       "Full release validation must run rerun_group=all before npm publish",
     );
+    expect(workflow).toContain(
+      "publish_openclaw_npm=true requires plugin_publish_scope=all-publishable",
+    );
     expect(workflow).toContain("preflight-manifest.json");
     expect(npmWorkflow).toContain("preflight-manifest.json");
     expect(npmWorkflow).toContain("Verify full release validation run metadata");

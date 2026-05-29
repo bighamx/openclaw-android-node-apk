@@ -83,6 +83,7 @@ const SLACK_HISTORY_MEDIA_MAX_ATTACHMENTS = 4;
 const SLACK_HISTORY_MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 const SLACK_HISTORY_MEDIA_IDLE_TIMEOUT_MS = 1_000;
 const SLACK_HISTORY_MEDIA_TOTAL_TIMEOUT_MS = 3_000;
+const SLACK_TIMESTAMP_RE = /^\d+(?:\.\d+)?$/;
 
 function recordString(
   record: Record<string, unknown> | undefined,
@@ -102,6 +103,15 @@ function recordNullableString(
     return null;
   }
   return normalizeOptionalString(record[key]);
+}
+
+function resolveSlackTimestampMs(ts: string | undefined): number | undefined {
+  const trimmed = ts?.trim();
+  if (!trimmed || !SLACK_TIMESTAMP_RE.test(trimmed)) {
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? Math.round(parsed * 1000) : undefined;
 }
 
 function mergeSlackAssistantThreadContext(
@@ -969,7 +979,7 @@ export async function prepareSlackMessage(params: {
             client: ctx.app.client,
           })
         : null;
-    const timestamp = message.ts ? Math.round(Number(message.ts) * 1000) : undefined;
+    const timestamp = resolveSlackTimestampMs(message.ts);
     const senderName = pendingBody ? await resolveSenderName() : undefined;
     await recordDroppedChannelInboundHistory({
       input: {
@@ -1145,7 +1155,7 @@ export async function prepareSlackMessage(params: {
   const body = formatInboundEnvelope({
     channel: "Slack",
     from: envelopeFrom,
-    timestamp: message.ts ? Math.round(Number(message.ts) * 1000) : undefined,
+    timestamp: resolveSlackTimestampMs(message.ts),
     body: textWithId,
     chatType,
     sender: { name: senderName, id: senderId },
@@ -1238,7 +1248,7 @@ export async function prepareSlackMessage(params: {
     channel: "slack",
     accountId: route.accountId,
     messageId: message.ts,
-    timestamp: message.ts ? Math.round(Number(message.ts) * 1000) : undefined,
+    timestamp: resolveSlackTimestampMs(message.ts),
     from: slackFrom,
     sender: {
       id: senderId,
@@ -1335,7 +1345,7 @@ export async function prepareSlackMessage(params: {
       entry: {
         sender: senderName,
         body: rawBody,
-        timestamp: message.ts ? Math.round(Number(message.ts) * 1000) : undefined,
+        timestamp: resolveSlackTimestampMs(message.ts),
         messageId: message.ts,
       },
     });

@@ -19,6 +19,17 @@ type SlackDmHistoryEntry = {
   timestamp?: number;
 };
 
+const SLACK_TIMESTAMP_RE = /^\d+(?:\.\d+)?$/;
+
+function resolveSlackTimestampMs(ts: string | undefined): number | undefined {
+  const trimmed = ts?.trim();
+  if (!trimmed || !SLACK_TIMESTAMP_RE.test(trimmed)) {
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? Math.round(parsed * 1000) : undefined;
+}
+
 export function resolveSlackDmHistoryLimit(params: {
   account: ResolvedSlackAccount;
   userId?: string;
@@ -96,7 +107,7 @@ export async function resolveSlackDmHistoryContext(params: {
           ? await resolveUserLabel(message.user)
           : (normalizeOptionalString(message.username) ?? (message.bot_id ? "Bot" : "Unknown"));
       const sender = `${senderBase} (${role})`;
-      const timestamp = message.ts ? Math.round(Number(message.ts) * 1000) : undefined;
+      const timestamp = resolveSlackTimestampMs(message.ts);
       entries.push({ sender, body, timestamp });
       formatted.push(
         formatInboundEnvelope({
