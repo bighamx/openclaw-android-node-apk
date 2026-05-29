@@ -24,6 +24,7 @@ import {
   readNonNegativeIntegerParam,
   readStringParam,
 } from "./common.js";
+import { gatewayCallOptionSchemaProperties } from "./gateway-schema.js";
 import { callGatewayTool, readGatewayCallOptions } from "./gateway.js";
 
 const log = createSubsystemLogger("gateway-tool");
@@ -35,7 +36,6 @@ const DEFAULT_UPDATE_TIMEOUT_MS = 20 * 60_000;
 // must fail closed and allow only a narrow set of agent-tunable paths.
 const ALLOWED_GATEWAY_CONFIG_PATHS = [
   // Agent prompt/model tuning.
-  "agents.defaults.systemPromptOverride",
   "agents.defaults.promptOverlays",
   "agents.defaults.model",
   "agents.defaults.thinkingDefault",
@@ -43,7 +43,6 @@ const ALLOWED_GATEWAY_CONFIG_PATHS = [
   "agents.defaults.reasoningDefault",
   "agents.defaults.fastModeDefault",
   "agents.list[].id",
-  "agents.list[].systemPromptOverride",
   "agents.list[].model",
   "agents.list[].thinkingDefault",
   "agents.list[].subagents.thinking",
@@ -346,9 +345,7 @@ const GatewayToolSchema = Type.Object({
   reason: Type.Optional(Type.String()),
   continuationMessage: Type.Optional(Type.String()),
   // config.get, config.schema.lookup, config.apply, update.run
-  gatewayUrl: Type.Optional(Type.String()),
-  gatewayToken: Type.Optional(Type.String()),
-  timeoutMs: Type.Optional(Type.Number()),
+  ...gatewayCallOptionSchemaProperties(),
   // config.schema.lookup
   path: Type.Optional(Type.String()),
   // config.apply, config.patch

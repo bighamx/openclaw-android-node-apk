@@ -129,10 +129,12 @@ describe("gateway tool restart continuation", () => {
       properties?: {
         delayMs?: { minimum?: number; type?: string };
         restartDelayMs?: { minimum?: number; type?: string };
+        timeoutMs?: { minimum?: number; type?: string };
       };
     };
     expect(parameters.properties?.delayMs).toMatchObject({ type: "integer", minimum: 0 });
     expect(parameters.properties?.restartDelayMs).toMatchObject({ type: "integer", minimum: 0 });
+    expect(parameters.properties?.timeoutMs).toMatchObject({ type: "integer", minimum: 1 });
   });
 
   it("instructs agents to use continuationMessage when a restart still needs a reply", async () => {
