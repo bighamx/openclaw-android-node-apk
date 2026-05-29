@@ -72,6 +72,7 @@ import { resolveSlackDmHistoryContext, resolveSlackDmHistoryLimit } from "./prep
 import { resolveSlackRoutingContext } from "./prepare-routing.js";
 import { resolveSlackThreadContextData } from "./prepare-thread-context.js";
 import { isSlackSubteamMentionForBot, normalizeSlackId } from "./subteam-mentions.js";
+import { resolveSlackTimestampMs } from "./timestamp.js";
 import type { PreparedSlackMessage } from "./types.js";
 
 const mentionRegexCache = new WeakMap<SlackMonitorContext, Map<string, RegExp[]>>();
@@ -83,7 +84,6 @@ const SLACK_HISTORY_MEDIA_MAX_ATTACHMENTS = 4;
 const SLACK_HISTORY_MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 const SLACK_HISTORY_MEDIA_IDLE_TIMEOUT_MS = 1_000;
 const SLACK_HISTORY_MEDIA_TOTAL_TIMEOUT_MS = 3_000;
-const SLACK_TIMESTAMP_RE = /^\d+(?:\.\d+)?$/;
 
 function recordString(
   record: Record<string, unknown> | undefined,
@@ -103,15 +103,6 @@ function recordNullableString(
     return null;
   }
   return normalizeOptionalString(record[key]);
-}
-
-function resolveSlackTimestampMs(ts: string | undefined): number | undefined {
-  const trimmed = ts?.trim();
-  if (!trimmed || !SLACK_TIMESTAMP_RE.test(trimmed)) {
-    return undefined;
-  }
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? Math.round(parsed * 1000) : undefined;
 }
 
 function mergeSlackAssistantThreadContext(

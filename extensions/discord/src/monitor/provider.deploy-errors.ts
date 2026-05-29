@@ -1,5 +1,8 @@
 import { inspect } from "node:util";
-import { parseStrictNonNegativeInteger } from "openclaw/plugin-sdk/number-runtime";
+import {
+  parseStrictFiniteNumber,
+  parseStrictNonNegativeInteger,
+} from "openclaw/plugin-sdk/number-runtime";
 import { formatDurationSeconds } from "openclaw/plugin-sdk/runtime-env";
 import { formatErrorMessage } from "openclaw/plugin-sdk/ssrf-runtime";
 import { RateLimitError } from "../internal/discord.js";
@@ -102,8 +105,7 @@ function readFiniteNumber(value: unknown): number | undefined {
     return value;
   }
   if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
+    return parseStrictFiniteNumber(value);
   }
   return undefined;
 }

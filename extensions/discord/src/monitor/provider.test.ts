@@ -966,6 +966,19 @@ describe("monitorDiscordProvider", () => {
     expect(details).toBe(" (status=429, retryAfter=3.2s, scope=route)");
   });
 
+  it("does not parse malformed Discord deploy retry_after values", () => {
+    const details = providerTesting.formatDiscordDeployErrorDetails({
+      status: 429,
+      rawBody: {
+        message: "You are being rate limited.",
+        retry_after: "0x2",
+        global: false,
+      },
+    });
+
+    expect(details).toBe(" (status=429, scope=route)");
+  });
+
   it("rejects malformed Discord deploy rate-limit status values", () => {
     const details = providerTesting.formatDiscordDeployErrorDetails({
       status: 429.5,

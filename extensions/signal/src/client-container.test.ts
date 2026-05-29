@@ -641,6 +641,24 @@ describe("containerFetchAttachment", () => {
     expect(arrayBuffer).not.toHaveBeenCalled();
   });
 
+  it("rejects malformed content-length before reading attachments", async () => {
+    const arrayBuffer = vi.fn();
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-length": "0x3" }),
+      arrayBuffer,
+    });
+
+    await expect(
+      containerFetchAttachment("attachment-123", {
+        baseUrl: "http://localhost:8080",
+        maxResponseBytes: 4,
+      }),
+    ).rejects.toThrow("invalid content-length header: 0x3");
+    expect(arrayBuffer).not.toHaveBeenCalled();
+  });
+
   it("rejects streamed attachments that exceed the response cap", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
