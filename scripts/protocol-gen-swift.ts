@@ -42,30 +42,30 @@ const STRICT_LITERAL_STRUCTS = new Set([
 
 const DEFAULTED_OPTIONAL_INIT_PARAMS: Record<string, Set<string>> = {
   SessionOperationEvent: new Set(["agentId"]),
-  SessionsCompactionBranchParams: new Set(["agentId"]),
-  SessionsCompactionGetParams: new Set(["agentId"]),
   SessionsCompactionListParams: new Set(["agentId"]),
+  SessionsCompactionGetParams: new Set(["agentId"]),
+  SessionsCompactionBranchParams: new Set(["agentId"]),
   SessionsCompactionRestoreParams: new Set(["agentId"]),
-  SessionsCompactParams: new Set(["agentId"]),
-  SessionsDeleteParams: new Set(["agentId"]),
+  SessionsSendParams: new Set(["agentId"]),
   SessionsMessagesSubscribeParams: new Set(["agentId"]),
   SessionsMessagesUnsubscribeParams: new Set(["agentId"]),
+  SessionsAbortParams: new Set(["agentId"]),
   SessionsPatchParams: new Set(["agentId"]),
   SessionsResetParams: new Set(["agentId"]),
-  SessionsSendParams: new Set(["agentId"]),
-  SessionsAbortParams: new Set(["agentId"]),
+  SessionsDeleteParams: new Set(["agentId"]),
+  SessionsCompactParams: new Set(["agentId"]),
   SessionsUsageParams: new Set(["agentId", "agentScope"]),
+  ChatHistoryParams: new Set(["agentId"]),
+  ChatSendParams: new Set(["agentId"]),
+  ChatAbortParams: new Set(["agentId"]),
+  ChatInjectParams: new Set(["agentId"]),
+  ChatDeltaEvent: new Set(["agentId"]),
+  ChatFinalEvent: new Set(["agentId"]),
+  ChatAbortedEvent: new Set(["agentId"]),
+  ChatErrorEvent: new Set(["agentId"]),
   ArtifactsListParams: new Set(["agentId"]),
   ArtifactsGetParams: new Set(["agentId"]),
   ArtifactsDownloadParams: new Set(["agentId"]),
-  ChatAbortParams: new Set(["agentId"]),
-  ChatAbortedEvent: new Set(["agentId"]),
-  ChatDeltaEvent: new Set(["agentId"]),
-  ChatErrorEvent: new Set(["agentId"]),
-  ChatFinalEvent: new Set(["agentId"]),
-  ChatHistoryParams: new Set(["agentId"]),
-  ChatInjectParams: new Set(["agentId"]),
-  ChatSendParams: new Set(["agentId"]),
   MessageActionParams: new Set(["inboundTurnKind"]),
   CronRunLogEntry: new Set(["errorReason", "failureNotificationDelivery"]),
   ExecApprovalRequestParams: new Set(["requireDeliveryRoute", "suppressDelivery"]),
@@ -211,7 +211,9 @@ function swiftInitializerParam(params: {
   if (params.required) {
     return `${params.name}: ${type}`;
   }
-  const defaultNil = DEFAULTED_OPTIONAL_INIT_PARAMS[params.structName]?.has(params.key) ?? false;
+  const defaultNil =
+    params.key === "agentId" ||
+    (DEFAULTED_OPTIONAL_INIT_PARAMS[params.structName]?.has(params.key) ?? false);
   return `${params.name}: ${type}?${defaultNil ? " = nil" : ""}`;
 }
 
