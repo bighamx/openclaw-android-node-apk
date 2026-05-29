@@ -1,7 +1,7 @@
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { getActiveMemorySearchManager } from "../plugins/memory-runtime.js";
-import { clampTimerTimeoutMs } from "../shared/number-coercion.js";
+import { resolveTimerTimeoutMs } from "../shared/number-coercion.js";
 import type { RealtimeVoiceAgentConsultResult } from "./agent-consult-runtime.js";
 import { parseRealtimeVoiceAgentConsultArgs } from "./agent-consult-tool.js";
 
@@ -98,7 +98,7 @@ function buildMissText(query: string, labels: RealtimeVoiceFastContextLabels): s
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  const resolvedTimeoutMs = clampTimerTimeoutMs(timeoutMs) ?? 1;
+  const resolvedTimeoutMs = resolveTimerTimeoutMs(timeoutMs, 1);
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([

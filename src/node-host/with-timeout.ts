@@ -1,11 +1,11 @@
-import { clampTimerTimeoutMs } from "../shared/number-coercion.js";
+import { resolveTimerTimeoutMs } from "../shared/number-coercion.js";
 
 export async function withTimeout<T>(
   work: (signal: AbortSignal | undefined) => Promise<T>,
   timeoutMs?: number,
   label?: string,
 ): Promise<T> {
-  const resolved = clampTimerTimeoutMs(timeoutMs);
+  const resolved = timeoutMs === undefined ? undefined : resolveTimerTimeoutMs(timeoutMs, 1);
   if (!resolved) {
     return await work(undefined);
   }

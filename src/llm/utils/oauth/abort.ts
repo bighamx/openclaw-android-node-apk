@@ -1,4 +1,4 @@
-import { clampTimerTimeoutMs } from "../../../shared/number-coercion.js";
+import { resolveTimerTimeoutMs } from "../../../shared/number-coercion.js";
 
 export function createOAuthLoginCancelledError(): Error {
   return new Error("Login cancelled");
@@ -52,7 +52,7 @@ export function buildOAuthRequestSignal(options: {
   signal?: AbortSignal;
   timeoutMs: number;
 }): AbortSignal {
-  const timeoutSignal = AbortSignal.timeout(clampTimerTimeoutMs(options.timeoutMs, 0) ?? 0);
+  const timeoutSignal = AbortSignal.timeout(resolveTimerTimeoutMs(options.timeoutMs, 0, 0));
   if (!options.signal) {
     return timeoutSignal;
   }

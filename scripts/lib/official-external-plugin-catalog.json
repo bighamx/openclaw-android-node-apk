@@ -208,6 +208,42 @@
       }
     },
     {
+      "name": "@openclaw/pixverse-provider",
+      "description": "OpenClaw PixVerse video generation provider plugin",
+      "source": "official",
+      "kind": "plugin",
+      "openclaw": {
+        "plugin": {
+          "id": "pixverse",
+          "label": "PixVerse"
+        },
+        "install": {
+          "clawhubSpec": "clawhub:@openclaw/pixverse-provider",
+          "npmSpec": "@openclaw/pixverse-provider",
+          "defaultChoice": "npm",
+          "minHostVersion": ">=2026.5.26"
+        }
+      }
+    },
+    {
+      "name": "@openclaw/tokenjuice",
+      "description": "OpenClaw tokenjuice exec output compaction plugin",
+      "source": "official",
+      "kind": "plugin",
+      "openclaw": {
+        "plugin": {
+          "id": "tokenjuice",
+          "label": "Tokenjuice"
+        },
+        "install": {
+          "clawhubSpec": "clawhub:@openclaw/tokenjuice",
+          "npmSpec": "@openclaw/tokenjuice",
+          "defaultChoice": "npm",
+          "minHostVersion": ">=2026.5.28"
+        }
+      }
+    },
+    {
       "name": "@openclaw/voice-call",
       "description": "OpenClaw voice-call plugin",
       "source": "official",

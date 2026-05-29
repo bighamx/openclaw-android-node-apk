@@ -20,7 +20,7 @@ if (typeof process !== "undefined" && (process.versions?.node || process.version
   });
 }
 
-import { clampTimerTimeoutMs } from "../../shared/number-coercion.js";
+import { resolveTimerTimeoutMs } from "../../shared/number-coercion.js";
 import { getEnvApiKey } from "../env-api-keys.js";
 import { clampThinkingLevel } from "../model-utils.js";
 import { registerSessionResourceCleanup } from "../session-resources.js";
@@ -139,7 +139,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 function resolveRequestTimeoutMs(options?: OpenAICodexResponsesOptions): number | undefined {
   const timeoutMs = options?.timeoutMs;
   return typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
-    ? clampTimerTimeoutMs(timeoutMs)
+    ? resolveTimerTimeoutMs(timeoutMs, 1)
     : undefined;
 }
 

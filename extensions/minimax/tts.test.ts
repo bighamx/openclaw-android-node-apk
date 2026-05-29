@@ -20,7 +20,9 @@ describe("minimaxTTS", () => {
   });
 
   it("caps oversized request timeout before arming abort timers", async () => {
-    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const timeoutSpy = vi
+      .spyOn(globalThis, "setTimeout")
+      .mockReturnValue(0 as unknown as ReturnType<typeof setTimeout>);
     fetchWithSsrFGuardMock.mockResolvedValue({
       response: new Response(
         JSON.stringify({ data: { audio: Buffer.from("audio").toString("hex") } }),

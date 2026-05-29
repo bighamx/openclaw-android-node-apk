@@ -182,9 +182,6 @@ importers:
       tar:
         specifier: 7.5.15
         version: 7.5.15
-      tokenjuice:
-        specifier: 0.8.0
-        version: 0.8.0
       tree-sitter-bash:
         specifier: 0.25.1
         version: 0.25.1
@@ -1565,6 +1562,9 @@ importers:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
+      openclaw:
+        specifier: workspace:*
+        version: link:../..
 
   extensions/tts-local-cli:
     devDependencies:

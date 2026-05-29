@@ -586,7 +586,7 @@ describe("file-transfer node invoke policy", () => {
     "continues dir.fetch after preflight without forwarding caller preflightOnly",
     async () => {
       const policy = createFileTransferNodeInvokePolicy();
-      const tarBase64 = await tarEntries({
+      const tarBase64 = tarEntries({
         "a.txt": "a",
         "sub/b.txt": "b",
       });
@@ -634,7 +634,7 @@ describe("file-transfer node invoke policy", () => {
     "checks final dir.fetch archive entries before returning the archive",
     async () => {
       const policy = createFileTransferNodeInvokePolicy();
-      const tarBase64 = await tarEntries({
+      const tarBase64 = tarEntries({
         "ok.txt": "ok",
         ".ssh/id_rsa": "secret",
       });
@@ -685,7 +685,7 @@ describe("file-transfer node invoke policy", () => {
 
   testUnlessWindows("rejects oversized final dir.fetch archive entry lists", async () => {
     const policy = createFileTransferNodeInvokePolicy();
-    const tarBase64 = await tarEntries(
+    const tarBase64 = tarEntries(
       Object.fromEntries(Array.from({ length: 5001 }, (_, index) => [`file-${index}.txt`, "x"])),
     );
     const { ctx, invokeNode } = createCtx({

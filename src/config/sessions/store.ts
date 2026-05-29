@@ -901,7 +901,9 @@ async function persistResolvedSessionEntry(params: {
 export async function updateSessionStoreEntry(params: {
   storePath: string;
   sessionKey: string;
-  update: (entry: SessionEntry) => Promise<Partial<SessionEntry> | null>;
+  update: (
+    entry: SessionEntry,
+  ) => Promise<Partial<SessionEntry> | null> | Partial<SessionEntry> | null;
   skipMaintenance?: boolean;
   takeCacheOwnership?: boolean;
 }): Promise<SessionEntry | null> {
