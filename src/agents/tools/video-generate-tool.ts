@@ -203,7 +203,7 @@ const VideoGenerateToolProperties = {
     }),
   ),
   timeoutMs: Type.Optional(
-    Type.Number({
+    Type.Integer({
       description: "Provider timeout ms.",
       minimum: 1,
     }),
