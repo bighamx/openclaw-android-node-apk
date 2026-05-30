@@ -15,6 +15,10 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Skills: let the `skill_research` agent tool apply, reject, and quarantine explicit Skill Workshop proposals through the guarded proposal lifecycle. Thanks @shakkernerd.
+- Skills: let Skill Workshop proposals carry approved support files under standard skill folders, with scanner, hash, and rollback safeguards. Thanks @shakkernerd.
+- Skills: let pending Skill Workshop proposals be revised in place with versioned, dated proposal frontmatter before approval. Thanks @shakkernerd.
+- Skills: add Skill Workshop proposals with pending `PROPOSAL.md` drafts, CLI/Gateway review actions, rollback metadata, and the `skill_research` agent tool. Thanks @shakkernerd.
 - Plugins: externalize Tokenjuice as the official `@openclaw/tokenjuice` plugin with npm and ClawHub publish metadata.
 - Plugins: externalize the GitHub Copilot agent runtime as the official `@openclaw/copilot` plugin with npm and ClawHub publish metadata.
 - iOS: add hosted push relay defaults, realtime Talk playback, and a guarded WebSocket ping path for more reliable mobile sessions. (#88096, #88105, #88231)
@@ -26,6 +30,7 @@ Docs: https://docs.openclaw.ai
 
 - CLI: keep `plugins list --json` on the snapshot-only path so plugin sweeps avoid loading the full runtime status graph.
 - Plugins: make PixVerse external-plugin ClawHub metadata explicit and keep it out of bundled dist builds.
+- Cron: keep SQLite cron migrations compatible with legacy run-log tables, archived job stores, diagnostic cron names, and legacy one-shot delete-after-run behavior. (#88285)
 - Providers: bound generated media downloads from OpenAI, Runway, xAI, MiniMax, BytePlus, DashScope-compatible, FAL, OpenRouter, Google, Vydra, and Comfy providers.
 - Providers: cap GitHub Copilot OAuth request timeouts before creating abort signals.
 - Cron: retry recurring jobs after transient model rate limits before waiting for the next scheduled slot.
