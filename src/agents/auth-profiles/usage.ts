@@ -2,6 +2,8 @@ import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import {
+  asDateTimestampMs,
+  isFutureDateTimestampMs,
   positiveSecondsToSafeMilliseconds,
   resolveExpiresAtMsFromEpochSeconds,
 } from "../../shared/number-coercion.js";
@@ -812,8 +814,7 @@ export async function markAuthProfileBlockedUntil(params: {
   if (
     !profile ||
     isAuthCooldownBypassedForProvider(profile.provider) ||
-    !Number.isFinite(blockedUntil) ||
-    blockedUntil <= Date.now()
+    !isFutureDateTimestampMs(blockedUntil)
   ) {
     return;
   }
@@ -828,16 +829,16 @@ export async function markAuthProfileBlockedUntil(params: {
       if (!profile || isAuthCooldownBypassedForProvider(profile.provider)) {
         return false;
       }
-      const now = Date.now();
+      const now = asDateTimestampMs(Date.now());
+      if (now === undefined) {
+        return false;
+      }
       previousStats = freshStore.usageStats?.[profileId];
       updateTime = now;
       const existingBlockedUntil = previousStats?.blockedUntil;
-      const activeBlockedUntil =
-        typeof existingBlockedUntil === "number" &&
-        Number.isFinite(existingBlockedUntil) &&
-        existingBlockedUntil > now
-          ? existingBlockedUntil
-          : 0;
+      const activeBlockedUntil = isFutureDateTimestampMs(existingBlockedUntil, { nowMs: now })
+        ? existingBlockedUntil
+        : 0;
       nextStats = {
         ...previousStats,
         blockedUntil: Math.max(activeBlockedUntil, blockedUntil),
@@ -876,15 +877,15 @@ export async function markAuthProfileBlockedUntil(params: {
     return;
   }
 
-  const now = Date.now();
+  const now = asDateTimestampMs(Date.now());
+  if (now === undefined) {
+    return;
+  }
   previousStats = store.usageStats?.[profileId];
   const existingBlockedUntil = previousStats?.blockedUntil;
-  const activeBlockedUntil =
-    typeof existingBlockedUntil === "number" &&
-    Number.isFinite(existingBlockedUntil) &&
-    existingBlockedUntil > now
-      ? existingBlockedUntil
-      : 0;
+  const activeBlockedUntil = isFutureDateTimestampMs(existingBlockedUntil, { nowMs: now })
+    ? existingBlockedUntil
+    : 0;
   nextStats = {
     ...previousStats,
     blockedUntil: Math.max(activeBlockedUntil, blockedUntil),
