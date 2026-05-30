@@ -97,6 +97,18 @@ export const MAX_TIMER_TIMEOUT_MS = 2_147_000_000;
 export const MAX_TIMER_TIMEOUT_SECONDS = Math.floor(MAX_TIMER_TIMEOUT_MS / 1000);
 export const MAX_DATE_TIMESTAMP_MS = 8_640_000_000_000_000;
 
+export function asDateTimestampMs(value: unknown): number | undefined {
+  return asFiniteNumberInRange(value, {
+    min: -MAX_DATE_TIMESTAMP_MS,
+    max: MAX_DATE_TIMESTAMP_MS,
+  });
+}
+
+export function timestampMsToIsoString(value: unknown): string | undefined {
+  const timestampMs = asDateTimestampMs(value);
+  return timestampMs === undefined ? undefined : new Date(timestampMs).toISOString();
+}
+
 export function clampTimerTimeoutMs(valueMs: unknown, minMs = 1): number | undefined {
   const value = asFiniteNumber(valueMs);
   if (value === undefined) {
