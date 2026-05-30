@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readPositiveIntEnv } from "./lib/env-limits.mjs";
 import { telegramBotApi } from "./telegram-bot-api.ts";
 
 type CommandResult = {
@@ -139,10 +140,11 @@ export const COMMAND_STDERR_TAIL_CHARS = 256 * 1024;
 export const COMMAND_FAILURE_STDOUT_TAIL_CHARS = 64 * 1024;
 const REMOTE_ROOT = "/tmp/openclaw-telegram-user-crabbox";
 const CREDENTIAL_SCRIPT = fileURLToPath(new URL("./telegram-user-credential.ts", import.meta.url));
-const LOG_READY_TAIL_BYTES = readPositiveInt(
-  process.env.OPENCLAW_TELEGRAM_USER_PROOF_LOG_TAIL_BYTES,
-  256 * 1024,
-);
+export function readTelegramUserProofLogTailBytes(env: NodeJS.ProcessEnv = process.env): number {
+  return readPositiveIntEnv("OPENCLAW_TELEGRAM_USER_PROOF_LOG_TAIL_BYTES", 256 * 1024, env);
+}
+
+const LOG_READY_TAIL_BYTES = readTelegramUserProofLogTailBytes();
 const TELEGRAM_PROOF_WINDOW = {
   height: 1000,
   width: 650,
@@ -413,11 +415,6 @@ function readJsonFile(filePath: string): JsonObject {
     }
     throw error;
   }
-}
-
-function readPositiveInt(raw: string | undefined, fallback: number): number {
-  const parsed = Number.parseInt(raw ?? "", 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function requireString(source: JsonObject, key: string) {
