@@ -95,6 +95,9 @@ export const pluginSdkDocMetadata = {
   "provider-onboard": {
     category: "provider",
   },
+  "provider-oauth-runtime": {
+    category: "provider",
+  },
   "provider-selection-runtime": {
     category: "provider",
   },

@@ -272,6 +272,7 @@
   "native-command-config-runtime",
   "native-command-registry",
   "provider-auth",
+  "provider-oauth-runtime",
   "provider-auth-runtime",
   "provider-auth-api-key",
   "provider-auth-result",

@@ -1173,6 +1173,10 @@
       "types": "./dist/plugin-sdk/provider-auth.d.ts",
       "default": "./dist/plugin-sdk/provider-auth.js"
     },
+    "./plugin-sdk/provider-oauth-runtime": {
+      "types": "./dist/plugin-sdk/provider-oauth-runtime.d.ts",
+      "default": "./dist/plugin-sdk/provider-oauth-runtime.js"
+    },
     "./plugin-sdk/provider-auth-runtime": {
       "types": "./dist/plugin-sdk/provider-auth-runtime.d.ts",
       "default": "./dist/plugin-sdk/provider-auth-runtime.js"
@@ -1599,6 +1603,7 @@
     "plugins:sync": "node --import tsx scripts/sync-plugin-versions.ts",
     "plugins:sync:check": "node --import tsx scripts/sync-plugin-versions.ts --check",
     "postinstall": "node scripts/postinstall-bundled-plugins.mjs",
+    "postpack": "node scripts/package-changelog.mjs restore",
     "preinstall": "node scripts/preinstall-package-manager-warning.mjs",
     "prepack": "node --import tsx scripts/openclaw-prepack.ts",
     "prepare": "node scripts/prepare-git-hooks.mjs",
