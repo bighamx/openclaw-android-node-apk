@@ -8,7 +8,6 @@ import {
 import {
   type AnyAgentTool,
   type NodeListNode,
-  DEFAULT_UPLOAD_DIR,
   BrowserToolSchema,
   applyBrowserProxyPaths,
   browserAct,
@@ -37,8 +36,8 @@ import {
   readStringParam,
   readStringValue,
   resolveBrowserConfig,
+  resolveExistingUploadPaths,
   resolveRuntimeImageSanitization,
-  resolveExistingPathsWithinRoot,
   resolveNodeIdFromList,
   resolveProfile,
   selectDefaultNodeFromList,
@@ -821,15 +820,11 @@ export function createBrowserTool(opts?: {
           if (paths.length === 0) {
             throw new Error("paths required");
           }
-          const uploadPathsResult = await resolveExistingPathsWithinRoot({
-            rootDir: DEFAULT_UPLOAD_DIR,
-            requestedPaths: paths,
-            scopeLabel: `uploads directory (${DEFAULT_UPLOAD_DIR})`,
-          });
-          if (!uploadPathsResult.ok) {
-            throw new Error(uploadPathsResult.error);
+          const resolvedResult = await resolveExistingUploadPaths({ requestedPaths: paths });
+          if (!resolvedResult.ok) {
+            throw new Error(resolvedResult.error);
           }
-          const normalizedPaths = uploadPathsResult.paths;
+          const normalizedPaths = resolvedResult.paths;
           const ref = readStringParam(params, "ref");
           const inputRef = readStringParam(params, "inputRef");
           const element = readStringParam(params, "element");

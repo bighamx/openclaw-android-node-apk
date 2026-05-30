@@ -137,6 +137,17 @@ vi.mock("openclaw/plugin-sdk/runtime-config-snapshot", async () => {
   };
 });
 
+const pathValidationMocks = vi.hoisted(() => ({
+  resolveExistingUploadPaths: vi.fn<
+    (args: {
+      requestedPaths: string[];
+    }) => Promise<{ ok: true; paths: string[] } | { ok: false; error: string }>
+  >(async ({ requestedPaths }) => ({
+    ok: true as const,
+    paths: requestedPaths,
+  })),
+}));
+
 const sessionTabRegistryMocks = vi.hoisted(() => ({
   touchSessionBrowserTab: vi.fn(),
   trackSessionBrowserTab: vi.fn(),
@@ -226,10 +237,7 @@ vi.mock("./browser-tool.runtime.js", () => {
     },
     readStringParam,
     readStringValue,
-    resolveExistingPathsWithinRoot: vi.fn(async ({ requestedPaths }) => ({
-      ok: true,
-      paths: requestedPaths,
-    })),
+    resolveExistingUploadPaths: pathValidationMocks.resolveExistingUploadPaths,
     resolveNodeIdFromList: (nodes: Array<Record<string, unknown>>, requested: string) => {
       const node = nodes.find(
         (entry) => entry.nodeId === requested || entry.displayName === requested,
@@ -1632,5 +1640,47 @@ describe("browser tool act stale target recovery", () => {
     ).rejects.toThrow(/Run action=tabs profile="user"/i);
 
     expect(browserActionsMocks.browserAct).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("browser tool upload inbound media fallback (#83544)", () => {
+  beforeEach(resetBrowserToolMocks);
+  afterEach(() => vi.restoreAllMocks());
+
+  it("resolves upload paths before arming the file chooser", async () => {
+    const inboundPath = "/home/user/.openclaw/media/inbound/report.pdf";
+    pathValidationMocks.resolveExistingUploadPaths.mockResolvedValue({
+      ok: true,
+      paths: [inboundPath],
+    });
+    browserActionsMocks.browserArmFileChooser.mockResolvedValue({ ok: true });
+
+    const tool = createBrowserTool();
+    const result = await tool.execute?.("call-upload-1", {
+      action: "upload",
+      paths: [inboundPath],
+      ref: "file-input-1",
+    });
+
+    expect(pathValidationMocks.resolveExistingUploadPaths).toHaveBeenCalledWith({
+      requestedPaths: [inboundPath],
+    });
+    expect(result?.content[0]).toHaveProperty("type", "text");
+  });
+
+  it("rejects files outside both uploads and inbound media directories", async () => {
+    pathValidationMocks.resolveExistingUploadPaths.mockResolvedValue({
+      ok: false as const,
+      error: "path outside allowed directories",
+    });
+
+    const tool = createBrowserTool();
+    await expect(
+      tool.execute?.("call-upload-2", {
+        action: "upload",
+        paths: ["/etc/passwd"],
+        ref: "file-input-1",
+      }),
+    ).rejects.toThrow("path outside allowed directories");
   });
 });
