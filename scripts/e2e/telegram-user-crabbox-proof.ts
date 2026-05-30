@@ -5,12 +5,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createPnpmRunnerSpawnSpec } from "../pnpm-runner.mjs";
 import { readPositiveIntEnv } from "./lib/env-limits.mjs";
 import { telegramBotApi } from "./telegram-bot-api.ts";
 
 type CommandResult = {
   stderr: string;
   stdout: string;
+};
+
+type GatewaySpawnSpec = {
+  args: string[];
+  command: string;
+  options: SpawnOptionsWithoutStdio;
 };
 
 type JsonObject = Record<string, unknown>;
@@ -478,6 +485,36 @@ function gatewayEnv(params: { configPath: string; stateDir: string; sutToken: st
   };
 }
 
+export function createOpenClawGatewaySpawnSpec(params: {
+  env: NodeJS.ProcessEnv;
+  gatewayPort: number;
+  repoRoot: string;
+  comSpec?: string;
+  nodeExecPath?: string;
+  npmExecPath?: string;
+  platform?: NodeJS.Platform;
+}): GatewaySpawnSpec {
+  const spec = createPnpmRunnerSpawnSpec({
+    comSpec: params.comSpec,
+    cwd: params.repoRoot,
+    env: params.env,
+    nodeExecPath: params.nodeExecPath,
+    npmExecPath: params.npmExecPath,
+    platform: params.platform,
+    pnpmArgs: ["openclaw", "gateway", "--port", String(params.gatewayPort)],
+  });
+  return {
+    args: spec.args,
+    command: spec.command,
+    options: {
+      cwd: spec.options.cwd,
+      env: spec.options.env,
+      shell: spec.options.shell,
+      windowsVerbatimArguments: spec.options.windowsVerbatimArguments,
+    },
+  };
+}
+
 function shellQuote(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
@@ -699,13 +736,17 @@ function spawnDaemon(params: {
   cwd: string;
   env: NodeJS.ProcessEnv;
   logPath: string;
+  shell?: boolean;
+  windowsVerbatimArguments?: boolean;
 }) {
   const log = fs.openSync(params.logPath, "a");
   const child = spawn(params.command, params.args, {
     cwd: params.cwd,
     detached: true,
     env: params.env,
+    shell: params.shell,
     stdio: ["ignore", log, log],
+    windowsVerbatimArguments: params.windowsVerbatimArguments,
   });
   child.unref();
   fs.closeSync(log);
@@ -898,14 +939,12 @@ async function startLocalSut(params: {
     "mock-openai",
     10_000,
   );
-  const gateway = spawnLogged(
-    "pnpm",
-    ["openclaw", "gateway", "--port", String(params.gatewayPort)],
-    {
-      cwd: params.repoRoot,
-      env: gatewayEnv({ ...config, sutToken: params.sutToken }),
-    },
-  );
+  const gatewaySpec = createOpenClawGatewaySpawnSpec({
+    env: gatewayEnv({ ...config, sutToken: params.sutToken }),
+    gatewayPort: params.gatewayPort,
+    repoRoot: params.repoRoot,
+  });
+  const gateway = spawnLogged(gatewaySpec.command, gatewaySpec.args, gatewaySpec.options);
   await waitForOutput(gateway.child, /\[gateway\] ready/u, () => gateway.output, "gateway", 60_000);
   return {
     ...config,
@@ -952,12 +991,20 @@ async function startLocalSutDaemon(params: {
     }
     await waitForLog(mockLog, /mock-openai listening/u, "mock-openai", 10_000);
 
+    const gatewayEnvVars = gatewayEnv({ ...config, sutToken: params.sutToken });
+    const gatewaySpec = createOpenClawGatewaySpawnSpec({
+      env: gatewayEnvVars,
+      gatewayPort: params.gatewayPort,
+      repoRoot: params.repoRoot,
+    });
     gatewayPid = spawnDaemon({
-      command: "pnpm",
-      args: ["openclaw", "gateway", "--port", String(params.gatewayPort)],
-      cwd: params.repoRoot,
-      env: gatewayEnv({ ...config, sutToken: params.sutToken }),
+      args: gatewaySpec.args,
+      command: gatewaySpec.command,
+      cwd: gatewaySpec.options.cwd ?? params.repoRoot,
+      env: gatewaySpec.options.env ?? gatewayEnvVars,
       logPath: gatewayLog,
+      shell: gatewaySpec.options.shell,
+      windowsVerbatimArguments: gatewaySpec.options.windowsVerbatimArguments,
     });
     if (!gatewayPid) {
       throw new Error("gateway did not start.");

@@ -1894,7 +1894,7 @@
     "proper-lockfile": "4.1.2",
     "qrcode": "1.5.4",
     "quickjs-wasi": "3.0.0",
-    "rastermill": "0.3.0",
+    "rastermill": "0.3.1",
     "tar": "7.5.15",
     "tree-sitter-bash": "0.25.1",
     "tslog": "4.10.2",
