@@ -10,12 +10,14 @@ export function resolveRuntimeImageSanitization(): { maxDimensionPx: number } | 
 }
 export {
   callGatewayTool,
+  describeImageFile,
   imageResultFromFile,
   jsonResult,
   listNodes,
   readPositiveIntegerParam,
   readStringParam,
   resolveNodeIdFromList,
+  saveMediaBuffer,
   selectDefaultNodeFromList,
 } from "./sdk-setup-tools.js";
 export type { AnyAgentTool, NodeListNode } from "./sdk-setup-tools.js";
