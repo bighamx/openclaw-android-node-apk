@@ -2076,7 +2076,15 @@ export function buildGatewaySessionRow(params: {
         rowContext: params.rowContext,
       }) ?? resolveNonNegativeNumber(transcriptUsage?.estimatedCostUsd));
   const contextTokens = lightweight
-    ? resolvePositiveNumber(entry?.contextTokens)
+    ? (resolvePositiveNumber(entry?.contextTokens) ??
+      resolvePositiveNumber(
+        resolveContextTokensForModel({
+          cfg,
+          provider: rowModelProvider,
+          model: rowModel,
+          allowAsyncLoad: false,
+        }),
+      ))
     : (resolvePositiveNumber(entry?.contextTokens) ??
       resolvePositiveNumber(transcriptUsage?.contextTokens) ??
       resolvePositiveNumber(
@@ -2337,6 +2345,38 @@ export function loadGatewaySessionRow(
     transcriptUsageMaxBytes: options?.transcriptUsageMaxBytes,
     storeChildSessionsByKey,
     ...(options?.agentId ? { agentId: options.agentId } : {}),
+  });
+}
+
+export function buildGatewaySessionInfo(params: {
+  cfg: OpenClawConfig;
+  storePath: string;
+  store: Record<string, SessionEntry>;
+  key: string;
+  entry?: SessionEntry;
+  agentId?: string;
+  now?: number;
+  modelCatalog?: ModelCatalogEntry[];
+}): GatewaySessionRow {
+  const now = params.now ?? Date.now();
+  const storeChildSessionsByKey = buildSingleRowStoreChildSessionsByKey({
+    storePath: params.storePath,
+    store: params.store,
+    key: params.key,
+    now,
+  });
+  return buildGatewaySessionRow({
+    cfg: params.cfg,
+    storePath: params.storePath,
+    store: params.store,
+    key: params.key,
+    entry: params.entry,
+    agentId: params.agentId,
+    modelCatalog: params.modelCatalog,
+    now,
+    storeChildSessionsByKey,
+    skipTranscriptUsageFallback: true,
+    lightweightListRow: true,
   });
 }
 
@@ -2763,7 +2803,9 @@ export async function listSessionsFromStoreAsync(params: {
     // Yield to the event loop between batches so WebSocket heartbeats,
     // channel I/O, and concurrent RPC calls are not starved.
     if ((i + 1) % SESSIONS_LIST_YIELD_BATCH_SIZE === 0 && i + 1 < entries.length) {
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
     }
   }
 

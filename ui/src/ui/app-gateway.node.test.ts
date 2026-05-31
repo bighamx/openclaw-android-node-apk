@@ -139,7 +139,6 @@ function createHost(): TestGatewayHost {
       sessionKey: "main",
       lastActiveSessionKey: "main",
       theme: "system",
-      chatFocusMode: false,
       chatShowThinking: true,
       splitRatio: 0.6,
       navCollapsed: false,
@@ -191,7 +190,7 @@ function createHost(): TestGatewayHost {
     execApprovalBusy: false,
     execApprovalError: null,
     updateAvailable: null,
-    updateComplete: new Promise(() => undefined),
+    updateComplete: new Promise(() => {}),
   } as unknown as TestGatewayHost;
 }
 
