@@ -1439,10 +1439,7 @@ describe("gateway server cron", () => {
       expect(legacyRunRes.ok).toBe(true);
       expectEnqueuedRunPayload(legacyRunRes.payload);
       await legacyFinished;
-      expect(fetchWithSsrFGuardMock).toHaveBeenCalledTimes(2);
-      const legacyCall = getWebhookCall(1);
-      expect(legacyCall.url).toBe("https://legacy.example.invalid/cron-finished");
-      expect(legacyCall.body.jobId).toBe("legacy-notify-job");
+      expect(fetchWithSsrFGuardMock).toHaveBeenCalledTimes(1);
 
       const completionJobId = await addWebhookCronJob({
         ws,
@@ -1457,7 +1454,7 @@ describe("gateway server cron", () => {
         },
       });
       await runCronJobAndWaitForFinished(ws, completionJobId);
-      const completionCall = getWebhookCall(2);
+      const completionCall = getWebhookCall(1);
       expect(completionCall.url).toBe("https://example.invalid/completion-destination");
       expect(completionCall.init.method).toBe("POST");
       expect(completionCall.init.headers?.Authorization).toBe("Bearer cron-webhook-token");
@@ -1485,7 +1482,7 @@ describe("gateway server cron", () => {
       expect(silentRunRes.ok).toBe(true);
       expectEnqueuedRunPayload(silentRunRes.payload);
       await silentFinished;
-      expect(fetchWithSsrFGuardMock).toHaveBeenCalledTimes(3);
+      expect(fetchWithSsrFGuardMock).toHaveBeenCalledTimes(2);
 
       fetchWithSsrFGuardMock.mockClear();
       cronIsolatedRun.mockResolvedValueOnce({ status: "error", summary: "delivery failed" });

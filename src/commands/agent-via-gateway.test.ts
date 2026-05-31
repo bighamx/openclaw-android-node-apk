@@ -10,6 +10,8 @@ import { agentCliCommand, agentViaGatewayTesting } from "./agent-via-gateway.js"
 import type { agentCommand as AgentCommand } from "./agent.js";
 
 const loadConfig = vi.hoisted(() => vi.fn());
+const loadConfigWithShellEnvFallback = vi.hoisted(() => vi.fn());
+const loadRuntimeConfig = vi.hoisted(() => vi.fn());
 const callGateway = vi.hoisted(() => vi.fn());
 const isGatewayCredentialsRequiredError = vi.hoisted(() =>
   vi.fn(
@@ -49,7 +51,7 @@ const jsonRuntime = {
 };
 
 function mockConfig(storePath: string, overrides?: Partial<OpenClawConfig>) {
-  loadConfig.mockReturnValue({
+  const config = {
     agents: {
       defaults: {
         timeoutSeconds: 600,
@@ -63,7 +65,10 @@ function mockConfig(storePath: string, overrides?: Partial<OpenClawConfig>) {
       ...overrides?.session,
     },
     gateway: overrides?.gateway,
-  });
+  };
+  loadConfig.mockReturnValue(config);
+  loadConfigWithShellEnvFallback.mockResolvedValue(config);
+  loadRuntimeConfig.mockReturnValue(config);
 }
 
 async function withTempStore(
@@ -217,7 +222,14 @@ function createGatewayNormalCloseError() {
   });
 }
 
-vi.mock("../config/io.js", () => ({ getRuntimeConfig: loadConfig, loadConfig }));
+vi.mock("../config/gateway-dispatch-config.js", () => ({
+  readGatewayDispatchConfig: loadConfig,
+  readGatewayDispatchConfigWithShellEnvFallback: loadConfigWithShellEnvFallback,
+}));
+vi.mock("../config/io.js", () => ({
+  getRuntimeConfig: loadRuntimeConfig,
+  loadConfig: loadRuntimeConfig,
+}));
 vi.mock("../gateway/call.js", () => ({
   callGateway,
   isGatewayCredentialsRequiredError,
@@ -344,11 +356,7 @@ describe("agentCliCommand", () => {
       expect(params.sessionId).toBeUndefined();
       expect(params.to).toBeUndefined();
       expect(request.config).toBe(loadConfig.mock.results[0]?.value);
-      expect(loadConfig).toHaveBeenCalledWith({
-        skipPluginValidation: true,
-        pin: false,
-        skipShellEnvFallback: true,
-      });
+      expect(loadConfig).toHaveBeenCalledWith();
       expect(agentCommand).not.toHaveBeenCalled();
       expect(loadAgentSessionModuleMock).not.toHaveBeenCalled();
     });
@@ -366,7 +374,8 @@ describe("agentCliCommand", () => {
       };
       loadConfig.mockReset();
       loadConfig.mockReturnValueOnce(fastConfig);
-      loadConfig.mockReturnValueOnce(shellEnvConfig);
+      loadConfigWithShellEnvFallback.mockReset();
+      loadConfigWithShellEnvFallback.mockResolvedValueOnce(shellEnvConfig);
       const authError = new Error("gateway agent requires credentials");
       authError.name = "GatewayCredentialsRequiredError";
       callGateway.mockRejectedValueOnce(authError);
@@ -374,10 +383,10 @@ describe("agentCliCommand", () => {
 
       await agentCliCommand({ message: "hi", sessionKey: "agent:main:incident-42" }, runtime);
 
-      expect(loadConfig.mock.calls).toEqual([
-        [{ skipPluginValidation: true, pin: false, skipShellEnvFallback: true }],
-        [{ skipPluginValidation: true, pin: false, skipShellEnvFallback: false }],
-      ]);
+      expect(loadConfig).toHaveBeenCalledTimes(1);
+      expect(loadConfig).toHaveBeenCalledWith();
+      expect(loadConfigWithShellEnvFallback).toHaveBeenCalledTimes(1);
+      expect(loadConfigWithShellEnvFallback).toHaveBeenCalledWith();
       expect(callGateway).toHaveBeenCalledTimes(2);
       expect(requireRecord(callGateway.mock.calls[0]?.[0], "first gateway request").config).toBe(
         fastConfig,
@@ -396,7 +405,8 @@ describe("agentCliCommand", () => {
       };
       loadConfig.mockReset();
       loadConfig.mockReturnValueOnce(fastConfig);
-      loadConfig.mockReturnValueOnce(fastConfig);
+      loadConfigWithShellEnvFallback.mockReset();
+      loadConfigWithShellEnvFallback.mockResolvedValueOnce(fastConfig);
       const authError = new Error("gateway url override requires explicit credentials");
       authError.name = "GatewayExplicitAuthRequiredError";
       callGateway.mockRejectedValueOnce(authError);
@@ -404,10 +414,10 @@ describe("agentCliCommand", () => {
 
       await agentCliCommand({ message: "hi", sessionKey: "agent:main:incident-42" }, runtime);
 
-      expect(loadConfig.mock.calls).toEqual([
-        [{ skipPluginValidation: true, pin: false, skipShellEnvFallback: true }],
-        [{ skipPluginValidation: true, pin: false, skipShellEnvFallback: false }],
-      ]);
+      expect(loadConfig).toHaveBeenCalledTimes(1);
+      expect(loadConfig).toHaveBeenCalledWith();
+      expect(loadConfigWithShellEnvFallback).toHaveBeenCalledTimes(1);
+      expect(loadConfigWithShellEnvFallback).toHaveBeenCalledWith();
       expect(callGateway).toHaveBeenCalledTimes(2);
     });
   });
@@ -1559,10 +1569,7 @@ describe("agentCliCommand", () => {
         };
         expect(fallbackOpts.sessionId).toMatch(/^gateway-fallback-/);
         expect(fallbackOpts.sessionKey).toBe(`agent:ops:explicit:${fallbackOpts.sessionId}`);
-        expect(loadConfig.mock.calls).toEqual([
-          [{ skipPluginValidation: true, pin: false, skipShellEnvFallback: true }],
-          [{ skipPluginValidation: true, pin: false, skipShellEnvFallback: true }],
-        ]);
+        expect(loadConfig.mock.calls).toEqual([[], []]);
       },
       { agents: { list: [{ id: "ops", default: true }, { id: "main" }] } },
     );
@@ -1750,7 +1757,7 @@ describe("agentCliCommand", () => {
       );
       expect(localOpts.agentId).toBe("ops");
       expect(localOpts.sessionKey).toBe("agent:ops:incident-42");
-      expect(loadConfig).toHaveBeenCalledWith();
+      expect(loadRuntimeConfig).toHaveBeenCalledWith();
     });
   });
 
