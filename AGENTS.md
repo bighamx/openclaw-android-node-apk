@@ -143,6 +143,7 @@ Skills own workflows; root owns hard policy and routing.
 - Maintainer decision closes the cluster: if deciding reported behavior/proposed fix is not planned, comment+close all directly associated open issues/PRs unless explicitly told to keep one open. Associated means linked PRs/issues, duplicates, companion workaround PRs, and the canonical issue for the rejected behavior.
 - Do not leave associated issues open for hypothetical future repros. Close with rationale; ask for a new issue or reopen only if concrete new evidence appears. Close comment states: decision, why, supported alternative, and what evidence would change the decision.
 - Issue/PR numbers need a short summary every time; assume the reader has not opened or read them.
+- Before presenting a batch of issues/PRs, use smart subagents to verify live state and current `main`; omit closed/fixed items, and comment+close items already fixed on `main` when maintainer action is authorized.
 - PR review answer: bug/behavior, URL(s), affected surface, provenance for regressions when traceable, best-fix judgment, evidence from code/tests/CI/current or shipped behavior.
 - PR reviewable findings: post them on the PR, not chat-only, so author sees actionable feedback.
 - Issue/PR final answer: last line is the full GitHub URL.
@@ -230,7 +231,7 @@ Skills own workflows; root owns hard policy and routing.
 - User says `commit`: your changes only. `commit all`: all changes in grouped chunks. `push`: may `git pull --rebase` first.
 - User says `ship it`: commit intended changes, pull --rebase, push.
 - Do not delete/rename unexpected files; ask if blocking, else ignore.
-- Bulk PR close/reopen >5: ask with count/scope.
+- Bulk PR close/reopen >20: ask with count/scope.
 
 ## Security / Release
 
