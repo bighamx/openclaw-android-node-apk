@@ -1,3 +1,4 @@
+import { migrateLegacyNotifyFallback } from "../migrations/legacy-notify.js";
 import { normalizeCronJobIdentityFields } from "../normalize-job-identity.js";
 import { normalizeCronJobInput } from "../normalize.js";
 import { getInvalidPersistedCronJobReason } from "../persisted-shape.js";
@@ -101,11 +102,41 @@ export async function ensureLoaded(
   }
   const loaded = await loadCronStoreWithConfigJobs(state.deps.storePath);
   const loadedJobs = (loaded.store.jobs ?? []) as unknown as CronJob[];
+  const configJobs = loaded.configJobs.map((job, index) =>
+    structuredClone(job ?? (loadedJobs[index] as unknown as Record<string, unknown>) ?? {}),
+  );
+  const legacyNotifyConfigJobIndexes = new Set(
+    configJobs.flatMap((job, index) => (Object.hasOwn(job, "notify") ? [index] : [])),
+  );
+  const notifyMigration = migrateLegacyNotifyFallback({
+    jobs: configJobs,
+    legacyWebhook: state.deps.cronConfig?.webhook,
+  });
+  if (notifyMigration.warnings.length > 0) {
+    state.deps.log.warn(
+      {
+        storePath: state.deps.storePath,
+        warnings: notifyMigration.warnings,
+      },
+      "cron: legacy notify fallback jobs need cron.webhook before migration",
+    );
+  }
   const jobs: CronJob[] = [];
   const quarantinedConfigJobs: QuarantinedCronConfigJob[] = [...loaded.invalidConfigRows];
   for (const [index, job] of loadedJobs.entries()) {
-    const raw = job as unknown as Record<string, unknown>;
-    const rawConfigJob = loaded.configJobs[index] ?? structuredClone(raw);
+    const decodedRaw = job as unknown as Record<string, unknown>;
+    const rawConfigJob = configJobs[index] ?? structuredClone(decodedRaw);
+    const raw = legacyNotifyConfigJobIndexes.has(index)
+      ? {
+          ...decodedRaw,
+          ...rawConfigJob,
+          state: decodedRaw.state,
+          updatedAtMs: decodedRaw.updatedAtMs,
+        }
+      : decodedRaw;
+    if (legacyNotifyConfigJobIndexes.has(index) && !Object.hasOwn(rawConfigJob, "notify")) {
+      delete raw.notify;
+    }
     const sourceIndex = loaded.configJobIndexes[index] ?? index;
     const runtimeEntry = loaded.configJobRuntimeEntries[index];
     normalizeCronJobIdentityFields(raw);
@@ -157,12 +188,14 @@ export async function ensureLoaded(
   };
   state.storeLoadedAtMs = state.deps.nowMs();
 
+  let activeStoreSaved = false;
   if (quarantinedConfigJobs.length > 0) {
     state.pendingQuarantineConfigJobs = quarantinedConfigJobs;
     const quarantinePath = await flushPendingQuarantine(state, state.storeLoadedAtMs);
     if (quarantinePath) {
       try {
         await saveCronStore(state.deps.storePath, state.store);
+        activeStoreSaved = true;
         state.deps.log.warn(
           {
             storePath: state.deps.storePath,
@@ -180,6 +213,24 @@ export async function ensureLoaded(
           "cron: failed to sanitize malformed persisted jobs after quarantine; continuing with quarantined in-memory view",
         );
       }
+    }
+  }
+
+  if (notifyMigration.changed && !activeStoreSaved) {
+    try {
+      await saveCronStore(state.deps.storePath, state.store);
+      state.deps.log.info(
+        { storePath: state.deps.storePath },
+        "cron: migrated legacy notify fallback jobs before scheduler startup",
+      );
+    } catch (error) {
+      state.deps.log.warn(
+        {
+          storePath: state.deps.storePath,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "cron: failed to persist legacy notify migration; using migrated in-memory jobs",
+      );
     }
   }
 

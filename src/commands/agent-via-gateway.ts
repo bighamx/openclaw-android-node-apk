@@ -13,10 +13,13 @@ import { getRuntimeConfig } from "../config/io.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   callGateway,
+  isGatewayCredentialsRequiredError,
+  isGatewayExplicitAuthRequiredError,
   isGatewayTransportError,
   randomIdempotencyKey,
   type GatewayRequestFunction,
 } from "../gateway/call.js";
+import { isGatewaySecretRefUnavailableError } from "../gateway/credentials.js";
 import { ADMIN_SCOPE } from "../gateway/operator-scopes.js";
 import { parseStrictNonNegativeInteger } from "../infra/parse-finite-number.js";
 import { routeLogsToStderr } from "../logging/console.js";
@@ -175,10 +178,14 @@ function resolveGatewayAgentTimeoutMs(timeoutSeconds: number): number {
   return resolveTimerTimeoutMs((timeoutSeconds + 30) * 1000, 10_000, 10_000);
 }
 
-function getGatewayDispatchConfig(): OpenClawConfig {
+function getGatewayDispatchConfig(options?: { skipShellEnvFallback?: boolean }): OpenClawConfig {
   // Scoped gateway turns need core agent/session/gateway fields only. The
   // running gateway owns plugin validation and plugin metadata freshness.
-  return getRuntimeConfig({ skipPluginValidation: true, pin: false });
+  return getRuntimeConfig({
+    skipPluginValidation: true,
+    pin: false,
+    skipShellEnvFallback: options?.skipShellEnvFallback ?? true,
+  });
 }
 
 async function formatPayloadForLog(payload: {
@@ -216,6 +223,14 @@ function isControlCommandThatMustNotFallback(opts: Pick<AgentCliOpts, "message">
 
 function isSessionResetCommand(message: string): boolean {
   return /^\/(?:new|reset)(?:\s|$)/i.test(message.trim());
+}
+
+function shouldRetryGatewayDispatchWithShellEnvFallback(err: unknown): boolean {
+  return (
+    isGatewayCredentialsRequiredError(err) ||
+    isGatewayExplicitAuthRequiredError(err) ||
+    isGatewaySecretRefUnavailableError(err)
+  );
 }
 
 function isGatewayAgentEmbeddedFallbackError(err: unknown): boolean {
@@ -600,7 +615,7 @@ async function agentViaGatewayCommand(
     );
   }
 
-  const cfg = getGatewayDispatchConfig();
+  let cfg = getGatewayDispatchConfig();
   const agentIdRaw = opts.agent?.trim();
   const agentId = agentIdRaw ? normalizeAgentId(agentIdRaw) : undefined;
   if (agentId) {
@@ -646,9 +661,9 @@ async function agentViaGatewayCommand(
   let acceptedGatewayRun = false;
   let activeConnectionAbortAttempted = false;
   let activeConnectionAbortSucceeded = false;
-  let response: GatewayAgentResponse;
-  try {
-    response = await withProgress(
+  let response: GatewayAgentResponse | undefined;
+  const dispatchGatewayAgentCall = async (activeCfg: OpenClawConfig) =>
+    await withProgress(
       {
         label: "Waiting for agent reply…",
         indeterminate: true,
@@ -678,7 +693,7 @@ async function agentViaGatewayCommand(
           },
           expectFinal: true,
           timeoutMs: gatewayTimeoutMs,
-          config: cfg,
+          config: activeCfg,
           signal: signalBridge.signal,
           onAccepted: (payload) => {
             acceptedGatewayRun = true;
@@ -699,22 +714,41 @@ async function agentViaGatewayCommand(
           ...gatewayIdentity,
         }),
     );
-  } catch (err) {
-    if (
-      isAbortError(err) &&
-      !activeConnectionAbortSucceeded &&
-      (acceptedGatewayRun || activeConnectionAbortAttempted)
-    ) {
-      await abortAcceptedGatewayAgentRunWithGatewayCall({
-        runId: acceptedRunId,
-        sessionKey: acceptedSessionKey,
-        signal: signalBridge.getReceivedSignal(),
-        runtime,
-        gatewayIdentity,
-        config: cfg,
-      });
+
+  let retriedWithShellEnvFallback = false;
+  for (;;) {
+    try {
+      response = await dispatchGatewayAgentCall(cfg);
+      break;
+    } catch (err) {
+      if (
+        !retriedWithShellEnvFallback &&
+        !acceptedGatewayRun &&
+        shouldRetryGatewayDispatchWithShellEnvFallback(err)
+      ) {
+        retriedWithShellEnvFallback = true;
+        cfg = getGatewayDispatchConfig({ skipShellEnvFallback: false });
+        continue;
+      }
+      if (
+        isAbortError(err) &&
+        !activeConnectionAbortSucceeded &&
+        (acceptedGatewayRun || activeConnectionAbortAttempted)
+      ) {
+        await abortAcceptedGatewayAgentRunWithGatewayCall({
+          runId: acceptedRunId,
+          sessionKey: acceptedSessionKey,
+          signal: signalBridge.getReceivedSignal(),
+          runtime,
+          gatewayIdentity,
+          config: cfg,
+        });
+      }
+      throw err;
     }
-    throw err;
+  }
+  if (!response) {
+    throw new Error("gateway agent call did not return a response");
   }
 
   if (opts.json) {

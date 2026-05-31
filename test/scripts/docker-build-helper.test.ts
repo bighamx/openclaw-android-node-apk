@@ -1776,6 +1776,12 @@ test -f "$TMPDIR/docker-cmd-seen"
     );
     expect(runner).toContain('docker_e2e_docker_cmd rm -f "$CONTAINER_NAME"');
     expect(runner).not.toMatch(/(^|\n)docker run --rm/u);
+    expect(runner).toContain(
+      "keeps unauthorized plugin-owned binding slash replies suppressed while routed to the bound plugin",
+    );
+    expect(runner).not.toContain(
+      "keeps unauthorized plugin-owned binding slash text routed to the bound plugin",
+    );
     expect(runner).toContain("expected focused Vitest summary for exactly 3 passed tests");
     expect(dockerfile).toContain("OPENCLAW_DISABLE_BUNDLED_PLUGIN_POSTINSTALL=1");
     expect(dockerfile).toContain(

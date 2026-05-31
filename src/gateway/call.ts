@@ -155,6 +155,13 @@ export class GatewayCredentialsRequiredError extends Error {
   }
 }
 
+export class GatewayExplicitAuthRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GatewayExplicitAuthRequiredError";
+  }
+}
+
 export type GatewayTransportErrorJson = {
   ok: false;
   error: {
@@ -230,6 +237,12 @@ export function isGatewayCredentialsRequiredError(
   }
   const candidate = value as Partial<GatewayCredentialsRequiredError>;
   return typeof candidate.method === "string" && typeof candidate.configPath === "string";
+}
+
+export function isGatewayExplicitAuthRequiredError(
+  value: unknown,
+): value is GatewayExplicitAuthRequiredError {
+  return value instanceof Error && value.name === "GatewayExplicitAuthRequiredError";
 }
 
 const defaultCreateGatewayClient = (opts: GatewayClientOptions) => new GatewayClient(opts);
@@ -497,7 +510,7 @@ export function ensureExplicitGatewayAuth(params: {
   ]
     .filter(Boolean)
     .join("\n");
-  throw new Error(message);
+  throw new GatewayExplicitAuthRequiredError(message);
 }
 
 type GatewayRemoteSettings = {
