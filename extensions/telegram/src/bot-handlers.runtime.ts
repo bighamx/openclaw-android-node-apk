@@ -123,7 +123,7 @@ import {
   buildTelegramConversationContext,
   buildTelegramReplyChain,
   createTelegramMessageCache,
-  resolveTelegramMessageCachePath,
+  resolveTelegramMessageCacheScope,
   type TelegramCachedMessageNode,
   type TelegramReplyChainEntry,
 } from "./message-cache.js";
@@ -142,6 +142,7 @@ import {
   resolveModelSelection,
   type ProviderInfo,
 } from "./model-buttons.js";
+import { parseTelegramOpaqueCallbackData } from "./native-command-callback-data.js";
 import { buildInlineKeyboard } from "./send.js";
 
 export const registerTelegramHandlers = ({
@@ -206,9 +207,7 @@ export const registerTelegramHandlers = ({
   const mediaGroupBuffer = new Map<string, BufferedMediaGroupEntry>();
   const mediaGroupProcessingByKey = new Map<string, Promise<void>>();
   const messageCache = createTelegramMessageCache({
-    persistedPath: resolveTelegramMessageCachePath(
-      telegramDeps.resolveStorePath(cfg.session?.store),
-    ),
+    scope: resolveTelegramMessageCacheScope(telegramDeps.resolveStorePath(cfg.session?.store)),
   });
   const messageDispatchReplayGuard = createTelegramMessageDispatchReplayGuard({
     storePath: telegramDeps.resolveStorePath(cfg.session?.store),
@@ -2053,8 +2052,12 @@ export const registerTelegramHandlers = ({
       const isGroup =
         callbackMessage.chat.type === "group" || callbackMessage.chat.type === "supergroup";
       const nativeCallbackCommand = parseTelegramNativeCommandCallbackData(data);
-      const callbackCommandText = nativeCallbackCommand ?? data;
-      const approvalCallback = parseExecApprovalCommandText(callbackCommandText);
+      const opaqueCallbackData = parseTelegramOpaqueCallbackData(data);
+      const callbackCommandText = nativeCallbackCommand ?? (opaqueCallbackData ? "" : data);
+      const pluginCallbackData = opaqueCallbackData ?? data;
+      const approvalCallback = parseExecApprovalCommandText(
+        nativeCallbackCommand ?? (opaqueCallbackData ? "" : data),
+      );
       const isApprovalCallback = approvalCallback !== null;
       const inlineButtonsScope = resolveTelegramInlineButtonsScope({
         cfg,
@@ -2143,7 +2146,7 @@ export const registerTelegramHandlers = ({
       }
       const runtimeCfg = telegramDeps.getRuntimeConfig();
       const pluginCallback = await dispatchTelegramPluginInteractiveHandler({
-        data,
+        data: pluginCallbackData,
         callbackId: callback.id,
         ctx: {
           accountId,
@@ -2337,6 +2340,10 @@ export const registerTelegramHandlers = ({
           }
           logVerbose(`telegram: failed to clear approval callback buttons: ${errStr}`);
         }
+        return;
+      }
+
+      if (opaqueCallbackData) {
         return;
       }
 

@@ -79,6 +79,7 @@ const NUL_MARKER_RE = /(?:\^@|\\0|\\x00|\\u0000|null\s*byte|nul\s*byte)/i;
 const QMD_EMBED_BACKOFF_BASE_MS = 60_000;
 const QMD_EMBED_BACKOFF_MAX_MS = 60 * 60 * 1000;
 const QMD_EMBED_LOCK_MIN_WAIT_MS = 15 * 60 * 1000;
+const QMD_WRITE_LOCK_MIN_WAIT_MS = 5 * 60 * 1000;
 const QMD_EMBED_LOCK_RETRY_TEMPLATE = {
   factor: 1.2,
   minTimeout: 250,
@@ -192,20 +193,37 @@ function resolveStableJitterMs(params: { seed: string; windowMs: number }): numb
   return bucket % (Math.floor(params.windowMs) + 1);
 }
 
-function resolveQmdEmbedLockOptions(embedTimeoutMs: number) {
-  const expectedEmbedMs = Math.max(1, embedTimeoutMs);
-  const waitBudgetMs = Math.max(QMD_EMBED_LOCK_MIN_WAIT_MS, expectedEmbedMs * 6);
+function resolveQmdWriteLockOptions(expectedMs: number, minWaitMs: number) {
+  const expected = Math.max(1, expectedMs);
+  const waitBudgetMs = Math.max(minWaitMs, expected * 6);
   return {
     retries: {
       retries: Math.max(60, Math.ceil(waitBudgetMs / QMD_EMBED_LOCK_RETRY_TEMPLATE.maxTimeout)),
       ...QMD_EMBED_LOCK_RETRY_TEMPLATE,
     },
-    stale: Math.max(QMD_EMBED_LOCK_MIN_WAIT_MS, expectedEmbedMs * 2),
+    stale: Math.max(minWaitMs, expected * 2),
   };
 }
 
 export function resolveQmdMcporterSearchProcessTimeoutMs(timeoutMs: number): number {
   return Math.max(addTimerTimeoutGraceMs(timeoutMs, 2_000) ?? 1, 5_000);
+}
+
+// Cross-process serialization for qmd embeds (heavy ML work, serialized globally).
+function resolveQmdEmbedLockOptions(embedTimeoutMs: number) {
+  return resolveQmdWriteLockOptions(embedTimeoutMs, QMD_EMBED_LOCK_MIN_WAIT_MS);
+}
+
+// One per-store write lock shared by the update and embed phases (both write the
+// same qmd index.sqlite), so a foreground `memory search` dirty-sync and a
+// background gateway update/embed never write the same store at once
+// (writer-vs-writer SQLITE_BUSY, #66339). Sized to the slower of the two writes
+// so a contending caller waits for the in-flight write instead of erroring.
+function resolveQmdStoreWriteLockOptions(updateTimeoutMs: number, embedTimeoutMs: number) {
+  return resolveQmdWriteLockOptions(
+    Math.max(updateTimeoutMs, embedTimeoutMs),
+    QMD_WRITE_LOCK_MIN_WAIT_MS,
+  );
 }
 
 function shouldIgnoreMemoryWatchPath(watchPath: string): boolean {
@@ -1534,12 +1552,19 @@ export class QmdMemoryManager implements MemorySearchManager {
       }
       if (this.shouldRunEmbed(force)) {
         try {
-          await this.withQmdEmbedLock(async () => {
-            await this.runQmd(["embed"], {
-              timeoutMs: this.qmd.update.embedTimeoutMs,
-              discardOutput: true,
-            });
-          });
+          // Wait for embed capacity before taking the per-store write lock. The
+          // store lock should protect active qmd writes only, not time spent queued
+          // behind unrelated agents' embeds.
+          await this.withQmdEmbedQueue(() =>
+            this.withQmdGlobalEmbedLock(() =>
+              this.withQmdStoreWriteLock(async () => {
+                await this.runQmd(["embed"], {
+                  timeoutMs: this.qmd.update.embedTimeoutMs,
+                  discardOutput: true,
+                });
+              }),
+            ),
+          );
           this.lastEmbedAt = Date.now();
           this.embedBackoffUntil = null;
           this.embedFailureCount = 0;
@@ -1748,8 +1773,7 @@ export class QmdMemoryManager implements MemorySearchManager {
     });
   }
 
-  private async withQmdEmbedLock<T>(task: () => Promise<T>): Promise<T> {
-    const lockPath = path.join(this.stateDir, "qmd", "embed.lock");
+  private async withQmdEmbedQueue<T>(task: () => Promise<T>): Promise<T> {
     const queue = getQmdEmbedQueueState();
     const previous = queue.tail;
     let releaseCurrent!: () => void;
@@ -1762,14 +1786,38 @@ export class QmdMemoryManager implements MemorySearchManager {
     );
     await previous.catch(() => undefined);
     try {
-      return await withFileLock(
-        lockPath,
-        resolveQmdEmbedLockOptions(this.qmd.update.embedTimeoutMs),
-        task,
-      );
+      return await task();
     } finally {
       releaseCurrent();
     }
+  }
+
+  private async withQmdGlobalEmbedLock<T>(task: () => Promise<T>): Promise<T> {
+    const lockPath = path.join(this.stateDir, "qmd", "embed.lock");
+    return await withFileLock(
+      lockPath,
+      resolveQmdEmbedLockOptions(this.qmd.update.embedTimeoutMs),
+      task,
+    );
+  }
+
+  private async withQmdStoreWriteLock<T>(task: () => Promise<T>): Promise<T> {
+    // One per-store cross-process write lock guarding every qmd write (update and
+    // embed) against the same index.sqlite, so a foreground `memory search`
+    // dirty-sync and a background gateway update/embed never write concurrently
+    // (writer-vs-writer SQLITE_BUSY, #66339). It lives beside the agent's qmd dir,
+    // so writes for different agents still run in parallel. Update takes only this
+    // lock; embed first waits for global embed capacity, then takes this lock for
+    // the active qmd write.
+    const lockPath = path.join(this.agentStateDir, "qmd-write.lock");
+    return await withFileLock(
+      lockPath,
+      resolveQmdStoreWriteLockOptions(
+        this.qmd.update.updateTimeoutMs,
+        this.qmd.update.embedTimeoutMs,
+      ),
+      task,
+    );
   }
 
   private async withQmdUpdateQueue<T>(task: () => Promise<T>): Promise<T> {
@@ -1796,7 +1844,11 @@ export class QmdMemoryManager implements MemorySearchManager {
       if (waitResult === "closed") {
         return undefined as T;
       }
-      return await task();
+      // Serialize the update write across processes (gateway + CLI). The in-process
+      // queue above is keyed per store but a separate process cannot see it. The
+      // shared per-store write lock also serializes against the embed write below,
+      // which targets the same index.sqlite.
+      return await this.withQmdStoreWriteLock(task);
     } finally {
       releaseCurrent();
       void next.finally(() => {

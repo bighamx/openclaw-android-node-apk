@@ -5,10 +5,12 @@ import {
 } from "openclaw/plugin-sdk/channel-test-helpers";
 import type { TelegramGroupConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { GetReplyOptions, MsgContext } from "openclaw/plugin-sdk/reply-runtime";
+import { withEnvAsync } from "openclaw/plugin-sdk/test-env";
 import { sanitizeTerminalText } from "openclaw/plugin-sdk/test-fixtures";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TelegramBotOptions } from "./bot.types.js";
 import type { TelegramGetChat } from "./bot/types.js";
+import { buildTelegramOpaqueCallbackData } from "./native-command-callback-data.js";
 const harness = await import("./bot.create-telegram-bot.test-harness.js");
 const pluginStateTestRuntime = await import("openclaw/plugin-sdk/plugin-state-test-runtime");
 const conversationRuntime = await import("openclaw/plugin-sdk/conversation-runtime");
@@ -143,29 +145,6 @@ function installPerKeySequentializer(): void {
 
 function mockTelegramConfigWrites() {
   return vi.spyOn(configMutation, "mutateConfigFile").mockResolvedValue({} as never);
-}
-
-async function withEnvAsync(env: Record<string, string | undefined>, fn: () => Promise<void>) {
-  const previous = new Map<string, string | undefined>();
-  for (const [key, value] of Object.entries(env)) {
-    previous.set(key, process.env[key]);
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-  try {
-    await fn();
-  } finally {
-    for (const [key, value] of previous) {
-      if (value === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
-    }
-  }
 }
 
 async function flushTelegramTestMicrotasks() {
@@ -1061,6 +1040,34 @@ describe("createTelegramBot", () => {
     const payload = requireValue(replySpy.mock.calls.at(0), "replySpy call")[0];
     expect(payload.Body).toContain("cmd:option_a");
     expect(answerCallbackQuerySpy).toHaveBeenCalledWith("cbq-1");
+  });
+
+  it("does not route opaque callback_query payloads as synthetic commands", async () => {
+    createTelegramBot({ token: "tok" });
+    const callbackHandler = requireValue(
+      onSpy.mock.calls.find((call) => call[0] === "callback_query")?.[1] as
+        | ((ctx: Record<string, unknown>) => Promise<void>)
+        | undefined,
+      "callback_query handler",
+    );
+
+    await callbackHandler({
+      callbackQuery: {
+        id: "cbq-opaque-1",
+        data: buildTelegramOpaqueCallbackData("/codex permissions yolo"),
+        from: { id: 9, first_name: "Ada", username: "ada_bot" },
+        message: {
+          chat: { id: 1234, type: "private" },
+          date: 1736380800,
+          message_id: 10,
+        },
+      },
+      me: { username: "openclaw_bot" },
+      getFile: async () => ({ download: async () => new Uint8Array() }),
+    });
+
+    expect(replySpy).not.toHaveBeenCalled();
+    expect(answerCallbackQuerySpy).toHaveBeenCalledWith("cbq-opaque-1");
   });
 
   it("toggles OC_MULTI buttons without routing through the generic callback message path", async () => {
