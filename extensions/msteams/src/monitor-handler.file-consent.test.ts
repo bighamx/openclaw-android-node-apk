@@ -139,18 +139,6 @@ function requirePendingUpload(uploadId: string) {
   }
   return upload;
 }
-
-function expectInvokeResponse(sendActivity: ReturnType<typeof vi.fn>): void {
-  expect(
-    sendActivity.mock.calls.some(
-      ([activity]) =>
-        typeof activity === "object" &&
-        activity !== null &&
-        (activity as { type?: unknown }).type === "invokeResponse",
-    ),
-  ).toBe(true);
-}
-
 function expectPendingUploadFields(uploadId: string): void {
   const upload = requirePendingUpload(uploadId);
   expect(upload.conversationId).toBe("19:victim@thread.v2");

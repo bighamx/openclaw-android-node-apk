@@ -2554,7 +2554,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
             reason: "deleted",
           })
         : [];
-    const archived = archivedTranscripts.map((entry) => entry.archivedPath);
+    const archived = archivedTranscripts.map((entryLocal) => entryLocal.archivedPath);
     if (deleted) {
       emitGatewaySessionEndPluginHook({
         cfg,

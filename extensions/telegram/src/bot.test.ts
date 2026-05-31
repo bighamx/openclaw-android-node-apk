@@ -27,7 +27,7 @@ const {
   replySpy,
   resolveExecApprovalSpy,
   sendMessageSpy,
-  setSessionStoreEntriesForTest,
+  setSessionStoreEntriesForTest: _setSessionStoreEntriesForTest,
   setMyCommandsSpy,
   telegramBotDepsForTest,
   telegramBotRuntimeForTest,

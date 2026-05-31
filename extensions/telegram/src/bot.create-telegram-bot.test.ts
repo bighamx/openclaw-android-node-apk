@@ -1,8 +1,4 @@
-import {
-  escapeRegExp,
-  formatEnvelopeTimestamp,
-  stripAnsi,
-} from "openclaw/plugin-sdk/channel-test-helpers";
+import { escapeRegExp, formatEnvelopeTimestamp } from "openclaw/plugin-sdk/channel-test-helpers";
 import type { TelegramGroupConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { GetReplyOptions, MsgContext } from "openclaw/plugin-sdk/reply-runtime";
 import { withEnvAsync } from "openclaw/plugin-sdk/test-env";
@@ -262,7 +258,7 @@ describe("createTelegramBot", () => {
       error: vi.fn(),
     } as unknown as NonNullable<TelegramBotOptions["runtime"]>;
     const bot = createTelegramBot({ token: "tok", runtime });
-    const catchMock = bot.catch as unknown as {
+    const catchMock = bot["catch"] as unknown as {
       mock: { calls: Array<[(err: unknown) => void]> };
     };
     const errorHandler = catchMock.mock.calls.at(0)?.[0];

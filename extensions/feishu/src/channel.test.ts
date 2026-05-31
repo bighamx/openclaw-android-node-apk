@@ -279,7 +279,7 @@ describe("feishuPlugin actions", () => {
   });
 
   it("honors the selected Feishu account during discovery", () => {
-    const cfg = {
+    const cfgLocal = {
       channels: {
         feishu: {
           enabled: true,
@@ -302,7 +302,7 @@ describe("feishuPlugin actions", () => {
       },
     } as OpenClawConfig;
 
-    expect(getDescribedActions(cfg, "default")).toEqual([
+    expect(getDescribedActions(cfgLocal, "default")).toEqual([
       "send",
       "read",
       "edit",
@@ -314,7 +314,7 @@ describe("feishuPlugin actions", () => {
       "channel-info",
       "channel-list",
     ]);
-    expect(getDescribedActions(cfg, "work")).toEqual([
+    expect(getDescribedActions(cfgLocal, "work")).toEqual([
       "send",
       "read",
       "edit",

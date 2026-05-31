@@ -390,7 +390,7 @@ export function buildDiscordComponentMessage(params: {
     const lastChild = containerChildren.at(-1);
     if (lastChild instanceof Row) {
       const row = lastChild;
-      const hasSelect = row.components.some((entry) => isSelectComponent(entry));
+      const hasSelect = row.components.some((entryLocal) => isSelectComponent(entryLocal));
       if (row.components.length < 5 && !hasSelect) {
         row.addComponent(component as Button);
       } else {

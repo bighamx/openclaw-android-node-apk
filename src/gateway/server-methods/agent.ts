@@ -1598,24 +1598,26 @@ export const agentHandlers: GatewayRequestHandlers = {
           ...(agentId ? { agentId } : {}),
           clone: false,
         };
-        const { cfg, storePath, entry, canonicalKey } = loadSessionEntry(
-          requestedSessionKey,
-          sessionLoadOptions,
-        );
-        cfgForAgent = cfg;
+        const {
+          cfg: cfgLocal,
+          storePath,
+          entry,
+          canonicalKey,
+        } = loadSessionEntry(requestedSessionKey, sessionLoadOptions);
+        cfgForAgent = cfgLocal;
         const sessionMaintenanceConfig = resolveMaintenanceConfigFromInput(
-          cfg.session?.maintenance,
+          cfgLocal.session?.maintenance,
         );
         const canonicalSessionAgentId =
           canonicalKey === "global"
-            ? (agentId ?? resolveDefaultAgentId(cfg))
+            ? (agentId ?? resolveDefaultAgentId(cfgLocal))
             : resolveAgentIdFromSessionKey(canonicalKey);
         const now = Date.now();
         const resetPolicy = resolveSessionResetPolicy({
-          sessionCfg: cfg.session,
+          sessionCfg: cfgLocal.session,
           resetType: resolveSessionResetType({ sessionKey: canonicalKey }),
           resetOverride: resolveChannelResetConfig({
-            sessionCfg: cfg.session,
+            sessionCfg: cfgLocal.session,
             channel: entry?.lastChannel ?? entry?.channel ?? request.channel,
           }),
         });
@@ -1689,7 +1691,7 @@ export const agentHandlers: GatewayRequestHandlers = {
           freshEntry: SessionEntry | undefined,
         ): AgentSessionPatchBuild => {
           const freshSpawnedBy = canonicalizeSpawnedByForAgent(
-            cfg,
+            cfgLocal,
             sessionAgent,
             freshEntry?.spawnedBy,
           );
@@ -1823,7 +1825,10 @@ export const agentHandlers: GatewayRequestHandlers = {
         resolvedSessionKey = canonicalSessionKey;
         const sessionAgentId = canonicalSessionAgentId;
         resolvedSessionAgentId = sessionAgentId;
-        const mainSessionKey = resolveAgentMainSessionKey({ cfg, agentId: sessionAgentId });
+        const mainSessionKey = resolveAgentMainSessionKey({
+          cfg: cfgLocal,
+          agentId: sessionAgentId,
+        });
         // Legacy stores may lack sessionStartedAt entirely. Pre-compute a
         // JSONL-transcript-derived candidate outside the store lock; the
         // updater below only writes it when the freshly-loaded store still
@@ -1851,7 +1856,7 @@ export const agentHandlers: GatewayRequestHandlers = {
             (store) => {
               const storeKeysBeforeMigration = new Set(Object.keys(store));
               const preMigrationTarget = resolveGatewaySessionStoreTarget({
-                cfg,
+                cfg: cfgLocal,
                 key: requestedStoreKey,
                 store,
                 ...(sessionAgentId ? { agentId: sessionAgentId } : {}),
@@ -1861,7 +1866,7 @@ export const agentHandlers: GatewayRequestHandlers = {
                   storeKey !== preMigrationTarget.canonicalKey && Object.hasOwn(store, storeKey),
               );
               const { target, primaryKey } = migrateAndPruneGatewaySessionStoreKey({
-                cfg,
+                cfg: cfgLocal,
                 key: requestedStoreKey,
                 store,
               });
@@ -1880,7 +1885,7 @@ export const agentHandlers: GatewayRequestHandlers = {
               const sendPolicy =
                 request.deliver === true
                   ? resolveSendPolicy({
-                      cfg,
+                      cfg: cfgLocal,
                       entry: merged,
                       sessionKey: canonicalKey,
                       channel: merged?.channel,
@@ -1935,7 +1940,7 @@ export const agentHandlers: GatewayRequestHandlers = {
         ) {
           const previousSessionId = rotatedSessionId ? entry?.sessionId : undefined;
           const sessionLifecycleTransition: AgentSendSessionLifecycleTransition = {
-            cfg,
+            cfg: cfgLocal,
             sessionKey: canonicalSessionKey,
             sessionId: resolvedSessionId,
             storePath,
@@ -1954,7 +1959,7 @@ export const agentHandlers: GatewayRequestHandlers = {
         }
         if (request.deliver === true) {
           const sendPolicy = resolveSendPolicy({
-            cfg,
+            cfg: cfgLocal,
             entry: sessionEntry,
             sessionKey: canonicalKey,
             channel: sessionEntry?.channel,

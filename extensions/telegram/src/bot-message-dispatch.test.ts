@@ -930,13 +930,13 @@ describe("dispatchTelegramMessage draft streaming", () => {
       textSnapshot: "first page",
       retain: true,
     });
-    expect(bot.api.deleteMessage).not.toHaveBeenCalled();
+    expect(bot.api["deleteMessage"]).not.toHaveBeenCalled();
 
     streamParams.onSupersededPreview?.({
       messageId: 18,
       textSnapshot: "stale page",
     });
-    await vi.waitFor(() => expect(bot.api.deleteMessage).toHaveBeenCalledWith(123, 18));
+    await vi.waitFor(() => expect(bot.api["deleteMessage"]).toHaveBeenCalledWith(123, 18));
   });
 
   it("queues final Telegram replies through outbound delivery when available", async () => {
@@ -3866,7 +3866,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
     });
 
     expect(generateTopicLabel).not.toHaveBeenCalled();
-    expect(bot.api.editForumTopic).not.toHaveBeenCalled();
+    expect(bot.api["editForumTopic"]).not.toHaveBeenCalled();
   });
 
   it("does not emit a silent-reply fallback when the dispatcher reports a queued final reply", async () => {

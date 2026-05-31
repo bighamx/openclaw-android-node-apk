@@ -635,15 +635,15 @@ export function createTelegramMessageCache(params?: {
     return entry;
   };
 
-  const listChatMessages = async (params: {
+  const listChatMessages = async (paramsLocal: {
     accountId: string;
     chatId: string | number;
     threadId?: number;
   }) => {
     await hydrateMessageCacheBucket(bucket, maxMessages, scopeKey);
-    const prefix = telegramMessageCacheKeyPrefix({ scopeKey, ...params });
-    const normalizedThreadId = normalizeTelegramCacheThreadId(params.threadId);
-    if (params.threadId != null && normalizedThreadId === undefined) {
+    const prefix = telegramMessageCacheKeyPrefix({ scopeKey, ...paramsLocal });
+    const normalizedThreadId = normalizeTelegramCacheThreadId(paramsLocal.threadId);
+    if (paramsLocal.threadId != null && normalizedThreadId === undefined) {
       return [];
     }
     const threadId = normalizedThreadId !== undefined ? String(normalizedThreadId) : undefined;

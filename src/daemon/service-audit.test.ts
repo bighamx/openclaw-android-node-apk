@@ -22,7 +22,7 @@ function hasIssue(
 function createGatewayAudit({
   expectedGatewayToken,
   expectedManagedServiceEnvKeys,
-  path = "/usr/local/bin:/usr/bin:/bin",
+  path: pathLocal = "/usr/local/bin:/usr/bin:/bin",
   serviceToken,
   extraEnvironment,
   environmentValueSources,
@@ -42,7 +42,7 @@ function createGatewayAudit({
     command: {
       programArguments: ["/usr/bin/node", "gateway"],
       environment: {
-        PATH: path,
+        PATH: pathLocal,
         ...(serviceToken ? { OPENCLAW_GATEWAY_TOKEN: serviceToken } : {}),
         ...extraEnvironment,
       },

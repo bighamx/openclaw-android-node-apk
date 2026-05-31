@@ -180,14 +180,14 @@ export function buildSlackInteractiveBlocks(
       });
       return state;
     }
-    const options = block.options
+    const optionsLocal = block.options
       .map((option) => ({
         label: option.label,
         value: resolveSlackControlValue(option),
       }))
       .filter(isRenderableSlackOption)
       .slice(0, SLACK_STATIC_SELECT_OPTIONS_MAX);
-    if (options.length === 0) {
+    if (optionsLocal.length === 0) {
       return state;
     }
     state.blocks.push({
@@ -205,7 +205,7 @@ export function buildSlackInteractiveBlocks(
             ),
             emoji: true,
           },
-          options: options.map((option, _choiceIndex) => ({
+          options: optionsLocal.map((option, _choiceIndex) => ({
             text: {
               type: "plain_text",
               text: truncateSlackText(option.label, SLACK_PLAIN_TEXT_MAX),

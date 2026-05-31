@@ -1460,11 +1460,11 @@ export const registerTelegramHandlers = ({
     context: TelegramEventAuthorizationContext;
     cfg: OpenClawConfig;
   }): Promise<boolean> => {
-    const { chatId, isGroup, senderId, senderUsername, context, cfg } = params;
+    const { chatId, isGroup, senderId, senderUsername, context, cfg: cfgLocal } = params;
     const dmAllowFrom = context.groupAllowOverride ?? allowFrom;
-    if (isTelegramCommandsAllowFromConfigured(cfg)) {
+    if (isTelegramCommandsAllowFromConfigured(cfgLocal)) {
       return resolveTelegramCommandAuthorization({
-        cfg,
+        cfg: cfgLocal,
         accountId,
         chatId,
         isGroup,
@@ -1475,7 +1475,7 @@ export const registerTelegramHandlers = ({
     }
 
     const expandedDmAllowFrom = await expandTelegramAllowFromWithAccessGroups({
-      cfg,
+      cfg: cfgLocal,
       allowFrom: dmAllowFrom,
       accountId,
       senderId,
@@ -1488,7 +1488,7 @@ export const registerTelegramHandlers = ({
     return (
       await resolveTelegramCommandIngressAuthorization({
         accountId,
-        cfg,
+        cfg: cfgLocal,
         dmPolicy: context.dmPolicy,
         isGroup,
         chatId,
@@ -1707,10 +1707,10 @@ export const registerTelegramHandlers = ({
     const isCommandLike = (text ?? "").trim().startsWith("/");
     if (text && !isCommandLike && !isAbortControlMessage) {
       const nowMs = Date.now();
-      const senderId = msg.from?.id != null ? String(msg.from.id) : "unknown";
+      const senderIdValue = msg.from?.id != null ? String(msg.from.id) : "unknown";
       // Use resolvedThreadId for forum groups, dmThreadId for DM topics
       const threadId = resolvedThreadId ?? dmThreadId;
-      const key = `text:${chatId}:${threadId ?? "main"}:${senderId}`;
+      const key = `text:${chatId}:${threadId ?? "main"}:${senderIdValue}`;
       const existing = textFragmentBuffer.get(key);
 
       if (existing) {
@@ -1769,9 +1769,9 @@ export const registerTelegramHandlers = ({
         return;
       }
     } else if (text && isAbortControlMessage && (await isAuthorizedAbortControlMessage())) {
-      const senderId = msg.from?.id != null ? String(msg.from.id) : "unknown";
+      const senderIdLocal = msg.from?.id != null ? String(msg.from.id) : "unknown";
       const threadId = resolvedThreadId ?? dmThreadId;
-      const key = `text:${chatId}:${threadId ?? "main"}:${senderId}`;
+      const key = `text:${chatId}:${threadId ?? "main"}:${senderIdLocal}`;
       const existing = textFragmentBuffer.get(key);
       if (existing) {
         clearTimeout(existing.timer);

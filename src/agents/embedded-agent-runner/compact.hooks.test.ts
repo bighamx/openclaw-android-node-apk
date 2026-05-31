@@ -2164,6 +2164,46 @@ describe("compactEmbeddedAgentSession hooks (ownsCompaction engine)", () => {
     expect(hookRunner.runAfterCompaction).not.toHaveBeenCalled();
   });
 
+  it("forces engine-owned compaction for preflight-required budget compaction", async () => {
+    const result = await compactEmbeddedAgentSession(
+      wrappedCompactionArgs({
+        trigger: "budget",
+        forcePreflight: true,
+        preflightRequired: true,
+        preflightCompactionTrigger: "transcript_bytes",
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    const compactArg = mockCallArg(contextEngineCompactMock) as {
+      runtimeContext?: Record<string, unknown>;
+    };
+    expectRecordFields(compactArg, {
+      compactionTarget: "budget",
+      force: true,
+    });
+    expectRecordFields(compactArg.runtimeContext, {
+      forceReason: "preflight_required",
+      preflightCompactionTrigger: "transcript_bytes",
+    });
+  });
+
+  it("continues forcing engine-owned manual compaction with manual force reason", async () => {
+    const result = await compactEmbeddedAgentSession(wrappedCompactionArgs({ trigger: "manual" }));
+
+    expect(result.ok).toBe(true);
+    const compactArg = mockCallArg(contextEngineCompactMock) as {
+      runtimeContext?: Record<string, unknown>;
+    };
+    expectRecordFields(compactArg, {
+      compactionTarget: "threshold",
+      force: true,
+    });
+    expectRecordFields(compactArg.runtimeContext, {
+      forceReason: "manual",
+    });
+  });
+
   it("threads the caller abort signal into the engine compact() call", async () => {
     const controller = new AbortController();
 

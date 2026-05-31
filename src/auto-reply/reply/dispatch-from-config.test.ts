@@ -6613,12 +6613,12 @@ describe("dispatchReplyFromConfig", () => {
     const dispatcher = createDispatcher();
     const ctx = buildTestCtx({ Provider: "whatsapp" });
     const onBlockReplyQueued = vi.fn();
-    const { setReplyPayloadMetadata } = await import("../types.js");
+    const { setReplyPayloadMetadata: setReplyPayloadMetadataLocal } = await import("../types.js");
     const replyResolver = async (
       _ctx: MsgContext,
       opts?: GetReplyOptions,
     ): Promise<ReplyPayload | undefined> => {
-      const payload = setReplyPayloadMetadata({ text: "Alpha" }, { assistantMessageIndex: 7 });
+      const payload = setReplyPayloadMetadataLocal({ text: "Alpha" }, { assistantMessageIndex: 7 });
       await opts?.onBlockReply?.(payload);
       return undefined;
     };

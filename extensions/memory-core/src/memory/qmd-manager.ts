@@ -2576,8 +2576,8 @@ export class QmdMemoryManager implements MemorySearchManager {
   }
 
   private toCollectionRelativePath(collection: string, filePath: string): string | null {
-    const root = this.collectionRoots.get(collection);
-    if (!root) {
+    const rootItem = this.collectionRoots.get(collection);
+    if (!rootItem) {
       return null;
     }
     const trimmedFilePath = filePath.trim();
@@ -2587,11 +2587,11 @@ export class QmdMemoryManager implements MemorySearchManager {
     const normalizedInput = path.normalize(trimmedFilePath);
     const absolutePath = path.isAbsolute(normalizedInput)
       ? normalizedInput
-      : path.resolve(root.path, normalizedInput);
-    if (!this.isWithinRoot(root.path, absolutePath)) {
+      : path.resolve(rootItem.path, normalizedInput);
+    if (!this.isWithinRoot(rootItem.path, absolutePath)) {
       return null;
     }
-    const relative = path.relative(root.path, absolutePath);
+    const relative = path.relative(rootItem.path, absolutePath);
     if (!relative || relative === ".") {
       return null;
     }
@@ -2758,8 +2758,8 @@ export class QmdMemoryManager implements MemorySearchManager {
       }
       let total = 0;
       for (const row of rows) {
-        const root = this.collectionRoots.get(row.collection);
-        const source = root?.kind ?? "memory";
+        const rootCandidate = this.collectionRoots.get(row.collection);
+        const source = rootCandidate?.kind ?? "memory";
         const entry = bySource.get(source) ?? { files: 0, chunks: 0 };
         entry.files += row.c ?? 0;
         entry.chunks += row.c ?? 0;
@@ -2800,12 +2800,12 @@ export class QmdMemoryManager implements MemorySearchManager {
     collection: string,
     collectionRelativePath: string,
   ): { rel: string; abs: string; source: MemorySource } | null {
-    const root = this.collectionRoots.get(collection);
-    if (!root) {
+    const rootEntry = this.collectionRoots.get(collection);
+    if (!rootEntry) {
       return null;
     }
     const normalizedRelative = collectionRelativePath.replace(/\\/g, "/");
-    const absPath = path.normalize(path.resolve(root.path, collectionRelativePath));
+    const absPath = path.normalize(path.resolve(rootEntry.path, collectionRelativePath));
     const relativeToWorkspace = path.relative(this.workspaceDir, absPath);
     const relPath = this.buildSearchPath(
       collection,
@@ -2813,7 +2813,7 @@ export class QmdMemoryManager implements MemorySearchManager {
       relativeToWorkspace,
       absPath,
     );
-    return { rel: relPath, abs: absPath, source: root.kind };
+    return { rel: relPath, abs: absPath, source: rootEntry.kind };
   }
 
   private buildSearchPath(
@@ -2860,13 +2860,13 @@ export class QmdMemoryManager implements MemorySearchManager {
       if (!collection || rest.length === 0) {
         throw new Error("invalid qmd path");
       }
-      const root = this.collectionRoots.get(collection);
-      if (!root) {
+      const rootResult = this.collectionRoots.get(collection);
+      if (!rootResult) {
         throw new Error(`unknown qmd collection: ${collection}`);
       }
       const joined = rest.join("/");
-      const resolved = path.resolve(root.path, joined);
-      if (!this.isWithinRoot(root.path, resolved)) {
+      const resolved = path.resolve(rootResult.path, joined);
+      if (!this.isWithinRoot(rootResult.path, resolved)) {
         throw new Error("qmd path escapes collection");
       }
       return resolved;
@@ -2884,12 +2884,12 @@ export class QmdMemoryManager implements MemorySearchManager {
 
   private isIndexedWorkspaceReadPath(absPath: string): boolean {
     const normalizedAbsPath = path.normalize(absPath);
-    for (const [collection, root] of this.collectionRoots.entries()) {
-      if (!this.isWithinRoot(root.path, normalizedAbsPath)) {
+    for (const [collection, rootValue] of this.collectionRoots.entries()) {
+      if (!this.isWithinRoot(rootValue.path, normalizedAbsPath)) {
         continue;
       }
       const collectionRelativePath = path
-        .relative(root.path, normalizedAbsPath)
+        .relative(rootValue.path, normalizedAbsPath)
         .replace(/\\/g, "/");
       if (!collectionRelativePath || collectionRelativePath.startsWith("..")) {
         continue;
@@ -2900,7 +2900,7 @@ export class QmdMemoryManager implements MemorySearchManager {
           .get(collection, collectionRelativePath) as { path: string } | undefined;
         if (
           exactRow &&
-          path.normalize(path.resolve(root.path, exactRow.path)) === normalizedAbsPath
+          path.normalize(path.resolve(rootValue.path, exactRow.path)) === normalizedAbsPath
         ) {
           return true;
         }
@@ -2910,7 +2910,10 @@ export class QmdMemoryManager implements MemorySearchManager {
         const match = rows.find((row) =>
           this.matchesPreferredFileHint(row.path, collectionRelativePath),
         );
-        if (match && path.normalize(path.resolve(root.path, match.path)) === normalizedAbsPath) {
+        if (
+          match &&
+          path.normalize(path.resolve(rootValue.path, match.path)) === normalizedAbsPath
+        ) {
           return true;
         }
       } catch (err) {
@@ -2928,8 +2931,8 @@ export class QmdMemoryManager implements MemorySearchManager {
     return isPathInside(this.workspaceDir, absPath);
   }
 
-  private isWithinRoot(root: string, candidate: string): boolean {
-    return isPathInside(root, candidate);
+  private isWithinRoot(rootLocal: string, candidate: string): boolean {
+    return isPathInside(rootLocal, candidate);
   }
 
   private clampResultsByInjectedChars(results: MemorySearchResult[]): MemorySearchResult[] {

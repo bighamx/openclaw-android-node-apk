@@ -4,6 +4,7 @@ import type {
   ResponseFunctionCallOutputItemList,
   ResponseFunctionToolCall,
   ResponseInput,
+  ResponseInputItem,
   ResponseInputContent,
   ResponseInputImage,
   ResponseInputText,
@@ -39,6 +40,8 @@ import { transformMessages } from "./transform-messages.js";
 // Utilities
 // =============================================================================
 
+type ReplayableResponseOutputMessage = Omit<ResponseOutputMessage, "id"> & { id?: string };
+
 function encodeTextSignatureV1(id: string, phase?: TextSignatureV1["phase"]): string {
   const payload: TextSignatureV1 = { v: 1, id };
   if (phase) {
@@ -73,6 +76,20 @@ function parseTextSignature(
     }
   }
   return { id: signature };
+}
+
+function resolveReplayableResponsesMessageId(params: {
+  textSignatureId?: string;
+  fallbackId: string;
+  fallbackOrdinal: number;
+  previousReplayItemWasReasoning: boolean;
+}): string | undefined {
+  if (!params.textSignatureId) {
+    return params.fallbackOrdinal === 0
+      ? params.fallbackId
+      : `${params.fallbackId}_${params.fallbackOrdinal}`;
+  }
+  return params.previousReplayItemWasReasoning ? params.textSignatureId : undefined;
 }
 
 export interface OpenAIResponsesStreamOptions {
@@ -221,6 +238,7 @@ export function convertResponsesMessages<TApi extends Api>(
       const output: ResponseInput = [];
       let textFallbackOrdinal = 0;
       const assistantMsg = msg;
+      let previousReplayItemWasReasoning = false;
       const isDifferentModel =
         assistantMsg.model !== model.id &&
         assistantMsg.provider === model.provider &&
@@ -231,35 +249,35 @@ export function convertResponsesMessages<TApi extends Api>(
           if (block.thinkingSignature) {
             const reasoningItem = JSON.parse(block.thinkingSignature) as ResponseReasoningItem;
             output.push(reasoningItem);
+            previousReplayItemWasReasoning = true;
           }
         } else if (block.type === "text") {
           const textBlock = block;
           const parsedSignature = parseTextSignature(textBlock.textSignature);
-          // OpenAI requires id to be max 64 characters
-          let msgId = parsedSignature?.id;
-          if (!msgId) {
-            // Reasoning-dropped/model-switch replay strips textSignature, which can
-            // leave several text blocks in one assistant turn without ids. msgIndex
-            // is per-message, so disambiguate fallbacks to avoid duplicate item ids
-            // (issue #88019).
-            msgId =
-              textFallbackOrdinal === 0
-                ? `msg_${msgIndex}`
-                : `msg_${msgIndex}_${textFallbackOrdinal}`;
+          let msgId = resolveReplayableResponsesMessageId({
+            textSignatureId: parsedSignature?.id,
+            fallbackId: `msg_${msgIndex}`,
+            fallbackOrdinal: textFallbackOrdinal,
+            previousReplayItemWasReasoning,
+          });
+          if (!parsedSignature?.id) {
             textFallbackOrdinal += 1;
-          } else if (msgId.length > 64) {
+          }
+          if (msgId && msgId.length > 64) {
             msgId = `msg_${shortHash(msgId)}`;
           }
-          output.push({
+          const messageItem: ReplayableResponseOutputMessage = {
             type: "message",
             role: "assistant",
             content: [
               { type: "output_text", text: sanitizeSurrogates(textBlock.text), annotations: [] },
             ],
             status: "completed",
-            id: msgId,
+            ...(msgId ? { id: msgId } : {}),
             phase: parsedSignature?.phase,
-          } satisfies ResponseOutputMessage);
+          };
+          output.push(messageItem as ResponseInputItem);
+          previousReplayItemWasReasoning = false;
         } else if (block.type === "toolCall") {
           const toolCall = block;
           const [callId, itemIdRaw] = toolCall.id.split("|");
@@ -279,6 +297,7 @@ export function convertResponsesMessages<TApi extends Api>(
             name: toolCall.name,
             arguments: JSON.stringify(toolCall.arguments),
           });
+          previousReplayItemWasReasoning = false;
         }
       }
       if (output.length === 0) {

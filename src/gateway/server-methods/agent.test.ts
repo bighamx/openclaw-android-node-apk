@@ -2883,6 +2883,11 @@ describe("gateway agent handler", () => {
         expect(task.runtime).not.toBe("cli");
       });
 
+      await waitForAssertion(() => {
+        expectRecordFields(getSubagentRunByChildSessionKey(childSessionKey), {
+          cleanupCompletedAt: expect.any(Number),
+        });
+      });
       const run = requireValue(
         getSubagentRunByChildSessionKey(childSessionKey),
         "expected subagent registry run",
@@ -3437,7 +3442,7 @@ describe("gateway agent handler", () => {
           storePath: "/tmp/sessions.json",
         },
       );
-      expect(broadcastToConnIds.mock.calls.map((call) => call[1]?.reason)).toEqual([
+      expect(broadcastToConnIds.mock.calls.map((callValue) => callValue[1]?.reason)).toEqual([
         "create",
         "send",
       ]);
@@ -3668,7 +3673,7 @@ describe("gateway agent handler", () => {
           storePath: "/tmp/sessions.json",
         },
       );
-      expect(broadcastToConnIds.mock.calls.map((call) => call[1]?.reason)).toEqual([
+      expect(broadcastToConnIds.mock.calls.map((callLocal) => callLocal[1]?.reason)).toEqual([
         "create",
         "send",
       ]);
