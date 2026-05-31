@@ -480,6 +480,7 @@ function buildRequestBody(
 ): RequestBody {
   const messages = convertResponsesMessages(model, context, CODEX_TOOL_CALL_PROVIDERS, {
     includeSystemPrompt: false,
+    replayResponsesItemIds: false,
   });
 
   const body: RequestBody = {
@@ -924,7 +925,7 @@ async function getWebSocketConstructor(): Promise<WebSocketConstructor | null> {
 
     cachedWebsocket = class extends WebSocket {
       constructor(url: string | URL, options?: string | string[] | Record<string, unknown>) {
-        let opts: Record<string, unknown> = {};
+        let opts: Record<string, unknown>;
         if (Array.isArray(options) || typeof options === "string") {
           opts = { protocols: options };
         } else {
@@ -1492,6 +1493,7 @@ async function processWebSocketStream(
         CODEX_TOOL_CALL_PROVIDERS,
         {
           includeSystemPrompt: false,
+          replayResponsesItemIds: false,
         },
       ).filter((item) => item.type !== "function_call_output");
       entry.continuation = {

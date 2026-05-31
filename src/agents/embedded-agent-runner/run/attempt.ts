@@ -3838,7 +3838,8 @@ export async function runEmbeddedAttempt(
               reacquireAfterPrompt: () => sessionLockController.reacquireAfterPrompt(),
               sessionKey: params.sessionKey,
               sessionFile: params.sessionFile,
-              withSessionWriteLock: (run) => sessionLockController.withSessionWriteLock(run),
+              withSessionWriteLock: (run, options) =>
+                sessionLockController.withSessionWriteLock(run, options),
             });
           }
 
@@ -5130,7 +5131,6 @@ export async function runEmbeddedAttempt(
       );
     }
     retainedSessionFileOwner?.release();
-    retainedSessionFileOwner = undefined;
     emitDiagnosticRunCompleted?.(
       aborted ? "aborted" : "error",
       promptError ?? new Error("run exited before diagnostic completion"),
