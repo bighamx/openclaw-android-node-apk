@@ -777,7 +777,7 @@ export abstract class MemoryManagerSyncOps {
         watcher = resolveMemoryNativeWatchFactory()(
           watchDir,
           { recursive: false },
-          (_eventType, filename) => {
+          (eventType, filename) => {
             if (filename == null) {
               markDirty();
               if (!this.attachLinuxMemoryDirectoryTreeSubtree(watchDir, attachDirectory)) {
@@ -799,6 +799,9 @@ export abstract class MemoryManagerSyncOps {
               closeDirectorySubtree(full);
             }
             if (stats?.isDirectory()) {
+              if (eventType === "rename") {
+                closeDirectorySubtree(full);
+              }
               if (!this.attachLinuxMemoryDirectoryTreeSubtree(full, attachDirectory)) {
                 closeAndFallback(
                   `failed to attach Linux memory directory watcher under ${full}; falling back to chokidar`,
