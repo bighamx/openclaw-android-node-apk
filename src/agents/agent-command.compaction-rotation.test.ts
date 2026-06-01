@@ -5,15 +5,20 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { loadSessionStore, saveSessionStore, type SessionEntry } from "../config/sessions.js";
 import { CURRENT_SESSION_VERSION } from "../config/sessions/version.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { runAgentAttempt } from "./command/attempt-execution.runtime.js";
+import type { EmbeddedAgentRunResult } from "./embedded-agent.js";
+import type { loadManifestModelCatalog } from "./model-catalog.js";
 
 type ProviderModelNormalizationParams = { provider: string; context: { modelId: string } };
+type LoadManifestModelCatalogParams = Parameters<typeof loadManifestModelCatalog>[0];
+type RunAgentAttempt = typeof runAgentAttempt;
 
 const state = vi.hoisted(() => ({
   cfg: undefined as OpenClawConfig | undefined,
   workspaceDir: undefined as string | undefined,
   agentDir: undefined as string | undefined,
-  runAgentAttemptMock: vi.fn(),
-  loadManifestModelCatalogMock: vi.fn(() => []),
+  runAgentAttemptMock: vi.fn<RunAgentAttempt>(),
+  loadManifestModelCatalogMock: vi.fn((_params: LoadManifestModelCatalogParams) => []),
   normalizeProviderModelIdWithRuntimeMock: vi.fn(
     (_params: ProviderModelNormalizationParams) => undefined,
   ),
@@ -57,7 +62,8 @@ vi.mock("../plugins/manifest-contract-eligibility.js", () => ({
 }));
 
 vi.mock("./model-catalog.js", () => ({
-  loadManifestModelCatalog: (...args: unknown[]) => state.loadManifestModelCatalogMock(...args),
+  loadManifestModelCatalog: (params: LoadManifestModelCatalogParams) =>
+    state.loadManifestModelCatalogMock(params),
 }));
 
 vi.mock("./provider-model-normalization.runtime.js", () => ({
@@ -132,7 +138,7 @@ vi.mock("./command/attempt-execution.runtime.js", async () => {
   );
   return {
     ...actual,
-    runAgentAttempt: (...args: unknown[]) => state.runAgentAttemptMock(...args),
+    runAgentAttempt: (...args: Parameters<RunAgentAttempt>) => state.runAgentAttemptMock(...args),
   };
 });
 
@@ -195,14 +201,14 @@ function makeResult(params: {
   sessionFile?: string;
   text: string;
   compactionCount?: number;
-}) {
+}): EmbeddedAgentRunResult {
   return {
     payloads: [{ text: params.text }],
     meta: {
       durationMs: 1,
       stopReason: "end_turn",
       executionTrace: {
-        runner: "embedded",
+        runner: "embedded" as const,
         fallbackUsed: false,
         winnerProvider: "openai",
         winnerModel: "gpt-5.5",

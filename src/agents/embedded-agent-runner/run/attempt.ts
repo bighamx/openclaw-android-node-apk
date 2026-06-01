@@ -4010,7 +4010,7 @@ export async function runEmbeddedAttempt(
                   ...buildAgentHookContextChannelFields(params),
                 },
               )
-              .catch((err) => {
+              .catch((err: unknown) => {
                 log.warn(`llm_input hook failed: ${String(err)}`);
               });
           }
@@ -4798,7 +4798,7 @@ export async function runEmbeddedAttempt(
               ...buildAgentHookContextChannelFields(params),
             },
           )
-          .catch((err) => {
+          .catch((err: unknown) => {
             log.warn(`llm_output hook failed: ${String(err)}`);
           });
       }
@@ -5120,7 +5120,7 @@ export async function runEmbeddedAttempt(
             }),
           );
         } else {
-          await Promise.reject(cleanupFailure);
+          await Promise.reject(toLintErrorObject(cleanupFailure, "Non-Error rejection"));
         }
       }
     }
@@ -5149,4 +5149,18 @@ export async function runEmbeddedAttempt(
     );
     restoreSkillEnv?.();
   }
+}
+
+function toLintErrorObject(value: unknown, fallbackMessage: string): Error {
+  if (value instanceof Error) {
+    return value;
+  }
+  if (typeof value === "string") {
+    return new Error(value);
+  }
+  const error = new Error(fallbackMessage, { cause: value });
+  if ((typeof value === "object" && value !== null) || typeof value === "function") {
+    Object.assign(error, value);
+  }
+  return error;
 }

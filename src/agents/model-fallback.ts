@@ -385,7 +385,7 @@ async function runFallbackAttempt<T>(params: {
     });
     if (classifiedError) {
       if (isTerminalAbort(params.abortSignal)) {
-        throw classifiedError;
+        throw toLintErrorObject(classifiedError, "Non-Error thrown");
       }
       return { error: classifiedError };
     }
@@ -598,7 +598,7 @@ function throwFallbackFailureSummary(params: {
   agentDir?: string;
 }): never {
   if (params.attempts.length <= 1 && params.lastError) {
-    throw params.lastError;
+    throw toLintErrorObject(params.lastError, "Non-Error thrown");
   }
 
   if (params.attribution?.sessionId) {
@@ -1760,3 +1760,17 @@ export async function runWithImageModelFallback<T>(params: {
   });
 }
 export { testing as __testing };
+
+function toLintErrorObject(value: unknown, fallbackMessage: string): Error {
+  if (value instanceof Error) {
+    return value;
+  }
+  if (typeof value === "string") {
+    return new Error(value);
+  }
+  const error = new Error(fallbackMessage, { cause: value });
+  if ((typeof value === "object" && value !== null) || typeof value === "function") {
+    Object.assign(error, value);
+  }
+  return error;
+}

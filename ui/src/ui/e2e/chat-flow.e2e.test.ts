@@ -80,7 +80,7 @@ describeControlUiE2e("Control UI mocked Gateway E2E", () => {
   beforeAll(async () => {
     if (!chromiumAvailable) {
       throw new Error(
-        `Playwright Chromium is not installed at ${chromiumExecutablePath}. Run \`pnpm --dir ui exec playwright install chromium\`, or set OPENCLAW_UI_E2E_ALLOW_MISSING_CHROMIUM=1 only when intentionally skipping this lane.`,
+        `Playwright Chromium is not installed at ${chromiumExecutablePath}. Run \`pnpm --dir ui exec playwright install chromium\`, set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH to a compatible browser, or set OPENCLAW_UI_E2E_ALLOW_MISSING_CHROMIUM=1 only when intentionally skipping this lane.`,
       );
     }
     server = await startControlUiE2eServer();
@@ -127,6 +127,70 @@ describeControlUiE2e("Control UI mocked Gateway E2E", () => {
       await gateway.emitChatFinal({ runId, text: "Harness verified." });
 
       await page.getByText("Harness verified.").waitFor({ timeout: 10_000 });
+    } finally {
+      await context.close();
+    }
+  });
+
+  it("renders stable markdown during a streaming chat turn and finalizes the tail", async () => {
+    const context = await browser.newContext({
+      locale: "en-US",
+      serviceWorkers: "block",
+      viewport: { height: 900, width: 1280 },
+    });
+    const page = await context.newPage();
+    const gateway = await installMockGateway(page);
+
+    try {
+      await page.goto(`${server.baseUrl}chat`);
+
+      const prompt = "stream markdown through the GUI";
+      await gateway.deferNext("chat.send");
+      await page.locator(".agent-chat__composer-combobox textarea").fill(prompt);
+      await page.getByRole("button", { name: "Send message" }).click();
+
+      const sendRequest = await gateway.waitForRequest("chat.send");
+      const params = requireRecord(sendRequest.params);
+      const runId = requireString(params.idempotencyKey, "chat send idempotency key");
+      const streamingText = "## Streaming heading\n\nworking **tail";
+      await gateway.emitGatewayEvent("chat", {
+        deltaText: streamingText,
+        message: {
+          content: [{ text: streamingText, type: "text" }],
+          role: "assistant",
+          timestamp: Date.now(),
+        },
+        runId,
+        sessionKey: "main",
+        state: "delta",
+      });
+
+      await page.locator(".chat-thread h2").getByText("Streaming heading").waitFor({
+        timeout: 10_000,
+      });
+      await page.locator(".markdown-plain-text-fallback").getByText("working **tail").waitFor({
+        timeout: 10_000,
+      });
+      expect(await page.locator(".markdown-plain-text-fallback strong").count()).toBe(0);
+
+      await gateway.resolveDeferred("chat.send", { runId, status: "started" });
+      await page.waitForFunction(() => {
+        const app = document.querySelector("openclaw-app") as
+          | (Element & { chatSending?: unknown })
+          | null;
+        return app?.chatSending === false;
+      });
+      await page.locator(".chat-thread h2").getByText("Streaming heading").waitFor({
+        timeout: 10_000,
+      });
+
+      await gateway.emitChatFinal({
+        runId,
+        text: "## Streaming heading\n\nworking **tail**",
+      });
+
+      await page.locator(".chat-thread strong").getByText("tail").waitFor({ timeout: 10_000 });
+      expect(await page.locator(".markdown-plain-text-fallback").count()).toBe(0);
     } finally {
       await context.close();
     }
@@ -179,6 +243,51 @@ describeControlUiE2e("Control UI mocked Gateway E2E", () => {
     }
   });
 
+  it("sends the first chat turn while agents startup loading is still pending", async () => {
+    const context = await browser.newContext({
+      locale: "en-US",
+      serviceWorkers: "block",
+      viewport: { height: 900, width: 1280 },
+    });
+    const page = await context.newPage();
+    const gateway = await installMockGateway(page, {
+      deferredMethods: ["agents.list", "chat.history"],
+      historyMessages: [],
+    });
+
+    try {
+      await page.goto(`${server.baseUrl}chat`);
+      await gateway.waitForRequest("agents.list");
+
+      const prompt = "send before agents list completes";
+      await page
+        .locator(".agent-chat__composer-combobox textarea")
+        .waitFor({ state: "visible", timeout: 10_000 });
+      await page.locator(".agent-chat__composer-combobox textarea").fill(prompt);
+      await page.getByRole("button", { name: "Send message" }).click();
+
+      const sendRequest = await gateway.waitForRequest("chat.send");
+      const params = requireRecord(sendRequest.params);
+      expect(params.message).toBe(prompt);
+      expect(params.sessionKey).toBe("main");
+
+      const runId = requireString(params.idempotencyKey, "chat send idempotency key");
+      await page.locator(".chat-thread").getByText(prompt).waitFor({ timeout: 10_000 });
+      await gateway.resolveDeferred("chat.history", {
+        messages: [],
+        sessionId: "control-ui-e2e-session",
+        thinkingLevel: null,
+      });
+      await page.locator(".chat-thread").getByText(prompt).waitFor({ timeout: 10_000 });
+      await gateway.emitChatFinal({ runId, text: "History race stayed visible." });
+      await page.getByText("History race stayed visible.").waitFor({ timeout: 10_000 });
+
+      await gateway.resolveDeferred("agents.list");
+    } finally {
+      await context.close();
+    }
+  });
+
   it("keeps a delayed chat.send ACK visible as pending until the ACK resolves", async () => {
     const context = await browser.newContext({
       locale: "en-US",
@@ -202,7 +311,7 @@ describeControlUiE2e("Control UI mocked Gateway E2E", () => {
 
       await page.locator(".chat-queue").getByText("Sending").waitFor({ timeout: 10_000 });
       await page.locator(".chat-queue").getByText(prompt).waitFor({ timeout: 10_000 });
-      expect(await page.locator(".chat-thread").getByText(prompt).count()).toBe(0);
+      await page.locator(".chat-thread").getByText(prompt).waitFor({ timeout: 10_000 });
 
       await gateway.resolveDeferred("chat.send", { runId, status: "started" });
 
@@ -345,6 +454,53 @@ describeControlUiE2e("Control UI mocked Gateway E2E", () => {
       expect(await modelSelect.getAttribute("data-chat-select-value")).toBe(
         "bedrock/claude-opus-4.5",
       );
+    } finally {
+      await context.close();
+    }
+  });
+
+  it("shows a pending send while a model override save is still pending", async () => {
+    const context = await browser.newContext({
+      locale: "en-US",
+      serviceWorkers: "block",
+      viewport: { height: 900, width: 1280 },
+    });
+    const page = await context.newPage();
+    const gateway = await installMockGateway(page, {
+      deferredMethods: ["sessions.patch"],
+      methodResponses: {
+        "sessions.list": chatSessionListResponse(),
+      },
+      models: [
+        { id: "gpt-5.5", name: "GPT-5.5", provider: "openai" },
+        { id: "claude-opus-4.5", name: "Claude Opus 4.5", provider: "bedrock" },
+      ],
+      sessionKey: "agent:main:session-a",
+    });
+
+    try {
+      await page.goto(`${server.baseUrl}chat`);
+
+      const main = page.getByRole("main");
+      await main.locator('[data-chat-model-select="true"]').click();
+      await main.locator('[data-chat-model-option="bedrock/claude-opus-4.5"]').click();
+      await gateway.waitForRequest("sessions.patch");
+
+      const prompt = "send while the model save is pending";
+      await page.locator(".agent-chat__composer-combobox textarea").fill(prompt);
+      await page.getByRole("button", { name: "Send message" }).click();
+
+      await page.locator(".chat-queue").getByText("Waiting for model").waitFor({
+        timeout: 10_000,
+      });
+      await page.locator(".chat-queue").getByText(prompt).waitFor({ timeout: 10_000 });
+      expect(await gateway.getRequests("chat.send")).toHaveLength(0);
+
+      await gateway.resolveDeferred("sessions.patch", {});
+      const sendRequest = await gateway.waitForRequest("chat.send");
+      const params = requireRecord(sendRequest.params);
+      expect(params.message).toBe(prompt);
+      expect(params.sessionKey).toBe("agent:main:session-a");
     } finally {
       await context.close();
     }
