@@ -1217,7 +1217,6 @@ export const ar: TranslationMap = {
     autoScrollAlways: "دائمًا",
     autoScrollNearBottom: "قرب الأسفل",
     autoScrollOff: "إيقاف",
-    focusToggle: "تبديل وضع التركيز (إخفاء الشريط الجانبي + رأس الصفحة)",
     hideCronSessions: "إخفاء جلسات cron",
     showCronSessions: "إظهار جلسات cron",
     showCronSessionsHidden: "إظهار جلسات cron ({count} مخفية)",

@@ -2405,6 +2405,48 @@ describe("TelegramPollingSession", () => {
     expect(
       pollingSessionTesting.resolveSpooledUpdateHandlerAbortGraceMs(Number.MAX_SAFE_INTEGER),
     ).toBe(MAX_TIMER_TIMEOUT_MS);
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const abort = new AbortController();
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-telegram-spool-"));
+    let releaseTurn: (() => void) | undefined;
+    const turnDone = new Promise<void>((resolve) => {
+      releaseTurn = resolve;
+    });
+
+    try {
+      await writeSpooledTestUpdates(tempDir, [
+        topicUpdate(42, 10, "wedged topic 10 turn"),
+        topicUpdate(43, 10, "blocked topic 10 turn"),
+      ]);
+      const { runPromise, stopWorker } = startIsolatedIngressSession({
+        abort,
+        spoolDir: tempDir,
+        spooledUpdateHandlerTimeoutMs: 100,
+        spooledUpdateHandlerAbortGraceMs: Number.MAX_SAFE_INTEGER,
+        handleUpdate: async () => {
+          await turnDone;
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(150);
+      await vi.waitFor(() => {
+        expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), MAX_TIMER_TIMEOUT_MS);
+      });
+
+      releaseTurn?.();
+      abort.abort();
+      stopWorker();
+      await vi.advanceTimersByTimeAsync(20_000);
+      await runPromise;
+    } finally {
+      releaseTurn?.();
+      abort.abort();
+      setTimeoutSpy.mockRestore();
+      vi.useRealTimers();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("does not drain more updates on the old bot while a timeout restart is pending", async () => {

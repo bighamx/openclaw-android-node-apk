@@ -1233,7 +1233,6 @@ export const pt_BR: TranslationMap = {
     autoScrollAlways: "Sempre",
     autoScrollNearBottom: "Próximo ao final",
     autoScrollOff: "Desativado",
-    focusToggle: "Alternar modo de foco (ocultar barra lateral + cabeçalho da página)",
     hideCronSessions: "Ocultar sessões de cron",
     showCronSessions: "Mostrar sessões de cron",
     showCronSessionsHidden: "Mostrar sessões de cron ({count} ocultas)",

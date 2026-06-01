@@ -1,18 +1,19 @@
 import type { ModelCatalogEntry } from "../../agents/model-catalog.js";
 import type { GatewayRequestContext } from "./types.js";
 
-const SESSION_METADATA_MODEL_CATALOG_TIMEOUT_MS = 750;
+const OPTIONAL_MODEL_CATALOG_TIMEOUT_MS = 750;
 
-let loggedSlowSessionMetadataCatalog = false;
+const loggedSlowCatalogKeys = new Set<string>();
 
-export async function loadOptionalSessionMetadataModelCatalog(
+export async function loadOptionalServerMethodModelCatalog(
   context: GatewayRequestContext,
   surface: string,
+  options?: { logOnceKey?: string },
 ): Promise<ModelCatalogEntry[] | undefined> {
   let timeout: NodeJS.Timeout | undefined;
-  const timedOut = Symbol("session-metadata-model-catalog-timeout");
+  const timedOut = Symbol("server-method-model-catalog-timeout");
   const timeoutPromise = new Promise<typeof timedOut>((resolve) => {
-    timeout = setTimeout(() => resolve(timedOut), SESSION_METADATA_MODEL_CATALOG_TIMEOUT_MS);
+    timeout = setTimeout(() => resolve(timedOut), OPTIONAL_MODEL_CATALOG_TIMEOUT_MS);
     timeout.unref?.();
   });
   try {
@@ -21,10 +22,11 @@ export async function loadOptionalSessionMetadataModelCatalog(
       timeoutPromise,
     ]);
     if (result === timedOut) {
-      if (!loggedSlowSessionMetadataCatalog) {
-        loggedSlowSessionMetadataCatalog = true;
+      const logOnceKey = options?.logOnceKey ?? "session-metadata";
+      if (!loggedSlowCatalogKeys.has(logOnceKey)) {
+        loggedSlowCatalogKeys.add(logOnceKey);
         context.logGateway.debug(
-          `${surface} continuing without model catalog after ${SESSION_METADATA_MODEL_CATALOG_TIMEOUT_MS}ms`,
+          `${surface} continuing without model catalog after ${OPTIONAL_MODEL_CATALOG_TIMEOUT_MS}ms`,
         );
       }
       return undefined;

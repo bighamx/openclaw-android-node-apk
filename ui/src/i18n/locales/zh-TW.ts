@@ -1199,7 +1199,6 @@ export const zh_TW: TranslationMap = {
     autoScrollAlways: "一律",
     autoScrollNearBottom: "接近底部",
     autoScrollOff: "關閉",
-    focusToggle: "切換專注模式 (隱藏側邊欄 + 頁面頁眉)",
     hideCronSessions: "隱藏定時任務會話",
     showCronSessions: "顯示定時任務會話",
     showCronSessionsHidden: "顯示定時任務會話 (已隱藏 {count} 個)",

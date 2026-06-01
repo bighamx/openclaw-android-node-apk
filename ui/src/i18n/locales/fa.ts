@@ -1234,7 +1234,6 @@ export const fa: TranslationMap = {
     autoScrollAlways: "همیشه",
     autoScrollNearBottom: "نزدیک پایین",
     autoScrollOff: "خاموش",
-    focusToggle: "تغییر وضعیت حالت تمرکز (پنهان کردن نوار کناری + سرصفحه صفحه)",
     hideCronSessions: "پنهان کردن نشست‌های cron",
     showCronSessions: "نمایش نشست‌های cron",
     showCronSessionsHidden: "نمایش نشست‌های cron ({count} پنهان)",

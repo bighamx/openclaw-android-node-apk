@@ -193,6 +193,45 @@ const pinnedMessagesMap = new Map<string, PinnedMessages>();
 const deletedMessagesMap = new Map<string, DeletedMessages>();
 const SLASH_MENU_LISTBOX_ID = "chat-slash-menu-listbox";
 const SLASH_MENU_ACTIVE_ANNOUNCEMENT_ID = "chat-slash-active-announcement";
+type TalkSelectOption = { label: string; value: string };
+
+const TALK_VOICE_OPTIONS: TalkSelectOption[] = [
+  { label: "Default", value: "" },
+  { label: "Alloy", value: "alloy" },
+  { label: "Ash", value: "ash" },
+  { label: "Ballad", value: "ballad" },
+  { label: "Coral", value: "coral" },
+  { label: "Echo", value: "echo" },
+  { label: "Sage", value: "sage" },
+  { label: "Shimmer", value: "shimmer" },
+  { label: "Verse", value: "verse" },
+  { label: "Marin", value: "marin" },
+  { label: "Cedar", value: "cedar" },
+];
+const TALK_SENSITIVITY_OPTIONS: TalkSelectOption[] = [
+  { label: "Default", value: "" },
+  { label: "Low", value: "0.65" },
+  { label: "Medium", value: "0.5" },
+  { label: "High", value: "0.35" },
+];
+const TALK_PROVIDER_OPTIONS: TalkSelectOption[] = [
+  { label: "Auto", value: "" },
+  { label: "OpenAI", value: "openai" },
+  { label: "Google", value: "google" },
+];
+const TALK_TRANSPORT_OPTIONS: TalkSelectOption[] = [
+  { label: "Auto", value: "" },
+  { label: "WebRTC", value: "webrtc" },
+  { label: "Gateway relay", value: "gateway-relay" },
+  { label: "Provider WebSocket", value: "provider-websocket" },
+];
+const TALK_REASONING_OPTIONS: TalkSelectOption[] = [
+  { label: "Default", value: "" },
+  { label: "Minimal", value: "minimal" },
+  { label: "Low", value: "low" },
+  { label: "Medium", value: "medium" },
+  { label: "High", value: "high" },
+];
 
 function getPinnedMessages(sessionKey: string): PinnedMessages {
   return getOrCreateSessionCacheValue(
@@ -208,6 +247,68 @@ function getDeletedMessages(sessionKey: string): DeletedMessages {
     sessionKey,
     () => new DeletedMessages(sessionKey),
   );
+}
+
+function renderTalkSelect(params: {
+  label: string;
+  value: string;
+  options: TalkSelectOption[];
+  onSelect: (value: string) => void;
+}) {
+  const selected = params.options.find((entry) => entry.value === params.value);
+  const selectedLabel = selected?.label ?? params.value;
+  return html`
+    <label class="agent-chat__talk-field agent-chat__talk-field--select">
+      <span>${params.label}</span>
+      <details class="agent-chat__talk-select" data-talk-select=${params.label.toLowerCase()}>
+        <summary
+          class="agent-chat__talk-select-trigger"
+          aria-label=${params.label}
+          title=${selectedLabel}
+        >
+          <span class="agent-chat__talk-select-label">${selectedLabel}</span>
+          <span class="agent-chat__talk-select-icon" aria-hidden="true">
+            ${icons.chevronDown}
+          </span>
+        </summary>
+        <div class="agent-chat__talk-select-menu" role="listbox" aria-label=${params.label}>
+          ${repeat(
+            params.options,
+            (entry) => entry.value,
+            (entry) => {
+              const isSelected = entry.value === params.value;
+              return html`
+                <button
+                  class="agent-chat__talk-select-option ${isSelected
+                    ? "agent-chat__talk-select-option--selected"
+                    : ""}"
+                  data-talk-select-option=${entry.value}
+                  role="option"
+                  aria-selected=${isSelected ? "true" : "false"}
+                  type="button"
+                  @click=${(event: MouseEvent) => {
+                    (event.currentTarget as HTMLElement)
+                      .closest("details")
+                      ?.removeAttribute("open");
+                    if (!isSelected) {
+                      params.onSelect(entry.value);
+                    }
+                  }}
+                >
+                  <span>${entry.label}</span>
+                  ${isSelected
+                    ? html`<span class="agent-chat__talk-select-check" aria-hidden="true">
+                        ${icons.check}
+                      </span>`
+                    : nothing}
+                </button>
+              `;
+            },
+          )}
+        </div>
+      </details>
+    </label>
+  `;
 }
 
 function renderRealtimeTalkOptions(props: ChatProps) {
@@ -228,34 +329,19 @@ function renderRealtimeTalkOptions(props: ChatProps) {
     : isPresetSensitivity
       ? options.vadThreshold
       : "__custom";
-  const updateSensitivity = (event: Event) => {
-    const value = (event.currentTarget as HTMLSelectElement).value;
-    if (value !== "__custom") {
-      onChange({ vadThreshold: value });
-    }
-  };
+  const sensitivityOptions = isCustomSensitivity
+    ? [...TALK_SENSITIVITY_OPTIONS, { label: "Custom", value: "__custom" }]
+    : TALK_SENSITIVITY_OPTIONS;
   return html`
     <div class="agent-chat__talk-options" aria-label="Talk options">
       <div class="agent-chat__talk-options-primary">
-        <label>
-          <span>Voice</span>
-          <select .value=${options.voice} @change=${update("voice")}>
-            <option value="">Default</option>
-            ${[
-              "alloy",
-              "ash",
-              "ballad",
-              "coral",
-              "echo",
-              "sage",
-              "shimmer",
-              "verse",
-              "marin",
-              "cedar",
-            ].map((voice) => html`<option value=${voice}>${voice}</option>`)}
-          </select>
-        </label>
-        <label>
+        ${renderTalkSelect({
+          label: "Voice",
+          value: options.voice,
+          options: TALK_VOICE_OPTIONS,
+          onSelect: (voice) => onChange({ voice }),
+        })}
+        <label class="agent-chat__talk-field">
           <span>Model</span>
           <input
             .value=${options.model}
@@ -264,50 +350,39 @@ function renderRealtimeTalkOptions(props: ChatProps) {
             spellcheck="false"
           />
         </label>
-        <label>
-          <span>Sensitivity</span>
-          <select @change=${updateSensitivity}>
-            <option value="" ?selected=${sensitivityValue === ""}>Default</option>
-            <option value="0.65" ?selected=${sensitivityValue === "0.65"}>Low</option>
-            <option value="0.5" ?selected=${sensitivityValue === "0.5"}>Medium</option>
-            <option value="0.35" ?selected=${sensitivityValue === "0.35"}>High</option>
-            ${isCustomSensitivity
-              ? html`<option value="__custom" selected>Custom</option>`
-              : nothing}
-          </select>
-        </label>
+        ${renderTalkSelect({
+          label: "Sensitivity",
+          value: sensitivityValue,
+          options: sensitivityOptions,
+          onSelect: (vadThreshold) => {
+            if (vadThreshold !== "__custom") {
+              onChange({ vadThreshold });
+            }
+          },
+        })}
       </div>
       <details class="agent-chat__talk-options-advanced">
         <summary>Advanced</summary>
         <div class="agent-chat__talk-options-grid">
-          <label>
-            <span>Provider</span>
-            <select .value=${options.provider} @change=${update("provider")}>
-              <option value="">Auto</option>
-              <option value="openai">OpenAI</option>
-              <option value="google">Google</option>
-            </select>
-          </label>
-          <label>
-            <span>Transport</span>
-            <select .value=${options.transport} @change=${update("transport")}>
-              <option value="">Auto</option>
-              <option value="webrtc">WebRTC</option>
-              <option value="gateway-relay">Gateway relay</option>
-              <option value="provider-websocket">Provider WebSocket</option>
-            </select>
-          </label>
-          <label>
-            <span>Reasoning</span>
-            <select .value=${options.reasoningEffort} @change=${update("reasoningEffort")}>
-              <option value="">Default</option>
-              <option value="minimal">Minimal</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
-          </label>
-          <label>
+          ${renderTalkSelect({
+            label: "Provider",
+            value: options.provider,
+            options: TALK_PROVIDER_OPTIONS,
+            onSelect: (provider) => onChange({ provider }),
+          })}
+          ${renderTalkSelect({
+            label: "Transport",
+            value: options.transport,
+            options: TALK_TRANSPORT_OPTIONS,
+            onSelect: (transport) => onChange({ transport }),
+          })}
+          ${renderTalkSelect({
+            label: "Reasoning",
+            value: options.reasoningEffort,
+            options: TALK_REASONING_OPTIONS,
+            onSelect: (reasoningEffort) => onChange({ reasoningEffort }),
+          })}
+          <label class="agent-chat__talk-field">
             <span>Exact VAD</span>
             <input
               type="number"
@@ -319,7 +394,7 @@ function renderRealtimeTalkOptions(props: ChatProps) {
               placeholder="0.5"
             />
           </label>
-          <label>
+          <label class="agent-chat__talk-field">
             <span>Pause before send</span>
             <input
               type="number"
@@ -330,7 +405,7 @@ function renderRealtimeTalkOptions(props: ChatProps) {
               placeholder="500"
             />
           </label>
-          <label>
+          <label class="agent-chat__talk-field">
             <span>Lead-in</span>
             <input
               type="number"
@@ -423,7 +498,7 @@ export const cleanupChatModuleState = resetChatViewState;
 
 function adjustTextareaHeight(el: HTMLTextAreaElement) {
   el.style.height = "auto";
-  el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+  el.style.height = `${Math.min(Math.max(el.scrollHeight, 44), 150)}px`;
 }
 
 function focusComposerFromChrome(event: MouseEvent, connected: boolean) {

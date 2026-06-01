@@ -1232,7 +1232,6 @@ export const id: TranslationMap = {
     autoScrollAlways: "Selalu",
     autoScrollNearBottom: "Dekat bagian bawah",
     autoScrollOff: "Nonaktif",
-    focusToggle: "Alihkan mode fokus (sembunyikan bilah samping + header halaman)",
     hideCronSessions: "Sembunyikan sesi cron",
     showCronSessions: "Tampilkan sesi cron",
     showCronSessionsHidden: "Tampilkan sesi cron ({count} disembunyikan)",

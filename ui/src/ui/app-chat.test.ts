@@ -209,6 +209,12 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
+const neverSettlesPromise: Promise<never> = Promise.race([]);
+
+function pendingPromise<T = unknown>(): Promise<T> {
+  return neverSettlesPromise as Promise<T>;
+}
+
 async function raceWithMacrotask(promise: Promise<unknown>): Promise<"resolved" | "pending"> {
   return await Promise.race([
     promise.then(() => "resolved" as const),
@@ -224,7 +230,7 @@ describe("refreshChat", () => {
   });
 
   it("dispatches chat refresh work without waiting for slow history or metadata RPCs", async () => {
-    const request = vi.fn(() => new Promise<unknown>(() => {}));
+    const request = vi.fn(() => pendingPromise());
     const requestUpdate = vi.fn();
     const host = makeHost({
       client: { request } as unknown as ChatHost["client"],
@@ -260,7 +266,7 @@ describe("refreshChat", () => {
   });
 
   it("scopes global chat refresh session rows to the selected agent", async () => {
-    const request = vi.fn(() => new Promise<unknown>(() => {}));
+    const request = vi.fn(() => pendingPromise());
     const host = makeHost({
       client: { request } as unknown as ChatHost["client"],
       sessionKey: "global",
@@ -288,7 +294,7 @@ describe("refreshChat", () => {
   });
 
   it("scopes agent main aliases as selected global chat refreshes", async () => {
-    const request = vi.fn(() => new Promise<unknown>(() => {}));
+    const request = vi.fn(() => pendingPromise());
     const host = makeHost({
       client: { request } as unknown as ChatHost["client"],
       sessionKey: "agent:work:main",
@@ -308,7 +314,7 @@ describe("refreshChat", () => {
   });
 
   it("scopes agent session refresh rows before the list limit", async () => {
-    const request = vi.fn(() => new Promise<unknown>(() => {}));
+    const request = vi.fn(() => pendingPromise());
     const host = makeHost({
       client: { request } as unknown as ChatHost["client"],
       sessionKey: "agent:work:dashboard",
@@ -327,7 +333,7 @@ describe("refreshChat", () => {
   });
 
   it("uses hello default for global chat refresh before agents list loads", async () => {
-    const request = vi.fn(() => new Promise<unknown>(() => {}));
+    const request = vi.fn(() => pendingPromise());
     const host = makeHost({
       client: { request } as unknown as ChatHost["client"],
       sessionKey: "global",
@@ -352,7 +358,7 @@ describe("refreshChat", () => {
   });
 
   it("keeps unknown chat refresh session rows unscoped", async () => {
-    const request = vi.fn(() => new Promise<unknown>(() => {}));
+    const request = vi.fn(() => pendingPromise());
     const host = makeHost({
       client: { request } as unknown as ChatHost["client"],
       sessionKey: "unknown",
@@ -378,7 +384,7 @@ describe("refreshChat", () => {
       if (method === "chat.history") {
         return history.promise;
       }
-      return new Promise<unknown>(() => {});
+      return pendingPromise();
     });
     const host = makeHost({
       client: { request } as unknown as ChatHost["client"],
@@ -461,7 +467,9 @@ describe("refreshChat", () => {
     (host as ChatHost & { sessionsResultAgentId: string }).sessionsResultAgentId = "main";
 
     await refreshChat(host, { scheduleScroll: false });
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
 
     expect(host.sessionsResult).toBe(previousSessionsResult);
     expect(request).toHaveBeenCalledWith(
@@ -501,7 +509,9 @@ describe("refreshChat", () => {
     (host as ChatHost & { sessionsResultAgentId: string }).sessionsResultAgentId = "main";
 
     await refreshChat(host, { scheduleScroll: false });
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
 
     expect(request).toHaveBeenCalledWith(
       "chat.send",
@@ -532,7 +542,9 @@ describe("refreshChat", () => {
     });
 
     await refreshChat(host, { scheduleScroll: false });
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
 
     expect(request).toHaveBeenCalledWith(
       "chat.send",
@@ -601,7 +613,9 @@ describe("refreshChat", () => {
     });
 
     await refreshChat(host, { scheduleScroll: false });
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
 
     expect(request).not.toHaveBeenCalledWith("chat.send", expect.anything());
     expect(host.chatQueue).toEqual(restoredQueue);
@@ -979,7 +993,7 @@ describe("refreshChat", () => {
 
   it("does not wait for secondary chat metadata refreshes before showing history", async () => {
     const previousFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn(() => new Promise<Response>(() => {})) as never;
+    globalThis.fetch = vi.fn(() => pendingPromise<Response>()) as never;
     try {
       const request = vi.fn((method: string) => {
         if (method === "chat.history") {
@@ -987,7 +1001,7 @@ describe("refreshChat", () => {
             messages: [{ role: "assistant", content: [{ type: "text", text: "ready" }] }],
           });
         }
-        return new Promise(() => {});
+        return pendingPromise();
       });
       const host = makeHost({
         client: { request } as unknown as ChatHost["client"],

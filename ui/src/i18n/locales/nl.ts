@@ -1237,7 +1237,6 @@ export const nl: TranslationMap = {
     autoScrollAlways: "Altijd",
     autoScrollNearBottom: "Bijna onderaan",
     autoScrollOff: "Uit",
-    focusToggle: "Focusmodus schakelen (zijbalk + paginakop verbergen)",
     hideCronSessions: "Cron-sessies verbergen",
     showCronSessions: "Cron-sessies weergeven",
     showCronSessionsHidden: "Cron-sessies weergeven ({count} verborgen)",

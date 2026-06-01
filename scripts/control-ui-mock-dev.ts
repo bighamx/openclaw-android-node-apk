@@ -232,11 +232,11 @@ function createChatPickerScenario(): ControlUiMockGatewayScenario {
     ],
     [
       "plan.md",
-      "# Plan\n\n- Simplify composer controls.\n- Keep session switching available in collapsed navigation.\n- Verify the workspace rail can open every listed mock file.\n",
+      "# Composer polish plan\n\n1. Keep the composer controls calm.\n2. Move session selection into the sidebar.\n3. Keep model, reasoning, and speed choices discoverable without taking over the page.\n",
     ],
     [
       "notes/context.md",
-      "# Context\n\nThe mock workspace keeps enough files to exercise right-rail selection, preview loading, and stale request guards without a real gateway.\n",
+      "# Context notes\n\nThe right rail should feel like workspace context, not a modal pasted beside the chat.\n\n## Current focus\n\n- Markdown previews need readable dark-mode chrome.\n- Empty or unavailable content should show a quiet state instead of an empty card.\n- File previews should load from the same mock scenario as the file list.\n",
     ],
   ]);
   const workspaceFileCases = ["main", "alpha", "openclaw-mock"].flatMap((agentId) =>

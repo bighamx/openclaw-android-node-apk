@@ -1237,7 +1237,6 @@ export const pl: TranslationMap = {
     autoScrollAlways: "Zawsze",
     autoScrollNearBottom: "Blisko dołu",
     autoScrollOff: "Wyłączone",
-    focusToggle: "Przełącz tryb skupienia (ukryj pasek boczny i nagłówek strony)",
     hideCronSessions: "Ukryj sesje Cron",
     showCronSessions: "Pokaż sesje Cron",
     showCronSessionsHidden: "Pokaż sesje Cron ({count} ukrytych)",

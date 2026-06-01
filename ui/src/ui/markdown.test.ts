@@ -708,4 +708,23 @@ describe("renderMarkdownSidebar", () => {
       Array.from(container.querySelectorAll("button")).map((button) => button.textContent?.trim()),
     ).toEqual(["", "View Raw Text"]);
   });
+
+  it("renders a quiet empty state for blank markdown previews", () => {
+    const container = document.createElement("div");
+
+    render(
+      renderMarkdownSidebar({
+        content: { kind: "markdown", content: "   " },
+        error: null,
+        onClose: () => undefined,
+        onViewRawText: () => undefined,
+      }),
+      container,
+    );
+
+    expect(container.querySelector(".sidebar-markdown-reader")).toBeNull();
+    expect(container.querySelector(".sidebar-markdown-empty")?.textContent?.trim()).toBe(
+      "No previewable markdown content.",
+    );
+  });
 });

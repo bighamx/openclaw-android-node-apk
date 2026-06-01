@@ -1225,7 +1225,6 @@ export const ko: TranslationMap = {
     autoScrollAlways: "항상",
     autoScrollNearBottom: "하단 근처",
     autoScrollOff: "끔",
-    focusToggle: "집중 모드 전환(사이드바 + 페이지 헤더 숨기기)",
     hideCronSessions: "Cron 세션 숨기기",
     showCronSessions: "Cron 세션 표시",
     showCronSessionsHidden: "Cron 세션 표시({count}개 숨김)",

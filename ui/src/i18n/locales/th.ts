@@ -1202,7 +1202,6 @@ export const th: TranslationMap = {
     autoScrollAlways: "เสมอ",
     autoScrollNearBottom: "ใกล้ด้านล่าง",
     autoScrollOff: "ปิด",
-    focusToggle: "สลับโหมดโฟกัส (ซ่อนแถบด้านข้าง + ส่วนหัวหน้า)",
     hideCronSessions: "ซ่อนเซสชัน cron",
     showCronSessions: "แสดงเซสชัน cron",
     showCronSessionsHidden: "แสดงเซสชัน cron (ซ่อนอยู่ {count})",

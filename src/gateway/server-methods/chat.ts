@@ -157,8 +157,8 @@ import {
   buildWebchatAssistantMessageFromReplyPayloads,
   buildWebchatAudioContentBlocksFromReplyPayloads,
 } from "./chat-webchat-media.js";
+import { loadOptionalServerMethodModelCatalog } from "./optional-model-catalog.js";
 import { hasTrackedActiveSessionRun } from "./session-active-runs.js";
-import { loadOptionalSessionMetadataModelCatalog } from "./session-model-catalog.js";
 import type {
   GatewayRequestContext,
   GatewayRequestHandlerOptions,
@@ -2516,7 +2516,7 @@ export const chatHandlers: GatewayRequestHandlers = {
     }
     const modelCatalog = await measureDiagnosticsTimelineSpan(
       "gateway.chat.history.model_catalog",
-      () => loadOptionalSessionMetadataModelCatalog(context, "chat.history"),
+      () => loadOptionalServerMethodModelCatalog(context, "chat.history"),
       {
         config: cfg,
         phase: "chat.history",

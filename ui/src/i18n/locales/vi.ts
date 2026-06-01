@@ -1225,7 +1225,6 @@ export const vi: TranslationMap = {
     autoScrollAlways: "Luôn luôn",
     autoScrollNearBottom: "Gần cuối",
     autoScrollOff: "Tắt",
-    focusToggle: "Bật/tắt chế độ tập trung (ẩn thanh bên + tiêu đề trang)",
     hideCronSessions: "Ẩn phiên cron",
     showCronSessions: "Hiển thị phiên cron",
     showCronSessionsHidden: "Hiển thị phiên cron ({count} bị ẩn)",

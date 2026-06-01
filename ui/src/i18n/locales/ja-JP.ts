@@ -1236,7 +1236,6 @@ export const ja_JP: TranslationMap = {
     autoScrollAlways: "常に",
     autoScrollNearBottom: "下部付近",
     autoScrollOff: "オフ",
-    focusToggle: "フォーカスモードを切り替え（サイドバー + ページヘッダーを非表示）",
     hideCronSessions: "Cron セッションを非表示",
     showCronSessions: "Cron セッションを表示",
     showCronSessionsHidden: "Cron セッションを表示（{count} 件を非表示中）",

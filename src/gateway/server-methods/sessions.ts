@@ -120,8 +120,8 @@ import { applySessionsPatchToStore } from "../sessions-patch.js";
 import { resolveSessionKeyFromResolveParams } from "../sessions-resolve.js";
 import { setGatewayDedupeEntry } from "./agent-wait-dedupe.js";
 import { chatHandlers } from "./chat.js";
+import { loadOptionalServerMethodModelCatalog } from "./optional-model-catalog.js";
 import { hasTrackedActiveSessionRun } from "./session-active-runs.js";
-import { loadOptionalSessionMetadataModelCatalog } from "./session-model-catalog.js";
 import type {
   GatewayClient,
   GatewayRequestContext,
@@ -1042,7 +1042,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
           : store;
         const modelCatalog = await measureDiagnosticsTimelineSpan(
           "gateway.sessions.list.model_catalog",
-          () => loadOptionalSessionMetadataModelCatalog(context, "sessions.list"),
+          () => loadOptionalServerMethodModelCatalog(context, "sessions.list"),
           {
             config: cfg,
             phase: "sessions.list",
