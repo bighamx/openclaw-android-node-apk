@@ -111,6 +111,11 @@ export type ResolvedMemorySearchConfig = {
 };
 
 export type ResolvedMemorySearchSyncConfig = ResolvedMemorySearchConfig["sync"];
+export type MemorySearchResolvePurpose = "default" | "status" | "cli";
+export type MemorySearchResolveOptions = {
+  /** @deprecated No-op; kept for resolver call-site compatibility. */
+  purpose?: MemorySearchResolvePurpose;
+};
 
 const DEFAULT_CHUNK_TOKENS = 400;
 const DEFAULT_CHUNK_OVERLAP = 80;
@@ -468,6 +473,7 @@ function resolveSyncConfig(
 export function resolveMemorySearchConfig(
   cfg: OpenClawConfig,
   agentId: string,
+  _options?: MemorySearchResolveOptions,
 ): ResolvedMemorySearchConfig | null {
   const defaults = cfg.agents?.defaults?.memorySearch;
   const overrides = resolveAgentConfig(cfg, agentId)?.memorySearch;
@@ -500,6 +506,7 @@ export function resolveMemorySearchConfig(
 export function resolveMemorySearchSyncConfig(
   cfg: OpenClawConfig,
   agentId: string,
+  _options?: MemorySearchResolveOptions,
 ): ResolvedMemorySearchSyncConfig | null {
   const defaults = cfg.agents?.defaults?.memorySearch;
   const overrides = resolveAgentConfig(cfg, agentId)?.memorySearch;
