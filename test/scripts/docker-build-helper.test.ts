@@ -1696,6 +1696,7 @@ test -f "$TMPDIR/docker-cmd-seen"
 
     expect(runner).toContain("OPENCLAW_BUNDLED_PLUGIN_SWEEP_TOTAL");
     expect(runner).toContain("OPENCLAW_BUNDLED_PLUGIN_SWEEP_INDEX");
+    expect(runner).toContain("OPENCLAW_BUNDLED_PLUGIN_SWEEP_COMMAND_TIMEOUT");
     expect(runner).toContain("OPENCLAW_BUNDLED_PLUGIN_RUNTIME_READY_MS");
     expect(runner).toContain("OPENCLAW_PLUGIN_LIFECYCLE_TRACE");
     expect(runner).toContain("scripts/e2e/lib/bundled-plugin-install-uninstall/sweep.sh");
