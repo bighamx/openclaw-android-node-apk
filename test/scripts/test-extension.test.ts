@@ -530,6 +530,16 @@ describe("scripts/test-extension.mjs", () => {
     }
   });
 
+  it("rejects malformed extension shard counts", () => {
+    expect(() =>
+      createExtensionTestShards({
+        cwd: process.cwd(),
+        extensionIds: ["matrix", "openai"],
+        shardCount: "2x",
+      }),
+    ).toThrow("shardCount must be a positive integer");
+  });
+
   it("runs extension batch config groups concurrently when requested", async () => {
     const started: string[] = [];
     const resolvers: Array<() => void> = [];
