@@ -1,5 +1,13 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -88,6 +96,14 @@ function waitForDead(pid: number, timeoutMs = 2_000): void {
   }
 }
 
+function runPluginsSweepShell(script: string, env: NodeJS.ProcessEnv = {}) {
+  return spawnSync("/bin/bash", ["-c", script], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+}
+
 describe("plugins Docker assertions", () => {
   it("rejects loose ClawHub preflight limits instead of parsing prefixes", () => {
     const timeoutResult = spawnSync(process.execPath, [ASSERTIONS_SCRIPT, "clawhub-preflight"], {
@@ -126,10 +142,65 @@ describe("plugins Docker assertions", () => {
 
     for (const scriptPath of scripts) {
       const script = readFileSync(scriptPath, "utf8");
+      const scriptWithoutDefaultScratch = script.replace('mktemp -d "/tmp/openclaw-plugins.XXXXXX"', "");
       expect(script).toContain("OPENCLAW_PLUGINS_TMP_DIR");
-      expect(script).not.toMatch(
+      expect(scriptWithoutDefaultScratch).not.toMatch(
         /\/tmp\/(?:plugins|marketplace|demo-plugin|is-number|openclaw-plugin|openclaw-clawhub)/,
       );
+    }
+  });
+
+  it("cleans the default plugin sweep scratch root", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "openclaw-plugin-sweep-cleanup-"));
+    const marker = path.join(root, "scratch-path.txt");
+    try {
+      const result = runPluginsSweepShell(
+        `
+set -euo pipefail
+export OPENCLAW_PLUGINS_SWEEP_SOURCE_ONLY=1
+source scripts/e2e/lib/plugins/sweep.sh
+printf '%s\\n' "$OPENCLAW_PLUGINS_TMP_DIR" > "$MARKER"
+test -d "$OPENCLAW_PLUGINS_TMP_DIR"
+cleanup_openclaw_plugins_sweep
+test ! -e "$OPENCLAW_PLUGINS_TMP_DIR"
+`,
+        { MARKER: marker },
+      );
+
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe("");
+      expect(result.status).toBe(0);
+      const scratchRoot = readFileSync(marker, "utf8").trim();
+      expect(scratchRoot).toContain("/tmp/openclaw-plugins.");
+      expect(existsSync(scratchRoot)).toBe(false);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  it("preserves caller-provided plugin sweep scratch roots", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "openclaw-plugin-sweep-caller-"));
+    const scratchRoot = path.join(root, "scratch");
+    try {
+      const result = runPluginsSweepShell(
+        `
+set -euo pipefail
+export OPENCLAW_PLUGINS_SWEEP_SOURCE_ONLY=1
+export OPENCLAW_PLUGINS_TMP_DIR="$SCRATCH_ROOT"
+source scripts/e2e/lib/plugins/sweep.sh
+test -d "$OPENCLAW_PLUGINS_TMP_DIR"
+cleanup_openclaw_plugins_sweep
+test -d "$OPENCLAW_PLUGINS_TMP_DIR"
+`,
+        { SCRATCH_ROOT: scratchRoot },
+      );
+
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe("");
+      expect(result.status).toBe(0);
+      expect(existsSync(scratchRoot)).toBe(true);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
     }
   });
 
