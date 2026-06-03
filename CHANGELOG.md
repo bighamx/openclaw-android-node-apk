@@ -45,6 +45,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Discord: match the shipped `libopus-wasm` error shape so corrupt voice packets are treated as decode noise instead of crashing receive recovery.
 - Canvas: restore A2UI Google, X, and legacy Granola compatibility image assets in the bundled host payload.
 - Agents/providers: avoid loading owner plugin runtimes for explicitly configured custom provider models during OpenAI-compatible transport setup.
 - Tooling: fail Codex app-server protocol generation before invoking Cargo when local disk headroom is too low.
