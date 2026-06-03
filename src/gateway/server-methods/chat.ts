@@ -333,6 +333,28 @@ function buildMediaOnlyTtsSupplementTranscriptMarker(
   return buildTtsSupplementTranscriptMarker(payload);
 }
 
+function resolveWebchatPromptCacheKey(params: {
+  agentId: string;
+  model: string;
+  provider: string;
+  sessionKey: string;
+}): string {
+  const digest = createHash("sha256")
+    .update(
+      [
+        "v1",
+        params.provider.trim().toLowerCase(),
+        params.model.trim(),
+        normalizeAgentId(params.agentId),
+        params.sessionKey,
+      ].join("\0"),
+      "utf8",
+    )
+    .digest("hex")
+    .slice(0, 32);
+  return `openclaw-webchat-${digest}`;
+}
+
 async function buildWebchatAssistantMediaMessage(
   payloads: ReplyPayload[],
   options?: {
@@ -2518,6 +2540,14 @@ async function handleChatHistoryRequest({
     respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, selectedAgent.error));
     return;
   }
+  const modelCatalogPromise = measureDiagnosticsTimelineSpan(
+    `gateway.${method}.model_catalog`,
+    () => loadOptionalServerMethodModelCatalog(context, method),
+    {
+      config: cfg,
+      phase: method,
+    },
+  );
   const sessionId = entry?.sessionId;
   const sessionAgentId = resolveSessionAgentId({
     sessionKey,
@@ -2598,14 +2628,7 @@ async function handleChatHistoryRequest({
       `chat.history omitted oversized payloads placeholders=${placeholderCount} total=${chatHistoryPlaceholderEmitCount}`,
     );
   }
-  const modelCatalog = await measureDiagnosticsTimelineSpan(
-    `gateway.${method}.model_catalog`,
-    () => loadOptionalServerMethodModelCatalog(context, method),
-    {
-      config: cfg,
-      phase: method,
-    },
-  );
+  const modelCatalog = await modelCatalogPromise;
   const sessionInfo = buildGatewaySessionInfo({
     cfg,
     storePath,
@@ -3633,6 +3656,16 @@ export const chatHandlers: GatewayRequestHandlers = {
             dispatcher,
             replyOptions: {
               runId: clientRunId,
+              ...(isOperatorUiClient(clientInfo)
+                ? {
+                    promptCacheKey: resolveWebchatPromptCacheKey({
+                      agentId,
+                      provider: resolvedSessionModel.provider,
+                      model: resolvedSessionModel.model,
+                      sessionKey: activeRunScopeKey,
+                    }),
+                  }
+                : {}),
               abortSignal: activeRunAbort.controller.signal,
               images: replyOptionImages,
               imageOrder: imageOrder.length > 0 ? imageOrder : undefined,
