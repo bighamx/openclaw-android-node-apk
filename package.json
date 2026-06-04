@@ -1,6 +1,6 @@
 {
   "name": "openclaw",
-  "version": "2026.6.3",
+  "version": "2026.6.2",
   "description": "Multi-channel AI gateway with extensible messaging integrations",
   "keywords": [],
   "homepage": "https://github.com/openclaw/openclaw#readme",
@@ -1950,14 +1950,6 @@
   },
   "optionalDependencies": {
     "sqlite-vec": "0.1.9"
-  },
-  "overrides": {
-    "axios": "1.16.0",
-    "fast-uri": "3.1.2",
-    "follow-redirects": "1.16.0",
-    "ip-address": "10.2.0",
-    "node-domexception": "npm:@nolyfill/domexception@1.0.28",
-    "uuid": "14.0.0"
   },
   "engines": {
     "node": ">=22.19.0"
