@@ -1,3 +1,8 @@
+/**
+ * Parses output from CLI-backed model providers. It supports plain text, JSON,
+ * JSONL streaming, Claude stream-json dialects, usage metadata, and tool event
+ * reconstruction.
+ */
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
 import type { CliBackendConfig } from "../config/types.js";
