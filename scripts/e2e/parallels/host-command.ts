@@ -519,7 +519,12 @@ export async function runStreaming(
         } else {
           resolve(code ?? (signal ? 128 : 1));
         }
-      })();
+      })().catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        reject(
+          new Error(`failed to write Parallels host command log: ${message}`, { cause: error }),
+        );
+      });
     });
   });
 }

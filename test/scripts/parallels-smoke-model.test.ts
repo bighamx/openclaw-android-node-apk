@@ -25,6 +25,7 @@ import {
   resolveUbuntuVmName,
   resolveWindowsProviderAuth,
   run,
+  runStreaming,
   shellQuote,
   withProgressOnStderr,
 } from "../../scripts/e2e/parallels/common.ts";
@@ -1004,6 +1005,20 @@ setInterval(() => {}, 1000);
         timeoutMs: 50,
       }),
     ).toThrow(/ENOENT/u);
+  });
+
+  it("rejects streaming host commands when log writes fail", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "openclaw-parallels-host-command-log-"));
+    try {
+      await expect(
+        runStreaming(process.execPath, ["-e", "process.stdout.write('ok')"], {
+          logPath: tempDir,
+          quiet: true,
+        }),
+      ).rejects.toThrow(/failed to write Parallels host command log/u);
+    } finally {
+      rmSync(tempDir, { force: true, recursive: true });
+    }
   });
 
   it.runIf(process.platform !== "win32")(
