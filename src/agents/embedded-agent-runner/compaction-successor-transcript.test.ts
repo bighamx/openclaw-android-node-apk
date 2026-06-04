@@ -1,3 +1,4 @@
+// Persistence coverage for transcript rotation after successful compaction.
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -82,6 +83,8 @@ function createCompactedSession(sessionDir: string): {
   firstKeptId: string;
   oldUserId: string;
 } {
+  // Fixture includes pre-compaction history, preserved branch metadata, and
+  // post-compaction turns so rotation can prove exactly which entries survive.
   const manager = SessionManager.create(sessionDir, sessionDir);
   manager.appendModelChange("openai", "gpt-5.2");
   manager.appendThinkingLevelChange("medium");
@@ -108,6 +111,8 @@ describe("rotateTranscriptAfterCompaction", () => {
     const dir = await createTmpDir();
     const { sessionFile } = createCompactedSession(dir);
 
+    // File-only rotation is used after the active manager has moved on; opening
+    // a new manager here would hide bugs in the direct persistence path.
     const openSpy = vi.spyOn(SessionManager, "open").mockImplementation(() => {
       throw new Error("SessionManager.open should not be used for file rotation");
     });
