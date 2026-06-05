@@ -1,3 +1,4 @@
+// Package Acceptance Workflow tests cover package acceptance workflow script behavior.
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
