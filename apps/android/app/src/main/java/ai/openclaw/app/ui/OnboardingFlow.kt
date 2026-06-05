@@ -3,7 +3,6 @@ package ai.openclaw.app.ui
 import ai.openclaw.app.LocationMode
 import ai.openclaw.app.MainViewModel
 import ai.openclaw.app.SensitiveFeatureConfig
-import ai.openclaw.app.gateway.GatewayEndpoint
 import ai.openclaw.app.node.DeviceNotificationListenerService
 import ai.openclaw.app.ui.design.ClawDesignTheme
 import ai.openclaw.app.ui.design.ClawErrorState
@@ -254,7 +253,7 @@ fun OnboardingFlow(
           onUseNearby = {
             val endpoint = gateways.firstOrNull() ?: return@GatewaySetupScreen
             attemptedConnect = true
-            viewModel.connect(endpoint)
+            viewModel.connectInBackground(endpoint)
             step = OnboardingStep.Recovery
           },
           onPair = {
@@ -275,21 +274,14 @@ fun OnboardingFlow(
             setupError = null
             attemptedConnect = true
             connectAttemptStartedAtMs = SystemClock.elapsedRealtime()
-            // Setup-code pairing replaces any stale shared credentials before
-            // the bootstrap token is stored for the first authenticated connect.
-            viewModel.resetGatewaySetupAuth()
-            viewModel.setManualEnabled(true)
-            viewModel.setManualHost(config.host)
-            viewModel.setManualPort(config.port)
-            viewModel.setManualTls(config.tls)
-            viewModel.setGatewayBootstrapToken(config.bootstrapToken)
-            viewModel.setGatewayToken(config.token)
-            viewModel.setGatewayPassword(config.password)
-            viewModel.connect(
-              GatewayEndpoint.manual(host = config.host, port = config.port),
-              token = config.token.ifEmpty { null },
-              bootstrapToken = config.bootstrapToken.ifEmpty { null },
-              password = config.password.ifEmpty { null },
+            viewModel.saveGatewayConfigAndConnect(
+              host = config.host,
+              port = config.port,
+              tls = config.tls,
+              token = config.token,
+              bootstrapToken = config.bootstrapToken,
+              password = config.password,
+              resetSetupAuth = true,
             )
             step = OnboardingStep.Recovery
           },
@@ -317,11 +309,14 @@ fun OnboardingFlow(
                 token = token,
                 password = password,
               ) ?: return@GatewayRecoveryScreen
-            viewModel.connect(
-              GatewayEndpoint.manual(host = config.host, port = config.port),
-              token = config.token.ifEmpty { null },
-              bootstrapToken = config.bootstrapToken.ifEmpty { null },
-              password = config.password.ifEmpty { null },
+            viewModel.saveGatewayConfigAndConnect(
+              host = config.host,
+              port = config.port,
+              tls = config.tls,
+              token = config.token,
+              bootstrapToken = config.bootstrapToken,
+              password = config.password,
+              resetSetupAuth = false,
             )
           },
           onEdit = { step = OnboardingStep.Gateway },

@@ -4,6 +4,8 @@ import ai.openclaw.app.chat.ChatMessage
 import ai.openclaw.app.chat.ChatPendingToolCall
 import ai.openclaw.app.chat.ChatSessionEntry
 import ai.openclaw.app.chat.OutgoingAttachment
+import ai.openclaw.app.gateway.DeviceAuthStore
+import ai.openclaw.app.gateway.DeviceIdentityStore
 import ai.openclaw.app.gateway.GatewayEndpoint
 import ai.openclaw.app.gateway.GatewayUpdateAvailableSummary
 import ai.openclaw.app.node.CameraCaptureManager
@@ -280,9 +282,51 @@ class MainViewModel(
     prefs.setGatewayPassword(value)
   }
 
-  /** Clears setup credentials through the runtime so active gateway sessions drop stale auth state. */
-  fun resetGatewaySetupAuth() {
-    ensureRuntime().resetGatewaySetupAuth()
+  /** Clears setup credentials without starting the runtime just to discard first-run pairing auth. */
+  private fun resetGatewaySetupAuth() {
+    runtimeRef.value?.resetGatewaySetupAuth() ?: resetGatewaySetupAuthWithoutRuntime()
+  }
+
+  private fun resetGatewaySetupAuthWithoutRuntime() {
+    prefs.clearGatewaySetupAuth()
+    val deviceId = DeviceIdentityStore(nodeApp).loadOrCreate().deviceId
+    val deviceAuthStore = DeviceAuthStore(prefs)
+    deviceAuthStore.clearToken(deviceId, "node")
+    deviceAuthStore.clearToken(deviceId, "operator")
+  }
+
+  fun saveGatewayConfigAndConnect(
+    host: String,
+    port: Int,
+    tls: Boolean,
+    token: String,
+    bootstrapToken: String,
+    password: String,
+    resetSetupAuth: Boolean,
+  ) {
+    // Gateway pairing touches encrypted prefs, identity files, and sockets; keep
+    // the whole sequence off the Compose thread so retries cannot trigger ANRs.
+    viewModelScope.launch(Dispatchers.Default) {
+      if (resetSetupAuth) {
+        resetGatewaySetupAuth()
+      }
+      prefs.setManualEnabled(true)
+      prefs.setManualHost(host)
+      prefs.setManualPort(port)
+      prefs.setManualTls(tls)
+      prefs.setGatewayBootstrapToken(bootstrapToken)
+      prefs.setGatewayToken(token)
+      prefs.setGatewayPassword(password)
+      ensureRuntime()
+        .connect(
+          GatewayEndpoint.manual(host = host, port = port),
+          NodeRuntime.GatewayConnectAuth(
+            token = token.ifEmpty { null },
+            bootstrapToken = bootstrapToken.ifEmpty { null },
+            password = password.ifEmpty { null },
+          ),
+        )
+    }
   }
 
   /** Marks onboarding complete and starts the runtime before UI observes connected-state flows. */
@@ -295,10 +339,12 @@ class MainViewModel(
 
   /** Re-enters gateway setup after disconnecting and clearing one-time setup credentials. */
   fun pairNewGateway() {
-    runtimeRef.value?.disconnect()
-    resetGatewaySetupAuth()
-    _startOnboardingAtGatewaySetup.value = true
-    prefs.setOnboardingCompleted(false)
+    viewModelScope.launch(Dispatchers.Default) {
+      runtimeRef.value?.disconnect()
+      resetGatewaySetupAuth()
+      prefs.setOnboardingCompleted(false)
+      _startOnboardingAtGatewaySetup.value = true
+    }
   }
 
   /** Acknowledges the one-shot request that opens onboarding at the gateway setup step. */
@@ -394,11 +440,19 @@ class MainViewModel(
   }
 
   fun refreshGatewayConnection() {
-    ensureRuntime().refreshGatewayConnection()
+    viewModelScope.launch(Dispatchers.Default) {
+      ensureRuntime().refreshGatewayConnection()
+    }
   }
 
   fun connect(endpoint: GatewayEndpoint) {
     ensureRuntime().connect(endpoint)
+  }
+
+  fun connectInBackground(endpoint: GatewayEndpoint) {
+    viewModelScope.launch(Dispatchers.Default) {
+      ensureRuntime().connect(endpoint)
+    }
   }
 
   fun connect(

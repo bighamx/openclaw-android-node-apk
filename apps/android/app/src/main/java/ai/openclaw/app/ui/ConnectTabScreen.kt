@@ -1,7 +1,6 @@
 package ai.openclaw.app.ui
 
 import ai.openclaw.app.MainViewModel
-import ai.openclaw.app.gateway.GatewayEndpoint
 import ai.openclaw.app.ui.mobileCardSurface
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
@@ -291,27 +290,14 @@ fun ConnectTabScreen(viewModel: MainViewModel) {
           }
 
           validationText = null
-          if (inputMode == ConnectInputMode.SetupCode) {
-            // Setup-code auth should replace old bootstrap/shared credentials;
-            // manual reconnects keep existing typed credentials.
-            viewModel.resetGatewaySetupAuth()
-          }
-          viewModel.setManualEnabled(true)
-          viewModel.setManualHost(config.host)
-          viewModel.setManualPort(config.port)
-          viewModel.setManualTls(config.tls)
-          viewModel.setGatewayBootstrapToken(config.bootstrapToken)
-          if (config.token.isNotBlank()) {
-            viewModel.setGatewayToken(config.token)
-          } else if (config.bootstrapToken.isNotBlank()) {
-            viewModel.setGatewayToken("")
-          }
-          viewModel.setGatewayPassword(config.password)
-          viewModel.connect(
-            GatewayEndpoint.manual(host = config.host, port = config.port),
-            token = config.token.ifEmpty { null },
-            bootstrapToken = config.bootstrapToken.ifEmpty { null },
-            password = config.password.ifEmpty { null },
+          viewModel.saveGatewayConfigAndConnect(
+            host = config.host,
+            port = config.port,
+            tls = config.tls,
+            token = config.token,
+            bootstrapToken = config.bootstrapToken,
+            password = config.password,
+            resetSetupAuth = inputMode == ConnectInputMode.SetupCode,
           )
         },
         modifier = Modifier.fillMaxWidth().height(52.dp),
