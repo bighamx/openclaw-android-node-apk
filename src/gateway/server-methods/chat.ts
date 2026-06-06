@@ -517,6 +517,31 @@ function resolveActiveChatSendRunId(value: unknown): string | null {
   return typeof runId === "string" && runId.trim() ? runId : null;
 }
 
+function clearActiveChatSendDedupeRun(
+  dedupe: GatewayRequestContext["dedupe"],
+  key: string | null,
+  runId: string,
+) {
+  if (!key || resolveActiveChatSendRunId(dedupe.get(key)?.payload) !== runId) {
+    return;
+  }
+  dedupe.delete(key);
+}
+
+function buildAbortedChatSendPayload(params: {
+  runId: string;
+  endedAt: number;
+  stopReason?: string;
+}) {
+  return {
+    runId: params.runId,
+    status: "timeout" as const,
+    summary: "aborted",
+    ...(params.stopReason ? { stopReason: params.stopReason } : {}),
+    endedAt: params.endedAt,
+  };
+}
+
 function buildActiveChatSendDedupeKey(params: {
   attachmentCount: number;
   explicitDeliverRoute: boolean;
@@ -3033,6 +3058,28 @@ export const chatHandlers: GatewayRequestHandlers = {
       return;
     }
 
+    const abortedAt = context.chatAbortedRuns.get(clientRunId);
+    if (abortedAt !== undefined) {
+      const payload = buildAbortedChatSendPayload({
+        runId: clientRunId,
+        endedAt: abortedAt,
+      });
+      setGatewayDedupeEntry({
+        dedupe: context.dedupe,
+        key: `chat:${clientRunId}`,
+        entry: {
+          ts: abortedAt,
+          ok: true,
+          payload,
+        },
+      });
+      respond(true, payload, undefined, {
+        cached: true,
+        runId: clientRunId,
+      });
+      return;
+    }
+
     const activeExisting = context.chatAbortControllers.get(clientRunId);
     if (activeExisting) {
       respond(true, { runId: clientRunId, status: "in_flight" as const }, undefined, {
@@ -3080,6 +3127,34 @@ export const chatHandlers: GatewayRequestHandlers = {
         });
         return;
       }
+    }
+    const activeRunAbort = registerChatAbortController({
+      chatAbortControllers: context.chatAbortControllers,
+      runId: clientRunId,
+      sessionId: backingSessionId ?? clientRunId,
+      sessionKey,
+      agentId: selectedAgent.agentId,
+      timeoutMs,
+      now,
+      ownerConnId: normalizeOptionalText(client?.connId),
+      ownerDeviceId: normalizeOptionalText(client?.connect?.device?.id),
+      providerId: resolvedSessionModel.provider,
+      authProviderId: resolvedSessionAuthProvider,
+      kind: "chat-send",
+    });
+    if (!activeRunAbort.registered) {
+      respond(true, { runId: clientRunId, status: "in_flight" as const }, undefined, {
+        cached: true,
+        runId: clientRunId,
+      });
+      return;
+    }
+    if (activeChatSendDedupeKey) {
+      context.dedupe.set(activeChatSendDedupeKey, {
+        ts: now,
+        ok: true,
+        payload: { runId: clientRunId },
+      });
     }
     const explicitOriginTargetsPlugin = explicitOriginTargetsPluginBinding(
       explicitOriginResult.value,
@@ -3152,6 +3227,8 @@ export const chatHandlers: GatewayRequestHandlers = {
           performance.now() - prepareAttachmentsStartedAtMs,
         );
       } catch (err) {
+        activeRunAbort.cleanup();
+        clearActiveChatSendDedupeRun(context.dedupe, activeChatSendDedupeKey, clientRunId);
         logAttachmentFailure(context.logGateway, "chat.send attachment parse/stage failed", err);
         respond(
           false,
@@ -3164,36 +3241,29 @@ export const chatHandlers: GatewayRequestHandlers = {
         return;
       }
     }
+    if (activeRunAbort.controller.signal.aborted) {
+      const stopReason = activeRunAbort.entry?.abortStopReason ?? "rpc";
+      const endedAt = Date.now();
+      const payload = buildAbortedChatSendPayload({
+        runId: clientRunId,
+        stopReason,
+        endedAt,
+      });
+      clearActiveChatSendDedupeRun(context.dedupe, activeChatSendDedupeKey, clientRunId);
+      setGatewayDedupeEntry({
+        dedupe: context.dedupe,
+        key: `chat:${clientRunId}`,
+        entry: {
+          ts: endedAt,
+          ok: true,
+          payload,
+        },
+      });
+      respond(true, payload, undefined, { runId: clientRunId });
+      return;
+    }
 
     try {
-      const activeRunAbort = registerChatAbortController({
-        chatAbortControllers: context.chatAbortControllers,
-        runId: clientRunId,
-        sessionId: backingSessionId ?? clientRunId,
-        sessionKey,
-        agentId: selectedAgent.agentId,
-        timeoutMs,
-        now,
-        ownerConnId: normalizeOptionalText(client?.connId),
-        ownerDeviceId: normalizeOptionalText(client?.connect?.device?.id),
-        providerId: resolvedSessionModel.provider,
-        authProviderId: resolvedSessionAuthProvider,
-        kind: "chat-send",
-      });
-      if (!activeRunAbort.registered) {
-        respond(true, { runId: clientRunId, status: "in_flight" as const }, undefined, {
-          cached: true,
-          runId: clientRunId,
-        });
-        return;
-      }
-      if (activeChatSendDedupeKey) {
-        context.dedupe.set(activeChatSendDedupeKey, {
-          ts: now,
-          ok: true,
-          payload: { runId: clientRunId },
-        });
-      }
       context.addChatRun(clientRunId, {
         sessionKey,
         agentId: selectedAgent.agentId,
@@ -4280,10 +4350,12 @@ export const chatHandlers: GatewayRequestHandlers = {
         })
         .finally(() => {
           activeRunAbort.cleanup();
+          clearActiveChatSendDedupeRun(context.dedupe, activeChatSendDedupeKey, clientRunId);
           context.removeChatRun(clientRunId, clientRunId, sessionKey);
         });
     } catch (err) {
-      context.chatAbortControllers.delete(clientRunId);
+      activeRunAbort.cleanup();
+      clearActiveChatSendDedupeRun(context.dedupe, activeChatSendDedupeKey, clientRunId);
       context.removeChatRun(clientRunId, clientRunId, sessionKey);
       const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
       const payload = {
