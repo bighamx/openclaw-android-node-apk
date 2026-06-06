@@ -17,6 +17,8 @@ import {
   assertCommandResourceCeiling,
   assertDiagnosticStabilityClean,
   assertExpectedKitchenSinkToolEntries,
+  assertGatewayHealthPayload,
+  assertGatewayStatusPayload,
   assertKitchenSinkSearchInvokeResult,
   assertKitchenSinkTextInvokeResult,
   assertResourceCeiling,
@@ -298,6 +300,30 @@ describe("kitchen-sink RPC gateway teardown", () => {
 
       expect(calls).toBe(1);
       expect(Date.now() - startedAt).toBeLessThan(500);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("requires /readyz body.ready before accepting gateway readiness", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "openclaw-kitchen-rpc-ready-body-"));
+    try {
+      const logPath = path.join(root, "gateway.log");
+      writeFileSync(logPath, "[gateway] ready\n");
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(new Response('{"ready":false}', { status: 200 }))
+        .mockResolvedValueOnce(new Response('{"ready":true}', { status: 200 }));
+
+      await expect(
+        waitForGatewayReady({ exitCode: null, signalCode: null }, 9, logPath, {
+          fetchImpl,
+          pollDelayMs: 1,
+          timeoutMs: 100,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -748,6 +774,57 @@ describe("kitchen-sink RPC diagnostics assertions", () => {
             truncated: 0,
             chunked: 1,
           },
+        },
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("kitchen-sink RPC health/status assertions", () => {
+  it("rejects empty health and status RPC payloads", () => {
+    expect(() => assertGatewayHealthPayload({})).toThrow("health payload missing");
+    expect(() => assertGatewayStatusPayload({})).toThrow("status payload missing");
+  });
+
+  it("accepts minimally valid gateway health and status RPC payloads", () => {
+    expect(() =>
+      assertGatewayHealthPayload({
+        ok: true,
+        ts: Date.now(),
+        durationMs: 12,
+        channels: {},
+        channelOrder: [],
+        channelLabels: {},
+        heartbeatSeconds: 30,
+        defaultAgentId: "main",
+        agents: [],
+        sessions: {
+          path: "/tmp/openclaw-sessions.sqlite",
+          count: 0,
+          recent: [],
+        },
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertGatewayStatusPayload({
+        heartbeat: {
+          defaultAgentId: "main",
+          agents: [],
+        },
+        channelSummary: [],
+        queuedSystemEvents: [],
+        tasks: {},
+        taskAudit: {},
+        sessions: {
+          paths: [],
+          count: 0,
+          defaults: {
+            model: null,
+            contextTokens: null,
+          },
+          recent: [],
+          byAgent: [],
         },
       }),
     ).not.toThrow();
