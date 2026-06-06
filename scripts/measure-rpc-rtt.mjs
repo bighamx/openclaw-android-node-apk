@@ -31,7 +31,27 @@ function usage() {
   ].join("\n");
 }
 
-function parseArgs(argv) {
+function readFlagValue(argv, index, flag) {
+  const value = argv[index + 1];
+  if (!value) {
+    throw new Error(`${flag} requires a value.`);
+  }
+  return value;
+}
+
+function parsePositiveInt(value, flag) {
+  const text = String(value ?? "").trim();
+  if (!/^\d+$/u.test(text)) {
+    throw new Error(`${flag} must be a positive integer.`);
+  }
+  const parsed = Number(text);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`${flag} must be a positive integer.`);
+  }
+  return parsed;
+}
+
+export function parseArgs(argv) {
   const args = {
     iterations: DEFAULT_ITERATIONS,
     methods: DEFAULT_METHODS,
@@ -39,31 +59,32 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--output-dir") {
-      args.outputDir = argv[(index += 1)];
+      args.outputDir = readFlagValue(argv, index, arg);
+      index += 1;
       continue;
     }
     if (arg === "--repo-root") {
-      args.repoRoot = argv[(index += 1)];
+      args.repoRoot = readFlagValue(argv, index, arg);
+      index += 1;
       continue;
     }
     if (arg === "--iterations") {
-      args.iterations = Number(argv[(index += 1)]);
+      args.iterations = parsePositiveInt(readFlagValue(argv, index, arg), arg);
+      index += 1;
       continue;
     }
     if (arg === "--methods") {
-      args.methods = argv[(index += 1)]
+      args.methods = readFlagValue(argv, index, arg)
         .split(",")
         .map((entry) => entry.trim())
         .filter(Boolean);
+      index += 1;
       continue;
     }
     throw new Error(`Unknown argument: ${arg}\n${usage()}`);
   }
   if (!args.outputDir) {
     throw new Error(usage());
-  }
-  if (!Number.isInteger(args.iterations) || args.iterations < 1) {
-    throw new Error("--iterations must be a positive integer.");
   }
   if (args.methods.length === 0) {
     throw new Error("--methods must include at least one gateway method.");
@@ -432,14 +453,24 @@ function quantile(sorted, q) {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * q) - 1))];
 }
 
-function stats(samples) {
+function roundMeasuredMs(value, label) {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative finite duration.`);
+  }
+  return Math.max(1, Math.round(value));
+}
+
+export function summarizeRttSamples(samples) {
+  if (samples.length === 0) {
+    throw new Error("RPC RTT measurement produced no samples.");
+  }
   const sorted = samples.toSorted((left, right) => left - right);
   return {
-    avgMs: Math.round(sorted.reduce((sum, value) => sum + value, 0) / sorted.length),
-    maxMs: Math.round(sorted.at(-1)),
-    minMs: Math.round(sorted[0]),
-    p50Ms: Math.round(quantile(sorted, 0.5)),
-    p95Ms: Math.round(quantile(sorted, 0.95)),
+    avgMs: roundMeasuredMs(sorted.reduce((sum, value) => sum + value, 0) / sorted.length, "avgMs"),
+    maxMs: roundMeasuredMs(sorted.at(-1), "maxMs"),
+    minMs: roundMeasuredMs(sorted[0], "minMs"),
+    p50Ms: roundMeasuredMs(quantile(sorted, 0.5), "p50Ms"),
+    p95Ms: roundMeasuredMs(quantile(sorted, 0.95), "p95Ms"),
   };
 }
 
@@ -665,7 +696,7 @@ async function main() {
       payload: {
         method: "connect",
         ok: true,
-        durationMs: Math.round(performance.now() - connectStarted),
+        durationMs: roundMeasuredMs(performance.now() - connectStarted, "connect durationMs"),
       },
     });
     const samples = [];
@@ -673,23 +704,30 @@ async function main() {
       for (let iteration = 1; iteration <= args.iterations; iteration += 1) {
         const requestStartedAtMs = performance.now();
         const response = await client.request(method, {}, 10_000);
-        const durationMs = Math.round(performance.now() - requestStartedAtMs);
+        const durationMs = performance.now() - requestStartedAtMs;
+        const roundedDurationMs = roundMeasuredMs(durationMs, `${method} durationMs`);
         if (!response.ok) {
           throw new Error(`${method} failed: ${JSON.stringify(response.error)}`);
         }
         samples.push({ method, durationMs });
         events.push({
           event: "gateway-rpc",
-          payload: { kind: "gateway-rpc", method, ok: true, durationMs, iteration },
+          payload: {
+            kind: "gateway-rpc",
+            method,
+            ok: true,
+            durationMs: roundedDurationMs,
+            iteration,
+          },
         });
       }
     }
     client.close();
-    const sampleStats = stats(samples.map((sample) => sample.durationMs));
+    const sampleStats = summarizeRttSamples(samples.map((sample) => sample.durationMs));
     const byMethod = Object.fromEntries(
       args.methods.map((method) => [
         method,
-        stats(
+        summarizeRttSamples(
           samples.filter((sample) => sample.method === method).map((sample) => sample.durationMs),
         ),
       ]),

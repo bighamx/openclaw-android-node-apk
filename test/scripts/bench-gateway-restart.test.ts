@@ -44,8 +44,31 @@ describe("gateway restart benchmark script", () => {
   it("rejects ambiguous benchmark CLI values before spawning Node", () => {
     expect(testing.parsePositiveInt("5", 1, "--restarts")).toBe(5);
     expect(testing.parseNonNegativeInt("0", 1, "--warmup")).toBe(0);
+    expect(
+      testing.parseOptions([
+        "--case",
+        "skipChannelsNoAcpxProbe",
+        "--output",
+        "restart.json",
+        "--allow-failures",
+        "--restarts",
+        "2",
+      ]),
+    ).toMatchObject({
+      allowFailures: true,
+      cases: [{ id: "skipChannelsNoAcpxProbe" }],
+      output: "restart.json",
+      restarts: 2,
+    });
     expect(() => testing.parsePositiveInt("2abc", 1, "--restarts")).toThrow(
       /--restarts must be an integer/u,
+    );
+    expect(() => testing.parseOptions(["--output", "--case", "skipChannels"])).toThrow(
+      "--output requires a value",
+    );
+    expect(() => testing.parseOptions(["--case"])).toThrow("--case requires a value");
+    expect(() => testing.parseOptions(["--restarts", "--runs", "1"])).toThrow(
+      "--restarts requires a value",
     );
     expect(() => testing.resolveEntry("--inspect")).toThrow(/must be a file path/u);
   });
