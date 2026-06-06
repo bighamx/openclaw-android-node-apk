@@ -83,6 +83,17 @@ describe("check-cli-startup-memory", () => {
     ).toBe(1000);
   });
 
+  it("rejects missing startup memory artifact paths", () => {
+    for (const args of [
+      ["--json"],
+      ["--json", "--summary"],
+      ["--summary"],
+      ["--summary", "--json"],
+    ]) {
+      expect(() => testing.parseArgs(args)).toThrow(/--(?:json|summary) requires a path/u);
+    }
+  });
+
   it("does not create a temp home before argument validation succeeds", () => {
     if (process.platform !== "darwin" && process.platform !== "linux") {
       return;
@@ -145,5 +156,32 @@ describe("check-cli-startup-memory", () => {
     ).toThrow("--help timed out after 1234ms");
     expect(seenTimeouts).toEqual([1234, 1234, 1234]);
     expect(seenKillSignals).toEqual(["SIGKILL", "SIGKILL", "SIGKILL"]);
+  });
+
+  it("rejects zero RSS markers instead of passing empty resource evidence", () => {
+    if (process.platform !== "darwin" && process.platform !== "linux") {
+      return;
+    }
+
+    const tempRoot = makeTempRoot();
+    expect(() =>
+      testing.runStartupMemoryCheck(
+        [
+          "--json",
+          path.join(tempRoot, "startup-memory.json"),
+          "--summary",
+          path.join(tempRoot, "summary.md"),
+        ],
+        {
+          platform: "darwin",
+          spawnSync: () => ({
+            signal: null,
+            status: 0,
+            stderr: "__OPENCLAW_MAX_RSS_KB__=0\n",
+            stdout: "",
+          }),
+        },
+      ),
+    ).toThrow("--help did not report max RSS");
   });
 });

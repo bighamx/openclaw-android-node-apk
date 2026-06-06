@@ -389,6 +389,33 @@ describe("scripts/test-group-report arg parsing", () => {
       );
     }
   });
+
+  it("rejects missing report path, config, and numeric option values", () => {
+    for (const flag of ["--config", "--report", "--group-by", "--output"]) {
+      expect(() => parseTestGroupReportArgs([flag, "--limit", "5"])).toThrow(
+        `${flag} requires a value`,
+      );
+    }
+    for (const flag of [
+      "--limit",
+      "--top-files",
+      "--max-test-ms",
+      "--timeout-ms",
+      "--kill-grace-ms",
+      "--concurrency",
+    ]) {
+      expect(() => parseTestGroupReportArgs([flag])).toThrow(`${flag} requires a value`);
+      expect(() => parseTestGroupReportArgs([flag, "--output", "report.json"])).toThrow(
+        `${flag} requires a value`,
+      );
+    }
+    expect(() => parseTestGroupReportArgs(["--compare", "before.json", "--limit"])).toThrow(
+      "--compare requires a value",
+    );
+    expect(() => parseTestGroupReportArgs(["--compare", "--limit", "5"])).toThrow(
+      "--compare requires a value",
+    );
+  });
 });
 
 describe("scripts/test-group-report child process guard", () => {

@@ -41,6 +41,14 @@ function readNonEmptyEnv(name) {
   return value === undefined || value.length === 0 ? null : value;
 }
 
+function readRequiredPathOption(argv, index, flag) {
+  const value = argv[index + 1];
+  if (!value || value.startsWith("--")) {
+    throw new Error(`${flag} requires a path`);
+  }
+  return value;
+}
+
 function parseArgs(argv) {
   const options = {
     jsonPath:
@@ -53,19 +61,13 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--json") {
-      const value = argv[index + 1];
-      if (!value) {
-        throw new Error("--json requires a path");
-      }
+      const value = readRequiredPathOption(argv, index, "--json");
       options.jsonPath = path.resolve(value);
       index += 1;
       continue;
     }
     if (arg === "--summary") {
-      const value = argv[index + 1];
-      if (!value) {
-        throw new Error("--summary requires a path");
-      }
+      const value = readRequiredPathOption(argv, index, "--summary");
       options.summaryPath = path.resolve(value);
       index += 1;
       continue;
@@ -153,7 +155,8 @@ function parseMaxRssMb(stderr) {
   if (!lastMatch) {
     return null;
   }
-  return Number(lastMatch[1]) / 1024;
+  const maxRssKb = Number(lastMatch[1]);
+  return Number.isFinite(maxRssKb) && maxRssKb > 0 ? maxRssKb / 1024 : null;
 }
 
 function formatMb(value) {
