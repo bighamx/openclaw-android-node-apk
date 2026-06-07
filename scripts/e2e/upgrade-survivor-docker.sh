@@ -372,7 +372,6 @@ node scripts/e2e/lib/upgrade-survivor/probe-gateway.mjs \
   --base-url "http://127.0.0.1:$PORT" \
   --path /readyz \
   --expect ready \
-  --allow-failing discord,telegram,whatsapp,feishu,matrix \
   --out /tmp/openclaw-upgrade-survivor-readyz.json
 
 echo "Checking gateway RPC status..."

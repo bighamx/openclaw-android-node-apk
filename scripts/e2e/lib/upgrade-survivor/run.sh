@@ -1177,6 +1177,9 @@ probe_gateway_endpoint() {
   if [ -n "${OPENCLAW_UPGRADE_SURVIVOR_READYZ_ALLOW_FAILING:-}" ]; then
     args+=(--allow-failing "$OPENCLAW_UPGRADE_SURVIVOR_READYZ_ALLOW_FAILING")
   fi
+  if [ "${OPENCLAW_UPGRADE_SURVIVOR_READYZ_ALLOW_DEGRADED:-}" = "1" ]; then
+    args+=(--allow-degraded-ready)
+  fi
   args+=(--out "$out_file")
   start_epoch="$(node -e "process.stdout.write(String(Date.now()))")"
   node scripts/e2e/lib/upgrade-survivor/probe-gateway.mjs "${args[@]}"
@@ -1214,9 +1217,7 @@ ensure_gateway_started() {
 
 check_gateway_probes() {
   healthz_seconds="$(probe_gateway_endpoint /healthz live "$HEALTHZ_JSON")"
-  export OPENCLAW_UPGRADE_SURVIVOR_READYZ_ALLOW_FAILING="discord,telegram,whatsapp,feishu,matrix"
   readyz_seconds="$(probe_gateway_endpoint /readyz ready "$READYZ_JSON")"
-  unset OPENCLAW_UPGRADE_SURVIVOR_READYZ_ALLOW_FAILING
 }
 
 check_gateway_status() {

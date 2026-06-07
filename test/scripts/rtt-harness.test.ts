@@ -214,6 +214,8 @@ describe("RTT harness", () => {
     );
     expect(script).toContain("run_logged docker_e2e_docker_run_cmd run --rm");
     expect(script).not.toContain("run_logged docker run --rm");
+    expect(script).toContain('docker_e2e_print_log "$run_log"');
+    expect(script).not.toContain('cat "$run_log"');
     expect(heartbeatStartIndex).toBeGreaterThan(sourceIndex);
     expect(heartbeatStartIndex).toBeLessThan(driverIndex);
     expect(script).toContain("start_credential_heartbeat() {\n  (\n    set +e");
@@ -464,6 +466,7 @@ describe("RTT harness", () => {
     ]);
 
     const config = JSON.parse(await fs.readFile(configPath, "utf8"));
+    expect(config.channels.telegram.replyToMode).toBe("first");
     expect(config.channels.telegram.streaming).toEqual({ mode: "off" });
     expect(config.messages.groupChat.visibleReplies).toBe("automatic");
   });

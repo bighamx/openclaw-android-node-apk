@@ -17,6 +17,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  extractLastOpenClawVersionFromLog,
   modelProviderConfigBatchJson,
   readPositiveIntEnv,
   resolveLatestVersion,
@@ -157,6 +158,20 @@ describe("Parallels smoke model selection", () => {
   let invalidLinuxAgentTimeoutResult: ReturnType<typeof spawnNodeEvalSync>;
   let invalidWindowsAgentTimeoutResult: ReturnType<typeof spawnNodeEvalSync>;
   let invalidWindowsUpdateTimeoutResult: ReturnType<typeof spawnNodeEvalSync>;
+
+  it("extracts the last OpenClaw version from a bounded log tail", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "openclaw-parallels-log-tail-"));
+    const logPath = join(tempDir, "phase.log");
+    try {
+      writeFileSync(logPath, ["OpenClaw 0.0.1", "x".repeat(4096), "OpenClaw 2026.6.7"].join("\n"));
+
+      await expect(extractLastOpenClawVersionFromLog(logPath, undefined, 128)).resolves.toBe(
+        "2026.6.7",
+      );
+    } finally {
+      rmSync(tempDir, { force: true, recursive: true });
+    }
+  });
 
   beforeAll(() => {
     invalidProviderResult = spawnNodeEvalSync(

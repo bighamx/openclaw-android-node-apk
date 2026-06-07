@@ -1812,6 +1812,76 @@ test -f "$TMPDIR/docker-cmd-seen"
     }
   });
 
+  it("forwards harness stdin to backgrounded Docker runs", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "openclaw-docker-harness-stdin-"));
+
+    try {
+      const rootDir = process.cwd();
+      const script = `
+set -euo pipefail
+ROOT_DIR=${shellQuote(rootDir)}
+TMPDIR=${shellQuote(workDir)}
+export ROOT_DIR TMPDIR
+
+mkdir -p "$TMPDIR/bin"
+cat >"$TMPDIR/bin/timeout" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  --kill-after=1s)
+    exit 0
+    ;;
+  --kill-after=30s)
+    shift 2
+    ;;
+  *)
+    shift
+    ;;
+esac
+"$@"
+SH
+chmod +x "$TMPDIR/bin/timeout"
+export PATH="$TMPDIR/bin:$PATH"
+
+source "$ROOT_DIR/scripts/lib/docker-e2e-package.sh"
+
+docker() {
+  if [[ "$1" == "rm" ]]; then
+    return 0
+  fi
+
+  local cidfile=""
+  local expect_cidfile=0
+  local arg
+  for arg in "$@"; do
+    if [[ "$expect_cidfile" == "1" ]]; then
+      cidfile="$arg"
+      expect_cidfile=0
+      continue
+    fi
+    if [[ "$arg" == "--cidfile" ]]; then
+      expect_cidfile=1
+    fi
+  done
+
+  test -n "$cidfile"
+  printf "container-stdin\\n" >"$cidfile"
+  cat >"$TMPDIR/docker-stdin-seen"
+}
+export -f docker
+
+docker_e2e_run_with_harness image-name bash -s <<'SH'
+printf "heredoc reached docker\\n"
+SH
+
+grep -Fxq 'printf "heredoc reached docker\\n"' "$TMPDIR/docker-stdin-seen"
+`;
+
+      execFileSync("bash", ["-lc", script], { encoding: "utf8" });
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
   it("cleans Codex npm plugin live package artifacts on every exit path", () => {
     const runner = readFileSync(CODEX_NPM_PLUGIN_LIVE_DOCKER_E2E_PATH, "utf8");
 
@@ -1961,6 +2031,142 @@ output="$(run_logged_print_heartbeat plugins-run 1 bash -c 'printf "captured con
 [[ "$output" = *"still running plugins-run ("* ]]
 [[ "$output" = *"log bytes captured"* ]]
 [[ "$output" = *"captured container log"* ]]
+`;
+
+      execFileSync("bash", ["-lc", script], { encoding: "utf8" });
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("cleans the heartbeat command when the wrapper is terminated", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "openclaw-docker-e2e-log-term-cleanup-"));
+
+    try {
+      const rootDir = process.cwd();
+      const script = `
+set -euo pipefail
+ROOT_DIR=${shellQuote(rootDir)}
+TMPDIR=${shellQuote(workDir)}
+export ROOT_DIR TMPDIR
+
+source "$ROOT_DIR/scripts/lib/docker-e2e-logs.sh"
+
+command_pid_file="$TMPDIR/command.pid"
+(
+  run_logged_print_heartbeat plugins-run 30 bash -c 'printf "%s" "$$" > "$1"; while true; do /bin/sleep 1; done' bash "$command_pid_file"
+) &
+wrapper_pid="$!"
+for _ in $(seq 1 100); do
+  [ -s "$command_pid_file" ] && break
+  /bin/sleep 0.1
+done
+if [ ! -s "$command_pid_file" ]; then
+  kill -TERM "$wrapper_pid" 2>/dev/null || true
+  echo "heartbeat command pid was not recorded" >&2
+  exit 1
+fi
+command_pid="$(cat "$command_pid_file")"
+kill -TERM "$wrapper_pid"
+/bin/sleep 2
+for _ in $(seq 1 50); do
+  if ! kill -0 "$command_pid" 2>/dev/null; then
+    wait "$wrapper_pid" 2>/dev/null || true
+    exit 0
+  fi
+  /bin/sleep 0.1
+done
+kill -TERM "$command_pid" 2>/dev/null || true
+kill -TERM "$wrapper_pid" 2>/dev/null || true
+echo "heartbeat command still alive after wrapper termination: $command_pid" >&2
+exit 1
+`;
+
+      execFileSync("bash", ["-lc", script], { encoding: "utf8" });
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("cleans harness containers when heartbeat-wrapped Docker runs are terminated", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "openclaw-docker-e2e-harness-term-cleanup-"));
+
+    try {
+      const rootDir = process.cwd();
+      const script = `
+set -euo pipefail
+ROOT_DIR=${shellQuote(rootDir)}
+TMPDIR=${shellQuote(workDir)}
+export ROOT_DIR TMPDIR
+
+mkdir -p "$TMPDIR/bin"
+cat >"$TMPDIR/bin/timeout" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  --kill-after=1s)
+    exit 0
+    ;;
+  --kill-after=30s)
+    shift 2
+    ;;
+  *)
+    shift
+    ;;
+esac
+"$@"
+SH
+chmod +x "$TMPDIR/bin/timeout"
+export PATH="$TMPDIR/bin:$PATH"
+
+source "$ROOT_DIR/scripts/lib/docker-e2e-package.sh"
+
+docker() {
+  if [[ "$1" == "rm" ]]; then
+    shift
+    test "$1" = "-f"
+    shift
+    printf "%s\\n" "$1" >>"$TMPDIR/docker-rm-seen"
+    return 0
+  fi
+
+  local cidfile=""
+  local expect_cidfile=0
+  local arg
+  for arg in "$@"; do
+    if [[ "$expect_cidfile" == "1" ]]; then
+      cidfile="$arg"
+      expect_cidfile=0
+      continue
+    fi
+    if [[ "$arg" == "--cidfile" ]]; then
+      expect_cidfile=1
+    fi
+  done
+
+  test -n "$cidfile"
+  printf "container-term\\n" >"$cidfile"
+  printf "docker running\\n"
+  while true; do /bin/sleep 10; done
+}
+export -f docker
+
+(
+  docker_e2e_run_logged_print_with_harness plugins-run image-name bash -lc true
+) &
+wrapper_pid="$!"
+for _ in $(seq 1 50); do
+  [ -s "$TMPDIR/docker-rm-seen" ] && break
+  /bin/sleep 0.1
+  kill -0 "$wrapper_pid" 2>/dev/null || true
+done
+kill -TERM "$wrapper_pid" 2>/dev/null || true
+wait "$wrapper_pid" 2>/dev/null || true
+for _ in $(seq 1 50); do
+  grep -qx "container-term" "$TMPDIR/docker-rm-seen" 2>/dev/null && break
+  /bin/sleep 0.1
+done
+grep -qx "container-term" "$TMPDIR/docker-rm-seen"
+test -z "$(find "$TMPDIR" -maxdepth 1 -name 'openclaw-docker-e2e-container.*' -print)"
 `;
 
       execFileSync("bash", ["-lc", script], { encoding: "utf8" });
@@ -2126,13 +2332,18 @@ output="$(cat "$sampler_log")"
       expect(runner, path).toContain("docker_e2e_sample_stats_until_exit \\");
       expect(runner, path).toContain('"$STATS_LOG" \\');
       expect(runner, path).toContain('"$RUN_LOG" \\');
+      expect(runner, path).toContain('docker_e2e_print_log "$RUN_LOG"');
+      expect(runner, path).not.toContain('cat "$RUN_LOG"');
       expect(runner, path).not.toMatch(/(^|\n)docker run --name "\$CONTAINER_NAME"/u);
       expect(runner, path).not.toMatch(/(^|\n)docker (?:inspect|stats) /u);
       expect(runner, path).toMatch(/cleanup\(\) \{[\s\S]*rm -f "\$RUN_LOG" "\$STATS_LOG"/u);
       expect(runner, path).toContain(`if [ "$run_status" -eq 0 ]; then\n  ${resourceAssertion}`);
       expect(runner, path).toContain(
-        `elif [ -s "$STATS_LOG" ]; then\n  ${resourceAssertion} || true`,
+        `elif [ -s "$STATS_LOG" ]; then\n  if ! ${resourceAssertion}; then`,
       );
+      expect(runner, path).toContain("RESOURCE_CEILING_FAILED lane=");
+      expect(runner, path).toContain("primary_status=$run_status");
+      expect(runner, path).not.toContain(`${resourceAssertion} || true`);
       expect(runner, path).not.toContain(`${resourceAssertion}\n\nexit "$run_status"`);
     }
   });
@@ -2284,8 +2495,9 @@ output="$(cat "$sampler_log")"
       '"OPENCLAW_INSTALL_TAG=beta OPENCLAW_E2E_MODELS=anthropic OPENCLAW_INSTALL_E2E_IMAGE=openclaw-install-e2e-anthropic:local pnpm test:install:e2e"',
     );
     expect(scenarios).toContain(
-      '"OPENCLAW_OPENWEBUI_MODEL=openai/gpt-5.4-mini OPENWEBUI_SMOKE_MODE=models OPENCLAW_OPENWEBUI_PROVIDER_TIMEOUT_SECONDS=300 OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:openwebui"',
+      '"OPENCLAW_OPENWEBUI_MODEL=openai/gpt-5.4-mini OPENCLAW_OPENWEBUI_PROVIDER_TIMEOUT_SECONDS=300 OPENCLAW_SKIP_DOCKER_BUILD=1 pnpm test:docker:openwebui"',
     );
+    expect(scenarios).not.toContain("OPENWEBUI_SMOKE_MODE=models");
     expect(openWebUiRunner).toContain(
       'SMOKE_MODE="${OPENWEBUI_SMOKE_MODE:-${OPENCLAW_OPENWEBUI_SMOKE_MODE:-chat}}"',
     );

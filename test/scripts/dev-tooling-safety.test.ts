@@ -19,8 +19,13 @@ import {
   redactJsonValueForDevToolLog,
 } from "../../scripts/lib/dev-tooling-safety.ts";
 
-afterEach(() => {
+const tempDirs: string[] = [];
+
+afterEach(async () => {
   vi.useRealTimers();
+  for (const dir of tempDirs.splice(0)) {
+    await fs.rm(dir, { force: true, recursive: true });
+  }
 });
 
 describe("dev tooling safety helpers", () => {
@@ -222,6 +227,61 @@ describe("script-specific dev tooling hardening", () => {
 
     await vi.advanceTimersByTimeAsync(20);
     expect(signals).toEqual(["SIGINT", "SIGTERM", "SIGKILL"]);
+  });
+
+  it("reads TUI PTY mirror updates incrementally with a bounded chunk", async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-tui-watch-test-"));
+    tempDirs.push(tempRoot);
+    const mirrorPath = path.join(tempRoot, "mirror.ansi");
+    await fs.writeFile(mirrorPath, "first-second-third", "utf8");
+
+    const first = await tuiPtyWatchTesting.readNewMirrorData(mirrorPath, 0, 6);
+    expect(first.chunk.toString("utf8")).toBe("first-");
+    expect(first.offset).toBe(6);
+
+    const second = await tuiPtyWatchTesting.readNewMirrorData(mirrorPath, first.offset, 6);
+    expect(second.chunk.toString("utf8")).toBe("second");
+    expect(second.offset).toBe(12);
+  });
+
+  it("restarts TUI PTY mirror reads when the mirror file is truncated", async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-tui-watch-test-"));
+    tempDirs.push(tempRoot);
+    const mirrorPath = path.join(tempRoot, "mirror.ansi");
+    await fs.writeFile(mirrorPath, "fresh", "utf8");
+
+    const result = await tuiPtyWatchTesting.readNewMirrorData(mirrorPath, 10, 1024);
+
+    expect(result.chunk.toString("utf8")).toBe("fresh");
+    expect(result.offset).toBe(5);
+  });
+
+  it("drains all pending TUI PTY mirror chunks after the child exits", async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-tui-watch-test-"));
+    tempDirs.push(tempRoot);
+    const mirrorPath = path.join(tempRoot, "mirror.ansi");
+    await fs.writeFile(mirrorPath, "first-second-third", "utf8");
+    const chunks: string[] = [];
+
+    const offset = await tuiPtyWatchTesting.drainNewMirrorData(
+      mirrorPath,
+      0,
+      (chunk: Buffer) => chunks.push(chunk.toString("utf8")),
+      6,
+    );
+
+    expect(chunks).toEqual(["first-", "second", "-third"]);
+    expect(offset).toBe("first-second-third".length);
+  });
+
+  it("keeps only diagnostic tails from noisy TUI PTY child output", () => {
+    const retained = tuiPtyWatchTesting.appendBufferTail(
+      Buffer.from("0123456789", "utf8"),
+      Buffer.from("abcdef", "utf8"),
+      8,
+    );
+
+    expect(retained.toString("utf8")).toBe("89abcdef");
   });
 
   it.runIf(process.platform !== "win32")(
