@@ -135,6 +135,27 @@ describe("qa agentic parity report", () => {
     });
   });
 
+  it("uses scenario rows rather than stale summary counts for parity metrics", () => {
+    const summary: QaParitySuiteSummary = {
+      counts: {
+        total: 2,
+        passed: 2,
+        failed: 0,
+      },
+      scenarios: [
+        { name: "Approval turn tool followthrough", status: "pass" },
+        { name: "Compaction retry after mutating tool", status: "fail" },
+      ],
+    };
+
+    const metrics = computeQaAgenticParityMetrics(summary);
+
+    expect(metrics.totalScenarios).toBe(2);
+    expect(metrics.passedScenarios).toBe(1);
+    expect(metrics.failedScenarios).toBe(1);
+    expect(metrics.completionRate).toBe(0.5);
+  });
+
   it("keeps non-tool scenarios out of the valid-tool-call metric", () => {
     const summary: QaParitySuiteSummary = {
       scenarios: [
@@ -147,6 +168,57 @@ describe("qa agentic parity report", () => {
     const metrics = computeQaAgenticParityMetrics(summary);
     expect(metrics.totalScenarios).toBe(3);
     expect(metrics.passedScenarios).toBe(3);
+    expect(metrics.validToolCallCount).toBe(1);
+    expect(metrics.validToolCallRate).toBe(1);
+  });
+
+  it("does not count passing runtime parity scenarios without tool-call evidence", () => {
+    const summary: QaRuntimeParitySuiteSummary = {
+      scenarios: [
+        {
+          name: "Approval turn tool followthrough",
+          status: "pass",
+          steps: [],
+          runtimeParity: {
+            scenarioId: "approval-turn-tool-followthrough",
+            drift: "none",
+            cells: {
+              openclaw: {
+                runtime: "openclaw",
+                transcriptBytes: '{"role":"assistant"}\n',
+                toolCalls: [],
+                finalText: "done",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                wallClockMs: 10,
+                bootStateLines: [],
+              },
+              codex: {
+                runtime: "codex",
+                transcriptBytes: '{"role":"assistant"}\n',
+                toolCalls: [],
+                finalText: "done",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                wallClockMs: 10,
+                bootStateLines: [],
+              },
+            },
+          },
+        },
+      ],
+    };
+
+    const metrics = computeQaAgenticParityMetrics(summary);
+
+    expect(metrics.passedScenarios).toBe(1);
+    expect(metrics.validToolCallCount).toBe(0);
+    expect(metrics.validToolCallRate).toBe(0);
+  });
+
+  it("counts passing runtime parity scenarios with tool calls in both runtimes", () => {
+    const metrics = computeQaAgenticParityMetrics({
+      scenarios: [makeRuntimeParitySummary().scenarios[0]!],
+    });
+
     expect(metrics.validToolCallCount).toBe(1);
     expect(metrics.validToolCallRate).toBe(1);
   });
