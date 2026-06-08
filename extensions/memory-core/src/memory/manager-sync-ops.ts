@@ -1842,11 +1842,18 @@ export abstract class MemoryManagerSyncOps {
     });
     const hasIndexedChunks = this.hasIndexedChunks();
     const needsInitialIndex = indexIdentity.status !== "valid" && !hasIndexedChunks;
+    // Missing metadata cannot prove whether existing chunks were semantic.
+    // Wait for the configured provider before replacing them with a rebuilt index.
+    const canRebuildMissingIdentity =
+      this.provider !== null || !this.settings.provider || this.settings.provider === "none";
+    const needsMissingIdentityReindex =
+      indexIdentity.status === "missing" && !hasTargetSessionFiles && canRebuildMissingIdentity;
     const needsExplicitIdentityReindex =
       params?.reason === "cli" && indexIdentity.status !== "valid" && !hasTargetSessionFiles;
     const needsFullReindex =
       (params?.force && !hasTargetSessionFiles) ||
       needsInitialIndex ||
+      needsMissingIdentityReindex ||
       needsExplicitIdentityReindex;
     if (indexIdentity.status !== "valid" && !needsFullReindex) {
       this.dirty = true;
