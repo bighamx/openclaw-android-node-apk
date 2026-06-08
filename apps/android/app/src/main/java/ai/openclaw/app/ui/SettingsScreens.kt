@@ -940,21 +940,6 @@ private fun AppearanceSettingsScreen(
         )
       }
     }
-    ClawPanel {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(text = "Palette", style = ClawTheme.type.section, color = ClawTheme.colors.text)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          AppearancePaletteSwatch("Canvas", ClawTheme.colors.canvas, modifier = Modifier.weight(1f))
-          AppearancePaletteSwatch("Surface", ClawTheme.colors.surfaceRaised, modifier = Modifier.weight(1f))
-          AppearancePaletteSwatch(
-            "Accent",
-            ClawTheme.colors.primary,
-            contentColor = ClawTheme.colors.canvas,
-            modifier = Modifier.weight(1f),
-          )
-        }
-      }
-    }
   }
 }
 
@@ -963,25 +948,6 @@ internal fun appearanceThemeSummary(mode: AppearanceThemeMode): String = mode.di
 internal fun appearanceThemeOptions(): List<String> = AppearanceThemeMode.entries.map { it.displayLabel }
 
 internal fun appearanceThemeModeForLabel(label: String): AppearanceThemeMode = AppearanceThemeMode.fromDisplayLabel(label)
-
-@Composable
-private fun AppearancePaletteSwatch(
-  label: String,
-  color: Color,
-  contentColor: Color = ClawTheme.colors.text,
-  modifier: Modifier = Modifier,
-) {
-  Surface(
-    modifier = modifier.height(58.dp),
-    shape = RoundedCornerShape(ClawTheme.radii.control),
-    color = color,
-    border = BorderStroke(1.dp, ClawTheme.colors.border),
-  ) {
-    Box(modifier = Modifier.fillMaxSize().padding(8.dp), contentAlignment = Alignment.BottomStart) {
-      Text(text = label, style = ClawTheme.type.caption, color = contentColor, maxLines = 1)
-    }
-  }
-}
 
 /** Converts raw gateway connection text into stable settings metric labels. */
 private fun gatewayStatusLabel(
