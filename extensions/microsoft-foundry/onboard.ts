@@ -217,7 +217,12 @@ async function promptFoundryApi(
   });
 }
 
-type ManualFoundryModelFamilyChoice = "reasoning-family" | "other-chat";
+type ManualFoundryModelFamilyChoice = "reasoning-family" | "mai-image" | "other-chat";
+type ManualFoundryMaiImageModel =
+  | "MAI-Image-2.5-Flash"
+  | "MAI-Image-2.5"
+  | "MAI-Image-2e"
+  | "MAI-Image-2";
 
 async function promptFoundryModelFamily(
   ctx: ProviderAuthContext,
@@ -231,12 +236,48 @@ async function promptFoundryModelFamily(
         hint: "Use for Azure OpenAI reasoning and Codex deployments",
       },
       {
+        value: "mai-image",
+        label: "MAI image model",
+        hint: "Use for Microsoft MAI image deployments",
+      },
+      {
         value: "other-chat",
         label: "Other chat model",
         hint: "Use for other chat/completions style Foundry models",
       },
     ],
     initialValue: "reasoning-family",
+  });
+}
+
+async function promptFoundryMaiImageModel(
+  ctx: ProviderAuthContext,
+): Promise<ManualFoundryMaiImageModel> {
+  return await ctx.prompter.select({
+    message: "MAI image base model",
+    options: [
+      {
+        value: "MAI-Image-2.5-Flash",
+        label: "MAI-Image-2.5-Flash",
+        hint: "Latest fast MAI image deployment",
+      },
+      {
+        value: "MAI-Image-2.5",
+        label: "MAI-Image-2.5",
+        hint: "Latest MAI image deployment",
+      },
+      {
+        value: "MAI-Image-2e",
+        label: "MAI-Image-2e",
+        hint: "Efficient MAI image deployment",
+      },
+      {
+        value: "MAI-Image-2",
+        label: "MAI-Image-2",
+        hint: "MAI image deployment",
+      },
+    ],
+    initialValue: "MAI-Image-2.5-Flash",
   });
 }
 
@@ -276,6 +317,14 @@ async function promptEndpointAndModelBase(
     })
   ).trim();
   const familyChoice = await promptFoundryModelFamily(ctx);
+  if (familyChoice === "mai-image") {
+    return {
+      endpoint,
+      modelId,
+      modelNameHint: await promptFoundryMaiImageModel(ctx),
+      api: DEFAULT_API,
+    };
+  }
   const resolvedModelName =
     familyChoice === "reasoning-family"
       ? usesFoundryResponsesByDefault(modelId) || requiresFoundryMaxCompletionTokens(modelId)

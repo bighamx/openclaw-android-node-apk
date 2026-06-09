@@ -3,14 +3,21 @@ import type { StreamFn } from "openclaw/plugin-sdk/agent-core";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { shouldTestFoundryTextConnection } from "./auth.js";
 import { getAccessTokenResultAsync } from "./cli.js";
 import plugin from "./index.js";
-import { buildFoundryConnectionTest, isValidTenantIdentifier } from "./onboard.js";
+import {
+  buildFoundryConnectionTest,
+  isValidTenantIdentifier,
+  promptApiKeyEndpointAndModel,
+} from "./onboard.js";
 import { resetFoundryRuntimeAuthCaches } from "./runtime.js";
 import {
   buildFoundryAuthResult,
+  isFoundryMaiImageModel,
   normalizeFoundryEndpoint,
   requiresFoundryMaxCompletionTokens,
+  supportsFoundryReasoningContent,
   supportsFoundryReasoningEffort,
   supportsFoundryImageInput,
   usesFoundryResponsesByDefault,
@@ -635,9 +642,126 @@ describe("microsoft-foundry plugin", () => {
     expect(supportsFoundryReasoningEffort("gpt-5.1-chat")).toBe(true);
     expect(supportsFoundryReasoningEffort("o3")).toBe(true);
     expect(supportsFoundryReasoningEffort("o1-mini")).toBe(false);
+    expect(supportsFoundryReasoningEffort("MAI-DS-R1")).toBe(false);
+    expect(supportsFoundryReasoningContent("MAI-DS-R1")).toBe(true);
     expect(supportsFoundryImageInput("gpt-5.4")).toBe(true);
     expect(supportsFoundryImageInput("gpt-4o")).toBe(true);
     expect(supportsFoundryImageInput("MAI-DS-R1")).toBe(false);
+    expect(isFoundryMaiImageModel("MAI-Image-2.5-Flash")).toBe(true);
+    expect(isFoundryMaiImageModel("MAI-Image-2e")).toBe(true);
+    expect(isFoundryMaiImageModel("MAI-DS-R1")).toBe(false);
+  });
+
+  it("records MAI chat deployments with reasoning-content token limits", () => {
+    const result = buildFoundryAuthResult({
+      profileId: "microsoft-foundry:entra",
+      apiKey: "__entra_id_dynamic__",
+      endpoint: "https://example.services.ai.azure.com",
+      modelId: "mai-r1-prod",
+      modelNameHint: "MAI-DS-R1",
+      api: "openai-completions",
+      authMethod: "entra-id",
+    });
+
+    const model = requireFoundryProviderPatch(result).models[0];
+    expect(model?.api).toBe("openai-completions");
+    expect(model?.reasoning).toBe(true);
+    expect(model?.contextWindow).toBe(163_840);
+    expect(model?.maxTokens).toBe(163_840);
+    expect(model?.input).toEqual(["text"]);
+    expect(model?.compat?.supportsReasoningEffort).toBe(false);
+    expect(model?.compat?.maxTokensField).toBe("max_tokens");
+  });
+
+  it("configures the image default for MAI image deployments", () => {
+    const result = buildFoundryAuthResult({
+      profileId: "microsoft-foundry:entra",
+      apiKey: "__entra_id_dynamic__",
+      endpoint: "https://example.services.ai.azure.com",
+      modelId: "mai-image-prod",
+      modelNameHint: "MAI-Image-2.5",
+      api: "openai-completions",
+      authMethod: "entra-id",
+    });
+
+    expect(result.configPatch?.agents?.defaults?.imageGenerationModel).toEqual({
+      primary: "microsoft-foundry/mai-image-prod",
+    });
+    expect(result.defaultModel).toBeUndefined();
+    expect(requireFoundryProviderPatch(result).models[0]?.name).toBe("MAI-Image-2.5");
+  });
+
+  it("skips chat connection probes for MAI image deployments", () => {
+    expect(
+      shouldTestFoundryTextConnection({
+        modelId: "prod-image",
+        modelNameHint: "MAI-Image-2.5",
+      }),
+    ).toBe(false);
+    expect(
+      shouldTestFoundryTextConnection({
+        modelId: "prod-chat",
+        modelNameHint: "gpt-5.4",
+      }),
+    ).toBe(true);
+  });
+
+  it("classifies custom API-key MAI image deployments during manual setup", async () => {
+    const text = vi
+      .fn()
+      .mockResolvedValueOnce("https://example.services.ai.azure.com")
+      .mockResolvedValueOnce("prod-image");
+    const select = vi
+      .fn()
+      .mockResolvedValueOnce("mai-image")
+      .mockResolvedValueOnce("MAI-Image-2.5");
+    const selection = await promptApiKeyEndpointAndModel({
+      prompter: {
+        text,
+        select,
+      },
+    } as never);
+
+    const result = buildFoundryAuthResult({
+      profileId: "microsoft-foundry:default",
+      apiKey: "test-api-key",
+      endpoint: selection.endpoint,
+      modelId: selection.modelId,
+      modelNameHint: selection.modelNameHint,
+      api: selection.api,
+      authMethod: "api-key",
+    });
+
+    expect(selection).toEqual({
+      endpoint: "https://example.services.ai.azure.com",
+      modelId: "prod-image",
+      modelNameHint: "MAI-Image-2.5",
+      api: "openai-completions",
+    });
+    expect(result.configPatch?.agents?.defaults?.imageGenerationModel).toEqual({
+      primary: "microsoft-foundry/prod-image",
+    });
+    expect(result.defaultModel).toBeUndefined();
+  });
+
+  it("uses discovered deployment metadata for MAI image defaults", () => {
+    const result = buildFoundryAuthResult({
+      profileId: "microsoft-foundry:entra",
+      apiKey: "__entra_id_dynamic__",
+      endpoint: "https://example.services.ai.azure.com",
+      modelId: "custom-image-prod",
+      api: "openai-completions",
+      authMethod: "entra-id",
+      deployments: [
+        { name: "custom-image-prod", modelName: "MAI-Image-2.5-Flash" },
+        { name: "custom-chat-prod", modelName: "gpt-5.4", api: "openai-responses" },
+      ],
+    });
+
+    expect(result.configPatch?.agents?.defaults?.imageGenerationModel).toEqual({
+      primary: "microsoft-foundry/custom-image-prod",
+    });
+    expect(result.defaultModel).toBeUndefined();
   });
 
   it("records GPT-family Foundry deployments as image-capable during auth setup", () => {
