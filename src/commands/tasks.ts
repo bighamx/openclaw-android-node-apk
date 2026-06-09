@@ -45,7 +45,7 @@ import {
 import { summarizeTaskRecords } from "../tasks/task-registry.summary.js";
 import type { TaskNotifyPolicy, TaskRecord } from "../tasks/task-registry.types.js";
 import {
-  ensureSessionStateMigratedForCommand,
+  ensureExplicitSessionStoreMigratedForCommand,
   loadExplicitSessionStorePreviewForCommand,
 } from "./session-state-migration.js";
 import {
@@ -151,12 +151,12 @@ async function runSessionRegistryMaintenance(params: {
   apply: boolean;
 }): Promise<SessionRegistryMaintenanceSummary> {
   const cfg = getRuntimeConfig();
-  if (params.apply) {
-    await ensureSessionStateMigratedForCommand(cfg);
-  }
   const runningCronJobIds = readRunningCronJobIds();
   const stores: SessionRegistryMaintenanceStoreSummary[] = [];
   for (const target of resolveAllAgentSessionStoreTargetsSync(cfg)) {
+    if (params.apply) {
+      await ensureExplicitSessionStoreMigratedForCommand(target.storePath);
+    }
     const beforeStore = params.apply
       ? loadSessionStore(target.storePath, { skipCache: true })
       : loadExplicitSessionStorePreviewForCommand(target.storePath);

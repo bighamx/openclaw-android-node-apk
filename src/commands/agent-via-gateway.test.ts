@@ -156,13 +156,7 @@ function createSignalProcess() {
 }
 
 async function waitForAgentCommandCall(expectedCalls = 1) {
-  const deadline = Date.now() + 5_000;
-  while (agentCommand.mock.calls.length < expectedCalls && Date.now() < deadline) {
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 10);
-    });
-  }
-  expect(agentCommand).toHaveBeenCalledTimes(expectedCalls);
+  await vi.waitFor(() => expect(agentCommand).toHaveBeenCalledTimes(expectedCalls));
 }
 
 function runAbortHandlerWhenReady(signal: AbortSignal | undefined, onAbort: () => void): void {
@@ -174,16 +168,7 @@ function runAbortHandlerWhenReady(signal: AbortSignal | undefined, onAbort: () =
 }
 
 async function waitForGatewayCall(expectedCalls = 1) {
-  for (
-    let attempt = 0;
-    attempt < 50 && callGateway.mock.calls.length < expectedCalls;
-    attempt += 1
-  ) {
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 0);
-    });
-  }
-  expect(callGateway).toHaveBeenCalledTimes(expectedCalls);
+  await vi.waitFor(() => expect(callGateway).toHaveBeenCalledTimes(expectedCalls));
 }
 
 function createDeferredVoid() {
