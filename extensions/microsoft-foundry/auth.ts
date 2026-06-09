@@ -135,12 +135,9 @@ export const entraIdAuthMethod: ProviderAuthMethod = {
       if (useDiscoveredResource) {
         const selectedResource = await selectFoundryResource(ctx, selectedSub);
         const resourceDeployments = listResourceDeployments(selectedResource, selectedSub.id);
-        const selectedDeployment = await selectFoundryDeployment(
-          ctx,
-          selectedResource,
-          resourceDeployments,
-        );
-        discoveredDeployments = resourceDeployments.map((deployment) =>
+        const { selected: selectedDeployment, supported: supportedDeployments } =
+          await selectFoundryDeployment(ctx, selectedResource, resourceDeployments);
+        discoveredDeployments = supportedDeployments.map((deployment) =>
           Object.assign(
             { name: deployment.name },
             deployment.modelName ? { modelName: deployment.modelName } : {},

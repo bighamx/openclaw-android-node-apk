@@ -135,6 +135,27 @@ function normalizeFoundryModelName(value?: string | null): string | undefined {
   return trimmed || undefined;
 }
 
+export function isAnthropicFoundryDeployment(modelName?: string | null): boolean {
+  const normalized = normalizeFoundryModelName(modelName);
+  return normalized ? normalized.startsWith("claude") : false;
+}
+
+export function partitionFoundryDeployments<T extends { name: string; modelName?: string }>(
+  deployments: readonly T[],
+): { supported: T[]; anthropic: T[] } {
+  const supported: T[] = [];
+  const anthropic: T[] = [];
+  for (const deployment of deployments) {
+    const classifier = resolveConfiguredModelNameHint(deployment.name, deployment.modelName);
+    if (isAnthropicFoundryDeployment(classifier)) {
+      anthropic.push(deployment);
+    } else {
+      supported.push(deployment);
+    }
+  }
+  return { supported, anthropic };
+}
+
 export function usesFoundryResponsesByDefault(value?: string | null): boolean {
   const normalized = normalizeFoundryModelName(value);
   if (!normalized) {
