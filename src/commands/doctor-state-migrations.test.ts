@@ -629,7 +629,7 @@ describe("doctor legacy state migrations", () => {
     result: Awaited<ReturnType<typeof runLegacyStateMigrations>>;
     targetDir: string;
     legacySessionsDir: string;
-    store: Record<string, { sessionId: string }>;
+    store: Record<string, { sessionId: string; sessionFile?: string }>;
   };
 
   beforeAll(async () => {
@@ -638,8 +638,12 @@ describe("doctor legacy state migrations", () => {
     const legacySessionsDir = writeLegacySessionsFixture({
       root,
       sessions: {
-        "+1555": { sessionId: "a", updatedAt: 10 },
-        "+1666": { sessionId: "b", updatedAt: 20 },
+        "+1555": {
+          sessionId: "a",
+          sessionFile: path.join(root, "sessions", "a.jsonl"),
+          updatedAt: 10,
+        },
+        "+1666": { sessionId: "b", sessionFile: "b.jsonl", updatedAt: 20 },
         "slack:channel:C123": { sessionId: "c", updatedAt: 30 },
         "group:abc": { sessionId: "d", updatedAt: 40 },
         "subagent:xyz": { sessionId: "e", updatedAt: 50 },
@@ -661,7 +665,7 @@ describe("doctor legacy state migrations", () => {
     const targetDir = path.join(root, "agents", "main", "sessions");
     const store = JSON.parse(
       fs.readFileSync(path.join(targetDir, "sessions.json"), "utf-8"),
-    ) as Record<string, { sessionId: string }>;
+    ) as Record<string, { sessionId: string; sessionFile?: string }>;
 
     migratedLegacySessionsCase = { result, targetDir, legacySessionsDir, store };
   });
@@ -676,6 +680,8 @@ describe("doctor legacy state migrations", () => {
     expect(store["agent:main:main"]?.sessionId).toBe("b");
     expect(store["agent:main:+1555"]?.sessionId).toBe("a");
     expect(store["agent:main:+1666"]?.sessionId).toBe("b");
+    expect(store["agent:main:+1555"]?.sessionFile).toBe(path.join(targetDir, "a.jsonl"));
+    expect(store["agent:main:+1666"]?.sessionFile).toBe(path.join(targetDir, "b.jsonl"));
     expect(store["+1555"]).toBeUndefined();
     expect(store["+1666"]).toBeUndefined();
     expect(store["agent:main:slack:channel:c123"]?.sessionId).toBe("c");

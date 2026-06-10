@@ -2878,6 +2878,7 @@ async function migrateLegacySessions(
     return { changes, warnings };
   }
 
+  const movedSessionFiles = new Map<string, string>();
   const entries = safeReadDir(detected.sessions.legacyDir);
   for (const entry of entries) {
     if (!entry.isFile()) {
@@ -2887,15 +2888,51 @@ async function migrateLegacySessions(
       continue;
     }
     const from = path.join(detected.sessions.legacyDir, entry.name);
-    const to = path.join(detected.sessions.targetDir, entry.name);
+    let to = path.join(detected.sessions.targetDir, entry.name);
     if (fileExists(to)) {
-      continue;
+      const parsed = path.parse(entry.name);
+      to = path.join(detected.sessions.targetDir, `${parsed.name}.legacy-${now()}${parsed.ext}`);
     }
     try {
       fs.renameSync(from, to);
+      movedSessionFiles.set(path.resolve(from), to);
       changes.push(`Moved ${entry.name} → agents/${detected.targetAgentId}/sessions`);
     } catch (err) {
       warnings.push(`Failed moving ${from}: ${String(err)}`);
+    }
+  }
+
+  if (movedSessionFiles.size > 0) {
+    let rewroteSessionFiles = false;
+    for (const entry of Object.values(merged)) {
+      const rawSessionFile = entry.sessionFile;
+      const legacySessionFile =
+        typeof rawSessionFile === "string"
+          ? path.resolve(detected.sessions.legacyDir, rawSessionFile)
+          : typeof entry.sessionId === "string"
+            ? path.join(detected.sessions.legacyDir, `${entry.sessionId}.jsonl`)
+            : undefined;
+      const movedSessionFile = legacySessionFile
+        ? movedSessionFiles.get(path.resolve(legacySessionFile))
+        : undefined;
+      if (!movedSessionFile) {
+        continue;
+      }
+      entry.sessionFile = movedSessionFile;
+      rewroteSessionFiles = true;
+    }
+    if (rewroteSessionFiles) {
+      const normalized: Record<string, SessionEntry> = {};
+      for (const [key, entry] of Object.entries(merged)) {
+        const normalizedEntry = normalizeSessionEntry(entry);
+        if (normalizedEntry) {
+          normalized[key] = normalizedEntry;
+        }
+      }
+      await saveSessionStore(detected.sessions.targetStorePath, normalized, {
+        skipMaintenance: true,
+      });
+      changes.push("Rewrote migrated session transcript paths");
     }
   }
 
