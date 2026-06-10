@@ -10,6 +10,7 @@ import {
   buildFoundryConnectionTest,
   isValidTenantIdentifier,
   promptApiKeyEndpointAndModel,
+  promptEndpointAndModelManually,
   selectFoundryDeployment,
 } from "./onboard.js";
 import { resetFoundryRuntimeAuthCaches } from "./runtime.js";
@@ -20,8 +21,8 @@ import {
   isAnthropicFoundryDeployment,
   isFoundryMaiImageModel,
   normalizeFoundryEndpoint,
-  partitionFoundryDeployments,
   requiresFoundryMaxCompletionTokens,
+  requiresFoundryEntraIdClaudeAuth,
   supportsFoundryReasoningContent,
   supportsFoundryReasoningEffort,
   supportsFoundryImageInput,
@@ -895,6 +896,105 @@ describe("microsoft-foundry plugin", () => {
     expect(result.defaultModel).toBeUndefined();
   });
 
+  it("keeps API-key manual setup defaulted to chat completions for GPT deployments", async () => {
+    const text = vi
+      .fn()
+      .mockResolvedValueOnce("https://example.services.ai.azure.com")
+      .mockResolvedValueOnce("gpt-4o");
+    const select = vi
+      .fn()
+      .mockImplementationOnce(async (params: { initialValue?: string }) => {
+        expect(params.initialValue).toBe("other-chat");
+        return "other-chat";
+      })
+      .mockImplementationOnce(async (params: { initialValue?: string }) => {
+        expect(params.initialValue).toBe("openai-completions");
+        return "openai-completions";
+      });
+
+    const selection = await promptApiKeyEndpointAndModel({
+      prompter: {
+        text,
+        select,
+      },
+    } as never);
+
+    expect(selection).toEqual({
+      endpoint: "https://example.services.ai.azure.com",
+      modelId: "gpt-4o",
+      api: "openai-completions",
+    });
+  });
+
+  it("rejects Entra-only Claude Mythos deployments during API-key manual setup", async () => {
+    const text = vi.fn(
+      async (params: { message: string; validate?: (value: string) => string | undefined }) => {
+        if (params.message === "Microsoft Foundry endpoint URL") {
+          return "https://example.services.ai.azure.com";
+        }
+        if (params.message === "Default model/deployment name") {
+          return "prod-mythos";
+        }
+        if (params.message === "Claude base model") {
+          expect(params.validate?.("claude-fable-5")).toBeUndefined();
+          expect(params.validate?.("claude-mythos-preview")).toContain("Entra ID auth");
+          return "claude-fable-5";
+        }
+        throw new Error(`unexpected prompt: ${params.message}`);
+      },
+    );
+    const select = vi.fn().mockResolvedValueOnce("claude");
+
+    const selection = await promptApiKeyEndpointAndModel({
+      prompter: {
+        text,
+        select,
+      },
+    } as never);
+
+    expect(selection).toEqual({
+      endpoint: "https://example.services.ai.azure.com",
+      modelId: "prod-mythos",
+      modelNameHint: "claude-fable-5",
+      api: "anthropic-messages",
+    });
+    expect(requiresFoundryEntraIdClaudeAuth("claude-mythos-preview")).toBe(true);
+    expect(requiresFoundryEntraIdClaudeAuth("claude-fable-5")).toBe(false);
+  });
+
+  it("allows Entra-only Claude Mythos deployments during Entra manual setup", async () => {
+    const text = vi.fn(
+      async (params: { message: string; validate?: (value: string) => string | undefined }) => {
+        if (params.message === "Microsoft Foundry endpoint URL") {
+          return "https://example.services.ai.azure.com";
+        }
+        if (params.message === "Default model/deployment name") {
+          return "prod-mythos";
+        }
+        if (params.message === "Claude base model") {
+          expect(params.validate?.("claude-mythos-preview")).toBeUndefined();
+          return "claude-mythos-preview";
+        }
+        throw new Error(`unexpected prompt: ${params.message}`);
+      },
+    );
+    const select = vi.fn().mockResolvedValueOnce("claude");
+
+    const selection = await promptEndpointAndModelManually({
+      prompter: {
+        text,
+        select,
+      },
+    } as never);
+
+    expect(selection).toEqual({
+      endpoint: "https://example.services.ai.azure.com",
+      modelId: "prod-mythos",
+      modelNameHint: "claude-mythos-preview",
+      api: "anthropic-messages",
+    });
+  });
+
   it("uses discovered deployment metadata for MAI image defaults", () => {
     const result = buildFoundryAuthResult({
       profileId: "microsoft-foundry:entra",
@@ -1126,6 +1226,85 @@ describe("microsoft-foundry plugin", () => {
     expect(provider?.models[0]?.reasoning).toBe(false);
     expect(provider?.models[0]?.compat?.supportsReasoningEffort).toBe(false);
     expect(provider?.models[0]?.compat?.maxTokensField).toBe("max_tokens");
+  });
+
+  it("routes Claude deployments through Foundry Anthropic Messages", () => {
+    const result = buildFoundryAuthResult({
+      profileId: "microsoft-foundry:entra",
+      apiKey: "__entra_id_dynamic__",
+      endpoint: "https://example.services.ai.azure.com/openai/v1",
+      modelId: "prod-fable",
+      modelNameHint: "claude-fable-5",
+      api: "anthropic-messages",
+      authMethod: "entra-id",
+    });
+
+    const provider = result.configPatch?.models?.providers?.["microsoft-foundry"];
+    expect(provider?.baseUrl).toBe("https://example.services.ai.azure.com/anthropic");
+    expect(provider?.api).toBe("anthropic-messages");
+    expect(provider?.authHeader).toBe(true);
+    expect(provider?.models[0]).toMatchObject({
+      id: "prod-fable",
+      name: "claude-fable-5",
+      api: "anthropic-messages",
+      reasoning: true,
+      input: ["text", "image"],
+      contextWindow: 1_000_000,
+      maxTokens: 128_000,
+      thinkingLevelMap: { xhigh: "xhigh", max: "max" },
+    });
+    expect(provider?.models[0]?.compat).toBeUndefined();
+  });
+
+  it.each([
+    "claude-mythos-preview",
+    "claude-fable-5",
+    "claude-opus-4.8",
+    "claude-opus-4.7",
+    "claude-opus-4.6",
+    "claude-sonnet-4.6",
+  ])("preserves Foundry Claude 1M token limits for %s", (modelNameHint) => {
+    const result = buildFoundryAuthResult({
+      profileId: "microsoft-foundry:entra",
+      apiKey: "__entra_id_dynamic__",
+      endpoint: "https://example.services.ai.azure.com",
+      modelId: `prod-${modelNameHint.replaceAll(".", "-")}`,
+      modelNameHint,
+      api: "anthropic-messages",
+      authMethod: "entra-id",
+    });
+
+    expect(result.configPatch?.models?.providers?.["microsoft-foundry"]?.models[0]).toMatchObject({
+      name: modelNameHint,
+      api: "anthropic-messages",
+      contextWindow: 1_000_000,
+      maxTokens: 128_000,
+    });
+  });
+
+  it("keeps older Foundry Claude deployments out of Fable-class thinking limits", () => {
+    const result = buildFoundryAuthResult({
+      profileId: "microsoft-foundry:entra",
+      apiKey: "__entra_id_dynamic__",
+      endpoint: "https://example.services.ai.azure.com",
+      modelId: "prod-claude-35",
+      modelNameHint: "claude-3.5-sonnet",
+      api: "anthropic-messages",
+      authMethod: "entra-id",
+    });
+
+    const model = result.configPatch?.models?.providers?.["microsoft-foundry"]?.models[0];
+    expect(model).toMatchObject({
+      id: "prod-claude-35",
+      name: "claude-3.5-sonnet",
+      api: "anthropic-messages",
+      reasoning: false,
+      input: ["text", "image"],
+      contextWindow: 128_000,
+      maxTokens: 16_384,
+    });
+    expect(model?.thinkingLevelMap).toBeUndefined();
+    expect(model?.compat).toBeUndefined();
   });
 
   it("keeps Foundry chat reasoning_effort enabled for GPT-5 reasoning deployments", () => {
@@ -1366,6 +1545,22 @@ describe("microsoft-foundry plugin", () => {
     expect(testRequest.body.max_tokens).toBe(1);
   });
 
+  it("builds Anthropic Messages connection tests for Claude deployments", () => {
+    const testRequest = buildFoundryConnectionTest({
+      endpoint: "https://example.services.ai.azure.com/openai/v1",
+      modelId: "prod-fable",
+      modelNameHint: "claude-fable-5",
+      api: "anthropic-messages",
+    });
+
+    expect(testRequest.url).toBe("https://example.services.ai.azure.com/anthropic/v1/messages");
+    expect(testRequest.body).toEqual({
+      model: "prod-fable",
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 1,
+    });
+  });
+
   it("returns actionable Azure CLI login errors", async () => {
     mockAzureCliLoginFailure();
 
@@ -1475,49 +1670,6 @@ describe("microsoft-foundry plugin", () => {
   });
 });
 
-describe("partitionFoundryDeployments", () => {
-  it("keeps OpenAI-compatible deployments and skips Claude in mixed resources", () => {
-    const { supported, anthropic } = partitionFoundryDeployments([
-      { name: "prod-gpt", modelName: "gpt-5.4" },
-      { name: "prod-claude", modelName: "claude-opus-4-6" },
-      { name: "prod-mini", modelName: "gpt-4o-mini" },
-    ]);
-
-    expect(supported.map((deployment) => deployment.name)).toEqual(["prod-gpt", "prod-mini"]);
-    expect(anthropic.map((deployment) => deployment.name)).toEqual(["prod-claude"]);
-  });
-
-  it("returns no supported deployments when only Anthropic deployments exist", () => {
-    const { supported, anthropic } = partitionFoundryDeployments([
-      { name: "only-claude", modelName: "claude-3.5-sonnet" },
-    ]);
-
-    expect(supported).toEqual([]);
-    expect(anthropic.map((deployment) => deployment.name)).toEqual(["only-claude"]);
-  });
-
-  it("is a no-op for all-OpenAI resources", () => {
-    const deployments = [
-      { name: "prod-gpt", modelName: "gpt-5.4" },
-      { name: "prod-mini", modelName: "gpt-4o-mini" },
-    ];
-    const { supported, anthropic } = partitionFoundryDeployments(deployments);
-
-    expect(supported).toEqual(deployments);
-    expect(anthropic).toEqual([]);
-  });
-
-  it("classifies by deployment name when modelName is missing", () => {
-    const { supported, anthropic } = partitionFoundryDeployments([
-      { name: "claude-opus-4-6" },
-      { name: "gpt-5.4-prod" },
-    ]);
-
-    expect(supported.map((deployment) => deployment.name)).toEqual(["gpt-5.4-prod"]);
-    expect(anthropic.map((deployment) => deployment.name)).toEqual(["claude-opus-4-6"]);
-  });
-});
-
 describe("selectFoundryDeployment", () => {
   function makeCtx(overrides: { selectValue?: string } = {}) {
     const noteCalls: Array<{ message: string; title: string }> = [];
@@ -1545,7 +1697,7 @@ describe("selectFoundryDeployment", () => {
     projects: [],
   };
 
-  it("offers and returns only supported deployments for mixed GPT and Claude resources", async () => {
+  it("offers and returns Claude deployments alongside GPT resources", async () => {
     const { ctx, selectCalls, noteCalls } = makeCtx({ selectValue: "prod-gpt" });
     const result = await selectFoundryDeployment(ctx, fakeResource, [
       { name: "prod-gpt", modelName: "gpt-5.4", state: "Succeeded" },
@@ -1555,25 +1707,30 @@ describe("selectFoundryDeployment", () => {
 
     expect(result.supported.map((deployment) => deployment.name)).toEqual([
       "prod-gpt",
+      "prod-claude",
       "prod-mini",
     ]);
     expect(result.selected.name).toBe("prod-gpt");
     expect(selectCalls[0]?.options.map((option) => option.value)).toEqual([
       "prod-gpt",
+      "prod-claude",
       "prod-mini",
     ]);
-    expect(noteCalls.some((call) => call.title === "Unsupported Deployments")).toBe(true);
+    expect(noteCalls.some((call) => call.title === "Unsupported Deployments")).toBe(false);
   });
 
-  it("throws an actionable error when only Anthropic deployments exist", async () => {
+  it("uses Anthropic-only deployment resources directly", async () => {
     const { ctx, noteCalls } = makeCtx();
 
-    await expect(
-      selectFoundryDeployment(ctx, fakeResource, [
-        { name: "only-claude", modelName: "claude-3.5-sonnet", state: "Succeeded" },
-      ]),
-    ).rejects.toThrow(/Only Anthropic deployments/);
-    expect(noteCalls.some((call) => call.title === "Unsupported Deployments")).toBe(true);
+    const result = await selectFoundryDeployment(ctx, fakeResource, [
+      { name: "only-claude", modelName: "claude-3.5-sonnet", state: "Succeeded" },
+    ]);
+
+    expect(result).toEqual({
+      selected: { name: "only-claude", modelName: "claude-3.5-sonnet", state: "Succeeded" },
+      supported: [{ name: "only-claude", modelName: "claude-3.5-sonnet", state: "Succeeded" }],
+    });
+    expect(noteCalls.some((call) => call.title === "Unsupported Deployments")).toBe(false);
   });
 
   it("leaves all-OpenAI resources unchanged", async () => {
