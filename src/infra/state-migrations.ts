@@ -1974,6 +1974,83 @@ function canonicalizeSessionStore(params: {
   return { store: canonical, legacyKeys };
 }
 
+function resolveStaleLegacySessionFile(params: {
+  entry: unknown;
+  legacyDir: string;
+  targetDir: string;
+}): string | undefined {
+  if (!params.entry || typeof params.entry !== "object" || Array.isArray(params.entry)) {
+    return undefined;
+  }
+  const entry = params.entry as SessionEntryLike;
+  const rawSessionFile = entry.sessionFile;
+  if (typeof rawSessionFile !== "string") {
+    return undefined;
+  }
+  const legacySessionFile = path.isAbsolute(rawSessionFile)
+    ? path.resolve(rawSessionFile)
+    : path.resolve(params.legacyDir, rawSessionFile);
+  const relative = path.relative(path.resolve(params.legacyDir), legacySessionFile);
+  if (relative.startsWith("..") || path.isAbsolute(relative) || fileExists(legacySessionFile)) {
+    return undefined;
+  }
+  const legacyBackupHasTranscript = safeReadDir(path.dirname(params.legacyDir)).some(
+    (dirent) =>
+      dirent.isDirectory() &&
+      dirent.name.startsWith(`${path.basename(params.legacyDir)}.legacy-`) &&
+      fileExists(
+        path.join(path.dirname(params.legacyDir), dirent.name, path.basename(legacySessionFile)),
+      ),
+  );
+  if (legacyBackupHasTranscript) {
+    return undefined;
+  }
+  const parsed = path.parse(path.basename(legacySessionFile));
+  const hasCollisionRename = safeReadDir(params.targetDir).some(
+    (dirent) =>
+      dirent.isFile() &&
+      dirent.name.startsWith(`${parsed.name}.legacy-`) &&
+      dirent.name.endsWith(parsed.ext),
+  );
+  if (hasCollisionRename) {
+    return undefined;
+  }
+  const targetSessionFile = path.join(params.targetDir, path.basename(legacySessionFile));
+  if (!fileExists(targetSessionFile) || typeof entry.sessionId !== "string") {
+    return undefined;
+  }
+  const readFirstLine = () => {
+    const fd = fs.openSync(targetSessionFile, "r");
+    try {
+      const buffer = Buffer.alloc(8192);
+      const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, 0);
+      if (bytesRead <= 0) {
+        return undefined;
+      }
+      const chunk = buffer.subarray(0, bytesRead).toString("utf8");
+      const newline = chunk.indexOf("\n");
+      return newline >= 0 ? chunk.slice(0, newline) : chunk;
+    } finally {
+      fs.closeSync(fd);
+    }
+  };
+  try {
+    const firstLine = readFirstLine();
+    const header = firstLine ? (JSON.parse(firstLine) as unknown) : undefined;
+    if (!header || typeof header !== "object" || Array.isArray(header)) {
+      return undefined;
+    }
+    if ((header as { type?: unknown }).type === "session") {
+      return (header as { id?: unknown }).id === entry.sessionId ? targetSessionFile : undefined;
+    }
+    const canonicalFileName =
+      path.basename(entry.sessionId) === entry.sessionId ? `${entry.sessionId}.jsonl` : undefined;
+    return canonicalFileName === path.basename(targetSessionFile) ? targetSessionFile : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function skipJson5Trivia(raw: string, index: number): number {
   let i = index;
   while (i < raw.length) {
@@ -2636,6 +2713,17 @@ export async function detectLegacyStateMigrations(params: {
         scope: targetScope,
       })
     : [];
+  const hasStaleSessionFiles =
+    targetSessionParsed.ok &&
+    Object.values(targetSessionParsed.store).some((entry) =>
+      Boolean(
+        resolveStaleLegacySessionFile({
+          entry,
+          legacyDir: sessionsLegacyDir,
+          targetDir: sessionsTargetDir,
+        }),
+      ),
+    );
 
   const legacyAgentDir = path.join(stateDir, "agent");
   const targetAgentDir = path.join(stateDir, "agents", targetAgentId, "agent");
@@ -2682,6 +2770,9 @@ export async function detectLegacyStateMigrations(params: {
   if (legacyKeys.length > 0) {
     preview.push(`- Sessions: canonicalize legacy keys in ${sessionsTargetStorePath}`);
   }
+  if (hasStaleSessionFiles) {
+    preview.push(`- Sessions: repair migrated transcript paths in ${sessionsTargetStorePath}`);
+  }
   if (hasLegacyAgentDir) {
     preview.push(`- Agent dir: ${legacyAgentDir} → ${targetAgentDir}`);
   }
@@ -2724,7 +2815,7 @@ export async function detectLegacyStateMigrations(params: {
       legacyStorePath: sessionsLegacyStorePath,
       targetDir: sessionsTargetDir,
       targetStorePath: sessionsTargetStorePath,
-      hasLegacy: hasLegacySessions || legacyKeys.length > 0,
+      hasLegacy: hasLegacySessions || legacyKeys.length > 0 || hasStaleSessionFiles,
       legacyKeys,
     },
     agentDir: {
@@ -2800,6 +2891,19 @@ async function migrateLegacySessions(
     scope: detected.targetScope,
   });
 
+  let repairedStaleSessionFiles = false;
+  for (const entry of Object.values(canonicalizedTarget.store)) {
+    const targetSessionFile = resolveStaleLegacySessionFile({
+      entry,
+      legacyDir: detected.sessions.legacyDir,
+      targetDir: detected.sessions.targetDir,
+    });
+    if (targetSessionFile) {
+      entry.sessionFile = targetSessionFile;
+      repairedStaleSessionFiles = true;
+    }
+  }
+
   const merged: Record<string, SessionEntryLike> = { ...canonicalizedTarget.store };
   for (const [key, entry] of Object.entries(canonicalizedLegacy.store)) {
     merged[key] = mergeSessionEntry({
@@ -2871,6 +2975,9 @@ async function migrateLegacySessions(
     changes.push(`Merged sessions store → ${detected.sessions.targetStorePath}`);
     if (canonicalizedTarget.legacyKeys.length > 0) {
       changes.push(`Canonicalized ${canonicalizedTarget.legacyKeys.length} legacy session key(s)`);
+    }
+    if (repairedStaleSessionFiles) {
+      changes.push("Repaired migrated session transcript paths");
     }
   }
 

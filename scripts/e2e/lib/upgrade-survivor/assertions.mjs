@@ -1,6 +1,7 @@
 // Assertions for upgrade-survivor E2E scenarios.
 import fs from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { readPluginInstallIndex } from "../plugin-index-sqlite.mjs";
 
 const command = process.argv[2];
@@ -123,9 +124,16 @@ function seedLegacySessionMetadata(stateDir) {
       lastTo: "CUPGRADE",
     },
   });
-  write(path.join(legacySessionsDir, `${LEGACY_SESSION_MAIN_ID}.jsonl`), '{"type":"main"}\n');
-  write(path.join(legacySessionsDir, `${LEGACY_SESSION_DIRECT_ID}.jsonl`), '{"type":"direct"}\n');
-  write(path.join(legacySessionsDir, `${LEGACY_SESSION_GROUP_ID}.jsonl`), '{"type":"group"}\n');
+  for (const sessionId of [
+    LEGACY_SESSION_MAIN_ID,
+    LEGACY_SESSION_DIRECT_ID,
+    LEGACY_SESSION_GROUP_ID,
+  ]) {
+    write(
+      path.join(legacySessionsDir, `${sessionId}.jsonl`),
+      `${JSON.stringify({ type: "session", id: sessionId })}\n`,
+    );
+  }
 }
 
 function getScenario() {
@@ -474,8 +482,7 @@ function assertSessionMetadataMigrated(stateDir) {
     );
   }
 
-  assert(fs.existsSync(targetStorePath), `agent session store missing: ${targetStorePath}`);
-  const store = readJson(targetStorePath);
+  const store = readMigratedSessionStore(stateDir, targetStorePath);
   const main = store["agent:main:main"];
   const direct = store["agent:main:+15551234567"];
   const group = store["agent:main:slack:channel:cupgrade"];
@@ -502,6 +509,33 @@ function assertSessionMetadataMigrated(stateDir) {
     main.skillsSnapshot?.resolvedSkills === undefined,
     "heavy resolvedSkills cache was persisted into migrated session metadata",
   );
+}
+
+function readMigratedSessionStore(stateDir, targetStorePath) {
+  if (fs.existsSync(targetStorePath)) {
+    return readJson(targetStorePath);
+  }
+
+  const dbPath = path.join(stateDir, "agents", "main", "agent", "openclaw-agent.sqlite");
+  assert(fs.existsSync(dbPath), `agent session store missing: ${targetStorePath} or ${dbPath}`);
+
+  let db;
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true });
+    const rows = db
+      .prepare("SELECT key, value_json FROM cache_entries WHERE scope = ?")
+      .all("session_entries");
+    const store = {};
+    for (const row of rows) {
+      if (typeof row?.key !== "string" || typeof row?.value_json !== "string") {
+        continue;
+      }
+      store[row.key] = JSON.parse(row.value_json);
+    }
+    return store;
+  } finally {
+    db?.close();
+  }
 }
 
 function readInstalledPluginIndex() {
