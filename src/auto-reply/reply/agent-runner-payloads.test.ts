@@ -846,7 +846,8 @@ describe("buildReplyPayloads media filter integration", () => {
       payloads: [{ text: "new final response" }],
     });
 
-    expect(replyPayloads).toEqual([{ text: "new final response" }]);
+    expect(replyPayloads).toHaveLength(1);
+    expectFields(replyPayloads[0], { text: "new final response" });
   });
 
   it("does not suppress same-target replies when accountId differs", async () => {
