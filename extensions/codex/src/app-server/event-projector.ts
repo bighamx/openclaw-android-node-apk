@@ -170,6 +170,7 @@ export class CodexAppServerEventProjector {
     string,
     { toolName: string; meta?: string; asyncStarted?: boolean }
   >();
+  private readonly terminalPresentationClearedItemIds = new Set<string>();
   private readonly sideEffectingToolItemIds = new Set<string>();
   private readonly sideEffectingDynamicToolCallIds = new Set<string>();
   private readonly toolTranscriptMessages: AgentMessage[] = [];
@@ -313,6 +314,7 @@ export class CodexAppServerEventProjector {
       assistantTexts.length > 0
         ? this.createAssistantMessage(assistantTexts.join("\n\n"))
         : undefined;
+    const currentAttemptAssistant = this.createCurrentAttemptAssistantMessage();
     // Each snapshot entry is tagged with a stable mirror identity of the
     // shape `${turnId}:${kind}`. The mirror's idempotency key is derived
     // from this identity rather than from snapshot position or content
@@ -385,6 +387,7 @@ export class CodexAppServerEventProjector {
       assistantTexts,
       toolMetas,
       lastAssistant,
+      currentAttemptAssistant,
       ...(this.lastNativeToolError ? { lastToolError: this.lastNativeToolError } : {}),
       didSendViaMessagingTool: toolTelemetry.didSendViaMessagingTool,
       messagingToolSentTexts: toolTelemetry.messagingToolSentTexts,
@@ -432,6 +435,7 @@ export class CodexAppServerEventProjector {
     sideEffectEvidence?: boolean;
     contentItems: CodexDynamicToolCallOutputContentItem[];
   }): void {
+    const resultText = collectDynamicToolContentText(params.contentItems);
     if (params.asyncStarted === true) {
       const existing = this.toolMetas.get(params.callId);
       this.toolMetas.set(params.callId, {
@@ -443,11 +447,22 @@ export class CodexAppServerEventProjector {
     this.recordToolTranscriptResult({
       id: params.callId,
       name: params.tool,
-      text: collectDynamicToolContentText(params.contentItems),
+      text: resultText,
       isError: !params.success,
     });
-    const terminalType = params.terminalType ?? (params.success ? "completed" : "error");
-    if (terminalType !== "blocked" && params.sideEffectEvidence === true) {
+    if (!params.success && params.terminalType === "blocked") {
+      this.lastNativeToolError = {
+        toolName: params.tool,
+        error: resultText || "codex dynamic tool blocked",
+      };
+    } else if (
+      params.success &&
+      this.lastNativeToolError &&
+      !this.lastNativeToolError.mutatingAction
+    ) {
+      this.lastNativeToolError = undefined;
+    }
+    if (params.sideEffectEvidence === true) {
       this.sideEffectingDynamicToolCallIds.add(params.callId);
     }
   }
@@ -608,16 +623,17 @@ export class CodexAppServerEventProjector {
 
   private async handleItemCompleted(params: JsonObject): Promise<void> {
     const item = readItem(params.item);
+    this.clearTerminalPresentationForNativeItem(item);
     const itemId = item?.id ?? readString(params, "itemId") ?? readString(params, "id");
     if (itemId) {
       this.activeItemIds.delete(itemId);
       this.completedItemIds.add(itemId);
     }
     this.rememberAssistantPhase(item);
-    if (item?.type === "agentMessage" && typeof item.text === "string" && item.text) {
+    if (item?.type === "agentMessage" && typeof item.text === "string") {
       this.rememberAssistantItem(item.id);
       this.assistantTextByItem.set(item.id, item.text);
-      if (this.isCommentaryAssistantItem(item.id)) {
+      if (item.text && this.isCommentaryAssistantItem(item.id)) {
         this.emitCommentaryProgress({ itemId: item.id, text: item.text });
       }
     }
@@ -751,8 +767,9 @@ export class CodexAppServerEventProjector {
       this.promptErrorSource = "prompt";
     }
     for (const item of turn.items ?? []) {
+      this.clearTerminalPresentationForNativeItem(item);
       this.rememberAssistantPhase(item);
-      if (item.type === "agentMessage" && typeof item.text === "string" && item.text) {
+      if (item.type === "agentMessage" && typeof item.text === "string") {
         this.rememberAssistantItem(item.id);
         this.assistantTextByItem.set(item.id, item.text);
       }
@@ -1107,6 +1124,24 @@ export class CodexAppServerEventProjector {
     }
   }
 
+  private clearTerminalPresentationForNativeItem(item: CodexThreadItem | undefined): void {
+    if (
+      !item ||
+      this.terminalPresentationClearedItemIds.has(item.id) ||
+      !shouldClearTerminalPresentationForNativeItem(item)
+    ) {
+      return;
+    }
+    this.terminalPresentationClearedItemIds.add(item.id);
+    this.params.onToolOutcome?.({
+      toolName: itemName(item) ?? item.type,
+      argsHash: "",
+      resultHash: "",
+      terminalPresentation: undefined,
+      presentationOnly: true,
+    });
+  }
+
   private recordNativeToolError(params: {
     item: CodexThreadItem;
     name: string;
@@ -1371,6 +1406,11 @@ export class CodexAppServerEventProjector {
     if (!item) {
       return;
     }
+    if (isSideEffectingNativeToolItem(item)) {
+      this.sideEffectingToolItemIds.add(item.id);
+    } else {
+      this.sideEffectingToolItemIds.delete(item.id);
+    }
     const toolName = itemName(item);
     if (!toolName) {
       return;
@@ -1382,11 +1422,6 @@ export class CodexAppServerEventProjector {
       ...(meta ? { meta } : {}),
       ...(existing?.asyncStarted ? { asyncStarted: true } : {}),
     });
-    if (isSideEffectingNativeToolItem(item)) {
-      this.sideEffectingToolItemIds.add(item.id);
-    } else {
-      this.sideEffectingToolItemIds.delete(item.id);
-    }
   }
 
   private recordNativeToolTranscriptCall(item: CodexThreadItem | undefined): void {
@@ -1688,6 +1723,26 @@ export class CodexAppServerEventProjector {
       return;
     }
     this.assistantItemOrder.push(itemId);
+  }
+
+  private createCurrentAttemptAssistantMessage(): AssistantMessage | undefined {
+    for (let i = this.assistantItemOrder.length - 1; i >= 0; i -= 1) {
+      const itemId = this.assistantItemOrder[i];
+      if (
+        !itemId ||
+        this.isCommentaryAssistantItem(itemId) ||
+        !this.assistantTextByItem.has(itemId)
+      ) {
+        continue;
+      }
+      const text = this.assistantTextByItem.get(itemId) ?? "";
+      const normalizedText = text.trim();
+      if (normalizedText && this.toolProgressTexts.has(normalizedText)) {
+        continue;
+      }
+      return this.createAssistantMessage(text);
+    }
+    return undefined;
   }
 
   private async readMirroredSessionMessages(): Promise<AgentMessage[]> {
@@ -2146,7 +2201,31 @@ function shouldRecordNativeToolTranscript(item: CodexThreadItem): boolean {
 }
 
 function isMutatingNativeToolItem(item: CodexThreadItem): boolean {
-  return item.type === "commandExecution" || item.type === "fileChange";
+  if (item.type === "commandExecution") {
+    // Codex commandActions describe presentation, not safety. Upstream may
+    // classify mutating commands as read/search, so native commands fail closed.
+    return true;
+  }
+  return (
+    item.type === "fileChange" ||
+    item.type === "collabAgentToolCall" ||
+    item.type === "imageGeneration"
+  );
+}
+
+function shouldClearTerminalPresentationForNativeItem(item: CodexThreadItem): boolean {
+  switch (item.type) {
+    case "collabAgentToolCall":
+    case "commandExecution":
+    case "fileChange":
+    case "imageGeneration":
+    case "imageView":
+    case "mcpToolCall":
+    case "webSearch":
+      return true;
+    default:
+      return false;
+  }
 }
 
 function nativeToolActionFingerprint(item: CodexThreadItem): string | undefined {

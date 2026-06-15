@@ -87,7 +87,7 @@ const resolveAndPersistSessionFile = vi.hoisted(() =>
   })),
 );
 const generateTopicLabel = vi.hoisted(() => vi.fn());
-const describeStickerImage = vi.hoisted(() => vi.fn(async () => null));
+const describeStickerImage = vi.hoisted(() => vi.fn(async (): Promise<string | null> => null));
 const loadModelCatalog = vi.hoisted(() => vi.fn(async () => ({})));
 const findModelInCatalog = vi.hoisted(() => vi.fn(() => null));
 const modelSupportsVision = vi.hoisted(() => vi.fn(() => false));
@@ -554,6 +554,61 @@ describe("dispatchTelegramMessage draft streaming", () => {
       route: { agentId: "ops" } as unknown as TelegramMessageContext["route"],
     });
   }
+
+  it("skips general understanding after describing a first-seen non-vision sticker", async () => {
+    describeStickerImage.mockResolvedValueOnce("A curious sticker");
+    const ctxPayload = {
+      MediaPath: "/tmp/sticker.webp",
+      Sticker: {
+        fileId: "sticker-file",
+        fileUniqueId: "sticker-unique",
+      },
+      StickerMediaIncluded: true,
+    } as TelegramMessageContext["ctxPayload"];
+
+    await dispatchWithContext({
+      context: createContext({ ctxPayload }),
+    });
+
+    expect(describeStickerImage).toHaveBeenCalledOnce();
+    expect(ctxPayload.BodyForAgent).toBe("[Sticker] A curious sticker");
+    expect(ctxPayload.SkipStickerMediaUnderstanding).toBe(true);
+    expectDispatchParams({
+      ctx: expect.objectContaining({
+        SkipStickerMediaUnderstanding: true,
+      }),
+    });
+  });
+
+  it("preserves cached sticker descriptions with user text through dispatch", async () => {
+    const body = "[Sticker] Cached description\nWhat is this?";
+    const ctxPayload = {
+      Body: body,
+      BodyForAgent: body,
+      MediaPath: "/tmp/sticker.webp",
+      Sticker: {
+        fileId: "sticker-file",
+        fileUniqueId: "sticker-unique",
+        cachedDescription: "Cached description",
+      },
+      StickerMediaIncluded: true,
+      SkipStickerMediaUnderstanding: true,
+    } as TelegramMessageContext["ctxPayload"];
+
+    await dispatchWithContext({
+      context: createContext({ ctxPayload }),
+    });
+
+    expect(describeStickerImage).not.toHaveBeenCalled();
+    expect(ctxPayload.Body).toBe(body);
+    expect(ctxPayload.BodyForAgent).toBe(body);
+    expectDispatchParams({
+      ctx: expect.objectContaining({
+        BodyForAgent: body,
+        SkipStickerMediaUnderstanding: true,
+      }),
+    });
+  });
 
   it("streams drafts in private threads and forwards thread id", async () => {
     const draftStream = createDraftStream();
@@ -2381,6 +2436,37 @@ describe("dispatchTelegramMessage draft streaming", () => {
     expect(answerDraftStream.clear).toHaveBeenCalledTimes(1);
     expectDeliveredReply(0, { text: "Branch is up to date" });
     expect(editMessageTelegram).not.toHaveBeenCalled();
+  });
+
+  it("replaces Telegram command progress items with matching command output", async () => {
+    const { answerDraftStream } = setupDraftStreams({ answerMessageId: 2001 });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ replyOptions }) => {
+      await replyOptions?.onItemEvent?.({
+        itemId: "tool:call-1",
+        toolCallId: "call-1",
+        kind: "command",
+        name: "exec",
+        progressText: "install dependencies",
+      });
+      await replyOptions?.onCommandOutput?.({
+        itemId: "tool:call-1-output",
+        toolCallId: "call-1",
+        phase: "end",
+        name: "exec",
+        exitCode: 0,
+      });
+      return { queuedFinal: false };
+    });
+
+    await dispatchWithContext({
+      context: createContext(),
+      streamMode: "progress",
+      telegramCfg: { streaming: { mode: "progress", progress: { label: "Shelling" } } },
+    });
+
+    const lastUpdate = answerDraftStream.updatePreview.mock.calls.at(-1)?.[0];
+    expect(lastUpdate?.text).toContain("completed");
+    expect(lastUpdate?.text).not.toContain("install dependencies");
   });
 
   it("sends trailing verbose status after a progress-mode final answer", async () => {

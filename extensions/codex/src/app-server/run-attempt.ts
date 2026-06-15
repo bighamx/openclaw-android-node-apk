@@ -732,6 +732,7 @@ export async function runCodexAppServerAttempt(
       currentThreadId: params.currentThreadTs,
       replyToMode: params.replyToMode,
       hasRepliedRef: params.hasRepliedRef,
+      onToolOutcome: params.onToolOutcome,
     },
   });
   const hadSessionFile = await pathExists(activeSessionFile);
@@ -1512,6 +1513,9 @@ export async function runCodexAppServerAttempt(
         startedAt: attemptStartedAt,
         endedAt: Date.now(),
         ...data,
+        ...((params.deferTerminalLifecycle ?? params.deferTerminalLifecycleEnd)
+          ? { phase: "finishing" }
+          : {}),
       },
     });
     lifecycleTerminalEmitted = true;
