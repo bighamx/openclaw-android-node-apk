@@ -882,10 +882,14 @@ export const dispatchTelegramMessage = async ({
     cfg,
     channel: "telegram",
     accountId: route.accountId,
+    supportsBlockTables: true,
   });
   const renderStreamText = (text: string) => ({
     text,
-    richMessage: buildTelegramRichMarkdown(text),
+    richMessage: buildTelegramRichMarkdown(text, {
+      tableMode,
+      skipEntityDetection: telegramCfg.linkPreview === false,
+    }),
   });
   const accountBlockStreamingEnabled =
     resolveChannelStreamingBlockEnabled(telegramCfg) ??
