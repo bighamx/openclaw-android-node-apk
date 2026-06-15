@@ -8,6 +8,7 @@ import {
 import {
   isMessagingToolDeliveryAction,
   isMessagingToolSendAction,
+  isMessagingToolTargetEvidenceAction,
 } from "./embedded-agent-messaging.js";
 
 beforeEach(() => {
@@ -32,6 +33,16 @@ beforeEach(() => {
 describe("messaging delivery action classification", () => {
   it("keeps visible side effects broader than terminal reply sends", () => {
     expect(isMessagingToolSendAction("message", { action: "poll" })).toBe(false);
+    expect(isMessagingToolTargetEvidenceAction("message", { action: "poll" })).toBe(true);
+    expect(isMessagingToolTargetEvidenceAction("message", { action: "reply" })).toBe(true);
+    expect(isMessagingToolTargetEvidenceAction("message", { action: "sticker" })).toBe(true);
+    expect(isMessagingToolTargetEvidenceAction("message", { action: "thread-create" })).toBe(true);
+    expect(isMessagingToolTargetEvidenceAction("message", { action: "topic-create" })).toBe(true);
+    expect(isMessagingToolTargetEvidenceAction("message", { action: "threadCreate" })).toBe(true);
+    expect(isMessagingToolTargetEvidenceAction("message", { action: "createForumTopic" })).toBe(
+      true,
+    );
+    expect(isMessagingToolTargetEvidenceAction("message", { action: "edit" })).toBe(false);
     expect(isMessagingToolDeliveryAction("message", { action: "poll" })).toBe(true);
     expect(isMessagingToolDeliveryAction("message", { action: "broadcast" })).toBe(true);
     expect(isMessagingToolDeliveryAction("message", { action: "thread-create" })).toBe(true);

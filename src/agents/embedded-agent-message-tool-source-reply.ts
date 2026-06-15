@@ -3,6 +3,7 @@
  */
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
 import {
+  isMessageToolConversationCreateActionName,
   isMessageToolSendActionName,
   isMessagingToolDeliveryAction,
 } from "./embedded-agent-messaging.js";
@@ -27,13 +28,6 @@ const RESULT_ENVELOPE_KEYS = [
 const BROADCAST_SEND_ENVELOPE_KEYS = ["payload", "result", "sendResult", "toolResult"];
 const PARTIAL_DELIVERY_ENVELOPE_KEYS = [...RESULT_ENVELOPE_KEYS, "error", "cause"];
 const SESSIONS_SEND_DELIVERY_STATUSES = new Set(["accepted", "ok"]);
-const CONVERSATION_CREATE_ACTIONS = new Set([
-  "thread-create",
-  "topic-create",
-  "threadcreate",
-  "createforumtopic",
-]);
-
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -458,7 +452,7 @@ export function isDeliveredMessagingToolResult(params: {
   }
   if (
     action &&
-    CONVERSATION_CREATE_ACTIONS.has(action) &&
+    isMessageToolConversationCreateActionName(action) &&
     (deliveryEnvelopeHasCreatedConversationId(params.result) ||
       deliveryEnvelopeHasCreatedConversationId(params.hookResult))
   ) {
