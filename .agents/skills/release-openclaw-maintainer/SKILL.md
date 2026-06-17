@@ -205,6 +205,11 @@ Use this skill for release and publish-time workflow. Load `$release-private` if
   `CHANGELOG.md` version section, not highlights or an excerpt. When creating
   or editing a release, extract from `## YYYY.M.PATCH` through the line before the
   next level-2 heading and use that complete block as the release notes.
+- Before publishing or closing a release, run
+  `$openclaw-changelog-update`'s `verify-release-notes.mjs` with every stable
+  and beta release tag in the train. Do not publish or leave a page live when
+  it is missing a source-history reference, eligible human credit, or the
+  complete matching changelog body.
 - To update an existing GitHub Release body, resolve the numeric release id and
   patch that resource with the notes file as the `body` field:
   `gh api repos/openclaw/openclaw/releases/tags/vYYYY.M.PATCH --jq .id`, then

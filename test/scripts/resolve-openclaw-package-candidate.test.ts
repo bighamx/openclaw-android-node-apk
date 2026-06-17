@@ -375,6 +375,45 @@ describe("resolve-openclaw-package-candidate", () => {
     );
   });
 
+  it("rejects loose trusted package source port values", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "openclaw-trusted-package-source-"));
+    tempDirs.push(dir);
+    const policy = path.join(dir, "trusted-sources.json");
+    await writeFile(
+      policy,
+      JSON.stringify({
+        schemaVersion: 1,
+        sources: {
+          exponent: {
+            hosts: ["packages.example"],
+            pathPrefixes: ["/openclaw/"],
+            ports: ["1e3"],
+          },
+          fractional: {
+            hosts: ["packages.example"],
+            pathPrefixes: ["/openclaw/"],
+            ports: [443.5],
+          },
+          hex: {
+            hosts: ["packages.example"],
+            pathPrefixes: ["/openclaw/"],
+            ports: ["0x1bb"],
+          },
+        },
+      }),
+    );
+
+    await expect(loadTrustedPackageSource("exponent", policy)).rejects.toThrow(
+      "trusted package source exponent has invalid ports",
+    );
+    await expect(loadTrustedPackageSource("fractional", policy)).rejects.toThrow(
+      "trusted package source fractional has invalid ports",
+    );
+    await expect(loadTrustedPackageSource("hex", policy)).rejects.toThrow(
+      "trusted package source hex has invalid ports",
+    );
+  });
+
   it("rejects unsafe package_url downloads before fetching private targets", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "openclaw-package-download-"));
     tempDirs.push(dir);

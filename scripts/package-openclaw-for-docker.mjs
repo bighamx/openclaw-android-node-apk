@@ -53,11 +53,14 @@ function resolveTimeoutMs(envName, defaultValue) {
   if (raw === undefined || raw === "") {
     return defaultValue;
   }
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  if (!/^[0-9]+$/u.test(raw)) {
     throw new Error(`${envName} must be a positive timeout in milliseconds`);
   }
-  return Math.trunc(parsed);
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${envName} must be a positive timeout in milliseconds`);
+  }
+  return parsed;
 }
 
 function readOptionValue(argv, index, optionName) {

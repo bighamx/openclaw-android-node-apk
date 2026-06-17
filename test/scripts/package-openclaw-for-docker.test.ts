@@ -146,6 +146,29 @@ describe("package-openclaw-for-docker", () => {
     ]);
   });
 
+  it("rejects loose package artifact timeout env values", async () => {
+    const previousTimeout = process.env.OPENCLAW_DOCKER_PACKAGE_BUILD_TIMEOUT_MS;
+    try {
+      for (const value of ["1e3", "123.9", "9007199254740993", "0"]) {
+        process.env.OPENCLAW_DOCKER_PACKAGE_BUILD_TIMEOUT_MS = value;
+
+        await expect(
+          buildPackageArtifacts("/repo", {
+            runImpl: async () => undefined,
+          }),
+        ).rejects.toThrow(
+          "OPENCLAW_DOCKER_PACKAGE_BUILD_TIMEOUT_MS must be a positive timeout in milliseconds",
+        );
+      }
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.OPENCLAW_DOCKER_PACKAGE_BUILD_TIMEOUT_MS;
+      } else {
+        process.env.OPENCLAW_DOCKER_PACKAGE_BUILD_TIMEOUT_MS = previousTimeout;
+      }
+    }
+  });
+
   it("trims and restores the changelog around ignore-scripts package artifacts", async () => {
     const calls: string[] = [];
     const tarball = await packOpenClawPackageForDocker("/repo", "/out", {
