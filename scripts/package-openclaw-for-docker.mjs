@@ -78,6 +78,34 @@ function readEqualsOptionValue(value, optionName) {
   return value;
 }
 
+function validateOutputName(value) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.t(?:ar\.)?gz$/u.test(value)) {
+    throw new Error(`--output-name must be a tarball filename, not a path: ${value}`);
+  }
+}
+
+function resolvePackedOpenClawFileName(value) {
+  const filename = value.trim();
+  if (
+    !filename.endsWith(".tgz") ||
+    (!filename.startsWith("openclaw-") &&
+      !filename.includes(":") &&
+      !filename.includes("/") &&
+      !filename.includes("\\"))
+  ) {
+    return "";
+  }
+  if (
+    !/^openclaw-[A-Za-z0-9._-]+\.tgz$/u.test(filename) ||
+    filename.includes("\0") ||
+    filename !== path.basename(filename) ||
+    filename !== path.win32.basename(filename)
+  ) {
+    throw new Error(`npm pack reported unsafe OpenClaw tarball filename: ${filename}`);
+  }
+  return filename;
+}
+
 export function parseArgs(argv) {
   const options = {
     outputDir: "",
@@ -110,6 +138,9 @@ export function parseArgs(argv) {
     } else {
       throw new Error(`unknown argument: ${arg}`);
     }
+  }
+  if (options.outputName) {
+    validateOutputName(options.outputName);
   }
   return options;
 }
@@ -274,9 +305,9 @@ async function runCapture(command, args, cwd, options = {}) {
 async function newestOpenClawTarball(outputDir, packOutput) {
   let fromOutput = "";
   for (const line of packOutput.split(/\r?\n/u)) {
-    const trimmed = line.trim();
-    if (/^openclaw-.*\.tgz$/u.test(trimmed)) {
-      fromOutput = trimmed;
+    const filename = resolvePackedOpenClawFileName(line);
+    if (filename) {
+      fromOutput = filename;
     }
   }
   if (fromOutput) {
@@ -285,7 +316,13 @@ async function newestOpenClawTarball(outputDir, packOutput) {
 
   const entries = await fs.readdir(outputDir);
   const packed = entries
-    .filter((entry) => /^openclaw-.*\.tgz$/u.test(entry))
+    .filter((entry) => {
+      try {
+        return resolvePackedOpenClawFileName(entry) === entry;
+      } catch {
+        return false;
+      }
+    })
     .toSorted()
     .at(-1);
   if (!packed) {

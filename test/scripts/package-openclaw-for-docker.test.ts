@@ -96,6 +96,23 @@ describe("package-openclaw-for-docker", () => {
     }
   });
 
+  it("rejects package artifact output names that escape the output directory", () => {
+    for (const outputName of [
+      "../openclaw-current.tgz",
+      "nested/openclaw-current.tgz",
+      "openclaw-current.zip",
+      ".openclaw-current.tgz",
+    ]) {
+      expect(() => parseArgs(["--output-name", outputName])).toThrow(
+        `--output-name must be a tarball filename, not a path: ${outputName}`,
+      );
+    }
+
+    expect(parseArgs(["--output-name", "openclaw-current.tar.gz"]).outputName).toBe(
+      "openclaw-current.tar.gz",
+    );
+  });
+
   it("uses build-all as the single bounded package artifact build step", async () => {
     const calls: Array<{
       command: string;
@@ -196,6 +213,51 @@ describe("package-openclaw-for-docker", () => {
       "npm:pack --silent --ignore-scripts --pack-destination /out:/repo",
       "restore:/repo",
     ]);
+  });
+
+  it("rejects path-like npm pack stdout before resolving Docker package tarballs", async () => {
+    for (const filename of [
+      "../openclaw-2026.6.17.tgz",
+      "/tmp/openclaw-2026.6.17.tgz",
+      String.raw`C:\temp\openclaw-2026.6.17.tgz`,
+      "openclaw-nested/evil.tgz",
+      String.raw`openclaw-nested\evil.tgz`,
+      "openclaw-C:evil.tgz",
+    ]) {
+      await expect(
+        packOpenClawPackageForDocker("/repo", "/out", {
+          prepareChangelog: async () => {},
+          restoreChangelog: async () => {},
+          runCaptureImpl: async () => `${filename}\n`,
+        }),
+      ).rejects.toThrow("npm pack reported unsafe OpenClaw tarball filename");
+    }
+  });
+
+  it("ignores unsafe output directory tarball names when npm stdout is not usable", async () => {
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-docker-pack-"));
+    try {
+      fs.writeFileSync(path.join(outputDir, "openclaw-C:evil.tgz"), "");
+      fs.writeFileSync(path.join(outputDir, String.raw`openclaw-nested\evil.tgz`), "");
+      await expect(
+        packOpenClawPackageForDocker("/repo", outputDir, {
+          prepareChangelog: async () => {},
+          restoreChangelog: async () => {},
+          runCaptureImpl: async () => "npm notice\n",
+        }),
+      ).rejects.toThrow("missing packed OpenClaw tarball");
+
+      fs.writeFileSync(path.join(outputDir, "openclaw-2026.6.17.tgz"), "");
+      await expect(
+        packOpenClawPackageForDocker("/repo", outputDir, {
+          prepareChangelog: async () => {},
+          restoreChangelog: async () => {},
+          runCaptureImpl: async () => "npm notice\n",
+        }),
+      ).resolves.toBe(path.join(outputDir, "openclaw-2026.6.17.tgz"));
+    } finally {
+      fs.rmSync(outputDir, { recursive: true, force: true });
+    }
   });
 
   it("restores the changelog when ignore-scripts packaging fails", async () => {
