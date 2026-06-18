@@ -7,21 +7,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT_DIR/scripts/lib/docker-e2e-image.sh"
 
 IMAGE_NAME="$(docker_e2e_resolve_image "openclaw-mcp-code-mode-gateway-live-e2e" OPENCLAW_IMAGE)"
-PORT="${OPENCLAW_MCP_CODE_MODE_LIVE_GATEWAY_PORT:-18789}"
+PORT="$(docker_e2e_read_tcp_port_env OPENCLAW_MCP_CODE_MODE_LIVE_GATEWAY_PORT 18789)"
 TOKEN="mcp-code-mode-live-e2e-$(date +%s)-$$"
 CONTAINER_NAME="openclaw-mcp-code-mode-live-e2e-$$"
 PROFILE_FILE="${OPENCLAW_MCP_CODE_MODE_LIVE_PROFILE_FILE:-${OPENCLAW_TESTBOX_PROFILE_FILE:-$HOME/.openclaw-testbox-live.profile}}"
-
-validate_tcp_port() {
-  local label="$1"
-  local value="$2"
-  if [[ ! "$value" =~ ^[0-9]+$ ]] || [ "$value" -lt 1 ] || [ "$value" -gt 65535 ]; then
-    echo "invalid $label: $value" >&2
-    exit 2
-  fi
-}
-
-validate_tcp_port OPENCLAW_MCP_CODE_MODE_LIVE_GATEWAY_PORT "$PORT"
 
 CLIENT_LOG="$(mktemp -t openclaw-mcp-code-mode-live-log.XXXXXX)"
 

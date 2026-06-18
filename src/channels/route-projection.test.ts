@@ -3,13 +3,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { createChannelTestPluginBase, createTestRegistry } from "../test-utils/channel-plugins.js";
 import {
-  deliveryContextFromRoute,
   formatConversationTarget,
-  normalizeRoutableChannelRoute,
   resolveConversationDeliveryTarget,
   routeFromBindingRecord,
   routeFromConversationRef,
-  routeFromDeliveryContext,
   routeToDeliveryFields,
 } from "./route-projection.js";
 
@@ -78,28 +75,6 @@ describe("channel route projection", () => {
         },
       ]),
     );
-  });
-
-  it("round-trips delivery context through channel route metadata", () => {
-    const route = routeFromDeliveryContext({
-      channel: " Slack ",
-      to: " channel:C123 ",
-      accountId: " work ",
-      threadId: " 177000.123 ",
-    });
-
-    expect(route).toEqual({
-      channel: "slack",
-      accountId: "work",
-      target: { to: "channel:C123" },
-      thread: { id: "177000.123" },
-    });
-    expect(deliveryContextFromRoute(route)).toEqual({
-      channel: "slack",
-      to: "channel:C123",
-      accountId: "work",
-      threadId: "177000.123",
-    });
   });
 
   it("formats plugin-defined conversation targets via channel messaging hooks", () => {
@@ -190,7 +165,4 @@ describe("channel route projection", () => {
     });
   });
 
-  it("narrows only routable routes", () => {
-    expect(normalizeRoutableChannelRoute({ channel: "slack" })).toBeUndefined();
-  });
 });

@@ -29,6 +29,20 @@ openclaw_live_truthy() {
   esac
 }
 
+openclaw_live_read_positive_int_env() {
+  local name="${1:?missing environment variable name}"
+  local fallback="${2:?missing fallback value}"
+  local value="${!name-}"
+  if [ -z "${!name+x}" ]; then
+    value="$fallback"
+  fi
+  if [[ ! "$value" =~ ^[0-9]+$ ]] || (( 10#$value < 1 )); then
+    echo "invalid $name: $value" >&2
+    return 2
+  fi
+  printf '%s\n' "$value"
+}
+
 openclaw_live_is_ci() {
   openclaw_live_truthy "${CI:-}" \
     || openclaw_live_truthy "${GITHUB_ACTIONS:-}" \

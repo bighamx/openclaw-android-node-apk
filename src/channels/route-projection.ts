@@ -5,7 +5,6 @@ import type {
 } from "../infra/outbound/session-binding-service.js";
 import {
   normalizeChannelRouteRef,
-  type ChannelRouteChatType,
   type ChannelRouteRef,
 } from "../plugin-sdk/channel-route.js";
 import {
@@ -13,9 +12,7 @@ import {
   type ConversationTargetParams,
 } from "../utils/conversation-target.js";
 import {
-  channelRouteFromDeliveryContext,
   deliveryContextFromChannelRoute,
-  normalizeDeliveryContext,
   type DeliveryContext,
 } from "../utils/delivery-context.shared.js";
 import { getChannelPlugin, normalizeChannelId } from "./plugins/registry.js";
@@ -64,41 +61,6 @@ export function resolveConversationDeliveryTarget(params: ConversationTargetPara
   }
   const to = formatConversationTarget(params);
   return { to };
-}
-
-/** Channel route normalized enough to address an outbound delivery target. */
-export type RoutableChannelRouteRef = ChannelRouteRef & {
-  channel: string;
-  target: {
-    to: string;
-    rawTo?: string;
-    chatType?: ChannelRouteChatType;
-  };
-};
-
-/** Normalizes a route and rejects routes that cannot address a channel target. */
-export function normalizeRoutableChannelRoute(
-  route?: ChannelRouteRef | null,
-): RoutableChannelRouteRef | undefined {
-  const normalized = normalizeChannelRouteRef({
-    channel: route?.channel,
-    accountId: route?.accountId,
-    to: route?.target?.to,
-    rawTo: route?.target?.rawTo,
-    chatType: route?.target?.chatType,
-    threadId: route?.thread?.id,
-    threadKind: route?.thread?.kind,
-    threadSource: route?.thread?.source,
-  });
-  if (!normalized?.channel || !normalized.target?.to) {
-    return undefined;
-  }
-  return normalized as RoutableChannelRouteRef;
-}
-
-/** Converts legacy delivery context metadata into a channel route. */
-export function routeFromDeliveryContext(context?: DeliveryContext): ChannelRouteRef | undefined {
-  return channelRouteFromDeliveryContext(normalizeDeliveryContext(context));
 }
 
 /** Converts a channel route back to legacy delivery context metadata. */

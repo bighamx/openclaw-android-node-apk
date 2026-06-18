@@ -55,6 +55,38 @@ afterEach(() => {
 });
 
 describe("scripts/lib/live-docker-auth.sh", () => {
+  it("reads positive integer env values before live Docker setup", () => {
+    const result = spawnSync(
+      "/bin/bash",
+      [
+        "-c",
+        [
+          "source scripts/lib/live-docker-auth.sh",
+          'fallback="$(openclaw_live_read_positive_int_env OPENCLAW_LIVE_SAMPLE_SECONDS 180)"',
+          'leading_zero="$(OPENCLAW_LIVE_SAMPLE_SECONDS=008 openclaw_live_read_positive_int_env OPENCLAW_LIVE_SAMPLE_SECONDS 180)"',
+          'printf "%s\\n%s\\n" "$fallback" "$leading_zero"',
+        ].join("\n"),
+      ],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
+    const invalid = spawnSync(
+      "/bin/bash",
+      [
+        "-c",
+        [
+          "source scripts/lib/live-docker-auth.sh",
+          "OPENCLAW_LIVE_SAMPLE_SECONDS=30s openclaw_live_read_positive_int_env OPENCLAW_LIVE_SAMPLE_SECONDS 180",
+        ].join("\n"),
+      ],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trimEnd().split("\n")).toEqual(["180", "008"]);
+    expect(invalid.status).toBe(2);
+    expect(invalid.stderr).toContain("invalid OPENCLAW_LIVE_SAMPLE_SECONDS: 30s");
+  });
+
   it("adds a kill-after grace period when timeout supports it", () => {
     const binDir = makeTempBin("openclaw-live-docker-auth-gnu-");
     writeExecutable(
