@@ -1,12 +1,9 @@
 // Route projection helpers between sessions, delivery context, and channel routes.
-import type { SessionEntry } from "../config/sessions/types.js";
 import type {
   ConversationRef,
   SessionBindingRecord,
 } from "../infra/outbound/session-binding-service.js";
 import {
-  channelRouteThreadId,
-  channelRouteTarget,
   normalizeChannelRouteRef,
   type ChannelRouteChatType,
   type ChannelRouteRef,
@@ -18,9 +15,7 @@ import {
 import {
   channelRouteFromDeliveryContext,
   deliveryContextFromChannelRoute,
-  deliveryContextFromSession,
   normalizeDeliveryContext,
-  normalizeSessionDeliveryFields,
   type DeliveryContext,
 } from "../utils/delivery-context.shared.js";
 import { getChannelPlugin, normalizeChannelId } from "./plugins/registry.js";
@@ -111,17 +106,6 @@ export function deliveryContextFromRoute(route?: ChannelRouteRef): DeliveryConte
   return deliveryContextFromChannelRoute(route);
 }
 
-/** Projects the best known delivery route from a stored session entry. */
-export function routeFromSessionEntry(entry?: SessionEntry | null): ChannelRouteRef | undefined {
-  if (!entry) {
-    return undefined;
-  }
-  return (
-    normalizeSessionDeliveryFields(entry).route ??
-    routeFromDeliveryContext(deliveryContextFromSession(entry))
-  );
-}
-
 /** Converts a persisted conversation reference into a channel route. */
 export function routeFromConversationRef(
   conversation?: ConversationRef | null,
@@ -166,23 +150,4 @@ export function routeToDeliveryFields(route?: ChannelRouteRef): {
     ...(deliveryContext?.accountId ? { accountId: deliveryContext.accountId } : {}),
     ...(deliveryContext?.threadId != null ? { threadId: deliveryContext.threadId } : {}),
   };
-}
-
-/** Compares whether two routes address the same delivery target. */
-export function routesShareDeliveryTarget(params: {
-  left?: ChannelRouteRef | null;
-  right?: ChannelRouteRef | null;
-}): boolean {
-  const left = normalizeRoutableChannelRoute(params.left);
-  const right = normalizeRoutableChannelRoute(params.right);
-  if (!left || !right) {
-    return false;
-  }
-  return (
-    left.channel === right.channel &&
-    channelRouteTarget(left) === channelRouteTarget(right) &&
-    // Missing account ids are wildcards; thread ids must match when present.
-    (left.accountId == null || right.accountId == null || left.accountId === right.accountId) &&
-    String(channelRouteThreadId(left) ?? "") === String(channelRouteThreadId(right) ?? "")
-  );
 }

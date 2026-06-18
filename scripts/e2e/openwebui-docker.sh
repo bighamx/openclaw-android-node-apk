@@ -24,10 +24,39 @@ NET_NAME="openclaw-openwebui-e2e-$$"
 GW_NAME="openclaw-openwebui-gateway-$$"
 OW_NAME="openclaw-openwebui-$$"
 PROVIDER_TIMEOUT_SECONDS="${OPENCLAW_OPENWEBUI_PROVIDER_TIMEOUT_SECONDS:-900}"
-PROBE_FETCH_TIMEOUT_MS="${OPENCLAW_OPENWEBUI_FETCH_TIMEOUT_MS:-$((PROVIDER_TIMEOUT_SECONDS * 1000 + 60000))}"
-DOCKER_COMMAND_TIMEOUT="${OPENCLAW_OPENWEBUI_DOCKER_COMMAND_TIMEOUT:-$((PROVIDER_TIMEOUT_SECONDS + 90))s}"
 DOCKER_PULL_TIMEOUT="${OPENCLAW_OPENWEBUI_DOCKER_PULL_TIMEOUT:-600s}"
 SMOKE_MODE="${OPENWEBUI_SMOKE_MODE:-${OPENCLAW_OPENWEBUI_SMOKE_MODE:-chat}}"
+
+validate_positive_int() {
+  local label="$1"
+  local value="$2"
+  if [[ ! "$value" =~ ^[0-9]+$ ]] || (( 10#$value < 1 )); then
+    echo "invalid $label: $value" >&2
+    exit 2
+  fi
+}
+
+validate_tcp_port() {
+  local label="$1"
+  local value="$2"
+  if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+    echo "invalid $label: $value" >&2
+    exit 2
+  fi
+  local decimal_value=$((10#$value))
+  if [ "$decimal_value" -lt 1 ] || [ "$decimal_value" -gt 65535 ]; then
+    echo "invalid $label: $value" >&2
+    exit 2
+  fi
+}
+
+validate_tcp_port OPENCLAW_OPENWEBUI_GATEWAY_PORT "$PORT"
+validate_tcp_port OPENCLAW_OPENWEBUI_PORT "$WEBUI_PORT"
+validate_positive_int OPENCLAW_OPENWEBUI_PROVIDER_TIMEOUT_SECONDS "$PROVIDER_TIMEOUT_SECONDS"
+PROVIDER_TIMEOUT_SECONDS_DECIMAL=$((10#$PROVIDER_TIMEOUT_SECONDS))
+PROBE_FETCH_TIMEOUT_MS="${OPENCLAW_OPENWEBUI_FETCH_TIMEOUT_MS:-$((PROVIDER_TIMEOUT_SECONDS_DECIMAL * 1000 + 60000))}"
+validate_positive_int OPENCLAW_OPENWEBUI_FETCH_TIMEOUT_MS "$PROBE_FETCH_TIMEOUT_MS"
+DOCKER_COMMAND_TIMEOUT="${OPENCLAW_OPENWEBUI_DOCKER_COMMAND_TIMEOUT:-$((PROVIDER_TIMEOUT_SECONDS_DECIMAL + 90))s}"
 
 case "$SMOKE_MODE" in
   chat | models) ;;
