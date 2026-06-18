@@ -306,6 +306,59 @@ describe("scripts/test-projects changed-target routing", () => {
     });
   });
 
+  it("routes nested e2e library helpers through owner tests", () => {
+    const expectedTargets = new Map([
+      [
+        "scripts/e2e/lib/bundled-plugin-install-uninstall/probe.mjs",
+        ["test/scripts/bundled-plugin-install-uninstall-probe.test.ts"],
+      ],
+      [
+        "scripts/e2e/lib/kitchen-sink-plugin/assertions.mjs",
+        ["test/scripts/kitchen-sink-plugin-assertions.test.ts"],
+      ],
+      [
+        "scripts/e2e/lib/live-plugin-tool/assertions.mjs",
+        ["test/scripts/live-plugin-tool-assertions.test.ts"],
+      ],
+      [
+        "scripts/e2e/lib/plugins/assertions.mjs",
+        ["test/scripts/plugins-assertions.test.ts"],
+      ],
+      [
+        "scripts/e2e/lib/release-user-journey/assertions.mjs",
+        ["test/scripts/release-user-journey-assertions.test.ts"],
+      ],
+      ["scripts/e2e/lib/run-with-pty.mjs", ["test/scripts/e2e-run-with-pty.test.ts"]],
+    ]);
+
+    for (const [source, targets] of expectedTargets) {
+      expect(resolveChangedTestTargetPlan([source]), source).toEqual({
+        mode: "targets",
+        targets,
+      });
+    }
+  });
+
+  it("routes nested e2e shell helpers through their sourced owner tests", () => {
+    const expectedTargets = new Map([
+      [
+        "scripts/e2e/lib/kitchen-sink-plugin/sweep.sh",
+        ["test/scripts/kitchen-sink-plugin-assertions.test.ts"],
+      ],
+      ["scripts/e2e/lib/plugins/clawhub.sh", ["test/scripts/plugins-assertions.test.ts"]],
+      ["scripts/e2e/lib/plugins/fixtures.sh", ["test/scripts/plugins-assertions.test.ts"]],
+      ["scripts/e2e/lib/plugins/marketplace.sh", ["test/scripts/plugins-assertions.test.ts"]],
+      ["scripts/e2e/lib/plugins/sweep.sh", ["test/scripts/plugins-assertions.test.ts"]],
+    ]);
+
+    for (const [source, targets] of expectedTargets) {
+      expect(resolveChangedTestTargetPlan([source]), source).toEqual({
+        mode: "targets",
+        targets,
+      });
+    }
+  });
+
   it("routes unmatched script changes to the tooling suite instead of skipping tests", () => {
     const targets = [
       "scripts/check-no-raw-http2-imports.mjs",

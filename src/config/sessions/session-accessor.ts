@@ -27,10 +27,12 @@ import {
   getSessionEntry,
   cleanupSessionLifecycleArtifacts as cleanupFileSessionLifecycleArtifacts,
   deleteSessionEntryLifecycle as deleteFileSessionEntryLifecycle,
+  applySessionEntryLifecycleMutation as applyFileSessionEntryLifecycleMutation,
   listSessionEntries as listFileSessionEntries,
   loadSessionStore,
   applySessionEntryPatchProjection as applyFileSessionEntryPatchProjection,
   patchSessionEntry as patchFileSessionEntry,
+  purgeDeletedAgentSessionEntries as purgeFileDeletedAgentSessionEntries,
   readSessionUpdatedAt as readFileSessionUpdatedAt,
   resolveSessionStoreEntry,
   resetSessionEntryLifecycle as resetFileSessionEntryLifecycle,
@@ -39,6 +41,11 @@ import {
   type DeleteSessionEntryLifecycleResult,
   type ResetSessionEntryLifecycleMutation,
   type ResetSessionEntryLifecycleResult,
+  type DeletedAgentSessionEntryPurgeParams,
+  type SessionArchivedTranscriptCleanupRule,
+  type SessionEntryLifecycleMutationResult,
+  type SessionEntryLifecycleRemoval,
+  type SessionEntryLifecycleUpsert,
   type SessionEntryPatchProjectionContext,
   type SessionEntryPatchProjectionFailure,
   type SessionEntryPatchProjectionResult,
@@ -313,6 +320,14 @@ export type {
   SessionLifecycleArtifactCleanupParams,
   SessionLifecycleArtifactCleanupResult,
   SessionLifecycleStoreTarget,
+};
+
+export type {
+  DeletedAgentSessionEntryPurgeParams,
+  SessionArchivedTranscriptCleanupRule,
+  SessionEntryLifecycleMutationResult,
+  SessionEntryLifecycleRemoval,
+  SessionEntryLifecycleUpsert,
 };
 
 export type ResetSessionEntryLifecycleParams = {
@@ -593,6 +608,36 @@ export async function deleteSessionEntryLifecycle(
   params: DeleteSessionEntryLifecycleParams,
 ): Promise<DeleteSessionEntryLifecycleResult> {
   return await deleteFileSessionEntryLifecycle(params);
+}
+
+/** Applies exact entry lifecycle mutations and artifact cleanup at the storage boundary. */
+export async function applySessionEntryLifecycleMutation(params: {
+  storePath: string;
+  removals?: Iterable<SessionEntryLifecycleRemoval>;
+  upserts?: Iterable<SessionEntryLifecycleUpsert>;
+  activeSessionKey?: string;
+  maintenanceOverride?: Partial<ResolvedSessionMaintenanceConfig>;
+  skipMaintenance?: boolean;
+  archiveReason?: "deleted" | "reset";
+  restrictArchivedTranscriptsToStoreDir?: boolean;
+  cleanupArchivedTranscripts?: {
+    rules: SessionArchivedTranscriptCleanupRule[];
+    nowMs?: number;
+  };
+  pruneUnreferencedArtifacts?: {
+    olderThanMs: number;
+    dryRun?: boolean;
+  };
+  captureArtifactCleanupError?: boolean;
+}): Promise<SessionEntryLifecycleMutationResult> {
+  return await applyFileSessionEntryLifecycleMutation(params);
+}
+
+/** Purges session entries owned by a deleted agent at the storage boundary. */
+export async function purgeDeletedAgentSessionEntries(
+  params: DeletedAgentSessionEntryPurgeParams,
+): Promise<SessionEntryLifecycleMutationResult> {
+  return await purgeFileDeletedAgentSessionEntries(params);
 }
 
 /** Reads parsed transcript records from an explicit or derived transcript target. */
