@@ -124,6 +124,17 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/gu, `'\\''`)}'`;
 }
 
+function cleanupSmokeLogTailHelpers(): string {
+  const script = readFileSync(CLEANUP_SMOKE_RUN_PATH, "utf8");
+  const match = script.match(
+    /(read_positive_int_env\(\) \{[\s\S]*?\n\}\n\nprint_log_tail\(\) \{[\s\S]*?\n\})\n\nread_positive_int_env/u,
+  );
+  if (!match) {
+    throw new Error("cleanup smoke log helpers were not found");
+  }
+  return match[1];
+}
+
 function runCleanupDefaultPlatform(env: Record<string, string>, hostArch: string): string {
   const script = readFileSync(CLEANUP_DOCKER_SMOKE_PATH, "utf8");
   const match = script.match(/(resolve_default_cleanup_platform\(\) \{[\s\S]*?\n\})\n\nPLATFORM=/u);
@@ -228,8 +239,65 @@ docker_build_transient_failure "$LOG_PATH"
     const cleanupRun = readFileSync(CLEANUP_SMOKE_RUN_PATH, "utf8");
 
     expect(cleanupRun).toContain("OPENCLAW_CLEANUP_SMOKE_LOG_PRINT_BYTES");
+    expect(cleanupRun).toContain(
+      "read_positive_int_env OPENCLAW_CLEANUP_SMOKE_LOG_PRINT_BYTES 65536 >/dev/null",
+    );
     expect(cleanupRun.match(/print_log_tail \/tmp\/openclaw-cleanup-/g)).toHaveLength(3);
     expect(cleanupRun).not.toContain("cat /tmp/openclaw-cleanup-");
+  });
+
+  it("rejects invalid cleanup-smoke log byte limits", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "openclaw-cleanup-smoke-log-invalid-"));
+
+    try {
+      const logPath = join(workDir, "cleanup.log");
+      writeFileSync(logPath, "cleanup output\n");
+      const script = `
+set -euo pipefail
+LOG_PATH=${shellQuote(logPath)}
+export OPENCLAW_CLEANUP_SMOKE_LOG_PRINT_BYTES=64kb
+
+${cleanupSmokeLogTailHelpers()}
+
+print_log_tail "$LOG_PATH"
+`;
+
+      const result = spawnSync("bash", ["-lc", script], { encoding: "utf8" });
+
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("invalid OPENCLAW_CLEANUP_SMOKE_LOG_PRINT_BYTES: 64kb");
+      expect(result.stdout).toBe("");
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("normalizes zero-padded cleanup-smoke log byte limits", () => {
+    const workDir = mkdtempSync(join(tmpdir(), "openclaw-cleanup-smoke-log-tail-"));
+
+    try {
+      const logPath = join(workDir, "cleanup.log");
+      writeFileSync(logPath, "old-cleanup-output-recent\n");
+      const script = `
+set -euo pipefail
+LOG_PATH=${shellQuote(logPath)}
+export OPENCLAW_CLEANUP_SMOKE_LOG_PRINT_BYTES=0008
+
+${cleanupSmokeLogTailHelpers()}
+
+print_log_tail "$LOG_PATH"
+`;
+
+      const result = spawnSync("bash", ["-lc", script], { encoding: "utf8" });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("truncated: showing last 8");
+      expect(result.stdout).toContain("-recent\n");
+      expect(result.stdout).not.toContain("old-cleanup-output");
+      expect(result.stderr).toBe("");
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
   });
 
   it("prints Docker MCP client logs through the bounded helper", () => {
