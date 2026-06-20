@@ -439,6 +439,39 @@ function parseOpenClawPackageSpecVersion(spec: string): string {
   return resolveOpenClawRegistryVersion(value) || "";
 }
 
+function readString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function parseRegistryPackageMetadata(raw: string): {
+  gitHead: string;
+  tarball: string;
+  version: string;
+} {
+  const value = raw.trim();
+  if (!value) {
+    return { gitHead: "", tarball: "", version: "" };
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!isRecord(parsed)) {
+      return { gitHead: "", tarball: "", version: "" };
+    }
+    const dist = isRecord(parsed.dist) ? parsed.dist : {};
+    return {
+      gitHead: readString(parsed.gitHead),
+      tarball: readString(parsed["dist.tarball"]) || readString(dist.tarball),
+      version: readString(parsed.version),
+    };
+  } catch {
+    return { gitHead: "", tarball: "", version: "" };
+  }
+}
+
 export class NpmUpdateSmoke {
   private auth: ProviderAuth;
   private windowsAuth: ProviderAuth;
@@ -773,20 +806,7 @@ export class NpmUpdateSmoke {
     if (!output) {
       return { gitHead: "", tarball: "", version: "" };
     }
-    try {
-      const parsed = JSON.parse(output) as {
-        dist?: { tarball?: string };
-        gitHead?: string;
-        version?: string;
-      };
-      return {
-        gitHead: parsed.gitHead ?? "",
-        tarball: parsed.dist?.tarball ?? "",
-        version: parsed.version ?? "",
-      };
-    } catch {
-      return { gitHead: "", tarball: "", version: "" };
-    }
+    return parseRegistryPackageMetadata(output);
   }
 
   private async runSameGuestUpdates(): Promise<void> {

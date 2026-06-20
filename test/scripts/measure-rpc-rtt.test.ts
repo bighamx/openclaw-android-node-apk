@@ -102,6 +102,30 @@ describe("scripts/measure-rpc-rtt.mjs", () => {
     expect(socket.closed).toBe(true);
   });
 
+  it("clears pending websocket request timers when send throws synchronously", async () => {
+    vi.useFakeTimers();
+    FakeWebSocket.instances = [];
+    const client = createGatewayClient({
+      WebSocket: FakeWebSocket,
+      url: "ws://127.0.0.1:12345",
+    });
+    const socket = FakeWebSocket.instances[0];
+    if (!socket) {
+      throw new Error("fake websocket was not created");
+    }
+    socket.readyState = FakeWebSocket.OPEN;
+    socket.send = () => {
+      throw new Error("socket closed during send");
+    };
+
+    await expect(client.request("health", {}, 10_000)).rejects.toThrow(
+      "socket closed during send",
+    );
+
+    expect(vi.getTimerCount()).toBe(0);
+    client.close();
+  });
+
   it("parses bounded RPC RTT options strictly", () => {
     expect(
       parseArgs([

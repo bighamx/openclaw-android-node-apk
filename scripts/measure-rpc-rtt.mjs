@@ -720,18 +720,19 @@ export function createGatewayClient({ WebSocket, openTimeoutMs = 8_000, url }) {
         reject(new Error(`timeout waiting for ${method}`));
       }, timeoutMs);
       pending.set(id, { resolve, reject, timeout });
-      ws.send(JSON.stringify({ type: "req", id, method, params }), (error) => {
+      const rejectSendFailure = (error) => {
         if (!error) {
           return;
         }
-        const waiter = pending.get(id);
-        if (!waiter) {
-          return;
-        }
         pending.delete(id);
-        clearTimeout(waiter.timeout);
-        waiter.reject(error instanceof Error ? error : new Error(String(error)));
-      });
+        clearTimeout(timeout);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      };
+      try {
+        ws.send(JSON.stringify({ type: "req", id, method, params }), rejectSendFailure);
+      } catch (error) {
+        rejectSendFailure(error);
+      }
     });
   const close = () => {
     rejectPending(new Error("gateway websocket client closed"));
