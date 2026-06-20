@@ -297,6 +297,7 @@ function runCommand(command, args, options = {}) {
     const stderr = createOutputCapture("stderr");
     let timedOut = false;
     let aborted = false;
+    let parentSignalPending = null;
     let killTimer;
     let forceKillAt;
     const armForceKill = () => {
@@ -339,15 +340,33 @@ function runCommand(command, args, options = {}) {
       }
       parentSignalHandlers.clear();
     };
+    const finishTerminatedTree = async () => {
+      await finishTimedOutCommandProcessTree(child, {
+        forceKillAt,
+        timeoutKillGraceMs: COMMAND_TIMEOUT_KILL_GRACE_MS,
+      });
+      if (killTimer) {
+        clearTimeout(killTimer);
+      }
+      forceKillAt = undefined;
+    };
     if (process.platform !== "win32" && child.pid) {
       for (const signal of ["SIGHUP", "SIGINT", "SIGTERM"]) {
         const handler = () => {
+          if (parentSignalPending) {
+            terminateProcessTree(child, "SIGKILL");
+            return;
+          }
+          parentSignalPending = signal;
           terminateProcessTree(child, signal);
-          removeParentSignalHandlers();
-          process.kill(process.pid, signal);
+          armForceKill();
+          void finishTerminatedTree().finally(() => {
+            removeParentSignalHandlers();
+            process.kill(process.pid, signal);
+          });
         };
         parentSignalHandlers.set(signal, handler);
-        process.once(signal, handler);
+        process.on(signal, handler);
       }
     }
     child.on("error", (error) => {
@@ -363,24 +382,18 @@ function runCommand(command, args, options = {}) {
     child.on("close", (code, signal) => {
       clearTimeout(timer);
       abortSignal?.removeEventListener("abort", abort);
-      removeParentSignalHandlers();
       const result = { code, signal, stdout: stdout.text(), stderr: stderr.text() };
-      const finishTerminatedTree = async () => {
-        await finishTimedOutCommandProcessTree(child, {
-          forceKillAt,
-          timeoutKillGraceMs: COMMAND_TIMEOUT_KILL_GRACE_MS,
-        });
-        if (killTimer) {
-          clearTimeout(killTimer);
-        }
-        forceKillAt = undefined;
-      };
       if (aborted) {
+        removeParentSignalHandlers();
         void finishTerminatedTree().finally(() =>
           reject(new Error(scrub(`command aborted: ${command} ${args.join(" ")}`))),
         );
         return;
       }
+      if (parentSignalPending) {
+        return;
+      }
+      removeParentSignalHandlers();
       if (timedOut) {
         void finishTerminatedTree().finally(() =>
           reject(new Error(scrub(`command timed out: ${command} ${args.join(" ")}`))),
@@ -1687,7 +1700,7 @@ async function p12OpenAiLiveProof() {
   return "OpenAI model auth probe consumed API key through plugin-managed auth-profile SecretRef";
 }
 
-async function runPtySecretsConfigurePreset(envCtx) {
+async function runPtySecretsConfigurePreset(envCtx, options = {}) {
   const { spawn } = await import("@lydell/node-pty");
   const command = await resolveOpenClawCommand(
     ["secrets", "configure", "--providers-only", "--apply", "--yes", "--allow-exec", "--json"],
@@ -1702,16 +1715,39 @@ async function runPtySecretsConfigurePreset(envCtx) {
   });
   const output = createOutputCapture("secrets configure stdout");
   let phase = "providers-menu";
+  const keyTimers = new Set();
+  const clearKeyTimers = () => {
+    for (const keyTimer of keyTimers) {
+      clearTimeout(keyTimer);
+    }
+    keyTimers.clear();
+  };
   const sendKeys = (keys) => {
     keys.forEach((key, index) => {
-      setTimeout(() => child.write(key), index * 80);
+      const keyTimer = setTimeout(() => {
+        keyTimers.delete(keyTimer);
+        child.write(key);
+      }, index * 80);
+      keyTimers.add(keyTimer);
     });
   };
   return await new Promise((resolve, reject) => {
+    let timedOut = false;
+    let forceKillAt;
+    let forceKillTimer;
+    const timeoutMs = options.timeoutMs ?? 60000;
+    const timeoutKillGraceMs = options.timeoutKillGraceMs ?? COMMAND_TIMEOUT_KILL_GRACE_MS;
     const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error(`secrets configure preset timed out: ${scrub(output.text())}`));
-    }, 60000);
+      timedOut = true;
+      signalPtyProcessTree(child, "SIGHUP");
+      forceKillAt = Date.now() + timeoutKillGraceMs;
+      forceKillTimer = setTimeout(() => {
+        forceKillTimer = undefined;
+        forceKillAt = undefined;
+        signalPtyProcessTree(child, "SIGKILL");
+      }, timeoutKillGraceMs);
+      forceKillTimer.unref?.();
+    }, timeoutMs);
     child.onData((data) => {
       output.append(data);
       const outputText = output.text();
@@ -1733,6 +1769,20 @@ async function runPtySecretsConfigurePreset(envCtx) {
     });
     child.onExit(({ exitCode }) => {
       clearTimeout(timer);
+      clearKeyTimers();
+      if (timedOut) {
+        void finishTimedOutPtyProcessTree(child, {
+          forceKillAt,
+          forceKillTimer,
+          timeoutKillGraceMs,
+        }).finally(() =>
+          reject(new Error(`secrets configure preset timed out: ${scrub(output.text())}`)),
+        );
+        return;
+      }
+      if (forceKillTimer) {
+        clearTimeout(forceKillTimer);
+      }
       if (exitCode !== 0) {
         reject(new Error(`secrets configure preset failed (${exitCode}): ${scrub(output.text())}`));
         return;
@@ -1740,6 +1790,57 @@ async function runPtySecretsConfigurePreset(envCtx) {
       resolve(output.text());
     });
   });
+}
+
+async function finishTimedOutPtyProcessTree(
+  child,
+  { forceKillAt, forceKillTimer, timeoutKillGraceMs },
+) {
+  const graceRemainingMs =
+    forceKillAt === undefined ? timeoutKillGraceMs : Math.max(0, forceKillAt - Date.now());
+  if (graceRemainingMs > 0) {
+    await waitForPtyProcessTreeExit(child, graceRemainingMs);
+  }
+  if (forceKillTimer) {
+    clearTimeout(forceKillTimer);
+  }
+  if (ptyProcessTreeIsAlive(child)) {
+    signalPtyProcessTree(child, "SIGKILL");
+  }
+  await waitForPtyProcessTreeExit(child, timeoutKillGraceMs);
+}
+
+function ptyProcessTreeIsAlive(child) {
+  if (process.platform === "win32" || typeof child.pid !== "number") {
+    return false;
+  }
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+async function waitForPtyProcessTreeExit(child, timeoutMs) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (!ptyProcessTreeIsAlive(child)) {
+      return true;
+    }
+    await delay(50);
+  }
+  return !ptyProcessTreeIsAlive(child);
+}
+
+function signalPtyProcessTree(child, signal) {
+  if (process.platform !== "win32" && typeof child.pid === "number") {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {}
+  }
+  child.kill(signal);
 }
 
 async function p13SecretsConfigurePreset() {
