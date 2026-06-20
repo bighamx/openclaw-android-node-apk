@@ -5,7 +5,6 @@ import {
   buildCurrentInboundPrompt,
   buildCurrentInboundPromptContextPrefix,
   buildRuntimeContextCustomMessage,
-  buildRuntimeContextSystemContext,
   resolveRuntimeContextPromptParts,
 } from "./runtime-context-prompt.js";
 
@@ -352,20 +351,14 @@ describe("runtime context prompt submission", () => {
     });
   });
 
-  it("labels next-turn runtime context only when used as prompt-local system context", () => {
-    const systemContext = buildRuntimeContextSystemContext("secret runtime context");
+  it("labels runtime-only events as system context", () => {
+    const parts = resolveRuntimeContextPromptParts({
+      effectivePrompt: "internal event",
+      transcriptPrompt: "",
+    });
 
-    expect(systemContext).toContain(
-      "OpenClaw runtime context for the immediately preceding user message.",
-    );
-    expect(systemContext).toContain("not user-authored");
-    expect(systemContext).toContain("secret runtime context");
-  });
-
-  it("labels runtime-only events as system context", async () => {
-    const { buildRuntimeEventSystemContext } = await import("./runtime-context-prompt.js");
-
-    expect(buildRuntimeEventSystemContext("internal event")).toContain("OpenClaw runtime event.");
-    expect(buildRuntimeEventSystemContext("internal event")).toContain("not user-authored");
+    expect(parts.runtimeSystemContext).toContain("OpenClaw runtime event.");
+    expect(parts.runtimeSystemContext).toContain("not user-authored");
+    expect(parts.runtimeSystemContext).toContain("internal event");
   });
 });

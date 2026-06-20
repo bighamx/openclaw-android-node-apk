@@ -842,6 +842,12 @@ function commandWordsRuntimeEntrypoint(wordsInput) {
   return "";
 }
 
+function commandWordsShellEntrypoint(wordsInput) {
+  const words = normalizeExecutableWords(wordsInput);
+  const first = shellWordBasename(words[0]);
+  return shellInlineCommandInterpreters.has(first) ? first : "";
+}
+
 function commandNeedsAwsMacosPackageManager(commandArgs) {
   if (isChangedGateCommand(commandArgs)) {
     return true;
@@ -2009,15 +2015,14 @@ function awsMacosScriptBootstrapRequirements(script) {
   const requirements = { packageManager: false, bun: false };
   const firstLine = script.match(/^[^\r\n]*/u)?.[0] ?? "";
   if (firstLine.startsWith("#!")) {
-    let words = firstLine.slice(2).trim().split(/\s+/u).filter(Boolean);
-    if ((words[0] ?? "").split("/").pop() === "env") {
-      words = words.slice(1);
-      while ((words[0] ?? "").startsWith("-")) {
-        words = words.slice(1);
-      }
-    }
+    const words = firstLine.slice(2).trim().split(/\s+/u).filter(Boolean);
     requirements.packageManager = commandWordsNeedEntrypoint(words, awsMacosCorepackEntrypoints);
     requirements.bun = commandWordsNeedEntrypoint(words, awsMacosBunEntrypoints);
+    if (commandWordsShellEntrypoint(words)) {
+      const body = script.slice(firstLine.length).replace(/^\r?\n/u, "");
+      requirements.packageManager ||= commandNeedsAwsMacosPackageManager([body]);
+      requirements.bun ||= commandNeedsAwsMacosBun([body]);
+    }
     return requirements;
   }
   requirements.packageManager = commandNeedsAwsMacosPackageManager([script]);

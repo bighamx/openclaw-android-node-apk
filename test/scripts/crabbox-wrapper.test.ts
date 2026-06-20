@@ -1462,6 +1462,47 @@ describe.concurrent("scripts/crabbox-wrapper", () => {
     expect(output.args.at(-1)).toBe("arg1");
   });
 
+  it("bootstraps AWS macOS script-stdin shell shebang bodies before the uploaded script", () => {
+    const script = [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "pnpm --version",
+      "bun --version",
+    ].join("\n");
+    const result = runWrapper(
+      "provider: hetzner, aws, local-container, blacksmith-testbox, or cloudflare\n",
+      ["run", "--provider", "aws", "--target", "macos", "--script-stdin"],
+      { input: script },
+    );
+
+    const output = parseFakeCrabboxOutput(result);
+    expect(result.status).toBe(0);
+    expect(output.scriptContent).toContain("openclaw_crabbox_bootstrap_macos_js || exit $?");
+    expect(output.scriptContent).toContain('corepack enable --install-directory "$PNPM_HOME"');
+    expect(output.scriptContent).toContain("pnpm --version >&2");
+    expect(output.scriptContent).toContain("bun --version >&2 || return 1");
+    expect(output.scriptContent).toContain(`\n${script}\n`);
+  });
+
+  it("bootstraps Corepack for AWS macOS script-stdin env shebangs with option values", () => {
+    const script = [
+      "#!/usr/bin/env -C /tmp -u OPENCLAW_FAKE_VAR pnpm",
+      "--version",
+    ].join("\n");
+    const result = runWrapper(
+      "provider: hetzner, aws, local-container, blacksmith-testbox, or cloudflare\n",
+      ["run", "--provider", "aws", "--target", "macos", "--script-stdin"],
+      { input: script },
+    );
+
+    const output = parseFakeCrabboxOutput(result);
+    expect(result.status).toBe(0);
+    expect(output.scriptContent).toContain("openclaw_crabbox_bootstrap_macos_js || exit $?");
+    expect(output.scriptContent).toContain('corepack enable --install-directory "$PNPM_HOME"');
+    expect(output.scriptContent).toContain("pnpm --version >&2");
+    expect(output.scriptContent).toContain(`\n${script}\n`);
+  });
+
   it("bootstraps Bun for AWS macOS script-stdin bun shebangs", () => {
     const script = ["#!/usr/bin/env bun", "console.log(Bun.version);"].join("\n");
     const result = runWrapper(

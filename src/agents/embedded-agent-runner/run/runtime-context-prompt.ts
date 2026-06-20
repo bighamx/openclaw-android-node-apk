@@ -133,7 +133,10 @@ export function resolveRuntimeContextPromptParts(params: {
             : {}),
           runtimeContext,
           runtimeOnly: true,
-          runtimeSystemContext: buildRuntimeEventSystemContext(runtimeContext),
+          runtimeSystemContext: buildRuntimeContextMessageContent({
+            runtimeContext,
+            kind: "runtime-event",
+          }),
         }
       : {
           prompt: "",
@@ -169,16 +172,6 @@ function buildRuntimeContextMessageContent(params: {
   ].join("\n");
 }
 
-/** Builds the hidden next-turn system context payload for model conversion. */
-export function buildRuntimeContextSystemContext(runtimeContext: string): string {
-  return buildRuntimeContextMessageContent({ runtimeContext, kind: "next-turn" });
-}
-
-/** Builds the hidden runtime-event system context payload for empty runtime-only turns. */
-export function buildRuntimeEventSystemContext(runtimeContext: string): string {
-  return buildRuntimeContextMessageContent({ runtimeContext, kind: "runtime-event" });
-}
-
 /** Creates a non-displayed custom transcript message for runtime context, if any exists. */
 export function buildRuntimeContextCustomMessage(
   runtimeContext: string | undefined,
@@ -190,7 +183,10 @@ export function buildRuntimeContextCustomMessage(
   return {
     role: "custom",
     customType: OPENCLAW_RUNTIME_CONTEXT_CUSTOM_TYPE,
-    content: buildRuntimeContextSystemContext(trimmedRuntimeContext),
+    content: buildRuntimeContextMessageContent({
+      runtimeContext: trimmedRuntimeContext,
+      kind: "next-turn",
+    }),
     display: false,
     details: { source: "openclaw-runtime-context" },
     timestamp: Date.now(),
