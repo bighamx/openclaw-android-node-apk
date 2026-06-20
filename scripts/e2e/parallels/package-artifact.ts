@@ -248,7 +248,7 @@ async function removeStalePackageLock(lockDir: string, staleMs: number): Promise
     return;
   }
   const ageMs = Date.now() - ((await stat(lockDir).catch(() => undefined))?.mtimeMs ?? Date.now());
-  if (owner || ageMs >= staleMs) {
+  if (owner?.pid !== undefined || staleMs <= 0 || ageMs >= staleMs) {
     await rm(lockDir, { force: true, recursive: true }).catch(() => undefined);
   }
 }

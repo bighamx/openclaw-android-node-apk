@@ -133,6 +133,77 @@ describe("runQaDockerUp", () => {
     }
   });
 
+  it("falls back to Corepack for the QA UI build when pnpm is unavailable", async () => {
+    const calls: string[] = [];
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), "qa-docker-up-"));
+    const repoRoot = path.resolve("/repo/openclaw");
+    const composeFile = path.join(outputDir, "docker-compose.qa.yml");
+
+    try {
+      await runQaDockerUp(
+        {
+          repoRoot,
+          outputDir,
+          usePrebuiltImage: true,
+        },
+        {
+          async runCommand(command, args, cwd) {
+            calls.push([command, ...args, `@${cwd}`].join(" "));
+            if (command === "pnpm") {
+              throw Object.assign(new Error("spawn pnpm ENOENT"), { code: "ENOENT" });
+            }
+            if (args.join(" ").includes("ps --format json openclaw-qa-gateway")) {
+              return { stdout: '{"Health":"healthy","State":"running"}\n', stderr: "" };
+            }
+            return { stdout: "", stderr: "" };
+          },
+          fetchImpl: vi.fn(async () => ({ ok: true })),
+          sleepImpl: vi.fn(async () => {}),
+        },
+      );
+
+      expect(calls).toEqual([
+        `pnpm qa:lab:build @${repoRoot}`,
+        `corepack pnpm qa:lab:build @${repoRoot}`,
+        `docker compose -f ${composeFile} down --remove-orphans @${repoRoot}`,
+        `docker compose -f ${composeFile} up -d @${repoRoot}`,
+        `docker compose -f ${composeFile} ps --format json openclaw-qa-gateway @${repoRoot}`,
+      ]);
+    } finally {
+      await rm(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not hide real QA UI build failures behind the Corepack fallback", async () => {
+    const calls: string[] = [];
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), "qa-docker-up-"));
+    const repoRoot = path.resolve("/repo/openclaw");
+
+    try {
+      await expect(
+        runQaDockerUp(
+          {
+            repoRoot,
+            outputDir,
+            usePrebuiltImage: true,
+          },
+          {
+            async runCommand(command, args, cwd) {
+              calls.push([command, ...args, `@${cwd}`].join(" "));
+              throw Object.assign(new Error("qa lab build failed"), { code: 1 });
+            },
+            fetchImpl: vi.fn(async () => ({ ok: true })),
+            sleepImpl: vi.fn(async () => {}),
+          },
+        ),
+      ).rejects.toThrow("qa lab build failed");
+
+      expect(calls).toEqual([`pnpm qa:lab:build @${repoRoot}`]);
+    } finally {
+      await rm(outputDir, { recursive: true, force: true });
+    }
+  });
+
   it("uses a repo-root-relative default output dir when none is provided", async () => {
     const calls: string[] = [];
     const repoRoot = await mkdtemp(path.join(os.tmpdir(), "qa-docker-root-"));

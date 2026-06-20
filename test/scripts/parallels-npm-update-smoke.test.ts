@@ -247,6 +247,11 @@ exit 1
   });
 
   it("accepts keyed and nested npm metadata for published update targets", () => {
+    const script = readFileSync(SCRIPT_PATH, "utf8");
+
+    expect(script).toContain("curl -fsSL --connect-timeout 10 --max-time 120 --retry 2");
+    expect(script).toContain("timeoutMs: 150_000");
+
     expect(
       parseRegistryPackageMetadata(
         JSON.stringify({

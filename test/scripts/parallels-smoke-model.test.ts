@@ -40,7 +40,11 @@ import {
   validateSnapshotRestoreMode,
   withProgressOnStderr,
 } from "../../scripts/e2e/parallels/common.ts";
-import { LinuxGuest, MacosGuest } from "../../scripts/e2e/parallels/guest-transports.ts";
+import {
+  LinuxGuest,
+  MacosGuest,
+  runWindowsBackgroundPowerShell,
+} from "../../scripts/e2e/parallels/guest-transports.ts";
 import { resolveHostCommandInvocation } from "../../scripts/e2e/parallels/host-command.ts";
 import { testing as hostServerTesting } from "../../scripts/e2e/parallels/host-server.ts";
 import { parseArgs as parseLinuxSmokeArgs } from "../../scripts/e2e/parallels/linux-smoke.ts";
@@ -445,7 +449,7 @@ describe("Parallels smoke model selection", () => {
     expect(retained).toBe(`${"a".repeat(2)}${"b".repeat(10)}`);
   });
 
-  it("reclaims package locks with malformed owner pids", async () => {
+  it("keeps fresh package locks with malformed owner pids", async () => {
     const lockDir = makeTempDir(tempDirs, "openclaw-parallels-package-lock-");
     mkdirSync(lockDir, { recursive: true });
     writeFileSync(join(lockDir, "owner.json"), '{"pid":-1,"token":"stale"}\n');
@@ -456,6 +460,16 @@ describe("Parallels smoke model selection", () => {
     });
 
     await packageArtifactTesting.removeStalePackageLock(lockDir, 2 * 60 * 60_000);
+
+    expect(existsSync(lockDir)).toBe(true);
+  });
+
+  it("reclaims stale package locks with malformed owner pids", async () => {
+    const lockDir = makeTempDir(tempDirs, "openclaw-parallels-package-lock-");
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(join(lockDir, "owner.json"), '{"pid":-1,"token":"stale"}\n');
+
+    await packageArtifactTesting.removeStalePackageLock(lockDir, 0);
 
     expect(existsSync(lockDir)).toBe(false);
   });
@@ -964,6 +978,8 @@ if (isPrlctl) {
     expect(script).toContain('"Unable to lock directory"');
     expect(script).toContain("downloadGuestFile");
     expect(script).toContain("this.downloadGuestFile(tgzUrl");
+    expect(script).toContain("curl -fsSL --connect-timeout 10 --max-time 120 --retry 2");
+    expect(script).toContain("wget -q --timeout=10 --read-timeout=120 --tries=3");
   });
 
   it("keeps Linux bad-plugin diagnostics gated for historical update baselines", () => {
@@ -1241,6 +1257,9 @@ if (isPrlctl) {
     expect(macos).toContain('rm -rf "$HOME/.npm/_cacache"');
     expect(macos.match(/\.onboard-ref", 420/g)).toHaveLength(2);
     expect(macos).toContain('echo "npm install attempt $attempt failed; retrying in 5s"');
+    expect(macos.match(/curl -fsSL --connect-timeout 10 --max-time 120 --retry 2/g)).toHaveLength(
+      2,
+    );
   });
 
   it("provisions portable Git before Windows dev update lanes", () => {
@@ -1258,6 +1277,10 @@ if (isPrlctl) {
     expect(windowsGit.indexOf('"MinGit-2.53.0.2-64-bit.zip"')).toBeLessThan(
       windowsGit.indexOf('"MinGit-2.53.0.2-arm64.zip"'),
     );
+    expect(combined.match(/curl\.exe -fsSL --connect-timeout 10 --max-time 120 --retry 2/g))
+      .toHaveLength(2);
+    expect(script).toContain("Invoke-RestMethod -Uri");
+    expect(script).toContain("-TimeoutSec 120");
     expect(windowsGit).toContain('if "-64-bit." in name:');
     expect(windowsGit).toContain('elif "-arm64." in name:');
   });
@@ -1369,6 +1392,27 @@ if (isPrlctl) {
     expect(transports).toContain("Start-Process -FilePath powershell.exe");
     expect(transports).toContain('launch.stdout.includes("started")');
     expect(transports).toContain("waitForWindowsBackgroundMaterialized");
+  });
+
+  it("paces ambiguous Windows background launch materialization probes", async () => {
+    let calls = 0;
+    const runCommand = vi.fn(() => {
+      calls++;
+      return { status: 0, stderr: "", stdout: "" };
+    });
+
+    await expect(
+      runWindowsBackgroundPowerShell({
+        label: "ambiguous launch",
+        pollIntervalMs: 20,
+        runCommand,
+        script: "Write-Output ok",
+        timeoutMs: 90,
+        vmName: "Windows 11",
+      }),
+    ).rejects.toThrow("ambiguous launch background launch failed");
+
+    expect(calls).toBeLessThan(20);
   });
 
   it("returns timed-out host command status when check is disabled", () => {

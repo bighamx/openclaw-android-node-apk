@@ -825,10 +825,16 @@ export class NpmUpdateSmoke {
     }
     const output = run(
       "bash",
-      ["-lc", `curl -fsSL ${shellQuote(tarball)} | tar -xzOf - package/dist/build-info.json`],
+      [
+        "-lc",
+        `curl -fsSL --connect-timeout 10 --max-time 120 --retry 2 --retry-delay 2 ${shellQuote(
+          tarball,
+        )} | tar -xzOf - package/dist/build-info.json`,
+      ],
       {
         check: false,
         quiet: true,
+        timeoutMs: 150_000,
       },
     ).stdout.trim();
     if (!output) {

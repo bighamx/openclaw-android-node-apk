@@ -191,10 +191,11 @@ Write-OpenClawUtf8File $pidPath ([string]$process.Id)
       }
       lastLaunchStatus = launch.status;
       if (launch.status === 0 || launch.status === 124) {
-        const materialized = waitForWindowsBackgroundMaterialized({
+        const materialized = await waitForWindowsBackgroundMaterialized({
           append,
           deadline,
           pathsScript,
+          pollIntervalMs,
           runCommand,
           vmName: options.vmName,
         });
@@ -309,13 +310,14 @@ function hasControlLine(output: string, marker: string): boolean {
   return output.split(/\r?\n/u).some((entry) => entry.trimEnd() === marker);
 }
 
-function waitForWindowsBackgroundMaterialized(params: {
+async function waitForWindowsBackgroundMaterialized(params: {
   append?: (chunk: string | Uint8Array) => void;
   deadline: number;
   pathsScript: string;
+  pollIntervalMs: number;
   runCommand: typeof run;
   vmName: string;
-}): boolean {
+}): Promise<boolean> {
   const materializeDeadline = Math.min(Date.now() + 45_000, params.deadline);
   while (Date.now() < materializeDeadline) {
     const result = params.runCommand(
@@ -340,6 +342,7 @@ if ((Test-Path $logPath) -or (Test-Path $donePath)) {
     if (result.stdout.includes("materialized")) {
       return true;
     }
+    await sleep(Math.min(params.pollIntervalMs, Math.max(1, materializeDeadline - Date.now())));
   }
   return false;
 }
