@@ -118,9 +118,7 @@ describe("scripts/measure-rpc-rtt.mjs", () => {
       throw new Error("socket closed during send");
     };
 
-    await expect(client.request("health", {}, 10_000)).rejects.toThrow(
-      "socket closed during send",
-    );
+    await expect(client.request("health", {}, 10_000)).rejects.toThrow("socket closed during send");
 
     expect(vi.getTimerCount()).toBe(0);
     client.close();
@@ -441,7 +439,8 @@ describe("scripts/measure-rpc-rtt.mjs", () => {
     }
   });
 
-  it("cleans up the gateway process group before re-raising parent signals", () => {
+  it("gives gateway process groups a grace window before re-raising parent signals", async () => {
+    vi.useFakeTimers();
     const child = Object.assign(new EventEmitter(), {
       exitCode: null,
       kill: vi.fn(),
@@ -454,23 +453,33 @@ describe("scripts/measure-rpc-rtt.mjs", () => {
     });
     const kill = vi.fn(() => true);
 
-    const removeCleanup = installGatewayParentCleanup(child, {
-      killProcess: kill,
-      processLike,
-    });
-    processLike.emit("SIGTERM");
+    try {
+      const removeCleanup = installGatewayParentCleanup(child, {
+        killProcess: kill,
+        processLike,
+      });
+      processLike.emit("SIGTERM");
 
-    if (process.platform === "win32") {
-      expect(child.kill).toHaveBeenCalledWith("SIGTERM");
-    } else {
-      expect(kill).toHaveBeenNthCalledWith(1, -12348, "SIGTERM");
-      expect(kill).toHaveBeenNthCalledWith(2, -12348, "SIGKILL");
-      expect(child.kill).not.toHaveBeenCalled();
+      if (process.platform === "win32") {
+        expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+        expect(processLike.kill).toHaveBeenCalledWith(98765, "SIGTERM");
+      } else {
+        expect(kill).toHaveBeenNthCalledWith(1, -12348, "SIGTERM");
+        expect(kill).toHaveBeenNthCalledWith(2, -12348, 0);
+        expect(kill).not.toHaveBeenCalledWith(-12348, "SIGKILL");
+        expect(processLike.kill).not.toHaveBeenCalled();
+        removeCleanup();
+
+        await vi.advanceTimersByTimeAsync(250);
+
+        expect(kill).toHaveBeenCalledWith(-12348, "SIGKILL");
+        expect(child.kill).not.toHaveBeenCalled();
+        expect(processLike.kill).toHaveBeenCalledWith(98765, "SIGTERM");
+      }
+      expect(processLike.listenerCount("SIGTERM")).toBe(0);
+    } finally {
+      vi.useRealTimers();
     }
-    expect(processLike.kill).toHaveBeenCalledWith(98765, "SIGTERM");
-    expect(processLike.listenerCount("SIGTERM")).toBe(0);
-
-    removeCleanup();
   });
 
   it("cleans up the gateway process group on parent exit", () => {

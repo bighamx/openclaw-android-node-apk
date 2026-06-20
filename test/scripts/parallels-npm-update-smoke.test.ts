@@ -495,6 +495,69 @@ exit 1
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it.runIf(process.platform !== "win32")(
+    "lets update stream descendants exit during timeout kill grace",
+    async () => {
+      const root = makeTempDir();
+      const scriptPath = path.join(root, "stream-update-grace.mjs");
+      const readyPath = path.join(root, "stream-ready");
+      const donePath = path.join(root, "stream-done");
+      const smoke = withEnv(
+        { OPENAI_API_KEY: "test-key" },
+        () =>
+          new NpmUpdateSmoke({
+            ...TEST_AUTH,
+            json: false,
+            packageSpec: "openclaw@latest",
+            platforms: new Set<Platform>(["linux"]),
+            provider: "openai",
+            updateTarget: "local-main",
+          }),
+      );
+      const runStreamingToJobLog = Reflect.get(smoke, "runStreamingToJobLog") as (
+        command: string,
+        args: string[],
+        timeoutMs: number,
+        ctx: {
+          append(chunk: string | Uint8Array): void;
+          logPath: string;
+          signal: AbortSignal;
+        },
+      ) => Promise<number>;
+      const descendantScript = [
+        "import { writeFileSync } from 'node:fs';",
+        `writeFileSync(${JSON.stringify(readyPath)}, 'ready');`,
+        "process.on('SIGTERM', () => {",
+        `  setTimeout(() => { writeFileSync(${JSON.stringify(donePath)}, 'done'); process.exit(0); }, 75);`,
+        "});",
+        "setInterval(() => {}, 1000);",
+      ].join("\n");
+      writeFileSync(
+        scriptPath,
+        [
+          "import { spawn } from 'node:child_process';",
+          `spawn(process.execPath, ["--input-type=module", "--eval", ${JSON.stringify(
+            descendantScript,
+          )}], { stdio: "ignore" });`,
+          "process.on('SIGTERM', () => process.exit(0));",
+          "setInterval(() => {}, 1000);",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const command = runStreamingToJobLog.call(smoke, process.execPath, [scriptPath], 500, {
+        append: () => undefined,
+        logPath: path.join(root, "update.log"),
+        signal: new AbortController().signal,
+      });
+
+      await waitFor(() => existsSync(readyPath), "update stream descendant readiness");
+      await expect(command).resolves.toBe(124);
+      expect(readFileSync(donePath, "utf8")).toBe("done");
+    },
+  );
+
   it("runs Windows updates through a detached done-file runner", () => {
     const script = readFileSync(SCRIPT_PATH, "utf8");
     const transports = readFileSync(GUEST_TRANSPORTS_PATH, "utf8");

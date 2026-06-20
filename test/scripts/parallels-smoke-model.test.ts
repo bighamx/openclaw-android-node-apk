@@ -1,4 +1,5 @@
 // Parallels Smoke Model tests cover parallels smoke model script behavior.
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import {
   chmodSync,
@@ -187,6 +188,21 @@ async function waitFor(predicate: () => boolean, timeoutMs = 3_000): Promise<voi
     await delay(25);
   }
   throw new Error("condition was not met before timeout");
+}
+
+async function waitForProcessClose(
+  child: ReturnType<typeof spawn>,
+  timeoutMs = 3_000,
+): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+  return await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("child process did not close before timeout"));
+    }, timeoutMs);
+    child.once("close", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal });
+    });
+  });
 }
 
 describe("Parallels smoke model selection", () => {
@@ -1413,6 +1429,78 @@ setInterval(() => {}, 1000);
     },
   );
 
+  it.runIf(process.platform !== "win32")(
+    "reaps externally signaled timed host command descendants",
+    async () => {
+      const tempDir = makeTempDir(tempDirs, "openclaw-parallels-host-command-signal-");
+      const runnerPath = join(tempDir, "runner.mjs");
+      const readyPath = join(tempDir, "ready");
+      const grandchildPidPath = join(tempDir, "grandchild.pid");
+      const hostCommandUrl = pathToFileURL(join(process.cwd(), TS_PATHS.hostCommand)).href;
+      let runnerPid = 0;
+      let grandchildPid = 0;
+
+      try {
+        const grandchildScript = [
+          "const { writeFileSync } = require('node:fs');",
+          "writeFileSync(process.env.OPENCLAW_TEST_GRANDCHILD_PID, String(process.pid));",
+          "process.on('SIGTERM', () => {});",
+          "setInterval(() => {}, 1000);",
+        ].join("\n");
+        const parentScript = [
+          "const { spawn } = require('node:child_process');",
+          "const { writeFileSync } = require('node:fs');",
+          `spawn(process.execPath, ['-e', ${JSON.stringify(grandchildScript)}], { env: process.env, stdio: 'ignore' });`,
+          "writeFileSync(process.env.OPENCLAW_TEST_READY_FILE, 'ready');",
+          "process.on('SIGTERM', () => process.exit(0));",
+          "setInterval(() => {}, 1000);",
+        ].join("\n");
+        writeFileSync(
+          runnerPath,
+          [
+            `import { run } from ${JSON.stringify(hostCommandUrl)};`,
+            `run(process.execPath, ['-e', ${JSON.stringify(parentScript)}], {`,
+            "  check: false,",
+            "  env: {",
+            "    ...process.env,",
+            `    OPENCLAW_TEST_GRANDCHILD_PID: ${JSON.stringify(grandchildPidPath)},`,
+            `    OPENCLAW_TEST_READY_FILE: ${JSON.stringify(readyPath)},`,
+            "  },",
+            "  quiet: true,",
+            "  timeoutMs: 30_000,",
+            "});",
+          ].join("\n"),
+          "utf8",
+        );
+
+        const runner = spawn(process.execPath, ["--import", "tsx", runnerPath], {
+          cwd: process.cwd(),
+          detached: true,
+          stdio: "ignore",
+        });
+        runnerPid = runner.pid ?? 0;
+        expect(runnerPid).toBeGreaterThan(0);
+        await waitFor(() => existsSync(readyPath) && existsSync(grandchildPidPath), 2_000);
+        grandchildPid = Number.parseInt(readFileSync(grandchildPidPath, "utf8"), 10);
+
+        process.kill(-runnerPid, "SIGTERM");
+
+        await expect(waitForProcessClose(runner, 3_000)).resolves.toEqual({
+          code: null,
+          signal: "SIGTERM",
+        });
+        await waitFor(() => !isProcessAlive(grandchildPid), 3_000);
+      } finally {
+        if (runnerPid && isProcessAlive(runnerPid)) {
+          process.kill(-runnerPid, "SIGKILL");
+        }
+        if (grandchildPid && isProcessAlive(grandchildPid)) {
+          process.kill(grandchildPid, "SIGKILL");
+        }
+      }
+    },
+  );
+
   it.runIf(process.platform !== "win32")("preserves timed host command spawn errors", () => {
     expect(() =>
       run("openclaw-definitely-missing-host-command", [], {
@@ -1494,6 +1582,78 @@ setInterval(() => {}, 1000);
         expect(readFileSync(drainFile, "utf8")).toBe("drained");
       } finally {
         cleanupTempDirs(tempDirs);
+      }
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
+    "reaps externally signaled streaming host command descendants before re-raising",
+    async () => {
+      const tempDir = makeTempDir(tempDirs, "openclaw-parallels-streaming-host-command-signal-");
+      const runnerPath = join(tempDir, "runner.mjs");
+      const readyPath = join(tempDir, "ready");
+      const grandchildPidPath = join(tempDir, "grandchild.pid");
+      const logPath = join(tempDir, "stream.log");
+      const hostCommandUrl = pathToFileURL(join(process.cwd(), TS_PATHS.hostCommand)).href;
+      let runnerPid = 0;
+      let grandchildPid = 0;
+
+      try {
+        const grandchildScript = [
+          "const { writeFileSync } = require('node:fs');",
+          "writeFileSync(process.env.OPENCLAW_TEST_GRANDCHILD_PID, String(process.pid));",
+          "process.on('SIGTERM', () => {});",
+          "setInterval(() => {}, 1000);",
+        ].join("\n");
+        const parentScript = [
+          "const { spawn } = require('node:child_process');",
+          "const { writeFileSync } = require('node:fs');",
+          `spawn(process.execPath, ['-e', ${JSON.stringify(grandchildScript)}], { env: process.env, stdio: 'ignore' });`,
+          "writeFileSync(process.env.OPENCLAW_TEST_READY_FILE, 'ready');",
+          "process.on('SIGTERM', () => process.exit(0));",
+          "setInterval(() => {}, 1000);",
+        ].join("\n");
+        writeFileSync(
+          runnerPath,
+          [
+            `import { runStreaming } from ${JSON.stringify(hostCommandUrl)};`,
+            `await runStreaming(process.execPath, ['-e', ${JSON.stringify(parentScript)}], {`,
+            "  env: {",
+            "    ...process.env,",
+            `    OPENCLAW_TEST_GRANDCHILD_PID: ${JSON.stringify(grandchildPidPath)},`,
+            `    OPENCLAW_TEST_READY_FILE: ${JSON.stringify(readyPath)},`,
+            "  },",
+            `  logPath: ${JSON.stringify(logPath)},`,
+            "  quiet: true,",
+            "  timeoutMs: 30_000,",
+            "});",
+          ].join("\n"),
+          "utf8",
+        );
+
+        const runner = spawn(process.execPath, ["--import", "tsx", runnerPath], {
+          cwd: process.cwd(),
+          stdio: "ignore",
+        });
+        runnerPid = runner.pid ?? 0;
+        expect(runnerPid).toBeGreaterThan(0);
+        await waitFor(() => existsSync(readyPath) && existsSync(grandchildPidPath), 2_000);
+        grandchildPid = Number.parseInt(readFileSync(grandchildPidPath, "utf8"), 10);
+
+        runner.kill("SIGTERM");
+
+        await expect(waitForProcessClose(runner, 3_000)).resolves.toEqual({
+          code: null,
+          signal: "SIGTERM",
+        });
+        await waitFor(() => !isProcessAlive(grandchildPid), 3_000);
+      } finally {
+        if (runnerPid && isProcessAlive(runnerPid)) {
+          process.kill(runnerPid, "SIGKILL");
+        }
+        if (grandchildPid && isProcessAlive(grandchildPid)) {
+          process.kill(grandchildPid, "SIGKILL");
+        }
       }
     },
   );

@@ -1,4 +1,5 @@
 // Kitchen Sink Rpc Walk tests cover kitchen sink rpc walk script behavior.
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import fs, {
@@ -830,6 +831,81 @@ setInterval(() => {}, 1000);
       await runPromise.catch(() => {});
       if (grandchildPid && isProcessAlive(grandchildPid)) {
         process.kill(grandchildPid, "SIGKILL");
+      }
+      cleanupTempDirs(tempDirs);
+    }
+  });
+
+  posixIt("cleans active command process groups before parent signal exit", async () => {
+    const tempDirs: string[] = [];
+    const root = makeTempDir(tempDirs, "openclaw-kitchen-rpc-parent-signal-");
+    const runnerPath = path.join(root, "runner.mjs");
+    const scriptPath = path.join(root, "term-zero-grandchild.mjs");
+    const grandchildPidPath = path.join(root, "grandchild.pid");
+    const readyPath = path.join(root, "ready");
+    let grandchildPid = 0;
+    let runner: ReturnType<typeof spawn> | undefined;
+    const grandchildScript = [
+      "const fs = require('node:fs');",
+      "process.on('SIGTERM', () => {});",
+      "process.on('SIGHUP', () => {});",
+      `fs.writeFileSync(${JSON.stringify(readyPath)}, 'ready');`,
+      "setInterval(() => {}, 1000);",
+    ].join("\n");
+
+    writeFileSync(
+      scriptPath,
+      `
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+
+const grandchild = spawn(process.execPath, ["-e", ${JSON.stringify(grandchildScript)}], {
+  stdio: "ignore",
+});
+fs.writeFileSync(${JSON.stringify(grandchildPidPath)}, String(grandchild.pid));
+process.on("SIGTERM", () => process.exit(0));
+setInterval(() => {}, 1000);
+`,
+      "utf8",
+    );
+    writeFileSync(
+      runnerPath,
+      `
+import { runCommand } from ${JSON.stringify(
+        new URL("../../scripts/e2e/kitchen-sink-rpc-walk.mjs", import.meta.url).href,
+      )};
+
+await runCommand(process.execPath, [${JSON.stringify(scriptPath)}], {
+  timeoutKillGraceMs: 100,
+  timeoutMs: 30_000,
+});
+`,
+      "utf8",
+    );
+
+    try {
+      runner = spawn(process.execPath, [runnerPath], {
+        cwd: process.cwd(),
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+      await waitFor(() => existsSync(readyPath) && existsSync(grandchildPidPath));
+      grandchildPid = Number.parseInt(readText(grandchildPidPath), 10);
+      expect(Number.isInteger(grandchildPid)).toBe(true);
+      expect(isProcessAlive(grandchildPid)).toBe(true);
+
+      runner.kill("SIGTERM");
+
+      await expect(waitForChildClose(runner, 5_000)).resolves.toEqual({
+        code: null,
+        signal: "SIGTERM",
+      });
+      await waitFor(() => !isProcessAlive(grandchildPid), 5_000);
+    } finally {
+      if (grandchildPid && isProcessAlive(grandchildPid)) {
+        process.kill(grandchildPid, "SIGKILL");
+      }
+      if (runner?.pid && isProcessAlive(runner.pid)) {
+        runner.kill("SIGKILL");
       }
       cleanupTempDirs(tempDirs);
     }
@@ -2200,6 +2276,20 @@ async function waitFor(condition: () => boolean, timeoutMs = 3_000) {
     }
     await delay(25);
   }
+}
+
+async function waitForChildClose(child: ReturnType<typeof spawn>, timeoutMs = 3_000) {
+  return await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+    (resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error("child did not close before timeout"));
+      }, timeoutMs);
+      child.once("close", (code, signal) => {
+        clearTimeout(timeout);
+        resolve({ code, signal });
+      });
+    },
+  );
 }
 
 function isProcessAlive(pid: number) {

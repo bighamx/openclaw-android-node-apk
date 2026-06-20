@@ -31,6 +31,7 @@ const DEFAULT_MAX_COMMAND_RSS_MIB = 8192;
 const DEFAULT_OUTPUT_CAPTURE_CHARS = 1024 * 1024;
 const GATEWAY_TEARDOWN_GRACE_MS = 10000;
 const GATEWAY_TEARDOWN_KILL_GRACE_MS = 2000;
+const COMMAND_PARENT_SIGNAL_KILL_GRACE_MS = 2000;
 const COMMAND_PROCESS_TREE_EXIT_POLL_MS = 50;
 const LOG_SCAN_CHUNK_BYTES = 64 * 1024;
 const LOG_SCAN_MAX_LINE_CHARS = 16 * 1024;
@@ -56,6 +57,40 @@ const ERROR_LOG_ALLOW_PATTERNS = [
 ];
 
 let callGatewayModulePromise;
+const activeCommandChildren = new Set();
+const commandParentSignals =
+  process.platform === "win32" ? ["SIGINT", "SIGTERM"] : ["SIGINT", "SIGTERM", "SIGHUP"];
+let commandShutdownPromise;
+let commandSignalHandlersInstalled = false;
+
+function installCommandSignalHandlers() {
+  if (commandSignalHandlersInstalled) {
+    return;
+  }
+  commandSignalHandlersInstalled = true;
+  for (const signal of commandParentSignals) {
+    process.on(signal, commandSignalHandlers.get(signal));
+  }
+}
+
+function removeCommandSignalHandlers() {
+  if (!commandSignalHandlersInstalled) {
+    return;
+  }
+  commandSignalHandlersInstalled = false;
+  for (const signal of commandParentSignals) {
+    process.off(signal, commandSignalHandlers.get(signal));
+  }
+}
+
+const commandSignalHandlers = new Map(
+  commandParentSignals.map((signal) => [
+    signal,
+    () => {
+      void shutdownActiveCommands(signal);
+    },
+  ]),
+);
 
 function usage() {
   return `Usage: node scripts/e2e/kitchen-sink-rpc-walk.mjs
@@ -301,6 +336,11 @@ function formatCapturedOutput(label, buffer) {
 }
 
 export function runCommand(command, args, options = {}) {
+  if (commandShutdownPromise) {
+    return commandShutdownPromise.then(() => {
+      throw new Error(`${command} ${args.join(" ")} skipped during parent signal shutdown`);
+    });
+  }
   return new Promise((resolve, reject) => {
     const config = resolveKitchenSinkRpcConfig();
     const {
@@ -320,6 +360,8 @@ export function runCommand(command, args, options = {}) {
       ...spawnOptions,
       detached: spawnOptions.detached ?? process.platform !== "win32",
     });
+    activeCommandChildren.add(child);
+    installCommandSignalHandlers();
     const startedAt = Date.now();
     let stdout = { text: "", truncatedChars: 0 };
     let stderr = { text: "", truncatedChars: 0 };
@@ -393,6 +435,7 @@ export function runCommand(command, args, options = {}) {
       clearTimeout(timer);
       clearTimeout(forceKillTimer);
       forceKillAt = undefined;
+      releaseCommandChild(child);
       void stopResourceSampling().finally(() =>
         reject(toLintErrorObject(error, "Command failed before exit")),
       );
@@ -402,6 +445,7 @@ export function runCommand(command, args, options = {}) {
       const finish = () => {
         clearTimeout(forceKillTimer);
         forceKillAt = undefined;
+        releaseCommandChild(child);
         void stopResourceSampling().then((resourceSampleFailure) => {
           if (!timedOut && status === 0) {
             if (resourceSampleFailure) {
@@ -468,6 +512,38 @@ async function finishTimedOutCommandProcessTree(child, { forceKillAt, timeoutKil
     signalProcessGroup(child, "SIGKILL");
   }
   await waitForCommandProcessTreeExit(child, timeoutKillGraceMs);
+}
+
+function releaseCommandChild(child) {
+  activeCommandChildren.delete(child);
+  if (activeCommandChildren.size === 0 && !commandShutdownPromise) {
+    removeCommandSignalHandlers();
+  }
+}
+
+async function shutdownActiveCommands(signal) {
+  if (commandShutdownPromise) {
+    for (const child of activeCommandChildren) {
+      signalProcessGroup(child, "SIGKILL");
+    }
+    return commandShutdownPromise;
+  }
+  const children = [...activeCommandChildren];
+  for (const child of children) {
+    signalProcessGroup(child, signal);
+  }
+  commandShutdownPromise = Promise.all(
+    children.map((child) =>
+      finishTimedOutCommandProcessTree(child, {
+        forceKillAt: Date.now() + COMMAND_PARENT_SIGNAL_KILL_GRACE_MS,
+        timeoutKillGraceMs: COMMAND_PARENT_SIGNAL_KILL_GRACE_MS,
+      }),
+    ),
+  ).finally(() => {
+    removeCommandSignalHandlers();
+    process.kill(process.pid, signal);
+  });
+  return commandShutdownPromise;
 }
 
 async function waitForCommandProcessTreeExit(child, timeoutMs) {

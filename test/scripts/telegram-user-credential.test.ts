@@ -315,6 +315,59 @@ setInterval(() => {}, 1000);
     },
   );
 
+  it.runIf(process.platform !== "win32")(
+    "rejects timed-out commands when descendant processes exit cleanly",
+    async () => {
+      const dir = makeTempDir("openclaw-telegram-credential-tree-timeout-clean-");
+      const childPidPath = path.join(dir, "child.pid");
+      const readyPath = path.join(dir, "child.ready");
+      const cleanupPath = path.join(dir, "child.cleanup");
+      let childPid: number | undefined;
+
+      try {
+        const childScript = [
+          "const fs = require('node:fs');",
+          "process.on('SIGTERM', () => {",
+          `  fs.writeFileSync(${JSON.stringify(cleanupPath)}, 'clean');`,
+          "  setTimeout(() => process.exit(0), 75);",
+          "});",
+          `fs.writeFileSync(${JSON.stringify(readyPath)}, 'ready');`,
+          "setInterval(() => {}, 1000);",
+        ].join("");
+        const parentScript = [
+          "const { spawn } = require('node:child_process');",
+          `const child = spawn(process.execPath, ['-e', ${JSON.stringify(childScript)}], {`,
+          "  stdio: 'ignore',",
+          "});",
+          `require('node:fs').writeFileSync(${JSON.stringify(childPidPath)}, String(child.pid));`,
+          "process.on('SIGTERM', () => process.exit(0));",
+          "setInterval(() => {}, 1000);",
+        ].join("");
+
+        const startedAt = Date.now();
+        const runPromise = runCommand(process.execPath, ["-e", parentScript], dir, {
+          timeoutKillGraceMs: 1_000,
+          timeoutMs: 1_000,
+        });
+        const runError = runPromise.catch((error: unknown) => error);
+        await waitForFile(readyPath, 2_000);
+        childPid = Number.parseInt(readFileSync(childPidPath, "utf8"), 10);
+
+        await expect(runError).resolves.toMatchObject({
+          code: "ETIMEDOUT",
+          message: expect.stringContaining("timed out after 1000ms"),
+        });
+
+        expect(readFileSync(cleanupPath, "utf8")).toBe("clean");
+        expect(Date.now() - startedAt).toBeLessThan(1_700);
+      } finally {
+        if (childPid !== undefined && isProcessAlive(childPid)) {
+          process.kill(childPid, "SIGKILL");
+        }
+      }
+    },
+  );
+
   it.runIf(process.platform !== "win32")("kills timed-out child process groups", async () => {
     const dir = makeTempDir("openclaw-telegram-credential-tree-timeout-");
     const childPidPath = path.join(dir, "child.pid");
