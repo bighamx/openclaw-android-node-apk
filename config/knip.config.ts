@@ -131,7 +131,6 @@ const config = {
     "src/shared/text/assistant-visible-text.ts",
     bundledPluginFile("telegram", "src/bot/reply-threading.ts"),
     bundledPluginFile("telegram", "src/draft-chunking.ts"),
-    bundledPluginFile("voice-call", "src/providers/index.ts"),
   ],
   ignore: ["packages/*/dist/**"],
   workspaces: {

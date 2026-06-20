@@ -1591,11 +1591,7 @@ function injectRemoteChangedGateEnvironment(commandArgs) {
 }
 
 function markShellChangedGateAsRemoteChild(command) {
-  const missingEnv = remoteChangedGateEnv.filter((assignment) => !command.includes(assignment));
-  if (missingEnv.length === 0) {
-    return command;
-  }
-  return `export ${missingEnv.join(" ")}; ${command}`;
+  return `export ${remoteChangedGateEnv.join(" ")}; ${command}`;
 }
 
 function markDirectChangedGateAsRemoteChild(commandArgs) {
