@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   buildGroupedTestComparison,
@@ -24,6 +25,15 @@ import { withEnv } from "../../src/test-utils/env.js";
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-test-group-report-"));
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function writeGroupedReport(filePath: string) {
@@ -630,6 +640,57 @@ describe("scripts/test-group-report child process guard", () => {
       const sizeAfterWait = fs.existsSync(markerPath) ? fs.statSync(markerPath).size : 0;
       expect(sizeAfterWait).toBe(sizeAfterReturn);
     } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the wrapper alive while timed process-group descendants await SIGKILL", () => {
+    if (process.platform === "win32" || !fs.existsSync("/usr/bin/time")) {
+      return;
+    }
+
+    const tempDir = makeTempDir();
+    const childPidPath = path.join(tempDir, "child.pid");
+    const reportModuleUrl = pathToFileURL(path.resolve("scripts/test-group-report.mjs")).href;
+    let childPid: number | undefined;
+    try {
+      const childScript = [
+        "const fs = require('node:fs');",
+        "process.on('SIGTERM', () => {});",
+        "process.on('SIGHUP', () => {});",
+        `fs.writeFileSync(${JSON.stringify(childPidPath)}, String(process.pid));`,
+        "setInterval(() => {}, 1000);",
+      ].join("\n");
+      const runnerScript = [
+        `import { spawnText } from ${JSON.stringify(reportModuleUrl)};`,
+        "const result = await spawnText(",
+        '  "/usr/bin/time",',
+        `  [process.execPath, "--eval", ${JSON.stringify(childScript)}],`,
+        "  { cwd: process.cwd(), env: process.env, killGraceMs: 50, timeoutMs: 500 },",
+        ");",
+        "process.stdout.write(JSON.stringify(result));",
+      ].join("\n");
+      const result = spawnSync(process.execPath, ["--input-type=module", "--eval", runnerScript], {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        timeout: 5_000,
+      });
+      if (fs.existsSync(childPidPath)) {
+        childPid = Number.parseInt(fs.readFileSync(childPidPath, "utf8"), 10);
+      }
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toBe("");
+      const parsed = JSON.parse(result.stdout) as Awaited<ReturnType<typeof spawnText>>;
+      expect(parsed).toMatchObject({
+        status: 1,
+        timedOut: true,
+      });
+      expect(parsed.output).toContain("sending SIGKILL");
+    } finally {
+      if (childPid !== undefined && isProcessAlive(childPid)) {
+        process.kill(childPid, "SIGKILL");
+      }
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });

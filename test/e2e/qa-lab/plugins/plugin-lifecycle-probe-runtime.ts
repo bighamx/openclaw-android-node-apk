@@ -16,6 +16,8 @@ type MatrixEnv = NodeJS.ProcessEnv & ProbeEnv;
 interface CommandOptions {
   env?: NodeJS.ProcessEnv;
   outputFile?: string;
+  spawnImpl?: typeof spawn;
+  timeoutKillGraceMs?: number;
   timeoutMs?: number;
 }
 
@@ -231,28 +233,45 @@ async function runCommand(command: string, args: readonly string[], options: Com
     options.outputFile === undefined ? undefined : fs.openSync(options.outputFile, "a");
   try {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(command, args, {
+      const spawnImpl = options.spawnImpl ?? spawn;
+      const child = spawnImpl(command, args, {
         cwd: process.cwd(),
         env: options.env ?? process.env,
         stdio: outputFd === undefined ? "inherit" : (["ignore", outputFd, outputFd] as const),
       });
       let settled = false;
-      const timer =
+      let forceKillTimer: NodeJS.Timeout | undefined;
+      let timeoutTimer: NodeJS.Timeout | undefined;
+      let timeoutError: Error | undefined;
+      const clearTimers = () => {
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+        }
+        if (forceKillTimer) {
+          clearTimeout(forceKillTimer);
+        }
+      };
+      timeoutTimer =
         options.timeoutMs === undefined
           ? undefined
           : setTimeout(() => {
+              timeoutError = new Error(
+                `${command} ${args.join(" ")} timed out after ${options.timeoutMs}ms`,
+              );
               child.kill("SIGTERM");
-              setTimeout(() => child.kill("SIGKILL"), 2_000).unref();
+              forceKillTimer = setTimeout(
+                () => child.kill("SIGKILL"),
+                options.timeoutKillGraceMs ?? 2_000,
+              );
+              forceKillTimer.unref();
             }, options.timeoutMs);
-      timer?.unref();
+      timeoutTimer?.unref();
       child.once("error", (error) => {
         if (settled) {
           return;
         }
         settled = true;
-        if (timer) {
-          clearTimeout(timer);
-        }
+        clearTimers();
         reject(error);
       });
       child.once("exit", (code, signal) => {
@@ -260,8 +279,10 @@ async function runCommand(command: string, args: readonly string[], options: Com
           return;
         }
         settled = true;
-        if (timer) {
-          clearTimeout(timer);
+        clearTimers();
+        if (timeoutError) {
+          reject(timeoutError);
+          return;
         }
         if (code === 0 && !signal) {
           resolve();
@@ -531,6 +552,8 @@ export async function runPluginLifecycleMatrix() {
     registry?.stop();
   }
 }
+
+export const testing = { runCommand };
 
 const isLifecycleMatrixCli = process.argv[2] === "--lifecycle-matrix";
 

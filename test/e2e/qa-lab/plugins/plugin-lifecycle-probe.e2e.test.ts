@@ -1,18 +1,32 @@
 // Plugin Lifecycle Probe tests cover QA Lab plugin lifecycle evidence.
+import { EventEmitter } from "node:events";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTempDirTracker } from "../../../helpers/temp-dir.js";
 import {
   assertInspectLoaded,
   assertUninstalled,
   parseDurationMs,
+  testing as probeTesting,
 } from "./plugin-lifecycle-probe-runtime.js";
 
 const tempDirs = createTempDirTracker();
 
 function makeTempDir(): string {
   return tempDirs.make("openclaw-plugin-lifecycle-probe-");
+}
+
+class FakeCommandChild extends EventEmitter {
+  readonly signals: string[] = [];
+
+  kill(signal?: NodeJS.Signals | number): boolean {
+    this.signals.push(String(signal));
+    if (signal === "SIGTERM") {
+      queueMicrotask(() => this.emit("exit", 0, null));
+    }
+    return true;
+  }
 }
 
 afterEach(tempDirs.cleanup);
@@ -69,5 +83,30 @@ describe("plugin lifecycle matrix probe", () => {
 
   it("preserves disabled npm install timeout semantics", () => {
     expect(parseDurationMs("0", "600s")).toBeUndefined();
+  });
+
+  it("rejects timed commands that exit cleanly during kill grace", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = new FakeCommandChild();
+      const runPromise = probeTesting.runCommand("fake-command", ["install"], {
+        spawnImpl: (() => child) as unknown as typeof import("node:child_process").spawn,
+        timeoutKillGraceMs: 100,
+        timeoutMs: 10,
+      });
+      const runError = runPromise.catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(10);
+
+      const error = await runError;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe("fake-command install timed out after 10ms");
+      expect(child.signals).toEqual(["SIGTERM"]);
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(child.signals).toEqual(["SIGTERM"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

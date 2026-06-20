@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { win32 } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchJsonWithTimeout, runCommand } from "../../scripts/e2e/telegram-user-credential-io.ts";
 import {
   expandHome,
@@ -75,6 +75,8 @@ async function waitForExit(
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { force: true, recursive: true });
   }
@@ -176,6 +178,64 @@ describe("telegram user credential IO", () => {
         chunkCount: 1,
       }),
     ).toThrow("Chunked payload marker exceeds 67108864 bytes.");
+  });
+
+  it("hydrates chunked lease payloads using utf8 byte lengths", async () => {
+    const credentialModule = (await import(
+      `${new URL("../../scripts/e2e/telegram-user-credential.ts", import.meta.url).href}?case=utf8-chunk-${Date.now()}`
+    )) as {
+      hydratePayloadFromLease(params: {
+        acquired: Record<string, unknown>;
+        ownerId: string;
+        siteUrl: string;
+        token: string;
+      }): Promise<Record<string, unknown>>;
+    };
+    const sha256 = "a".repeat(64);
+    const serialized = JSON.stringify({
+      groupId: "-100123",
+      sutToken: "sut-token",
+      testerUserId: "8709353529",
+      testerUsername: "OpenClawTestUser",
+      telegramApiId: "123456",
+      telegramApiHash: "api-hash-\u00e9",
+      tdlibDatabaseEncryptionKey: "db-key",
+      tdlibArchiveBase64: "tdlib-archive",
+      tdlibArchiveSha256: sha256,
+      desktopTdataArchiveBase64: "desktop-archive",
+      desktopTdataArchiveSha256: sha256,
+    });
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ status: "ok", data: serialized }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const payload = await credentialModule.hydratePayloadFromLease({
+      acquired: {
+        credentialId: "cred-utf8",
+        leaseToken: "lease-utf8",
+        payload: {
+          [CHUNKED_PAYLOAD_MARKER]: true,
+          byteLength: Buffer.byteLength(serialized, "utf8"),
+          chunkCount: 1,
+        },
+      },
+      ownerId: "owner-utf8",
+      siteUrl: "https://qa.example.invalid",
+      token: "ci-secret",
+    });
+
+    expect(payload.telegramApiHash).toBe("api-hash-\u00e9");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://qa.example.invalid/qa-credentials/v1/payload-chunk",
+      expect.objectContaining({
+        body: expect.stringContaining('"credentialId":"cred-utf8"'),
+      }),
+    );
   });
 
   it("rejects loose numeric credential limits instead of parsing prefixes", async () => {

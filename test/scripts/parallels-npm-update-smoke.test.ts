@@ -60,6 +60,19 @@ async function waitForDead(pid: number, timeoutMs: number): Promise<void> {
   throw new Error(`timeout waiting for pid ${pid} to exit`);
 }
 
+async function waitFor(predicate: () => boolean, label: string, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+  }
+  throw new Error(`timeout waiting for ${label}`);
+}
+
 function decodePowerShellFromArgs(args: string[]): string {
   const encoded = args[args.indexOf("-EncodedCommand") + 1];
   return encoded ? Buffer.from(encoded, "base64").toString("utf16le") : "";
@@ -404,6 +417,48 @@ exit 1
     const descendantPid = Number(readFileSync(descendantPidPath, "utf8"));
     await waitForDead(descendantPid, 2000);
   });
+
+  it.runIf(process.platform !== "win32")(
+    "lets fresh lane descendants exit during timeout kill grace",
+    async () => {
+      const root = makeTempDir();
+      const logPath = path.join(root, "fresh.log");
+      const scriptPath = path.join(root, "graceful-fresh-lane.mjs");
+      const readyPath = path.join(root, "ready");
+      const donePath = path.join(root, "done");
+      const descendantScript = [
+        "import { writeFileSync } from 'node:fs';",
+        `writeFileSync(${JSON.stringify(readyPath)}, 'ready');`,
+        "process.on('SIGTERM', () => {",
+        `  setTimeout(() => { writeFileSync(${JSON.stringify(donePath)}, 'done'); process.exit(0); }, 75);`,
+        "});",
+        "setInterval(() => {}, 1000);",
+      ].join("\n");
+      writeFileSync(
+        scriptPath,
+        [
+          "import { spawn } from 'node:child_process';",
+          `spawn(process.execPath, ["--input-type=module", "--eval", ${JSON.stringify(
+            descendantScript,
+          )}], { stdio: "ignore" });`,
+          "process.on('SIGTERM', () => process.exit(0));",
+          "setInterval(() => {}, 1000);",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const command = spawnLoggedCommand(process.execPath, [scriptPath], logPath, {}, undefined, {
+        timeoutKillGraceMs: 500,
+        timeoutLabel: "fresh lane grace test",
+        timeoutMs: 500,
+      });
+
+      await waitFor(() => existsSync(readyPath), "fresh lane descendant readiness");
+      await expect(command).resolves.toBe(124);
+      expect(readFileSync(donePath, "utf8")).toBe("done");
+    },
+  );
 
   it("clears update stream timers when spawning the guest command fails", async () => {
     vi.useFakeTimers();

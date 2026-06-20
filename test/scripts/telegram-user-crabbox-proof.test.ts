@@ -13,6 +13,9 @@ import {
   recordProbeVideo,
   REMOTE_SETUP_COMMAND_TIMEOUT_MS,
   renderLaunchDesktop,
+  renderRemoteProbe,
+  renderRemoteSetup,
+  renderSelectDesktopChat,
   runCommand,
   startLocalSut,
   waitForLog,
@@ -197,6 +200,54 @@ describe("telegram user Crabbox proof log polling", () => {
     expect(script).not.toContain('cat "$root/telegram-desktop.log"');
   });
 
+  it("shell-quotes generated remote setup and chat literals", () => {
+    const payload = "name $(touch /tmp/openclaw-proof-injected) `touch /tmp/also-injected`";
+
+    expect(renderRemoteSetup({ tdlibSha256: payload, tdlibUrl: payload })).toContain(
+      `tdlib_url='${payload}'`,
+    );
+    expect(renderSelectDesktopChat({ chatTitle: payload })).toContain(`chat_title='${payload}'`);
+  });
+
+  posixIt("does not expand generated remote probe arguments in the shell", () => {
+    const root = makeTempDir();
+    const fakePython = path.join(root, "python3");
+    const scriptPath = path.join(root, "remote-probe.sh");
+    const argvPath = path.join(root, "argv.json");
+    const injectedPath = path.join(root, "injected");
+    const payload = `literal ' $(touch ${injectedPath})`;
+    writeExecutable(
+      fakePython,
+      `#!/usr/bin/env node
+import fs from "node:fs";
+fs.writeFileSync(process.env.OPENCLAW_TEST_ARGV_PATH, JSON.stringify(process.argv.slice(1)));
+`,
+    );
+    writeExecutable(
+      scriptPath,
+      renderRemoteProbe({
+        expect: [payload],
+        sutUsername: payload,
+        text: payload,
+        timeoutMs: 1000,
+      }),
+    );
+
+    const result = spawnSync("bash", [scriptPath], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        OPENCLAW_TEST_ARGV_PATH: argvPath,
+        PATH: `${root}${path.delimiter}${process.env.PATH ?? ""}`,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(injectedPath)).toBe(false);
+    expect(JSON.parse(fs.readFileSync(argvPath, "utf8"))).toContain(payload);
+  });
+
   posixIt("kills timed-out command process groups when the leader exits first", async () => {
     const root = makeTempDir();
     const scriptPath = path.join(root, "trap-term.mjs");
@@ -320,6 +371,89 @@ process.exit(2);
     await waitFor(() => !isProcessAlive(mockPid));
   });
 
+  posixIt("cleans gateway descendants after a failed gateway leader exits", async () => {
+    const root = makeTempDir();
+    const outputDir = makeTempDir();
+    const mockScript = path.join(root, "scripts/e2e/mock-openai-server.mjs");
+    const gatewayScript = path.join(root, "gateway-leader-exits.mjs");
+    const gatewayGrandchildPidPath = path.join(root, "gateway-grandchild.pid");
+    let gatewayGrandchildPid = 0;
+    fs.mkdirSync(path.dirname(mockScript), { recursive: true });
+    writeExecutable(
+      mockScript,
+      `
+process.stdout.write("mock-openai listening\\n");
+process.on("SIGTERM", () => process.exit(0));
+setInterval(() => {}, 1000);
+`,
+    );
+    writeExecutable(
+      gatewayScript,
+      `
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+
+const grandchild = spawn(process.execPath, [
+  "-e",
+  "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000);",
+], { stdio: "ignore" });
+fs.writeFileSync(${JSON.stringify(gatewayGrandchildPidPath)}, String(grandchild.pid));
+process.exit(2);
+`,
+    );
+
+    try {
+      await expect(
+        startLocalSut(
+          {
+            gatewayPort: 19042,
+            groupId: "group",
+            mockPort: 19043,
+            mockResponseText: "ok",
+            outputDir,
+            repoRoot: root,
+            sutToken: "token",
+            testerId: "tester",
+          },
+          {
+            createGatewaySpawnSpec: () => ({
+              args: [gatewayScript],
+              command: process.execPath,
+              options: { cwd: root, env: process.env },
+            }),
+            drainUpdates: async () => ({
+              drained: 0,
+              webhookUrlSet: false,
+            }),
+            waitForOutputReady: async (child, _pattern, output, label) => {
+              if (label === "mock-openai") {
+                await waitFor(() => output().includes("mock-openai listening"));
+                return;
+              }
+              await waitFor(() => fs.existsSync(gatewayGrandchildPidPath));
+              gatewayGrandchildPid = Number.parseInt(
+                fs.readFileSync(gatewayGrandchildPidPath, "utf8"),
+                10,
+              );
+              if (child.exitCode === null && child.signalCode === null) {
+                await new Promise<void>((resolve) => {
+                  child.once("exit", () => resolve());
+                });
+              }
+              throw new Error("gateway exited before ready");
+            },
+          },
+        ),
+      ).rejects.toThrow("gateway exited before ready");
+
+      await waitFor(() => !isProcessAlive(gatewayGrandchildPid));
+    } finally {
+      if (gatewayGrandchildPid && isProcessAlive(gatewayGrandchildPid)) {
+        process.kill(gatewayGrandchildPid, "SIGKILL");
+      }
+    }
+  });
+
   posixIt("stops Crabbox recording when the desktop probe fails", async () => {
     const root = makeTempDir();
     const recorderPath = path.join(root, "fake-crabbox-recorder.mjs");
@@ -360,4 +494,43 @@ setInterval(() => {}, 1000);
     const recorderPid = Number.parseInt(fs.readFileSync(recorderPidPath, "utf8"), 10);
     await waitFor(() => !isProcessAlive(recorderPid));
   });
+
+  posixIt(
+    "does not wait forever when Crabbox recording exits before the probe returns",
+    async () => {
+      const root = makeTempDir();
+      const recorderPath = path.join(root, "fake-crabbox-recorder.mjs");
+      const recorderExitPath = path.join(root, "recorder.exit");
+      writeExecutable(
+        recorderPath,
+        `#!/usr/bin/env node
+import fs from "node:fs";
+
+fs.writeFileSync(${JSON.stringify(recorderExitPath)}, "exited");
+`,
+      );
+
+      await expect(
+        Promise.race([
+          recordProbeVideo({
+            crabboxBin: recorderPath,
+            cwd: root,
+            durationSeconds: 1,
+            leaseId: "cbx_test",
+            outputPath: path.join(root, "proof.mp4"),
+            provider: "aws",
+            runProbe: async () => {
+              await waitFor(() => fs.existsSync(recorderExitPath));
+              await delay(50);
+            },
+            startDelayMs: 0,
+            target: "linux",
+          }),
+          delay(2_000).then(() => {
+            throw new Error("recordProbeVideo hung after the recorder had already exited");
+          }),
+        ]),
+      ).resolves.toBeUndefined();
+    },
+  );
 });

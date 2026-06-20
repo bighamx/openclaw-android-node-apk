@@ -134,6 +134,32 @@ describe("buildQaRuntimeEnv", () => {
     await expect(readdir(tempParent)).resolves.toStrictEqual([]);
   });
 
+  it("reports command spawn errors instead of leaking unhandled child errors", async () => {
+    const tempParent = await mkdtemp(path.join(os.tmpdir(), "qa-gateway-spawn-fail-"));
+    cleanups.push(async () => {
+      await rm(tempParent, { recursive: true, force: true });
+    });
+    qaTempPathState.preferredTmpDir = tempParent;
+    const missingExecutable = path.join(tempParent, "missing-openclaw-node");
+
+    await expect(
+      startQaGatewayChild({
+        repoRoot: process.cwd(),
+        command: {
+          executablePath: missingExecutable,
+          usePackagedPlugins: true,
+        },
+        transport: {
+          requiredPluginIds: [],
+          createGatewayConfig: () => ({}),
+        },
+        transportBaseUrl: "http://127.0.0.1:43123",
+      }),
+    ).rejects.toThrow(/gateway failed to spawn: .*ENOENT/u);
+
+    await expect(readdir(tempParent)).resolves.toStrictEqual([]);
+  });
+
   it("keeps the slow-reply QA opt-out enabled under fast mode", () => {
     const env = buildQaRuntimeEnv({
       ...createParams(),

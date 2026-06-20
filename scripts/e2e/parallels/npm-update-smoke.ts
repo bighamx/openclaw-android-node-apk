@@ -41,6 +41,9 @@ import { linuxUpdateScript, macosUpdateScript, windowsUpdateScript } from "./npm
 import { ensureVmRunning, resolveMacosVmName, resolveUbuntuVmName } from "./parallels-vm.ts";
 import { runTimedUpdateJob } from "./update-job-timeout.ts";
 
+const LOGGED_PROCESS_TREE_EXIT_POLL_MS = 25;
+const LOGGED_POST_FORCE_KILL_WAIT_MS = 1_000;
+
 interface NpmUpdateOptions {
   betaValidation?: string;
   freshTargetSpec?: string;
@@ -151,6 +154,7 @@ export function spawnLoggedCommand(
     let timedOut = false;
     let settled = false;
     let forceKillTimer: NodeJS.Timeout | undefined;
+    let forceKillAt: number | undefined;
     const append = (text: string) => {
       appendFileSync(logPath, text, "utf8");
       onOutput(text);
@@ -164,6 +168,7 @@ export function spawnLoggedCommand(
               `\n[${options.timeoutLabel ?? `${command} ${args.join(" ")}`} timed out after ${timeoutMs}ms]\n`,
             );
             signalLoggedChild(child, "SIGTERM");
+            forceKillAt = Date.now() + (options.timeoutKillGraceMs ?? freshLaneTimeoutKillGraceMs);
             forceKillTimer = setTimeout(
               () => signalLoggedChild(child, "SIGKILL"),
               options.timeoutKillGraceMs ?? freshLaneTimeoutKillGraceMs,
@@ -193,11 +198,19 @@ export function spawnLoggedCommand(
       settled = true;
       clearTimeout(timeoutTimer);
       clearTimeout(forceKillTimer);
-      if (timedOut && loggedProcessTreeIsAlive(child)) {
-        signalLoggedChild(child, "SIGKILL");
+      const finish = () => {
+        forceKillAt = undefined;
+        untrackLoggedChild(child);
+        resolve(timedOut ? 124 : (code ?? 1));
+      };
+      if (timedOut) {
+        void finishTimedOutLoggedProcessTree(child, {
+          forceKillAt,
+          timeoutKillGraceMs: options.timeoutKillGraceMs ?? freshLaneTimeoutKillGraceMs,
+        }).then(finish, finish);
+        return;
       }
-      untrackLoggedChild(child);
-      resolve(timedOut ? 124 : (code ?? 1));
+      finish();
     });
   });
 }
@@ -264,6 +277,43 @@ function loggedProcessTreeIsAlive(child: ReturnType<typeof spawn>): boolean {
   } catch (error) {
     return error instanceof Error && "code" in error && error.code === "EPERM";
   }
+}
+
+async function waitForLoggedProcessTreeExit(
+  child: ReturnType<typeof spawn>,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadlineAt = Date.now() + timeoutMs;
+  while (Date.now() < deadlineAt) {
+    if (!loggedProcessTreeIsAlive(child)) {
+      return true;
+    }
+    await new Promise((resolvePoll) => {
+      setTimeout(resolvePoll, LOGGED_PROCESS_TREE_EXIT_POLL_MS);
+    });
+  }
+  return !loggedProcessTreeIsAlive(child);
+}
+
+async function finishTimedOutLoggedProcessTree(
+  child: ReturnType<typeof spawn>,
+  {
+    forceKillAt,
+    timeoutKillGraceMs,
+  }: { forceKillAt: number | undefined; timeoutKillGraceMs: number },
+): Promise<void> {
+  if (!loggedProcessTreeIsAlive(child)) {
+    return;
+  }
+  const graceRemainingMs =
+    forceKillAt === undefined ? timeoutKillGraceMs : Math.max(0, forceKillAt - Date.now());
+  if (graceRemainingMs > 0) {
+    await waitForLoggedProcessTreeExit(child, graceRemainingMs);
+  }
+  if (loggedProcessTreeIsAlive(child)) {
+    signalLoggedChild(child, "SIGKILL");
+  }
+  await waitForLoggedProcessTreeExit(child, LOGGED_POST_FORCE_KILL_WAIT_MS);
 }
 
 function signalLoggedChild(child: ReturnType<typeof spawn>, signal: NodeJS.Signals) {

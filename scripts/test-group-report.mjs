@@ -453,6 +453,7 @@ export function spawnText(command, args, options) {
         timedOut,
       };
       if (waitingForKillGrace && processGroupIsAlive()) {
+        killTimer?.ref?.();
         childClosedResult = result;
         return;
       }

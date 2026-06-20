@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { basename, delimiter, join, win32 } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   extractLastOpenClawVersionFromLog,
   modelProviderConfigBatchJson,
@@ -50,6 +50,7 @@ import {
 import { parseArgs as parseWindowsSmokeArgs } from "../../scripts/e2e/parallels/windows-smoke.ts";
 import { withEnv } from "../../src/test-utils/env.js";
 import { spawnNodeEvalSync } from "../../src/test-utils/node-process.js";
+import { cleanupTempDirs, makeTempDir } from "../helpers/temp-dir.js";
 
 const WRAPPERS = {
   linux: "scripts/e2e/parallels-linux-smoke.sh",
@@ -82,6 +83,11 @@ const TS_PATHS = {
 };
 
 const OS_TS_PATHS = [TS_PATHS.linux, TS_PATHS.macos, TS_PATHS.windows];
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  cleanupTempDirs(tempDirs);
+});
 
 function countNonEmptyLines(value: string): number {
   let count = 0;
@@ -1300,28 +1306,50 @@ if (isPrlctl) {
     expect(result.stdout).toBeTypeOf("string");
   });
 
-  it("does not wait for host commands that trap SIGTERM after a timeout", () => {
-    const startedAt = Date.now();
-    const result = run(
-      process.execPath,
-      [
-        "-e",
-        [
-          "process.on('SIGTERM', () => {});",
-          "setTimeout(() => process.exit(77), 700);",
-          "setInterval(() => {}, 1000);",
-        ].join(""),
-      ],
-      {
-        check: false,
-        quiet: true,
-        timeoutMs: 50,
-      },
-    );
+  it.runIf(process.platform !== "win32")(
+    "lets timed host command descendants drain before force kill",
+    () => {
+      const tempDir = makeTempDir(tempDirs, "openclaw-parallels-host-command-drain-");
+      const readyFile = join(tempDir, "ready");
+      const drainFile = join(tempDir, "drained");
+      const descendantScript = [
+        "const { writeFileSync } = require('node:fs');",
+        "writeFileSync(process.env.READY_FILE, 'ready');",
+        "process.on('SIGTERM', () => {",
+        "  setTimeout(() => {",
+        "    writeFileSync(process.env.DRAIN_FILE, 'drained');",
+        "    process.exit(0);",
+        "  }, 25);",
+        "});",
+        "setInterval(() => {}, 1000);",
+      ].join("\n");
+      const parentScript = [
+        "const { spawn } = require('node:child_process');",
+        `spawn(process.execPath, ['-e', ${JSON.stringify(descendantScript)}], { env: process.env, stdio: 'ignore' });`,
+        "process.on('SIGTERM', () => process.exit(0));",
+        "setInterval(() => {}, 1000);",
+      ].join("\n");
 
-    expect(result.status).toBe(124);
-    expect(Date.now() - startedAt).toBeLessThan(500);
-  });
+      try {
+        const result = run(process.execPath, ["-e", parentScript], {
+          check: false,
+          env: {
+            ...process.env,
+            DRAIN_FILE: drainFile,
+            READY_FILE: readyFile,
+          },
+          quiet: true,
+          timeoutMs: 1_000,
+        });
+
+        expect(result.status).toBe(124);
+        expect(existsSync(readyFile)).toBe(true);
+        expect(readFileSync(drainFile, "utf8")).toBe("drained");
+      } finally {
+        cleanupTempDirs(tempDirs);
+      }
+    },
+  );
 
   it.runIf(process.platform !== "win32")("throws checked timed host command timeouts", () => {
     expect(() =>
@@ -1423,6 +1451,52 @@ setInterval(() => {}, 1000);
       vi.useRealTimers();
     }
   });
+
+  it.runIf(process.platform !== "win32")(
+    "lets timed streaming host command descendants drain before force kill",
+    async () => {
+      const tempDir = makeTempDir(tempDirs, "openclaw-parallels-streaming-host-command-drain-");
+      const readyFile = join(tempDir, "ready");
+      const drainFile = join(tempDir, "drained");
+      const logPath = join(tempDir, "stream.log");
+      const descendantScript = [
+        "const { writeFileSync } = require('node:fs');",
+        "writeFileSync(process.env.READY_FILE, 'ready');",
+        "process.on('SIGTERM', () => {",
+        "  setTimeout(() => {",
+        "    writeFileSync(process.env.DRAIN_FILE, 'drained');",
+        "    process.exit(0);",
+        "  }, 50);",
+        "});",
+        "setInterval(() => {}, 1000);",
+      ].join("\n");
+      const parentScript = [
+        "const { spawn } = require('node:child_process');",
+        `spawn(process.execPath, ['-e', ${JSON.stringify(descendantScript)}], { env: process.env, stdio: 'ignore' });`,
+        "process.on('SIGTERM', () => process.exit(0));",
+        "setInterval(() => {}, 1000);",
+      ].join("\n");
+
+      try {
+        const statusPromise = runStreaming(process.execPath, ["-e", parentScript], {
+          env: {
+            ...process.env,
+            DRAIN_FILE: drainFile,
+            READY_FILE: readyFile,
+          },
+          logPath,
+          quiet: true,
+          timeoutMs: 500,
+        });
+
+        await waitFor(() => existsSync(readyFile), 2_000);
+        await expect(statusPromise).resolves.toBe(124);
+        expect(readFileSync(drainFile, "utf8")).toBe("drained");
+      } finally {
+        cleanupTempDirs(tempDirs);
+      }
+    },
+  );
 
   it("streams host command logs instead of retaining them in memory", async () => {
     const source = readFileSync(TS_PATHS.hostCommand, "utf8");
