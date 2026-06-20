@@ -870,7 +870,7 @@ describe("scripts/test-projects changed-target routing", () => {
     const targets = [
       "scripts/check-no-raw-http2-imports.mjs",
       "scripts/e2e/lib/clawhub-fixture-server.cjs",
-      "scripts/install.ps1",
+      "scripts/auth-monitor.sh",
     ];
 
     expect(resolveChangedTestTargetPlan(targets)).toEqual({
@@ -1179,6 +1179,25 @@ describe("scripts/test-projects changed-target routing", () => {
     const expectedTargets = new Map([
       ["scripts/generate-npm-shrinkwrap.mjs", ["test/scripts/generate-npm-shrinkwrap.test.ts"]],
       [
+        "scripts/install.sh",
+        [
+          "test/scripts/install-sh.test.ts",
+          "test/scripts/test-install-sh-docker.test.ts",
+          "test/scripts/website-installer-sync-workflow.test.ts",
+          "test/scripts/openclaw-cross-os-release-checks.test.ts",
+          "src/scripts/ci-changed-scope.test.ts",
+        ],
+      ],
+      [
+        "scripts/install.ps1",
+        [
+          "test/scripts/install-ps1.test.ts",
+          "test/scripts/website-installer-sync-workflow.test.ts",
+          "test/scripts/openclaw-cross-os-release-checks.test.ts",
+          "src/scripts/ci-changed-scope.test.ts",
+        ],
+      ],
+      [
         "scripts/package-openclaw-for-docker.mjs",
         ["test/e2e/qa-lab/runtime/package-openclaw-for-docker.e2e.test.ts"],
       ],
@@ -1187,6 +1206,15 @@ describe("scripts/test-projects changed-target routing", () => {
       ["scripts/make_appcast.sh", ["test/scripts/make-appcast.test.ts"]],
       ["scripts/package-mac-app.sh", ["test/scripts/package-mac-app.test.ts"]],
       ["scripts/package-mac-dist.sh", ["test/scripts/package-mac-dist.test.ts"]],
+      [
+        "scripts/sparkle-build.ts",
+        [
+          "test/appcast.test.ts",
+          "test/release-check.test.ts",
+          "test/scripts/package-mac-app.test.ts",
+          "test/scripts/package-mac-dist.test.ts",
+        ],
+      ],
       ["scripts/package-changelog.mjs", ["test/scripts/package-changelog.test.ts"]],
       ["scripts/openclaw-prepack.ts", ["test/openclaw-prepack.test.ts"]],
       ["scripts/openclaw-npm-release-check.ts", ["test/openclaw-npm-release-check.test.ts"]],
@@ -1232,6 +1260,14 @@ describe("scripts/test-projects changed-target routing", () => {
       ["scripts/lib/dev-tooling-safety.ts", ["test/scripts/dev-tooling-safety.test.ts"]],
       ["scripts/lib/npm-verify-exec.ts", ["test/scripts/npm-verify-exec.test.ts"]],
       ["scripts/lib/arg-utils.mjs", ["test/scripts/arg-utils.test.ts"]],
+      [
+        "scripts/lib/plistbuddy.sh",
+        [
+          "test/scripts/create-dmg.test.ts",
+          "test/scripts/package-mac-app.test.ts",
+          "test/scripts/package-mac-dist.test.ts",
+        ],
+      ],
       ["scripts/lib/test-group-report.mjs", ["test/scripts/test-group-report.test.ts"]],
       ["scripts/lib/ts-guard-utils.mjs", ["test/scripts/ts-guard-utils.test.ts"]],
       ["scripts/lib/format-generated-module.mjs", ["test/scripts/format-generated-module.test.ts"]],

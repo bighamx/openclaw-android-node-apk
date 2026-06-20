@@ -34,27 +34,17 @@ export type RuntimeContextCustomMessage = {
 
 type EmptyTranscriptMode = "model-prompt" | "runtime-event";
 
-/** Returns the visible or resumable inbound prompt prefix used before the user prompt. */
-export function buildCurrentInboundPromptContextPrefix(
-  context: CurrentInboundPromptContext | undefined,
-  options?: { preferResumableText?: boolean },
-): string {
-  const text =
-    options?.preferResumableText === true
-      ? (context?.resumableText ?? context?.text)
-      : context?.text;
-  return text?.trim() ?? "";
-}
-
 /** Combines inbound context and the current prompt using the channel-provided joiner. */
 export function buildCurrentInboundPrompt(params: {
   context: CurrentInboundPromptContext | undefined;
   prompt: string;
   preferResumableText?: boolean;
 }): string {
-  const prefix = buildCurrentInboundPromptContextPrefix(params.context, {
-    preferResumableText: params.preferResumableText,
-  });
+  const contextText =
+    params.preferResumableText === true
+      ? (params.context?.resumableText ?? params.context?.text)
+      : params.context?.text;
+  const prefix = contextText?.trim() ?? "";
   if (!prefix) {
     return params.prompt;
   }

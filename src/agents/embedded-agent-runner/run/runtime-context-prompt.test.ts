@@ -3,7 +3,6 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCurrentInboundPrompt,
-  buildCurrentInboundPromptContextPrefix,
   buildRuntimeContextCustomMessage,
   resolveRuntimeContextPromptParts,
 } from "./runtime-context-prompt.js";
@@ -282,31 +281,6 @@ describe("runtime context prompt submission", () => {
     });
   });
 
-  it("uses current-turn context as prompt-local text", () => {
-    expect(
-      buildCurrentInboundPromptContextPrefix({
-        text: "Conversation info (untrusted metadata):\n```json\n{}\n```",
-      }),
-    ).toBe("Conversation info (untrusted metadata):\n```json\n{}\n```");
-  });
-
-  it("can use compact current-turn context for resumable backends", () => {
-    expect(
-      buildCurrentInboundPromptContextPrefix(
-        {
-          text: "Room context:\nAlice: lunch?\n\nCurrent event:\nBob: yes",
-          resumableText: "Current event:\nBob: yes",
-        },
-        { preferResumableText: true },
-      ),
-    ).toBe("Current event:\nBob: yes");
-  });
-
-  it("omits empty current-turn context", () => {
-    expect(buildCurrentInboundPromptContextPrefix(undefined)).toBe("");
-    expect(buildCurrentInboundPromptContextPrefix({ text: "   " })).toBe("");
-  });
-
   it("joins current-turn context and prompt with the requested separator", () => {
     expect(
       buildCurrentInboundPrompt({
@@ -332,6 +306,13 @@ describe("runtime context prompt submission", () => {
         preferResumableText: true,
       }),
     ).toBe("Current event:\nBob: yes\n\n[OpenClaw room event]");
+
+    expect(
+      buildCurrentInboundPrompt({
+        context: { text: "   " },
+        prompt: "visible ask",
+      }),
+    ).toBe("visible ask");
   });
 
   it("builds runtime context as prompt-local custom context before the current user prompt", () => {

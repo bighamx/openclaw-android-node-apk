@@ -702,6 +702,22 @@ const TOOLING_SOURCE_TEST_TARGETS = new Map([
   ["scripts/lib/managed-child-process.mjs", ["test/scripts/managed-child-process.test.ts"]],
   ["scripts/lib/npm-verify-exec.ts", ["test/scripts/npm-verify-exec.test.ts"]],
   ["scripts/lib/openclaw-test-state.mjs", ["test/scripts/openclaw-test-state.test.ts"]],
+  [
+    "scripts/lib/plistbuddy.sh",
+    [
+      "test/scripts/create-dmg.test.ts",
+      "test/scripts/package-mac-app.test.ts",
+      "test/scripts/package-mac-dist.test.ts",
+    ],
+  ],
+  [
+    "scripts/lib/plugin-npm-runtime-build.mjs",
+    ["test/scripts/plugin-npm-runtime-build-args.test.ts"],
+  ],
+  [
+    "scripts/lib/plugin-npm-package-manifest.mjs",
+    ["test/scripts/plugin-npm-package-manifest-args.test.ts"],
+  ],
   ["scripts/lib/source-file-scan-cache.mjs", ["test/scripts/source-file-scan-cache.test.ts"]],
   ["scripts/lib/test-group-report.mjs", ["test/scripts/test-group-report.test.ts"]],
   ["scripts/lib/ts-guard-utils.mjs", ["test/scripts/ts-guard-utils.test.ts"]],
@@ -715,7 +731,14 @@ const TOOLING_SOURCE_TEST_TARGETS = new Map([
     ["test/scripts/mantis-build-telegram-desktop-proof-evidence.test.ts"],
   ],
   ["scripts/mantis/publish-pr-evidence.mjs", ["test/scripts/mantis-publish-pr-evidence.test.ts"]],
+  ["scripts/qa-e2e.ts", ["test/scripts/qa-e2e.test.ts"]],
   ["scripts/qa-lab-up.ts", ["test/scripts/qa-lab-up.test.ts"]],
+  ["scripts/qa-coverage-report.ts", ["test/scripts/qa-report-cli.test.ts"]],
+  ["scripts/qa-parity-report.ts", ["test/scripts/qa-report-cli.test.ts"]],
+  [
+    "scripts/qa/ux-matrix-evidence-producer.ts",
+    ["test/scripts/qa-ux-matrix-evidence-producer.test.ts"],
+  ],
   [
     "scripts/run-vitest.mjs",
     [
@@ -734,16 +757,54 @@ const TOOLING_SOURCE_TEST_TARGETS = new Map([
   ["scripts/docker-e2e-rerun.mjs", ["test/scripts/docker-e2e-helper-cli.test.ts"]],
   ["scripts/docker-e2e-timings.mjs", ["test/scripts/docker-e2e-helper-cli.test.ts"]],
   ["scripts/generate-npm-shrinkwrap.mjs", ["test/scripts/generate-npm-shrinkwrap.test.ts"]],
+  [
+    "scripts/install.sh",
+    [
+      "test/scripts/install-sh.test.ts",
+      "test/scripts/test-install-sh-docker.test.ts",
+      "test/scripts/website-installer-sync-workflow.test.ts",
+      "test/scripts/openclaw-cross-os-release-checks.test.ts",
+      "src/scripts/ci-changed-scope.test.ts",
+    ],
+  ],
+  [
+    "scripts/install.ps1",
+    [
+      "test/scripts/install-ps1.test.ts",
+      "test/scripts/website-installer-sync-workflow.test.ts",
+      "test/scripts/openclaw-cross-os-release-checks.test.ts",
+      "src/scripts/ci-changed-scope.test.ts",
+    ],
+  ],
   ["scripts/ios-run.sh", ["test/scripts/ios-run.test.ts"]],
   ["scripts/create-dmg.sh", ["test/scripts/create-dmg.test.ts"]],
   ["scripts/kova-ci-summary.mjs", ["test/scripts/kova-ci-summary.test.ts"]],
   ["scripts/make_appcast.sh", ["test/scripts/make-appcast.test.ts"]],
+  ["scripts/openclaw-npm-prepublish-verify.ts", ["test/openclaw-npm-prepublish-verify.test.ts"]],
   ["scripts/openclaw-npm-postpublish-verify.ts", ["test/openclaw-npm-postpublish-verify.test.ts"]],
   ["scripts/openclaw-npm-release-check.ts", ["test/openclaw-npm-release-check.test.ts"]],
   ["scripts/openclaw-prepack.ts", ["test/openclaw-prepack.test.ts"]],
+  [
+    "scripts/check-openclaw-package-tarball.mjs",
+    ["test/scripts/check-openclaw-package-tarball.test.ts"],
+  ],
+  ["scripts/check-package-dist-imports.mjs", ["test/scripts/check-package-dist-imports.test.ts"]],
+  [
+    "scripts/check-plugin-npm-runtime-builds.mjs",
+    ["test/scripts/plugin-npm-runtime-build-args.test.ts"],
+  ],
   ["scripts/package-changelog.mjs", ["test/scripts/package-changelog.test.ts"]],
   ["scripts/package-mac-app.sh", ["test/scripts/package-mac-app.test.ts"]],
   ["scripts/package-mac-dist.sh", ["test/scripts/package-mac-dist.test.ts"]],
+  [
+    "scripts/sparkle-build.ts",
+    [
+      "test/appcast.test.ts",
+      "test/release-check.test.ts",
+      "test/scripts/package-mac-app.test.ts",
+      "test/scripts/package-mac-dist.test.ts",
+    ],
+  ],
   [
     "scripts/package-openclaw-for-docker.mjs",
     ["test/e2e/qa-lab/runtime/package-openclaw-for-docker.e2e.test.ts"],
@@ -797,6 +858,17 @@ const TOOLING_SOURCE_TEST_TARGETS = new Map([
       "test/scripts/kitchen-sink-rpc-walk.test.ts",
       "test/scripts/plugin-prerelease-test-plan.test.ts",
     ],
+  ],
+  ["scripts/measure-rpc-rtt.mjs", ["test/scripts/measure-rpc-rtt.test.ts"]],
+  [
+    "scripts/e2e/telegram-user-crabbox-proof.ts",
+    ["test/scripts/telegram-user-crabbox-proof.test.ts"],
+  ],
+  ["scripts/e2e/telegram-user-credential.ts", ["test/scripts/telegram-user-credential.test.ts"]],
+  ["scripts/e2e/telegram-user-credential-io.ts", ["test/scripts/telegram-user-credential.test.ts"]],
+  [
+    "scripts/e2e/telegram-user-credential-paths.ts",
+    ["test/scripts/telegram-user-credential.test.ts"],
   ],
   [
     "scripts/e2e/onboard-docker.sh",
@@ -1118,6 +1190,18 @@ const TOOLING_SOURCE_TEST_TARGETS = new Map([
   ["scripts/test-projects.test-support.mjs", ["test/scripts/test-projects.test.ts"]],
   ["scripts/tsdown-build.mjs", ["test/scripts/tsdown-build.test.ts"]],
   ["scripts/dev/gateway-smoke.ts", ["test/e2e/qa-lab/runtime/gateway-smoke.e2e.test.ts"]],
+  ["scripts/dev/test-device-pair-telegram.ts", ["test/scripts/test-device-pair-telegram.test.ts"]],
+  ["scripts/test-live-media.ts", ["test/scripts/test-live-media.test.ts"]],
+  ["scripts/profile-extension-memory.mjs", ["test/scripts/profile-extension-memory.test.ts"]],
+  [
+    "scripts/openclaw-performance-source-summary.mjs",
+    ["test/scripts/openclaw-performance-source-summary.test.ts"],
+  ],
+  ["scripts/check-gateway-cpu-scenarios.mjs", ["test/scripts/check-gateway-cpu-scenarios.test.ts"]],
+  [
+    "scripts/check-gateway-watch-regression.mjs",
+    ["test/scripts/check-gateway-watch-regression.test.ts"],
+  ],
   ["scripts/e2e/cron-mcp-cleanup-seed.ts", ["test/scripts/docker-e2e-seeds.test.ts"]],
   ["scripts/bundled-plugin-assets.mjs", ["test/scripts/bundled-plugin-assets.test.ts"]],
   ["scripts/bundle-a2ui.mjs", ["test/scripts/bundled-plugin-assets.test.ts"]],
