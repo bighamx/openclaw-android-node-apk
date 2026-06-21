@@ -1291,6 +1291,7 @@ describe("scripts/test-projects changed-target routing", () => {
           "src/scripts/ci-changed-scope.test.ts",
         ],
       ],
+      ["scripts/podman/openclaw.container.in", ["test/scripts/test-install-sh-docker.test.ts"]],
       [
         "scripts/package-openclaw-for-docker.mjs",
         ["test/e2e/qa-lab/runtime/package-openclaw-for-docker.e2e.test.ts"],

@@ -13,6 +13,7 @@ const INSTALL_E2E_RUNNER_PATH = "scripts/docker/install-sh-e2e/run.sh";
 const DOCKER_SETUP_PATH = "scripts/docker/setup.sh";
 const HOST_TIMEOUT_PATH = "scripts/lib/host-timeout.sh";
 const PODMAN_SETUP_PATH = "scripts/podman/setup.sh";
+const PODMAN_QUADLET_TEMPLATE_PATH = "scripts/podman/openclaw.container.in";
 const PODMAN_RUN_PATH = "scripts/run-openclaw-podman.sh";
 const SMOKE_RUNNER_PATH = "scripts/docker/install-sh-smoke/run.sh";
 const NONROOT_RUNNER_PATH = "scripts/docker/install-sh-nonroot/run.sh";
@@ -429,6 +430,35 @@ describe("test-install-sh-docker", () => {
       'BUILD_ARGS+=(--build-arg "OPENCLAW_IMAGE_PIP_PACKAGES=${OPENCLAW_IMAGE_PIP_PACKAGES}")',
     );
     expect(podmanSetup).not.toContain("OPENCLAW_DOCKER_PIP_PACKAGES");
+  });
+
+  it("keeps the Podman Quadlet template aligned with setup substitutions", () => {
+    const setupScript = readFileSync(PODMAN_SETUP_PATH, "utf8");
+    const template = readFileSync(PODMAN_QUADLET_TEMPLATE_PATH, "utf8");
+
+    expect(setupScript).toContain(
+      'QUADLET_TEMPLATE="$REPO_PATH/scripts/podman/openclaw.container.in"',
+    );
+    for (const placeholder of [
+      "OPENCLAW_CONFIG_DIR",
+      "OPENCLAW_WORKSPACE_DIR",
+      "IMAGE_NAME",
+      "CONTAINER_NAME",
+    ]) {
+      expect(setupScript).toContain(`{{${placeholder}}}`);
+      expect(template).toContain(`{{${placeholder}}}`);
+    }
+
+    expect(template).toContain("UserNS=keep-id");
+    expect(template).toContain("User=%U:%G");
+    expect(template).toContain("Volume={{OPENCLAW_CONFIG_DIR}}:/home/node/.openclaw:Z");
+    expect(template).toContain(
+      "Volume={{OPENCLAW_WORKSPACE_DIR}}:/home/node/.openclaw/workspace:Z",
+    );
+    expect(template).toContain("EnvironmentFile={{OPENCLAW_CONFIG_DIR}}/.env");
+    expect(template).toContain("PublishPort=127.0.0.1:18789:18789");
+    expect(template).toContain("Exec=node dist/index.js gateway --bind lan --port 18789");
+    expect(template).not.toContain("/home/admin");
   });
 
   it("allows repository branch history and release tags for secret-backed Docker release checks", () => {

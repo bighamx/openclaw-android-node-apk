@@ -1087,6 +1087,7 @@ const TOOLING_SOURCE_TEST_TARGETS = new Map([
       "src/scripts/ci-changed-scope.test.ts",
     ],
   ],
+  ["scripts/podman/openclaw.container.in", ["test/scripts/test-install-sh-docker.test.ts"]],
   ["scripts/ios-run.sh", ["test/scripts/ios-run.test.ts"]],
   ["scripts/create-dmg.sh", ["test/scripts/create-dmg.test.ts"]],
   ["scripts/kova-ci-summary.mjs", ["test/scripts/kova-ci-summary.test.ts"]],
