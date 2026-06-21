@@ -1318,6 +1318,8 @@ describe("scripts/test-projects changed-target routing", () => {
   it("keeps package, release, and install tooling edits on owner tests", () => {
     const expectedTargets = new Map([
       ["scripts/generate-npm-shrinkwrap.mjs", ["test/scripts/generate-npm-shrinkwrap.test.ts"]],
+      ["scripts/npm-runner.d.mts", ["test/scripts/npm-runner.test.ts"]],
+      ["scripts/pnpm-runner.d.mts", ["test/scripts/pnpm-runner.test.ts"]],
       [
         "scripts/install.sh",
         [
@@ -1807,6 +1809,10 @@ describe("scripts/test-projects changed-target routing", () => {
       ],
       [
         "scripts/lib/npm-pack-budget.mjs",
+        ["test/release-check.test.ts", "test/scripts/test-install-sh-docker.test.ts"],
+      ],
+      [
+        "scripts/lib/npm-pack-budget.d.mts",
         ["test/release-check.test.ts", "test/scripts/test-install-sh-docker.test.ts"],
       ],
       [
