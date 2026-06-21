@@ -4183,7 +4183,7 @@ export async function runEmbeddedAttempt(
             promptToolResultMaxChars * PROMPT_TOOL_RESULT_AGGREGATE_CAP_MULTIPLIER,
             toolResultPromptProjectionState,
           );
-          if (promptToolResultTruncation.truncatedCount > 0) {
+          if (promptToolResultTruncation.messages !== activeSession.messages) {
             promptHistoryMessages = promptToolResultTruncation.messages;
             log.info(
               `[tool-result-truncation] Truncated ${promptToolResultTruncation.truncatedCount} ` +
@@ -4725,7 +4725,7 @@ export async function runEmbeddedAttempt(
                     promptToolResultMaxChars * PROMPT_TOOL_RESULT_AGGREGATE_CAP_MULTIPLIER,
                     toolResultPromptProjectionState,
                   );
-                  return providerPromptHistoryTruncation.truncatedCount > 0
+                  return providerPromptHistoryTruncation.messages !== messages
                     ? providerPromptHistoryTruncation.messages
                     : messages;
                 },

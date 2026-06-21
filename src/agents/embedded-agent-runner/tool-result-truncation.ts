@@ -366,8 +366,12 @@ export function truncateOversizedToolResultsInMessages(
     minKeepChars: RECOVERY_MIN_KEEP_CHARS,
   });
   if (plan.replacements.length === 0) {
+    const projectedMessages = branch.map((entry) => entry.message as AgentMessage);
+    const hasProjectedChanges = projectedMessages.some(
+      (message, index) => message !== messages[index],
+    );
     return {
-      messages: branch.map((entry) => entry.message as AgentMessage),
+      messages: hasProjectedChanges ? projectedMessages : messages,
       truncatedCount: 0,
     };
   }
