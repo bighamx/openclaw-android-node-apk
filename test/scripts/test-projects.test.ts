@@ -308,6 +308,10 @@ describe("scripts/test-projects changed-target routing", () => {
       mode: "targets",
       targets: ["test/vitest/vitest.tooling.config.ts"],
     });
+    expect(resolveChangedTestTargetPlan(["scripts/github/resolve-openclaw-ref.sh"])).toEqual({
+      mode: "targets",
+      targets: ["test/scripts/resolve-openclaw-ref.test.ts"],
+    });
   });
 
   it("routes nested e2e library helpers through owner tests", () => {
@@ -1824,6 +1828,14 @@ describe("scripts/test-projects changed-target routing", () => {
         ["test/scripts/docker-build-helper.test.ts", "test/scripts/test-install-sh-docker.test.ts"],
       ],
       [
+        "scripts/docker/install-sh-common/cli-verify.sh",
+        ["test/scripts/test-install-sh-docker.test.ts"],
+      ],
+      [
+        "scripts/docker/install-sh-common/version-parse.sh",
+        ["test/scripts/test-install-sh-docker.test.ts"],
+      ],
+      [
         "scripts/docker/install-sh-nonroot/Dockerfile",
         [
           "src/docker-build-cache.test.ts",
@@ -1927,6 +1939,14 @@ describe("scripts/test-projects changed-target routing", () => {
         "scripts/lib/workspace-bootstrap-smoke.mjs",
         ["test/release-check.test.ts", "test/openclaw-npm-release-check.test.ts"],
       ],
+      [
+        "scripts/openclaw-release-clawhub-runtime-state.ts",
+        ["test/scripts/openclaw-release-clawhub-runtime-state.test.ts"],
+      ],
+      [
+        "scripts/openclaw-release-clawhub-plan.ts",
+        ["test/scripts/release-wrapper-scripts.test.ts"],
+      ],
       ["scripts/lib/openclaw-release-clawhub-plan.ts", ["test/plugin-clawhub-release.test.ts"]],
       [
         "scripts/lib/plugin-clawhub-release.ts",
@@ -1935,6 +1955,39 @@ describe("scripts/test-projects changed-target routing", () => {
       [
         "scripts/lib/plugin-npm-release.ts",
         ["test/plugin-npm-release.test.ts", "test/plugin-clawhub-release.test.ts"],
+      ],
+      [
+        "scripts/plugin-clawhub-release-check.ts",
+        ["test/scripts/release-wrapper-scripts.test.ts"],
+      ],
+      [
+        "scripts/plugin-clawhub-release-plan.ts",
+        ["test/scripts/release-wrapper-scripts.test.ts"],
+      ],
+      [
+        "scripts/plugin-npm-release-check.ts",
+        ["test/scripts/release-wrapper-scripts.test.ts"],
+      ],
+      [
+        "scripts/plugin-npm-release-plan.ts",
+        ["test/scripts/release-wrapper-scripts.test.ts"],
+      ],
+      [
+        "scripts/plugin-release-pretag-pack-check.ts",
+        ["test/scripts/plugin-release-pretag-pack-check.test.ts"],
+      ],
+      [
+        "scripts/plan-release-workflow-matrix.mjs",
+        ["test/scripts/release-workflow-matrix-plan.test.ts"],
+      ],
+      ["scripts/release-verify-beta.ts", ["test/scripts/release-wrapper-scripts.test.ts"]],
+      [
+        "scripts/validate-release-publish-approval.mjs",
+        ["test/scripts/validate-release-publish-approval.test.ts"],
+      ],
+      [
+        "scripts/lib/plugin-package-dependencies.mjs",
+        ["test/scripts/plugin-package-dependencies.test.ts"],
       ],
       [
         "scripts/lib/plugin-npm-runtime-assets.mjs",
@@ -2299,6 +2352,8 @@ describe("scripts/test-projects changed-target routing", () => {
         "scripts/e2e/parallels/windows-smoke.ts",
         "scripts/e2e/parallels-windows-smoke.sh",
         "scripts/e2e/lib/parallels-package/build-info-commit.mjs",
+        "scripts/e2e/lib/parallels-macos-common.sh",
+        "scripts/e2e/lib/parallels-package-common.sh",
       ]),
     ).toEqual([
       {
@@ -2313,6 +2368,25 @@ describe("scripts/test-projects changed-target routing", () => {
         watchMode: false,
       },
     ]);
+  });
+
+  it("routes mac restart helpers through restart-mac owner tests", () => {
+    expect(resolveChangedTestTargetPlan(["scripts/lib/restart-mac-gateway.sh"])).toEqual({
+      mode: "targets",
+      targets: ["test/scripts/restart-mac.test.ts"],
+    });
+  });
+
+  it("routes Parallels common shell helpers through lib helper owner tests", () => {
+    for (const changedPath of [
+      "scripts/e2e/lib/parallels-macos-common.sh",
+      "scripts/e2e/lib/parallels-package-common.sh",
+    ]) {
+      expect(resolveChangedTestTargetPlan([changedPath]), changedPath).toEqual({
+        mode: "targets",
+        targets: ["test/scripts/parallels-lib-helpers.test.ts"],
+      });
+    }
   });
 
   it("routes MCP Docker E2E script targets instead of skipping changed tests", () => {

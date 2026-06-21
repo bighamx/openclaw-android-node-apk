@@ -953,8 +953,50 @@ const TOOLING_SOURCE_TEST_TARGETS = new Map([
     ],
   ],
   [
+    "scripts/github/resolve-openclaw-ref.sh",
+    ["test/scripts/resolve-openclaw-ref.test.ts"],
+  ],
+  [
     "scripts/github/run-openclaw-cross-os-release-checks.sh",
     ["test/scripts/openclaw-cross-os-release-workflow.test.ts"],
+  ],
+  ["scripts/lib/restart-mac-gateway.sh", ["test/scripts/restart-mac.test.ts"]],
+  [
+    "scripts/openclaw-release-clawhub-runtime-state.ts",
+    ["test/scripts/openclaw-release-clawhub-runtime-state.test.ts"],
+  ],
+  [
+    "scripts/openclaw-release-clawhub-plan.ts",
+    ["test/scripts/release-wrapper-scripts.test.ts"],
+  ],
+  [
+    "scripts/plan-release-workflow-matrix.mjs",
+    ["test/scripts/release-workflow-matrix-plan.test.ts"],
+  ],
+  [
+    "scripts/plugin-clawhub-release-check.ts",
+    ["test/scripts/release-wrapper-scripts.test.ts"],
+  ],
+  [
+    "scripts/plugin-clawhub-release-plan.ts",
+    ["test/scripts/release-wrapper-scripts.test.ts"],
+  ],
+  [
+    "scripts/plugin-npm-release-check.ts",
+    ["test/scripts/release-wrapper-scripts.test.ts"],
+  ],
+  [
+    "scripts/plugin-npm-release-plan.ts",
+    ["test/scripts/release-wrapper-scripts.test.ts"],
+  ],
+  [
+    "scripts/plugin-release-pretag-pack-check.ts",
+    ["test/scripts/plugin-release-pretag-pack-check.test.ts"],
+  ],
+  ["scripts/release-verify-beta.ts", ["test/scripts/release-wrapper-scripts.test.ts"]],
+  [
+    "scripts/validate-release-publish-approval.mjs",
+    ["test/scripts/validate-release-publish-approval.test.ts"],
   ],
   [
     "scripts/github/security-sensitive-guard.mjs",
@@ -1036,6 +1078,14 @@ const TOOLING_SOURCE_TEST_TARGETS = new Map([
   [
     "scripts/docker/install-sh-e2e/run.sh",
     ["test/scripts/docker-build-helper.test.ts", "test/scripts/test-install-sh-docker.test.ts"],
+  ],
+  [
+    "scripts/docker/install-sh-common/cli-verify.sh",
+    ["test/scripts/test-install-sh-docker.test.ts"],
+  ],
+  [
+    "scripts/docker/install-sh-common/version-parse.sh",
+    ["test/scripts/test-install-sh-docker.test.ts"],
   ],
   ["scripts/docker/install-sh-nonroot/Dockerfile", INSTALL_DOCKERFILE_TEST_TARGETS],
   ["scripts/docker/install-sh-nonroot/run.sh", ["test/scripts/test-install-sh-docker.test.ts"]],
@@ -1191,6 +1241,10 @@ const TOOLING_SOURCE_TEST_TARGETS = new Map([
       "test/scripts/plugin-npm-package-manifest-args.test.ts",
       "test/plugin-npm-package-manifest.test.ts",
     ],
+  ],
+  [
+    "scripts/lib/plugin-package-dependencies.mjs",
+    ["test/scripts/plugin-package-dependencies.test.ts"],
   ],
   [
     "scripts/lib/plugin-npm-runtime-assets.mjs",
@@ -3109,11 +3163,15 @@ function resolveParallelsToolingTestTargets(changedPath) {
   if (
     !/^scripts\/e2e\/parallels\/[^/]+\.ts$/u.test(changedPath) &&
     !/^scripts\/e2e\/parallels-(?:linux|macos|npm-update|windows)-smoke\.sh$/u.test(changedPath) &&
-    !/^scripts\/e2e\/lib\/parallels-package\/build-info-commit\.mjs$/u.test(changedPath)
+    !/^scripts\/e2e\/lib\/parallels-package\/build-info-commit\.mjs$/u.test(changedPath) &&
+    !/^scripts\/e2e\/lib\/parallels-(?:macos|package)-common\.sh$/u.test(changedPath)
   ) {
     return null;
   }
-  if (/^scripts\/e2e\/lib\/parallels-package\/build-info-commit\.mjs$/u.test(changedPath)) {
+  if (
+    /^scripts\/e2e\/lib\/parallels-package\/build-info-commit\.mjs$/u.test(changedPath) ||
+    /^scripts\/e2e\/lib\/parallels-(?:macos|package)-common\.sh$/u.test(changedPath)
+  ) {
     return ["test/scripts/parallels-lib-helpers.test.ts"];
   }
   const targets = ["test/scripts/parallels-smoke-model.test.ts"];
