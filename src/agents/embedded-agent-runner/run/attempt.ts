@@ -131,7 +131,6 @@ import {
   FULL_BOOTSTRAP_COMPLETED_CUSTOM_TYPE,
   buildBootstrapContextForFiles,
   hasCompletedBootstrapTurn,
-  isWorkspaceBootstrapPending,
   makeBootstrapWarn,
   resolveBootstrapFilesForRun,
   resolveContextInjectionMode,
@@ -253,7 +252,11 @@ import {
 } from "../../tools/cron-tool.js";
 import { shouldAllowProviderOwnedThinkingReplay } from "../../transcript-policy.js";
 import { normalizeUsage, type NormalizedUsage } from "../../usage.js";
-import { DEFAULT_BOOTSTRAP_FILENAME, type WorkspaceBootstrapFile } from "../../workspace.js";
+import {
+  DEFAULT_BOOTSTRAP_FILENAME,
+  isWorkspaceBootstrapPending,
+  type WorkspaceBootstrapFile,
+} from "../../workspace.js";
 import { isRunnerAbortError } from "../abort.js";
 import { isCacheTtlEligibleProvider, readLastCacheTtlTimestamp } from "../cache-ttl.js";
 import { resolveCompactionTimeoutMs } from "../compaction-safety-timeout.js";
