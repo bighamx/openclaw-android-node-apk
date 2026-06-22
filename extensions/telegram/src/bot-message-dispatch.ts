@@ -471,10 +471,14 @@ function renderTelegramProgressDraftPreview(
   richMessages: boolean,
 ): TelegramDraftPreview {
   const trimmed = text.trimEnd();
-  const [heading] = trimmed.split(/\r?\n/u, 1);
   const renderedLines = lines.map(renderTelegramProgressLine).filter(Boolean);
-  const htmlParts = heading?.trim()
-    ? [`<b>${escapeTelegramProgressHtml(heading.trim())}</b>`, ...renderedLines]
+  const textLines = trimmed
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const heading = textLines.length > renderedLines.length ? textLines[0] : undefined;
+  const htmlParts = heading
+    ? [`<b>${escapeTelegramProgressHtml(heading)}</b>`, ...renderedLines]
     : renderedLines;
   const html = htmlParts.join("<br>");
   if (!richMessages) {

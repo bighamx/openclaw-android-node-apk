@@ -813,6 +813,184 @@ describe.concurrent("scripts/crabbox-wrapper", () => {
     expect(result.stderr).toContain("provider=aws");
   });
 
+  it("uses the native Windows daemon job for Windows hydrate actions", () => {
+    const result = runWrapper(azureProviderHelp, [
+      "actions",
+      "hydrate",
+      "--provider",
+      "aws",
+      "--target",
+      "windows",
+      "--id",
+      "cbx_existing",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(parseFakeCrabboxOutput(result).args).toEqual([
+      "actions",
+      "hydrate",
+      "--provider",
+      "aws",
+      "--target",
+      "windows",
+      "--id",
+      "cbx_existing",
+      "--job",
+      "hydrate-windows-daemon",
+    ]);
+  });
+
+  it("repairs generic hydrate jobs for native Windows hydrate actions", () => {
+    const result = runWrapper(azureProviderHelp, [
+      "actions",
+      "hydrate",
+      "--provider",
+      "aws",
+      "--target",
+      "windows",
+      "--job",
+      "hydrate",
+      "--id",
+      "cbx_existing",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(parseFakeCrabboxOutput(result).args).toEqual([
+      "actions",
+      "hydrate",
+      "--provider",
+      "aws",
+      "--target",
+      "windows",
+      "--job",
+      "hydrate-windows-daemon",
+      "--id",
+      "cbx_existing",
+    ]);
+  });
+
+  it("repairs generic hydrate job assignments for native Windows hydrate actions", () => {
+    const result = runWrapper(azureProviderHelp, [
+      "actions",
+      "hydrate",
+      "--provider",
+      "aws",
+      "--target",
+      "windows",
+      "--job=hydrate",
+      "--id",
+      "cbx_existing",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(parseFakeCrabboxOutput(result).args).toEqual([
+      "actions",
+      "hydrate",
+      "--provider",
+      "aws",
+      "--target",
+      "windows",
+      "--job=hydrate-windows-daemon",
+      "--id",
+      "cbx_existing",
+    ]);
+  });
+
+  it("keeps post-delimiter hydrate payloads untouched for native Windows hydrate actions", () => {
+    const result = runWrapper(azureProviderHelp, [
+      "actions",
+      "hydrate",
+      "--provider",
+      "aws",
+      "--target",
+      "windows",
+      "--id",
+      "cbx_existing",
+      "--",
+      "--job",
+      "hydrate",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(parseFakeCrabboxOutput(result).args).toEqual([
+      "actions",
+      "hydrate",
+      "--provider",
+      "aws",
+      "--target",
+      "windows",
+      "--id",
+      "cbx_existing",
+      "--job",
+      "hydrate-windows-daemon",
+      "--",
+      "--job",
+      "hydrate",
+    ]);
+  });
+
+  it("keeps explicit non-native hydrate jobs for Windows hydrate actions", () => {
+    const result = runWrapper(azureProviderHelp, [
+      "actions",
+      "hydrate",
+      "--provider",
+      "aws",
+      "--target",
+      "windows",
+      "--job",
+      "hydrate-github",
+      "--id",
+      "cbx_existing",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(parseFakeCrabboxOutput(result).args).toEqual([
+      "actions",
+      "hydrate",
+      "--provider",
+      "aws",
+      "--target",
+      "windows",
+      "--job",
+      "hydrate-github",
+      "--id",
+      "cbx_existing",
+    ]);
+  });
+
+  it("keeps WSL2 hydrate actions on the requested job", () => {
+    const result = runWrapper(azureProviderHelp, [
+      "actions",
+      "hydrate",
+      "--provider",
+      "aws",
+      "--target",
+      "windows",
+      "--windows-mode",
+      "wsl2",
+      "--job",
+      "hydrate",
+      "--id",
+      "cbx_existing",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(parseFakeCrabboxOutput(result).args).toEqual([
+      "actions",
+      "hydrate",
+      "--provider",
+      "aws",
+      "--target",
+      "windows",
+      "--windows-mode",
+      "wsl2",
+      "--job",
+      "hydrate",
+      "--id",
+      "cbx_existing",
+    ]);
+  });
+
   it("prefers Azure for unqualified Windows warmups", () => {
     const result = runWrapper(azureProviderHelp, ["warmup", "--target", "windows"]);
 

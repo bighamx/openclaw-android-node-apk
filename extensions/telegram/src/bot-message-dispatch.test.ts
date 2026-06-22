@@ -381,10 +381,10 @@ describe("dispatchTelegramMessage draft streaming", () => {
     return expectRecordFields(mockCallArg(createTelegramDraftStream), expected);
   }
 
-  function telegramProgressPreview(text: string, html: string) {
+  function telegramProgressPreview(_plainText: string, html: string) {
     return {
-      text,
-      richMessage: { html: html.replaceAll("\n", "<br>"), skip_entity_detection: true },
+      text: html.replaceAll("\n", "<br>"),
+      parseMode: "HTML" as const,
     };
   }
 
@@ -1892,7 +1892,15 @@ describe("dispatchTelegramMessage draft streaming", () => {
       content: fullAnswer,
       messageId: 2001,
     });
-    expect(appendSessionTranscriptMessage).not.toHaveBeenCalled();
+    const transcriptCall = expectRecordFields(mockCallArg(appendSessionTranscriptMessage), {
+      transcriptPath: "/tmp/session.jsonl",
+    });
+    expectRecordFields(transcriptCall.message, {
+      role: "assistant",
+      provider: "openclaw",
+      model: "delivery-mirror",
+      content: [{ type: "text", text: fullAnswer }],
+    });
   });
 
   it("emits the redacted appended message in transcript updates", async () => {
@@ -2510,7 +2518,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
     expect(answerDraftStream.update).toHaveBeenNthCalledWith(1, "Site A shows X.");
     expect(answerDraftStream.update).toHaveBeenNthCalledWith(2, "Site A shows X.");
     expect(answerDraftStream.updatePreview).toHaveBeenCalledWith(
-      expect.objectContaining({ text: expect.stringMatching(/🛠️ Exec$/) }),
+      expect.objectContaining({ text: expect.stringMatching(/🛠️ Exec<\/b>$/) }),
     );
     expect(answerDraftStream.update).toHaveBeenNthCalledWith(3, "Final answer");
     expect(answerDraftStream.clear).toHaveBeenCalledTimes(1);
@@ -2537,7 +2545,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
 
     expect(answerDraftStream.update).toHaveBeenNthCalledWith(1, "Site A shows X.");
     expect(answerDraftStream.updatePreview).toHaveBeenCalledWith(
-      expect.objectContaining({ text: expect.stringMatching(/🛠️ Exec$/) }),
+      expect.objectContaining({ text: expect.stringMatching(/🛠️ Exec<\/b>$/) }),
     );
     expect(answerDraftStream.update).toHaveBeenNthCalledWith(2, "Site B shows Y.");
     expect(answerDraftStream.update).toHaveBeenNthCalledWith(3, "Final answer");
@@ -2579,7 +2587,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
     await dispatchWithContext({ context: createContext() });
 
     expect(answerDraftStream.updatePreview).toHaveBeenCalledWith(
-      expect.objectContaining({ text: expect.stringMatching(/🛠️ Exec$/) }),
+      expect.objectContaining({ text: expect.stringMatching(/🛠️ Exec<\/b>$/) }),
     );
     expect(answerDraftStream.update).toHaveBeenNthCalledWith(1, "Branch is up to date");
     expect(answerDraftStream.forceNewMessage).toHaveBeenCalledTimes(1);
@@ -2605,7 +2613,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
     await dispatchWithContext({ context: createContext() });
 
     expect(answerDraftStream.updatePreview).toHaveBeenCalledWith(
-      expect.objectContaining({ text: expect.stringMatching(/🛠️ Exec$/) }),
+      expect.objectContaining({ text: expect.stringMatching(/🛠️ Exec<\/b>$/) }),
     );
     expect(answerDraftStream.update).toHaveBeenNthCalledWith(1, "Branch is up to date");
     expect(answerDraftStream.forceNewMessage).toHaveBeenCalledTimes(1);
@@ -2762,9 +2770,10 @@ describe("dispatchTelegramMessage draft streaming", () => {
       expect.objectContaining({ text: expect.stringContaining("stdout line one") }),
     );
     expect(answerDraftStream.updatePreview).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        text: "Shelling\n\n🛠️ Exec\n🔎 Web Search: docs lookup",
-      }),
+      telegramProgressPreview(
+        "Shelling\n\n🛠️ Exec\n🔎 Web Search: docs lookup",
+        "<b>Shelling</b>\n<b>🛠️ Exec</b>\n<b>🔎 Web Search</b> <code>docs lookup</code>",
+      ),
     );
     expect(deliverReplies).not.toHaveBeenCalled();
   });
@@ -3318,7 +3327,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
       const updateBeforeStatusReaction = draftStream.updatePreview.mock.calls.at(-1)?.[0]?.text;
       releaseSetTool?.();
       await pendingToolStart;
-      expect(updateBeforeStatusReaction).toBe("Shelling\n\n🛠️ Exec");
+      expect(updateBeforeStatusReaction).toBe("<b>Shelling</b><br><b>🛠️ Exec</b>");
       return { queuedFinal: false };
     });
 
