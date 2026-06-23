@@ -157,6 +157,17 @@ describe("telegram user Crabbox proof log polling", () => {
     expect(parseArgs(["--text", "-ping"]).text).toBe("-ping");
   });
 
+  it("rejects duplicate single-value proof controls while keeping repeated expectations", () => {
+    expect(() =>
+      parseArgs(["--output-dir", ".artifacts/one", "--output-dir", ".artifacts/two"]),
+    ).toThrow("--output-dir was provided more than once");
+
+    expect(parseArgs(["--expect", "OpenClaw", "--expect", "ready"]).expect).toEqual([
+      "OpenClaw",
+      "ready",
+    ]);
+  });
+
   it("uses unique default output dirs", () => {
     const firstOutputDir = parseArgs([]).outputDir;
     const secondOutputDir = parseArgs([]).outputDir;
