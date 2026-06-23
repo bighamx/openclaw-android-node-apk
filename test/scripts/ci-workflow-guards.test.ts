@@ -658,9 +658,9 @@ describe("ci workflow guards", () => {
     expect(generateJob.if).toBe("${{ inputs.qa_evidence_run_id == '' }}");
     expect(generateJob.uses).toBe("./.github/workflows/qa-profile-evidence.yml");
     expect(generateJob.with).toMatchObject({
-      ref: "${{ needs.validate_selected_ref.outputs.selected_revision }}",
+      ref: "${{ inputs.ref }}",
       expected_sha: "${{ needs.validate_selected_ref.outputs.selected_revision }}",
-      qa_profile: "all",
+      qa_profile: "release",
     });
     expect(generateJob.with).not.toHaveProperty("fail_on_qa_failure");
 

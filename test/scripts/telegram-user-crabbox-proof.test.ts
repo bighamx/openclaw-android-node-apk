@@ -291,6 +291,21 @@ describe("telegram user Crabbox proof log polling", () => {
     expect(fs.existsSync(path.join(stagedDir, "stale.txt"))).toBe(false);
   });
 
+  it("requires finish to write the proof report before full artifact publishing", () => {
+    const outputDir = makeTempDir();
+    fs.writeFileSync(
+      path.join(outputDir, "session.json"),
+      '{"sshKey":"/private/tmp/openclaw/key"}',
+    );
+    fs.writeFileSync(path.join(outputDir, "status.json"), '{"ok":true}');
+    fs.writeFileSync(path.join(outputDir, "telegram-desktop.log"), "log");
+
+    expect(() => stageFullSessionArtifacts(outputDir)).toThrow(
+      "Missing proof report. Run finish first: telegram-user-crabbox-proof.md",
+    );
+    expect(fs.existsSync(path.join(outputDir, "publish-full-artifacts"))).toBe(false);
+  });
+
   posixIt("does not expand generated remote probe arguments in the shell", () => {
     const root = makeTempDir();
     const fakePython = path.join(root, "python3");

@@ -1997,6 +1997,7 @@ const FULL_ARTIFACT_JSON_NAMES = new Set([
   "telegram-user-crabbox-session-summary.json",
 ]);
 const FULL_ARTIFACT_FILE_EXTENSIONS = new Set([".gif", ".log", ".md", ".mp4", ".png"]);
+const FULL_ARTIFACT_PROOF_REPORT = "telegram-user-crabbox-proof.md";
 const TIMESTAMPED_PROBE_ARTIFACT_JSON = /^probe-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.json$/u;
 
 function isFullArtifactJsonName(name: string) {
@@ -2004,6 +2005,10 @@ function isFullArtifactJsonName(name: string) {
 }
 
 export function stageFullSessionArtifacts(outputDir: string) {
+  if (!fs.existsSync(path.join(outputDir, FULL_ARTIFACT_PROOF_REPORT))) {
+    throw new Error(`Missing proof report. Run finish first: ${FULL_ARTIFACT_PROOF_REPORT}`);
+  }
+
   const publishDir = path.join(outputDir, "publish-full-artifacts");
   fs.rmSync(publishDir, { force: true, recursive: true });
   fs.mkdirSync(publishDir, { recursive: true });
