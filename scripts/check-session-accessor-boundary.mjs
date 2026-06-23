@@ -97,6 +97,7 @@ export const migratedSessionAccessorFiles = new Set([
   "src/cron/service/timer.ts",
   "src/gateway/session-compaction-checkpoints.ts",
   "src/gateway/session-history-state.ts",
+  "src/gateway/sessions-history-http.ts",
   "src/gateway/session-utils.ts",
   "src/gateway/managed-image-attachments.ts",
   "src/gateway/server-methods/artifacts.ts",
@@ -109,6 +110,7 @@ export const migratedSessionAccessorFiles = new Set([
   "src/infra/outbound/message-action-tts.ts",
   "src/agents/tools/embedded-gateway-stub.ts",
   "src/agents/tools/sessions-list-tool.ts",
+  "src/plugins/host-hook-state.ts",
   "src/status/status-message.ts",
   "src/tui/embedded-backend.ts",
 ]);
@@ -147,6 +149,7 @@ export const migratedSessionAccessorWriteFiles = new Set([
   "src/commands/tasks.ts",
   "src/config/sessions/cleanup-service.ts",
   "src/plugins/host-hook-cleanup.ts",
+  "src/plugins/host-hook-state.ts",
   "src/tui/embedded-backend.ts",
 ]);
 
@@ -535,6 +538,7 @@ export async function main() {
     "src/cron",
     "src/gateway",
     "src/infra",
+    "src/plugins",
     "src/tui",
   ]);
   const writeSourceRoots = resolveSourceRoots(repoRoot, [
