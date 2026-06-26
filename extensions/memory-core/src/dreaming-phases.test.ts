@@ -11,7 +11,7 @@ import {
   resolveMemoryRemDreamingConfig,
 } from "openclaw/plugin-sdk/memory-core-host-status";
 import { saveSessionStore } from "openclaw/plugin-sdk/session-store-runtime";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   testing,
   filterRecallEntriesWithinLookback,
@@ -30,6 +30,8 @@ import { createMemoryCoreTestHarness } from "./test-helpers.js";
 const { createTempWorkspace } = createMemoryCoreTestHarness();
 const DREAMING_TEST_BASE_TIME = new Date("2026-04-05T10:00:00.000Z");
 const DREAMING_TEST_DAY = "2026-04-05";
+const originalDreamingTestFast = process.env.OPENCLAW_TEST_FAST;
+const originalDreamingStateDir = process.env.OPENCLAW_STATE_DIR;
 const EMPTY_SESSION_CONTENT_HASH =
   "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070";
 const LIGHT_DREAMING_TEST_CONFIG: OpenClawConfig = {
@@ -58,6 +60,28 @@ const LIGHT_DREAMING_TEST_CONFIG: OpenClawConfig = {
     },
   },
 };
+
+function setDreamingTestEnv(stateDir: string): void {
+  Reflect.set(process.env, "OPENCLAW_TEST_FAST", "1");
+  Reflect.set(process.env, "OPENCLAW_STATE_DIR", stateDir);
+}
+
+function restoreDreamingTestEnv(): void {
+  if (originalDreamingTestFast === undefined) {
+    Reflect.deleteProperty(process.env, "OPENCLAW_TEST_FAST");
+  } else {
+    Reflect.set(process.env, "OPENCLAW_TEST_FAST", originalDreamingTestFast);
+  }
+  if (originalDreamingStateDir === undefined) {
+    Reflect.deleteProperty(process.env, "OPENCLAW_STATE_DIR");
+  } else {
+    Reflect.set(process.env, "OPENCLAW_STATE_DIR", originalDreamingStateDir);
+  }
+}
+
+afterEach(() => {
+  restoreDreamingTestEnv();
+});
 
 function requireCandidateByKey<T extends { key: string }>(candidates: T[], key: string): T {
   const candidate = candidates.find((entry) => entry.key === key);
@@ -947,8 +971,7 @@ describe("memory-core dreaming phases", () => {
 
   it("checkpoints session transcript ingestion and skips unchanged transcripts", async () => {
     const workspaceDir = await createDreamingWorkspace();
-    vi.stubEnv("OPENCLAW_TEST_FAST", "1");
-    vi.stubEnv("OPENCLAW_STATE_DIR", path.join(workspaceDir, ".state"));
+    setDreamingTestEnv(path.join(workspaceDir, ".state"));
     const sessionsDir = resolveSessionTranscriptsDirForAgent("main");
     await fs.mkdir(sessionsDir, { recursive: true });
     const transcriptPath = path.join(sessionsDir, "dreaming-main.jsonl");
@@ -1022,7 +1045,7 @@ describe("memory-core dreaming phases", () => {
         ([target]) => typeof target === "string" && target === transcriptPath,
       ).length;
       readSpy.mockRestore();
-      vi.unstubAllEnvs();
+      restoreDreamingTestEnv();
     }
 
     expect(transcriptReadCount).toBeLessThanOrEqual(1);
@@ -1051,8 +1074,7 @@ describe("memory-core dreaming phases", () => {
   it("keeps primary session transcripts out of configured subagent workspaces", async () => {
     const workspaceDir = await createDreamingWorkspace();
     const subagentWorkspaceDir = await createDreamingWorkspace();
-    vi.stubEnv("OPENCLAW_TEST_FAST", "1");
-    vi.stubEnv("OPENCLAW_STATE_DIR", path.join(workspaceDir, ".state"));
+    setDreamingTestEnv(path.join(workspaceDir, ".state"));
 
     const mainSessionsDir = resolveSessionTranscriptsDirForAgent("main");
     const subagentSessionsDir = resolveSessionTranscriptsDirForAgent("agi-ceo");
@@ -1122,7 +1144,7 @@ describe("memory-core dreaming phases", () => {
         await triggerLightDreaming(beforeAgentReply, workspaceDir, 5);
       });
     } finally {
-      vi.unstubAllEnvs();
+      restoreDreamingTestEnv();
     }
 
     const mainCorpus = await fs.readFile(
@@ -1141,8 +1163,7 @@ describe("memory-core dreaming phases", () => {
 
   it("redacts sensitive session content before writing session corpus", async () => {
     const workspaceDir = await createDreamingWorkspace();
-    vi.stubEnv("OPENCLAW_TEST_FAST", "1");
-    vi.stubEnv("OPENCLAW_STATE_DIR", path.join(workspaceDir, ".state"));
+    setDreamingTestEnv(path.join(workspaceDir, ".state"));
     const sessionsDir = resolveSessionTranscriptsDirForAgent("main");
     await fs.mkdir(sessionsDir, { recursive: true });
     const transcriptPath = path.join(sessionsDir, "dreaming-main.jsonl");
@@ -1198,7 +1219,7 @@ describe("memory-core dreaming phases", () => {
         await triggerLightDreaming(beforeAgentReply, workspaceDir, 5);
       });
     } finally {
-      vi.unstubAllEnvs();
+      restoreDreamingTestEnv();
     }
 
     const corpusPath = path.join(
@@ -1215,8 +1236,7 @@ describe("memory-core dreaming phases", () => {
 
   it("skips dreaming-generated narrative transcripts during session ingestion", async () => {
     const workspaceDir = await createDreamingWorkspace();
-    vi.stubEnv("OPENCLAW_TEST_FAST", "1");
-    vi.stubEnv("OPENCLAW_STATE_DIR", path.join(workspaceDir, ".state"));
+    setDreamingTestEnv(path.join(workspaceDir, ".state"));
     const sessionsDir = resolveSessionTranscriptsDirForAgent("main");
     await fs.mkdir(sessionsDir, { recursive: true });
     const transcriptPath = path.join(sessionsDir, "dreaming-narrative.jsonl");
@@ -1291,7 +1311,7 @@ describe("memory-core dreaming phases", () => {
         { trigger: "heartbeat", workspaceDir },
       );
     } finally {
-      vi.unstubAllEnvs();
+      restoreDreamingTestEnv();
     }
 
     await expectPathMissing(
@@ -1308,8 +1328,7 @@ describe("memory-core dreaming phases", () => {
 
   it("skips dreaming transcripts when the session store identifies them before bootstrap lands", async () => {
     const workspaceDir = await createDreamingWorkspace();
-    vi.stubEnv("OPENCLAW_TEST_FAST", "1");
-    vi.stubEnv("OPENCLAW_STATE_DIR", path.join(workspaceDir, ".state"));
+    setDreamingTestEnv(path.join(workspaceDir, ".state"));
     const sessionsDir = resolveSessionTranscriptsDirForAgent("main");
     await fs.mkdir(sessionsDir, { recursive: true });
     const transcriptPath = path.join(sessionsDir, "dreaming-narrative.jsonl");
@@ -1387,7 +1406,7 @@ describe("memory-core dreaming phases", () => {
         { trigger: "heartbeat", workspaceDir },
       );
     } finally {
-      vi.unstubAllEnvs();
+      restoreDreamingTestEnv();
     }
 
     await expectPathMissing(
