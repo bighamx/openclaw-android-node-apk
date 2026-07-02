@@ -1,8 +1,8 @@
 ## OpenClaw Android App
 
-Status: **extremely alpha**. The app is actively being rebuilt from the ground up.
+OpenClaw Android is the officially released Google Play app. It connects to an OpenClaw Gateway as a companion node for chat, voice, approvals, screen, and device-aware automation.
 
-### Rebuild Checklist
+### Current App Surface
 
 - [x] New 4-step onboarding flow
 - [x] Connect tab with `Setup Code` + `Manual` modes
@@ -18,7 +18,6 @@ Status: **extremely alpha**. The app is actively being rebuilt from the ground u
 - [x] Authenticated background presence beacons
 - [x] Voice tab full functionality
 - [x] Screen tab full functionality
-- [ ] Full end-to-end QA and release hardening
 
 ## Open in Android Studio
 
@@ -86,6 +85,15 @@ the screenshots, then shuts down the emulator it started.
 - Third-party build: `openclaw-<version>-third-party-release.apk`
 
 `pnpm android:bundle:release` is an alias for the same Fastlane archive lane.
+
+`pnpm android:release:archive` is for local archive validation only. It is not a
+fallback upload path after `pnpm android:release:upload` fails.
+
+Agent-driven Google Play uploads must use `pnpm android:release:upload` as the
+only release path. If that command fails, stop and fix the failing screenshot,
+metadata, signing, validation, archive, or upload step before trying again. Do
+not upload archived artifacts through direct Fastlane lanes, Gradle artifacts,
+Google Play API commands, or Play Console mutation commands.
 
 See `apps/android/VERSIONING.md` and `apps/android/fastlane/SETUP.md` for the release workflow.
 
@@ -334,5 +342,4 @@ Common failure quick-fixes:
 
 ## Contributions
 
-This Android app is currently being rebuilt.
 Maintainer: @obviyus. For issues/questions/contributions, please open an issue or reach out on Discord.
