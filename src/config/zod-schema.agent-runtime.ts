@@ -13,7 +13,7 @@ import { isBlockedObjectKey } from "../infra/prototype-keys.js";
 import { MANAGED_GITHUB_PROFILE_ID_PATTERN } from "./github-identity-profile-id.js";
 import { LEGACY_WEB_SEARCH_PROVIDER_CONFIG_KEYS } from "./web-search-legacy-provider-keys.js";
 import { AgentEntryBaseSchema } from "./zod-schema.agent-entry-base.js";
-import { AgentModelSchema, AgentToolModelSchema } from "./zod-schema.agent-model.js";
+import { AgentModelSchema } from "./zod-schema.agent-model.js";
 import {
   GroupChatSchema,
   HumanDelaySchema,
@@ -31,8 +31,6 @@ import {
   SandboxPruneSchema,
 } from "./zod-schema.sandbox.js";
 import { sensitive } from "./zod-schema.sensitive.js";
-
-export { AgentModelMapSchema, AgentModelPolicySchema } from "./zod-schema.agent-entry-base.js";
 
 const AgentTtsConfigSchema = TtsConfigSchema.unwrap()
   .extend({ prefsPath: z.string().optional() })
@@ -701,8 +699,6 @@ export const MemorySearchSchema = z
   })
   .strict()
   .optional();
-export { AgentModelSchema, AgentToolModelSchema };
-
 export const AgentEntrySchema = AgentEntryBaseSchema.extend({
   memory: z
     .object({
