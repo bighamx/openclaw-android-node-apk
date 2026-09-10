@@ -46,6 +46,7 @@ type CrabboxProfile = {
   heartbeatIntervalMs: number;
   heartbeatTimeoutMs: number;
   idleTimeout: string;
+  idleTimeoutMs: number;
   provider: string;
   ttl: string;
   target: CrabboxOperatingSystem;
@@ -56,11 +57,12 @@ type CrabboxProfile = {
 
 const MAX_CRABBOX_MACHINE_CLASS_LENGTH = 128;
 const MAX_CRABBOX_MACHINE_OPTIONS = 64;
-export const CRABBOX_ENROLLABLE_TARGETS = ["linux", "windows/wsl2"] as const;
+export const CRABBOX_ENROLLABLE_TARGETS = ["linux", "windows/wsl2", "macos"] as const;
 export type CrabboxOperatingSystem = (typeof CRABBOX_ENROLLABLE_TARGETS)[number];
 export const CRABBOX_OS_LABELS: Record<CrabboxOperatingSystem, string> = {
   linux: "Linux",
   "windows/wsl2": "Windows (WSL2)",
+  macos: "macOS",
 };
 
 export function parseCrabboxOperatingSystem(value: unknown): CrabboxOperatingSystem {
@@ -222,6 +224,7 @@ export function parseCrabboxProfile(profile: WorkerProfile): CrabboxProfile {
       Math.max(1, Math.floor(idleTimeoutMs / 2)),
     ),
     idleTimeout,
+    idleTimeoutMs,
     provider,
     setup,
     setupEnv,
@@ -391,6 +394,7 @@ export function buildCrabboxAllocationArgs(
     "--tailscale=false",
     ...(profile.class ? ["--class", profile.class] : []),
     ...(profile.target === "windows/wsl2" ? ["--target", "windows", "--windows-mode", "wsl2"] : []),
+    ...(profile.target === "macos" ? ["--target", "macos", "--market", "on-demand"] : []),
     "--ttl",
     profile.ttl,
     "--idle-timeout",

@@ -1,4 +1,5 @@
 // Doctor session SQLite tests exercise real temp stores and per-agent SQLite files.
+import { AsyncResource } from "node:async_hooks";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import fsPromises from "node:fs/promises";
@@ -3101,6 +3102,8 @@ describe("runDoctorSessionSqlite", () => {
     );
     const agentDatabase = await import("../state/openclaw-agent-db.js");
     const migrate = agentDatabase.migrateOpenClawAgentDatabaseForMaintenance;
+    // The competitor must not inherit the maintenance authority being revoked.
+    const claimCompetingLease = AsyncResource.bind(claimOpenClawAgentDatabaseLease);
     let competingLeaseId: string | undefined;
     const repair = vi
       .spyOn(agentDatabase, "migrateOpenClawAgentDatabaseForMaintenance")
@@ -3111,7 +3114,7 @@ describe("runDoctorSessionSqlite", () => {
           .db.prepare("DELETE FROM state_leases WHERE scope = ? AND lease_key = ?")
           .run(AGENT_DATABASE_MAINTENANCE_LEASE.scope, AGENT_DATABASE_MAINTENANCE_LEASE.key);
         expect(removed.changes).toBe(1);
-        competingLeaseId = claimOpenClawAgentDatabaseLease({
+        competingLeaseId = claimCompetingLease({
           agentId: "later",
           path: laterPath,
           env: store.env,
@@ -3349,27 +3352,84 @@ describe("runDoctorSessionSqlite", () => {
     ).not.toHaveProperty("sessionFile");
   });
 
-  it("validates missing SQLite rows without creating the agent database", async () => {
-    const store = createLegacyStore();
+  it.each([
+    ["missing row", undefined, 0, false, "sqlite_entry_missing", 0, 0],
+    ["different session", "other", 2, false, "sqlite_entry_mismatch", 0, 0],
+    ["short transcript", "session-1", 1, false, "sqlite_transcript_count_mismatch", 1, 0],
+    ["matching transcript", "session-1", 2, false, undefined, 1, 2],
+    ["longer transcript", "session-1", 3, false, "sqlite_transcript_count_mismatch", 1, 0],
+    ["missing source", "session-1", 2, true, undefined, 1, 2],
+  ] as const)(
+    "validates a %s against SQLite",
+    async (
+      _name,
+      sessionId,
+      eventCount,
+      missingSource,
+      issueCode,
+      validatedEntries,
+      validatedTranscriptEvents,
+    ) => {
+      const events = [
+        { type: "session", id: "session-1", version: 3 },
+        {
+          type: "message",
+          id: "one",
+          parentId: null,
+          message: { role: "user", content: "source" },
+        },
+        {
+          type: "message",
+          id: "two",
+          parentId: "one",
+          message: { role: "assistant", content: "later" },
+        },
+      ];
+      const store = createLegacyStore({
+        transcriptLines: events.slice(0, 2).map((event) => JSON.stringify(event)),
+      });
+      if (sessionId) {
+        await importSqliteSessionRows({
+          agentId: "main",
+          env: store.env,
+          sessionKey: "agent:main:main",
+          storePath: store.storePath,
+          entry: { sessionId, updatedAt: 2000 },
+          readTranscriptEvents: (append) => events.slice(0, eventCount).forEach(append),
+        });
+      }
+      if (missingSource) {
+        fs.rmSync(store.transcriptPath);
+      }
 
-    const report = await runDoctorSessionSqlite({
-      env: store.env,
-      mode: "validate",
-      store: store.storePath,
-    });
+      const report = await runDoctorSessionSqlite({
+        env: store.env,
+        mode: "validate",
+        store: store.storePath,
+      });
 
-    expect(report.totals).toMatchObject({
-      issues: 1,
-      sqliteEntries: 0,
-      validatedEntries: 0,
-      validatedTranscriptEvents: 0,
-    });
-    expect(report.targets[0]?.issues[0]).toMatchObject({
-      code: "sqlite_entry_missing",
-      sessionKey: "agent:main:main",
-    });
-    expect(fs.existsSync(report.targets[0]?.sqlitePath ?? "")).toBe(false);
-  });
+      const expectedIssueCodes = [
+        ...(issueCode ? [issueCode] : []),
+        ...(sessionId === "session-1" && !missingSource ? ["active_sqlite_transcript_jsonl"] : []),
+      ];
+      expect(report.totals).toMatchObject({
+        issues: expectedIssueCodes.length,
+        sqliteEntries: sessionId ? 1 : 0,
+        validatedEntries,
+        validatedTranscriptEvents,
+      });
+      expect(report.targets[0]?.issues.map((issue) => issue.code)).toEqual(expectedIssueCodes);
+      if (issueCode) {
+        expect(report.targets[0]?.issues[0]?.sessionKey).toBe("agent:main:main");
+      }
+      expect(fs.existsSync(report.targets[0]?.sqlitePath ?? "")).toBe(Boolean(sessionId));
+      if (eventCount === 3) {
+        const imported = await importLegacyStore(store);
+        expect(imported.targets[0]?.issues).toEqual([]);
+        expect(fs.existsSync(store.transcriptPath)).toBe(false);
+      }
+    },
+  );
 
   it("writes a migration manifest with planned and completed archive moves", async () => {
     const store = createLegacyStore();

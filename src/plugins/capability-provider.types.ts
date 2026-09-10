@@ -252,6 +252,19 @@ export type WorkerProvider = {
     machineClass?: string,
     os?: string,
   ) => boolean;
+  /** Immutable target resolved before project preparation or allocation. */
+  resolvePreparationTarget?: (
+    profile: WorkerProfile,
+    machineClass?: string,
+    os?: string,
+  ) => { machineClass: string; platform: string; arch?: string } | undefined;
+  /** Maximum unused ready-worker lifetime, measured from the original session demand. */
+  resolvePreparedIdleTimeoutMs?: (profile: WorkerProfile) => number | undefined;
+  /** Record successful demand in metadata only; must not allocate, capture, or renew reserves. */
+  notePreparedDemand?: (
+    lease: { leaseId: string; profile: WorkerProfile },
+    demand: { preparationKey: string; demandAtMs: number },
+  ) => Promise<void>;
   /**
    * Resolve the exact cleanup handle for this operation, even if no machine was created.
    * Must not provision, start, renew, run setup, enroll, or wait for transport readiness.
@@ -280,13 +293,41 @@ export type WorkerProvider = {
       project?: {
         key: string;
         baseCommit: string;
+        preparation?: {
+          key: string;
+          cacheKey: string;
+          purpose: "session" | "reserve";
+          demandAtMs: number;
+        };
         signal: AbortSignal;
         assertCurrent: () => void;
+        /** Verify an already enrolled allocation without transferring, running setup, or capturing it. */
+        inspectPreparedWorkspace?: (transport: {
+          runScript: (script: string, signal: AbortSignal) => Promise<string>;
+        }) => Promise<void>;
         /** Bound to this provision attempt; retained callbacks reject after it closes. */
         prepare: (transport: {
           runScript: (script: string, signal: AbortSignal) => Promise<string>;
+          /** Render using this provider command's remaining budget before repository code runs. */
+          runScriptWithBudget?: (
+            createScript: (timeoutMs: number) => string,
+            signal: AbortSignal,
+          ) => Promise<string>;
           upload: (localPath: string, remotePath: string, signal: AbortSignal) => Promise<void>;
-        }) => Promise<{ seedKey: string; cacheHit: boolean }>;
+        }) => Promise<{
+          seedKey: string;
+          cacheHit: boolean;
+          /** New completed setup must enter the reusable image before enrollment. */
+          captureRequired?: true;
+          preparedWorkspace?: {
+            preparationKey: string;
+            cacheKey: string;
+            workspaceDir: string;
+            homeDir: string;
+            sourceManifestRef: string;
+            preparedManifestRef: string;
+          };
+        }>;
       };
     },
   ) => Promise<WorkerLease>;
