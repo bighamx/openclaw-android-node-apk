@@ -53,8 +53,8 @@ describe("ClawHub plugin catalog client", () => {
 
     expect(result.map((item) => item.packageName)).toEqual(["memory-plus", "memory-next"]);
     expect(requestedUrls).toEqual([
-      "/api/v1/plugins?isOfficial=true&sort=recommended&limit=100",
-      "/api/v1/plugins?cursor=official-next&isOfficial=true&sort=recommended&limit=100",
+      "/api/v1/plugins?isOfficial=true&officialFirst=true&sort=downloads&limit=100",
+      "/api/v1/plugins?cursor=official-next&isOfficial=true&officialFirst=true&sort=downloads&limit=100",
     ]);
   });
 
@@ -174,6 +174,30 @@ describe("ClawHub plugin catalog client", () => {
     expect(Object.fromEntries(url.searchParams)).toEqual({
       featured: "true",
       limit: "6",
+    });
+  });
+
+  it("requests official plugins first and download order for ordinary browse", async () => {
+    let requestedUrl = "";
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      requestedUrl = requestUrl(input);
+      return jsonResponse({ items: [remotePlugin] });
+    });
+
+    await fetchClawHubPluginCatalog({
+      baseUrl: "https://example.com",
+      intent: "all",
+      category: "models",
+      limit: 8,
+      fetchImpl,
+    });
+
+    const url = new URL(requestedUrl);
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      category: "models",
+      officialFirst: "true",
+      sort: "downloads",
+      limit: "8",
     });
   });
 
@@ -397,13 +421,15 @@ describe("ClawHub plugin catalog client", () => {
       fetchImpl,
     });
 
-    expect(requestedUrls).toEqual([
-      "/api/v1/packages/memory-plus",
-      "/api/v1/packages/memory-plus/versions?limit=10",
-      "/api/v1/packages/memory-plus/versions/1.2.2",
-      "/api/v1/packages/memory-plus/file?path=README.md&preview=1&version=1.2.2",
-      "/api/v1/packages/memory-plus/versions/1.2.2/security",
-    ]);
+    expect(requestedUrls[0]).toBe("/api/v1/packages/memory-plus");
+    expect(requestedUrls.slice(1).toSorted()).toEqual(
+      [
+        "/api/v1/packages/memory-plus/versions?limit=10",
+        "/api/v1/packages/memory-plus/versions/1.2.2",
+        "/api/v1/packages/memory-plus/file?path=README.md&preview=1&version=1.2.2",
+        "/api/v1/packages/memory-plus/versions/1.2.2/security",
+      ].toSorted(),
+    );
     expect(detail).toMatchObject({
       packageName: "memory-plus",
       owner: {

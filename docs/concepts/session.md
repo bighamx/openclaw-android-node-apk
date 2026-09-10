@@ -340,11 +340,12 @@ Preview any maintenance run with `openclaw sessions cleanup --dry-run`.
   store schema, transcripts, send policy, origin metadata, and advanced config
 - [Multi-Agent](/concepts/multi-agent) - routing and session isolation across agents
 - [Background Tasks](/automation/tasks) - how detached work creates task records with session references
-- [Channel Routing](/channels/channel-routing) - how inbound messages are routed to sessions
+- [Channel routing](/channels/channel-routing) - how inbound messages are routed to sessions
 
 ## Related
 
 - [Session pruning](/concepts/session-pruning)
 - [Session tools](/concepts/session-tool)
+- [Transcript hygiene](/reference/transcript-hygiene) - in-memory, provider-specific transcript sanitization applied before a run
 - [Command queue](/concepts/queue)
 - [Multi-agent sandbox and tools](/tools/multi-agent-sandbox-tools) - per-agent sandbox and tool restrictions, including session visibility
