@@ -7,7 +7,7 @@ import { openNodeSqliteDatabase } from "../infra/node-sqlite.js";
 import {
   prepareSqliteReadOnlyLocation,
   prepareSqliteReadOnlyLocationSync,
-} from "../infra/sqlite-readonly-location.js";
+} from "../infra/sqlite-snapshot-source.js";
 import { withSqliteSourceHandle } from "../infra/sqlite-source-handle.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { openClawStateDatabaseCache } from "./openclaw-state-db-cache.js";
@@ -121,8 +121,8 @@ function withOpenClawStateReadOnlyLocation<T>(
     const db = openNodeSqliteDatabase(location, { readOnly: true });
     let closeSchemaReadAdmission: (() => void) | undefined;
     try {
-      closeSchemaReadAdmission = openDanglingWorkshopIndexReadAdmission(db);
       db.exec(`PRAGMA busy_timeout = ${OPENCLAW_SQLITE_BUSY_TIMEOUT_MS};`);
+      closeSchemaReadAdmission = openDanglingWorkshopIndexReadAdmission(db);
       assertSupportedStateSchemaVersion(db, pathname);
       return operation({ db, path: pathname });
     } finally {

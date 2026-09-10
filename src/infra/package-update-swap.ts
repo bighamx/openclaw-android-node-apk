@@ -349,7 +349,7 @@ export async function swapStagedPackageInstall(params: {
     }
     if (params.onTransaction) {
       retained = true;
-      let completed = false;
+      let retirement: Promise<UpdateStepResult | void> | undefined;
       let rollbackRefused = false;
       let rollbackResult: ReturnType<PackageUpdateTransaction["rollback"]> | undefined;
       let retainedAssertion: (() => void) | undefined;
@@ -378,12 +378,12 @@ export async function swapStagedPackageInstall(params: {
         ...(assertRollbackSafe ? { assertRollbackSafe } : {}),
         rollback: (assertion) => {
           const assertCurrent = retainAuthority(assertion);
-          if (completed) {
+          if (retirement) {
             return Promise.resolve({
               ...step(
                 1,
                 null,
-                "Package transaction is already complete; its backup is no longer retained.",
+                "Package transaction retirement has started; automatic rollback is no longer available.",
               ),
               name: "global install rollback",
               activePackageRoot,
@@ -424,8 +424,8 @@ export async function swapStagedPackageInstall(params: {
         },
         complete: async ({ activationVerified }, assertion): Promise<UpdateStepResult | void> => {
           const assertCurrent = retainAuthority(assertion);
-          if (completed) {
-            return;
+          if (retirement) {
+            return await retirement;
           }
           // Retire backups only after verified activation or restoration. A failed
           // backup move can leave its published copy as the only intact installation.
@@ -443,28 +443,69 @@ export async function swapStagedPackageInstall(params: {
               name: "global install backup retention",
             };
           }
-          const linkRetention = rootLink ? await rootLink.retire(assertCurrent) : null;
-          assertCurrent();
-          if (linkRetention) {
-            return { ...step(1, null, linkRetention), name: "global install backup retention" };
-          }
-          completed = true;
-          if (hadPackage && previousRoot?.kind !== "link") {
-            await discardPackageUpdateBackup(
-              backupRoot,
-              "old package",
-              targetLayout.globalRoot,
-              assertCurrent,
-            );
-          }
-          if (shimBackupDir) {
-            await discardPackageUpdateBackup(
-              shimBackupDir,
-              "shim backup",
-              targetLayout.globalRoot,
-              assertCurrent,
-            );
-          }
+          // Seal automatic rollback once retirement begins, but retain the actual
+          // outcome. A repeated completion must not report a renamed backup gone.
+          retirement = (async () => {
+            const messages: string[] = [];
+            // The filesystem fallback can recheck an assertion after catching it.
+            // A later successful read cannot turn that authority failure into cleanup.
+            let assertionFailure: { cause: unknown } | undefined;
+            const assertRetirementCurrent = () => {
+              if (assertionFailure) {
+                throw assertionFailure.cause;
+              }
+              try {
+                assertCurrent();
+              } catch (cause) {
+                assertionFailure = { cause };
+                throw cause;
+              }
+            };
+            const linkRetention = rootLink ? await rootLink.retire(assertRetirementCurrent) : null;
+            assertRetirementCurrent();
+            if (linkRetention) {
+              return { ...step(1, null, linkRetention), name: "global install backup retention" };
+            }
+            if (hadPackage && previousRoot?.kind !== "link") {
+              const message = await discardPackageUpdateBackup(
+                backupRoot,
+                "old package",
+                targetLayout.globalRoot,
+                assertRetirementCurrent,
+              );
+              if (message) {
+                messages.push(message);
+              }
+            }
+            if (shimBackupDir) {
+              const message = await discardPackageUpdateBackup(
+                shimBackupDir,
+                "shim backup",
+                targetLayout.globalRoot,
+                assertRetirementCurrent,
+              );
+              if (message) {
+                messages.push(message);
+              }
+            }
+            // Capture authority loss during the final filesystem await in the
+            // retirement outcome, not only in the caller's later publication check.
+            assertRetirementCurrent();
+            if (messages.length) {
+              return {
+                ...step(1, null, messages.join("\n")),
+                name: "global install backup retention",
+                // Only this verified obsolete-resource path qualifies the warning.
+                // Recovery refusal and unclassified link outcomes remain hard.
+                advisory: {
+                  kind: "recoverable-maintenance" as const,
+                  message: `Installation verification succeeded; backup cleanup remains pending. ${messages.join("\n")}. Inspect retained paths before removing obsolete backups manually.`,
+                },
+              };
+            }
+            return undefined;
+          })();
+          return await retirement;
         },
       });
     }
