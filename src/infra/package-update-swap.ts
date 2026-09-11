@@ -23,6 +23,7 @@ import {
   type PackageDirectoryIdentity,
   type PackageRootIntegrityFingerprint,
 } from "./package-update-integrity.js";
+import { preparePackageSwapLocalOverrides } from "./package-update-local-overrides.js";
 import {
   createNpmPackageRootLinkLifecycle,
   verifyNpmRootRecovery,
@@ -30,14 +31,13 @@ import {
 import {
   PackageUpdateActivationError,
   type PackageUpdateTransaction,
-  type StagedPackageInstall,
   type StagedPackageSwapResult,
+  type StagedPackageSwapParams,
 } from "./package-update-swap-contract.js";
 import { movePathWithCopyFallback } from "./replace-file.js";
 import {
   resolveNpmGlobalPrefixLayoutFromGlobalRoot,
   verifyPackageUpdateRecovery,
-  type ResolvedGlobalInstallTarget,
 } from "./update-global.js";
 import {
   finalizeNativePackageStage,
@@ -57,16 +57,9 @@ export function isBlockingPackageUpdateStep(step: UpdateStepResult): boolean {
 
 export { removePackageUpdatePath } from "./package-update-filesystem.js";
 
-export async function swapStagedPackageInstall(params: {
-  stage: StagedPackageInstall;
-  installTarget: ResolvedGlobalInstallTarget;
-  packageName: string;
-  postVerifyStep?: (packageRoot: string) => Promise<UpdateStepResult | null>;
-  beforeActivate?: () => Promise<void>;
-  onLiveMutation?: () => void;
-  onTransaction?: (transaction: PackageUpdateTransaction) => void;
-  timeoutMs?: number;
-}): Promise<StagedPackageSwapResult> {
+export async function swapStagedPackageInstall(
+  params: StagedPackageSwapParams,
+): Promise<StagedPackageSwapResult> {
   const startedAt = Date.now();
   let activePackageRoot = params.installTarget.packageRoot;
   const native = params.stage.native;
@@ -124,6 +117,7 @@ export async function swapStagedPackageInstall(params: {
   );
   let shimBackupDir: string | undefined;
   let hadPackage = false;
+  let replayLocalOverrides: (() => Promise<void>) | undefined;
   let previousVersion: string | null = null;
   let previousDistFiles: string[] | undefined;
   let previousRoot: PackageRootIntegrityFingerprint | undefined;
@@ -320,6 +314,13 @@ export async function swapStagedPackageInstall(params: {
         (await readPackageDistInventoryIfPresent(params.installTarget.packageRoot!)) ??
         (await collectPackageDistInventory(params.installTarget.packageRoot!));
     }
+    replayLocalOverrides = await preparePackageSwapLocalOverrides({
+      ...params,
+      hadPackage,
+      rootLinked: Boolean(rootLink),
+      targetSwapRoot,
+      backupRoot,
+    });
     packageRollbackVerified = hadPackage && previousVersion !== null;
   };
   const readLaunchers = async (launcherReader: ReturnType<typeof createPackageIntegrityReader>) => {
@@ -634,6 +635,7 @@ export async function swapStagedPackageInstall(params: {
         activePackageRoot = params.installTarget.packageRoot;
       }
     });
+    await replayLocalOverrides?.();
     await activateStagedNpmPackageRoot(stagedSwapRoot, targetSwapRoot);
     activePackageRoot = targetPackageRoot;
     projectActivated = true;
