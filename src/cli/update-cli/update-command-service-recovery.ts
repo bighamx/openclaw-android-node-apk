@@ -20,6 +20,7 @@ import {
   recoverInstalledLaunchAgentAfterUpdate,
   type PostUpdateLaunchAgentRecoveryResult,
 } from "./update-command-launch-agent-recovery.js";
+import { UpdateCommandRecoveryPendingError } from "./update-command-recovery.js";
 import {
   isPackageManagerUpdateMode,
   runUpdatedInstallGatewayCommand,
@@ -48,6 +49,7 @@ export async function recoverLaunchAgentAndRecheckGatewayHealth(params: {
   timeoutMs?: number;
   expectedVersion?: string;
   expectedBuildId?: string;
+  requirePluginHealth?: boolean;
   env?: NodeJS.ProcessEnv;
   deps?: PostUpdateGatewayHealthRecoveryDeps;
 }): Promise<{
@@ -115,6 +117,7 @@ export async function recoverLaunchAgentAndRecheckGatewayHealth(params: {
     timeoutMs: params.timeoutMs,
     expectedVersion: params.expectedVersion,
     ...(params.expectedBuildId ? { expectedBuildId: params.expectedBuildId } : {}),
+    requirePluginHealth: params.requirePluginHealth,
     env: params.env,
     supervisorKeepsAlive: true,
     settle: { probes: 12 },
@@ -166,6 +169,7 @@ export function formatPostUpdateGatewayRecoveryInstructions(
 }
 
 export async function maybeRestartServiceAfterFailedMutableUpdate(params: {
+  updateRun?: UpdateCommandOptions["run"];
   preManagedServiceStop: PreManagedServiceStop | undefined;
   recovery?: UpdateRunResult["recovery"];
   jsonMode: boolean;
@@ -173,6 +177,16 @@ export async function maybeRestartServiceAfterFailedMutableUpdate(params: {
   timeoutMs?: number;
   invocationCwd?: string;
 }): Promise<"healthy" | "failed" | undefined> {
+  const run = params.updateRun;
+  const executor = run?.executorFence;
+  const assertCurrent = () => {
+    if (params.updateRun !== run || run?.executorFence !== executor || (run && !executor)) {
+      throw new UpdateCommandRecoveryPendingError(
+        "Service recovery lost its original update executor.",
+      );
+    }
+    executor?.assertCurrent();
+  };
   const before = params.preManagedServiceStop;
   if (!before?.stopped || !before.serviceEnv) {
     return undefined;
@@ -183,6 +197,7 @@ export async function maybeRestartServiceAfterFailedMutableUpdate(params: {
     );
     return "failed";
   }
+  assertCurrent();
   try {
     const verdict = before.serviceUpdateVerdict;
     if (!verdict || !("root" in verdict)) {
@@ -196,6 +211,7 @@ export async function maybeRestartServiceAfterFailedMutableUpdate(params: {
       "serviceEnv" | "serviceUpdateVerdict" | "serviceManagerUid"
     > = before;
     const readCurrentService = async () => {
+      assertCurrent();
       const state = await readGatewayServiceState(service, {
         env: before.serviceEnv,
         requireEffective: true,
@@ -203,11 +219,13 @@ export async function maybeRestartServiceAfterFailedMutableUpdate(params: {
         validateEnvBeforeStatusRead: assertGatewayServiceManagementAllowedForUpdate,
         timeoutMs: params.timeoutMs,
       });
+      assertCurrent();
       const inspection = await revalidateManagedGatewayServiceAfterUpdate({
         state,
         root: verdict.root,
         preManagedServiceStop: expectedService,
       });
+      assertCurrent();
       // Recovery preserves the current definition. Once observed, even a same-unit
       // replacement during config or health awaits must not inherit this activation.
       expectedService = {
@@ -223,22 +241,25 @@ export async function maybeRestartServiceAfterFailedMutableUpdate(params: {
       serviceEnv: state.env,
       serviceCommand: state.command,
     });
+    assertCurrent();
     // Context resolution awaits config reads. Revalidate before the one activation;
     // the installed CLI owns its config dialect and preserves the service definition.
     const current = await readCurrentService();
     await runUpdatedInstallGatewayCommand(
       {
         result: { root: verdict.root },
-        opts: { json: params.jsonMode },
+        opts: { json: params.jsonMode, run },
         invocationEnv: before.serviceEnv,
         serviceEnv: current.env,
         nodeRunner: params.nodeRunner,
         timeoutMs: params.timeoutMs,
         invocationCwd: params.invocationCwd,
+        assertCurrent,
       },
       "restart",
       true,
     );
+    assertCurrent();
     const health = await waitForGatewayHealthyRestart({
       service,
       port,
@@ -249,6 +270,7 @@ export async function maybeRestartServiceAfterFailedMutableUpdate(params: {
       requireRunningService: true,
       settle: { probes: 12 },
     });
+    assertCurrent();
     if (!health.healthy || health.runtime.status !== "running") {
       throw new Error(renderRestartDiagnostics(health).join("\n"));
     }
@@ -262,6 +284,10 @@ export async function maybeRestartServiceAfterFailedMutableUpdate(params: {
     }
     return "healthy";
   } catch (err) {
+    assertCurrent();
+    if (err instanceof UpdateCommandRecoveryPendingError) {
+      throw err;
+    }
     defaultRuntime.error(
       `Failed to restart managed gateway service after failed update: ${String(err)}. Run \`openclaw gateway status --deep\` before restarting it manually.`,
     );

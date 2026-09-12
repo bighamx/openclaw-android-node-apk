@@ -2,7 +2,6 @@
 import { nothing } from "lit";
 import { classifySessionKind } from "../../../../../src/sessions/classify-session-kind.js";
 import { i18n, t } from "../../../i18n/index.ts";
-import { latestBrowserTabCards } from "../../../lib/chat/browser-tab-preview.ts";
 import type { ChatItem, MessageGroup } from "../../../lib/chat/chat-types.ts";
 import { extractTextCached } from "../../../lib/chat/message-extract.ts";
 import { formatSessionArchiveReason } from "../../../lib/sessions/session-archive-reason.ts";
@@ -129,6 +128,7 @@ export function projectChatTranscript(
     stream: displayStream,
     streamStartedAt: props.streamStartedAt,
     queue: props.queue,
+    initialTurnId: props.initialTurnId,
     pendingInputs: props.pendingInputs,
     workerSetupPending: ["requested", "provisioning", "syncing", "starting"].includes(
       activeSession?.placement?.state ?? "",
@@ -152,10 +152,7 @@ export function projectChatTranscript(
   const runOutputTokens = workingIndicator?.runId
     ? (props.runUsageById?.get(workingIndicator.runId)?.outputTokens ?? null)
     : null;
-  const latestBrowserTabs =
-    props.browserTabPreviewsActive === false
-      ? latestBrowserTabCards([], [])
-      : latestBrowserTabCards(props.messages, props.toolMessages);
+  const latestBrowserTabs = props.latestBrowserTabs;
   syncToolCardExpansionState(
     props.sessionKey,
     chatItems,
@@ -649,7 +646,7 @@ export function projectChatTranscript(
     getChatMediaRenderVersion(),
     // The host minute poll requests an update; this key crosses row guard() memoization.
     Math.floor(Date.now() / 60_000),
-    JSON.stringify([...latestBrowserTabs]),
+    JSON.stringify([...(latestBrowserTabs ?? [])]),
     props.sessionKey,
     props.presented,
     props.transcriptVisible,

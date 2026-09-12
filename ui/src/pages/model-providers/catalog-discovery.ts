@@ -27,8 +27,8 @@ export type CatalogDiscoveryController = {
   openPicker: () => void;
   /** Retries a failed discovery. */
   retry: () => void;
-  /** Resets request history and pending/error state when core data or its owner changes. */
-  reset: () => void;
+  /** Retires pending results; same-owner publication preserves discovery history. */
+  reset: (options?: { preserveHistory?: boolean }) => void;
 };
 
 type CreateOptions = {
@@ -60,11 +60,13 @@ export function createCatalogDiscoveryController(
     retry() {
       void discover(true);
     },
-    reset() {
+    reset({ preserveHistory = false } = {}) {
       const retired = pending;
       pending = null;
       error = null;
-      requestedDiscovery = false;
+      if (!preserveHistory) {
+        requestedDiscovery = false;
+      }
       retired?.abort();
       options.requestUpdate();
     },
@@ -95,6 +97,7 @@ export function createCatalogDiscoveryController(
     try {
       const result = await loadModelCatalog(client, {
         agentId,
+        includeDefaultModels: true,
         ...(refresh ? { refresh: true } : {}),
         signal: request.signal,
       });
@@ -105,6 +108,7 @@ export function createCatalogDiscoveryController(
           options.setData({
             ...data,
             models: result.models,
+            automaticUtilityModel: result.defaultModels?.automaticUtilityModel,
             providerOutcomes: result.providerOutcomes ?? [],
             catalogError: null,
           });

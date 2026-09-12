@@ -9,6 +9,7 @@ import type {
   SessionsListResult,
 } from "../../../api/types.ts";
 import type { QuestionPrompt } from "../../../app/question-prompt.ts";
+import type { BrowserTabSelection } from "../../../components/browser/browser-target.ts";
 import { copyMarkdownLabel, handleCopyButton } from "../../../components/copy-button.ts";
 import { icons } from "../../../components/icons.ts";
 import type { ImageLightboxItem } from "../../../components/image-lightbox.ts";
@@ -92,7 +93,7 @@ export type ChatThreadProps = ChatSendStatusActions & {
   historyPagination?: ChatHistoryBoundaryProps;
   messages: unknown[];
   toolMessages: unknown[];
-  browserTabPreviewsActive?: boolean;
+  latestBrowserTabs?: ReadonlyMap<string, BrowserTabSelection>;
   guardianNotices?: ChatGuardianNotice[];
   streamSegments: ChatStreamSegment[];
   stream: string | null;
@@ -102,6 +103,7 @@ export type ChatThreadProps = ChatSendStatusActions & {
   runUsageById?: ReadonlyMap<string, RunOutputUsage>;
   runStatus?: ChatRunUiStatus | null;
   queue: ChatQueueItem[];
+  initialTurnId?: string;
   pendingInputs?: ChatPendingInputsPage["items"];
   showThinking: boolean;
   showToolCalls: boolean;
