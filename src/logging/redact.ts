@@ -668,15 +668,16 @@ export function redactText(
   let next = redactFormBody(
     redactAssignmentValues(redactStructuredAuthHeaders(text, "***"), "url"),
   );
-  for (const pattern of patterns) {
-    const replace = (match: RedactMatch) =>
-      redactMatch(match, pattern, options?.preserveSourceAssignment);
+  let pattern: ResolvedRedactPattern;
+  const replace = (match: RedactMatch) =>
+    redactMatch(match, pattern, options?.preserveSourceAssignment);
+  const replaceRegex = (...args: unknown[]) => replace(readRedactMatch(args));
+  // Each replacement finishes synchronously before this invocation advances its pattern.
+  for (pattern of patterns) {
     next =
       pattern instanceof RegExp && !options?.fullContext && !chunkUnsafePatterns.has(pattern)
-        ? replacePatternBounded(next, pattern, (...args: unknown[]) =>
-            replace(readRedactMatch(args)),
-          )
-        : replaceRedactPattern(next, pattern, replace);
+        ? replacePatternBounded(next, pattern, replaceRegex)
+        : replaceRedactPattern(next, pattern, replace, replaceRegex);
   }
   return next;
 }

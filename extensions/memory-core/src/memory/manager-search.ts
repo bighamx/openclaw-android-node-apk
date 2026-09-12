@@ -1,11 +1,11 @@
 // Memory Core plugin module implements manager search behavior.
 import type { DatabaseSync } from "node:sqlite";
-import { truncateUtf16Safe } from "openclaw/plugin-sdk/memory-core-host-engine-foundation";
 import {
   cosineSimilarity,
   parseEmbedding,
-  type MemorySource,
-} from "openclaw/plugin-sdk/memory-core-host-engine-storage";
+  truncateUtf16Safe,
+} from "openclaw/plugin-sdk/memory-core-host-engine-knn";
+import type { MemorySource } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import {
   normalizeStringEntries,
   normalizeStringEntriesLower,
@@ -350,6 +350,7 @@ export async function searchVector(params: {
   signal?: AbortSignal;
   ensureVectorReady: (dimensions: number) => Promise<boolean>;
   runVectorKnn?: (request: VectorKnnRequest, signal?: AbortSignal) => Promise<VectorKnnResponse>;
+  runFallback?: () => Promise<SearchRowResult[]>;
   sourceFilterVec: { sql: string; params: SearchSource[] };
   sourceFilterChunks: { sql: string; params: SearchSource[] };
 }): Promise<SearchRowResult[]> {
@@ -358,17 +359,19 @@ export async function searchVector(params: {
   }
   params.signal?.throwIfAborted();
   const providerModels = resolveProviderModels(params.providerModel, params.providerModelAliases);
-  const searchFallback = () =>
-    searchChunksByEmbedding({
-      db: params.db,
-      providerModel: params.providerModel,
-      providerModelAliases: params.providerModelAliases,
-      sourceFilter: params.sourceFilterChunks,
-      queryVec: params.queryVec,
-      limit: params.limit,
-      snippetMaxChars: params.snippetMaxChars,
-      signal: params.signal,
-    });
+  const searchFallback =
+    params.runFallback ??
+    (() =>
+      searchChunksByEmbedding({
+        db: params.db,
+        providerModel: params.providerModel,
+        providerModelAliases: params.providerModelAliases,
+        sourceFilter: params.sourceFilterChunks,
+        queryVec: params.queryVec,
+        limit: params.limit,
+        snippetMaxChars: params.snippetMaxChars,
+        signal: params.signal,
+      }));
   const vectorReady = await params.ensureVectorReady(params.queryVec.length);
   params.signal?.throwIfAborted();
   if (vectorReady) {
@@ -403,7 +406,7 @@ export async function searchVector(params: {
   return await searchFallback();
 }
 
-async function searchChunksByEmbedding(params: {
+export async function searchChunksByEmbedding(params: {
   db: DatabaseSync;
   providerModel: string;
   providerModelAliases?: string[];
@@ -664,8 +667,8 @@ export async function searchPathKeyword(params: {
     exact_path_specificity: ExactPathSpecificity;
   };
   // ASCII identifiers use the path FTS plan before suffix filtering; Unicode
-  // forms keep the LIKE fallback. Live chunks are joined before LIMIT so an
-  // empty indexed file cannot consume an exact-result slot.
+  // forms keep the LIKE fallback. Exclude empty files before LIMIT, then order
+  // their first chunks only for the retained paths in the same read snapshot.
   const loadExactRows = (useLexicalCandidates: boolean): ExactPathRow[] => {
     const qualifiedPatternClause = exactCandidatePatterns
       .map(() => `${pathColumn} LIKE ? ESCAPE '\\'`)
@@ -701,6 +704,11 @@ export async function searchPathKeyword(params: {
           `), exact_paths AS MATERIALIZED (\n` +
           `  SELECT path, source, exact_path_specificity FROM scored_paths\n` +
           `   WHERE exact_path_specificity > 0\n` +
+          `     AND EXISTS (SELECT 1 FROM memory_index_chunks live\n` +
+          `                  WHERE live.path = scored_paths.path\n` +
+          `                    AND live.source = scored_paths.source)\n` +
+          `   ORDER BY exact_path_specificity DESC, path ASC, source ASC\n` +
+          `   LIMIT ?\n` +
           `)\n` +
           `SELECT c.id, exact_paths.path, exact_paths.source,\n` +
           `       c.start_line, c.end_line, c.text, exact_paths.exact_path_specificity\n` +
@@ -713,8 +721,7 @@ export async function searchPathKeyword(params: {
           `     LIMIT 1\n` +
           `  )\n` +
           ` ORDER BY exact_paths.exact_path_specificity DESC,\n` +
-          `          exact_paths.path ASC, exact_paths.source ASC\n` +
-          ` LIMIT ?`,
+          `          exact_paths.path ASC, exact_paths.source ASC`,
       )
       .all(...candidateParams, exactPathQuery, exactPathLimit) as ExactPathRow[];
   };
@@ -777,22 +784,32 @@ export async function searchPathKeyword(params: {
       ...filter.params,
       ...params.sourceFilter.params,
     ];
+    // Filter empty sources before LIMIT, then resolve first chunks only for the
+    // retained paths. Keep both phases in the same statement's read snapshot.
     return params.db
       .prepare(
-        `SELECT c.id, ${params.pathFtsTable}.path, ${params.pathFtsTable}.source,\n` +
-          `       c.start_line, c.end_line, c.text,\n` +
-          `       ${matchQuery ? `bm25(${params.pathFtsTable})` : "0"} AS rank\n` +
-          `  FROM ${params.pathFtsTable}\n` +
+        `WITH retained_paths AS MATERIALIZED (\n` +
+          `  SELECT ${params.pathFtsTable}.path, ${params.pathFtsTable}.source,\n` +
+          `         ${matchQuery ? `bm25(${params.pathFtsTable})` : "0"} AS rank\n` +
+          `    FROM ${params.pathFtsTable}\n` +
+          `   WHERE ${matchQuery ? `${params.pathFtsTable} MATCH ?` : "1=1"}${filter.sql}${params.sourceFilter.sql}${qualifiedSpecificityClause}\n` +
+          `     AND EXISTS (SELECT 1 FROM memory_index_chunks live\n` +
+          `                  WHERE live.path = ${params.pathFtsTable}.path\n` +
+          `                    AND live.source = ${params.pathFtsTable}.source)\n` +
+          `   ORDER BY rank ASC, ${params.pathFtsTable}.path ASC, ${params.pathFtsTable}.source ASC\n` +
+          `   LIMIT ?\n` +
+          `)\n` +
+          `SELECT c.id, retained_paths.path, retained_paths.source,\n` +
+          `       c.start_line, c.end_line, c.text, retained_paths.rank\n` +
+          `  FROM retained_paths\n` +
           `  JOIN memory_index_chunks c ON c.id = (\n` +
           `    SELECT candidate.id FROM memory_index_chunks candidate\n` +
-          `     WHERE candidate.path = ${params.pathFtsTable}.path\n` +
-          `       AND candidate.source = ${params.pathFtsTable}.source\n` +
+          `     WHERE candidate.path = retained_paths.path\n` +
+          `       AND candidate.source = retained_paths.source\n` +
           `     ORDER BY candidate.start_line, candidate.end_line, candidate.id\n` +
           `     LIMIT 1\n` +
           `  )\n` +
-          ` WHERE ${matchQuery ? `${params.pathFtsTable} MATCH ?` : "1=1"}${filter.sql}${params.sourceFilter.sql}${qualifiedSpecificityClause}\n` +
-          ` ORDER BY rank ASC, ${params.pathFtsTable}.path ASC, ${params.pathFtsTable}.source ASC\n` +
-          ` LIMIT ?`,
+          ` ORDER BY retained_paths.rank ASC, retained_paths.path ASC, retained_paths.source ASC`,
       )
       .all(...queryParams, exactPathQuery, resultLimit) as PathLexicalRow[];
   };

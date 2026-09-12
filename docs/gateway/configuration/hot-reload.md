@@ -97,6 +97,7 @@ back to OpenClaw.
 | Gateway auth limits       | `gateway.auth.rateLimit`                                                                                                                                                                                                                                           | No (retains limiter state)             |
 | Discovery visibility      | `discovery.mdns.mode`                                                                                                                                                                                                                                              | No (replaces discovery advertisements) |
 | Browser defaults          | `browser.profiles`, `browser.defaultProfile`, `browser.headless`, `browser.executablePath`, `browser.attachOnly`, `browser.cdpUrl`, `browser.noSandbox`, `browser.extraArgs`, `browser.snapshotDefaults`, `browser.tabCleanup`, `browser.allowSystemProfileImport` | No                                     |
+| Browser control policy    | `browser.enabled`, `browser.evaluateEnabled`, `browser.ssrfPolicy`                                                                                                                                                                                                 | No (replaces Browser control service)  |
 | Gateway server            | Other `gateway.*` settings (port, bind, auth mode, roles, tailscale, TLS)                                                                                                                                                                                          | **Yes**                                |
 | Infrastructure            | Other `discovery` and `browser` settings, MCP Apps listener settings, `secrets.egressProxy`, `plugins.load`, `plugins.installs`                                                                                                                                    | **Yes**                                |
 
@@ -173,9 +174,22 @@ in force until that restart completes or its rejected changes are reverted.
 
 Browser default-profile changes apply on the next request. Launch-setting
 changes replace affected managed browser processes when next used; externally
-attached browsers stay running. Browser enablement, evaluation, SSRF policy,
-and extension relay remain restart-owned. Snapshot defaults apply to the next
-snapshot, and tab-cleanup settings apply on the next sweep.
+attached browsers stay running. Browser enablement, evaluation, and SSRF policy
+changes replace only the Browser control service: pending operations cancel and
+owned Chrome processes close before the new policy applies. Attached and remote
+browser processes stay open while OpenClaw disconnects its control sessions.
+When enabled, Browser control starts again on demand; managed tabs from the
+retired process are not kept. Extension relay settings still require a Gateway
+restart. Snapshot defaults apply to the next snapshot, and tab-cleanup settings
+apply on the next sweep.
+
+TLS certificate renewal watches the files at the running Gateway's accepted
+certificate, key, and CA paths. Valid replacement material updates existing and
+future HTTPS listeners, discovery, and pairing fingerprints without interrupting
+connections. Incomplete or invalid replacements keep the previous material serving.
+Reload mode `off` pauses renewal; re-enabling checks changes made while paused.
+TLS configuration and path changes still require a Gateway restart. Remote
+certificate pins remain operator-controlled; see [Gateway TLS](/gateway/config-gateway#gateway-tls).
 
 Authentication rate-limit changes retain recorded failures, earned lockout
 deadlines, and pending loopback delays. New limits and loopback exemptions apply
@@ -215,12 +229,13 @@ nodes and operator connections stay open. Legacy nodes reconnect when hosted sur
 descriptors change so their protocol limits are recalculated. Pending node handshakes
 also recheck those capabilities before admission.
 
-Plugin hot reload uses the package metadata discovered at Gateway startup.
+Automatic config hot reload reuses the current plugin inventory.
 Enablement, plugin config, and account changes do not rescan plugin files.
-Install, update, uninstall, and explicit plugin metadata refresh require a
-Gateway restart; `hybrid` schedules that restart, while `off` leaves it to you.
-Changing an agent's workspace also does not discover plugins in the new
-directory until restart. See [Plugin metadata snapshots](/plugins/architecture#plugin-metadata-snapshot-and-lookup-table).
+Supported install, update, uninstall, reload, and metadata refresh actions prepare
+and publish a new plugin inventory through the running Gateway, including when
+`gateway.reload.mode` is `off`.
+Changing an agent's workspace alone does not refresh discovery; use an explicit
+metadata refresh or restart. See [Plugin metadata snapshots](/plugins/architecture#plugin-metadata-snapshot-and-lookup-table).
 
 During channel or plugin hot reload, Gateway-hosted channel webhook routes return
 `503` with `Retry-After: 1` until replacement ingress registers. Senders must honor

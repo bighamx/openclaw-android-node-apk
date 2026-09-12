@@ -27,6 +27,7 @@ import { GATEWAY_EVENTS } from "./server-methods-list.js";
 import { refreshConnectedNodeSurfaceCaches } from "./server-methods/nodes.read.js";
 import { assertGatewayRuntimeSecurityConfig } from "./server-runtime-config.js";
 import { getRequiredSharedGatewaySessionGeneration } from "./server-shared-auth-generation.js";
+import { startGatewayTlsRenewal } from "./server-tls-renewal.js";
 import type { GatewayHttpTransport } from "./server-transport-bridge.js";
 import { disconnectDisallowedGatewayBrowserOriginClients } from "./server/ws-origin-policy.js";
 import { DEFAULT_TERMINAL_DETACH_SECONDS } from "./terminal/session-limits.js";
@@ -321,7 +322,7 @@ export async function finishGatewayStartup(params: {
             await refreshAttachedGatewayDiscovery(loaded.pluginRegistry, startupPluginRuntimeClaim);
             return true;
           },
-          getCronService: () => runtimeState.cronState.cron,
+          getCronService: kernel.getCronService,
           onChannelsStarted: () => {
             releaseStartupAccountStarts();
           },
@@ -345,7 +346,7 @@ export async function finishGatewayStartup(params: {
                     isClosePreludeStarted: () => lifecycle.closePreludeStarted,
                     // Close must see the drain handle before reconciliation can yield.
                     registerSidecar: (sidecar) => {
-                      registerConnectionDependentSidecars([sidecar]);
+                      registerConnectionDependentSidecars(sidecar);
                     },
                     unregisterSidecar: unregisterConnectionDependentSidecar,
                   });
@@ -379,7 +380,7 @@ export async function finishGatewayStartup(params: {
   if (!minimalTestGateway) {
     const { startOpenClawDatabaseIntegrityVerifier } =
       await import("../state/openclaw-database-verify.js");
-    kernel.addGatewayLifetimeSidecar(startOpenClawDatabaseIntegrityVerifier({ env: process.env }));
+    registerGatewayLifetimeSidecars(startOpenClawDatabaseIntegrityVerifier({ env: process.env }));
   }
   postAttachRuntimeReturned = true;
   activateScheduledServicesWhenReady();
@@ -399,7 +400,23 @@ export async function finishGatewayStartup(params: {
       }),
     });
   };
+  const tlsRenewal = startGatewayTlsRenewal({
+    runtime: gatewayTls,
+    servers: runtime.httpServers,
+    enabled: cfgAtStart.gateway?.reload?.mode !== "off",
+    isClosing: () => lifecycle.closePreludeStarted,
+    onRenewed: async () => {
+      await runtimeState.discovery?.update({
+        gatewayTlsFingerprintSha256: gatewayTls.fingerprintSha256,
+      });
+    },
+    log: log.child("tls"),
+  });
+  if (tlsRenewal) {
+    registerGatewayLifetimeSidecars([tlsRenewal]);
+  }
   const configReloaderParams: Parameters<typeof startManagedGatewayConfigReloader>[0] = {
+    onReloadEnabledChange: tlsRenewal?.setEnabled,
     configRevisionProjector: gatewayRequestContext.configRevisionProjector,
     resolveGatewayContext: resolvePluginGatewayContext,
     minimalTestGateway,
@@ -587,7 +604,7 @@ export async function finishGatewayStartup(params: {
           : [record.rootDir, record.source],
       ) ?? []),
     ];
-    registerGatewayLifetimeSidecars([
+    registerGatewayLifetimeSidecars(
       gatewayRuntimeServices.scheduleGatewayIdleTask({
         delayMs: RETAINED_PLUGIN_CLEANUP_DELAY_MS,
         retryDelayMs: RETAINED_PLUGIN_CLEANUP_DELAY_MS,
@@ -601,7 +618,7 @@ export async function finishGatewayStartup(params: {
         log,
         errorMessage: "retained npm generation cleanup failed",
       }),
-    ]);
+    );
   } else {
     startupTrace.detail("memory.post-ready", collectGatewayProcessMemoryUsageMb());
   }

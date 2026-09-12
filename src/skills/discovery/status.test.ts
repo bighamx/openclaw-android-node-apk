@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+import { withEnvAsync } from "../../test-utils/env.js";
 import { readLocalSkillCardContentSync } from "../lifecycle/clawhub.js";
 import { createCanonicalFixtureSkill } from "../test-support/test-helpers.js";
 import type { SkillEntry } from "../types.js";
@@ -13,6 +14,42 @@ type SkillStatus = ReturnType<typeof buildWorkspaceSkillStatus>["skills"][number
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
 describe("buildWorkspaceSkillStatus", () => {
+  it("refreshes dependency eligibility and installer preference after a binary is installed", async () => {
+    const workspaceDir = tempDirs.make("openclaw-skill-status-");
+    const entries = ["first", "second"].map((name) =>
+      createEntry(name, {
+        baseDir: workspaceDir,
+        metadata: {
+          requires: { bins: ["brew"] },
+          install: [
+            { id: "brew", kind: "brew", formula: "fixture-tool" },
+            { id: "node", kind: "node", package: "fixture-tool" },
+          ],
+        },
+      }),
+    );
+    await withEnvAsync({ PATH: workspaceDir, PATHEXT: ".CMD" }, async () => {
+      const options = { entries, config: { skills: { install: { preferBrew: true } } } };
+      const before = buildWorkspaceSkillStatus(workspaceDir, options);
+      for (const skill of before.skills) {
+        expect(skill.eligible).toBe(false);
+        expect(skill.missing.bins).toEqual(["brew"]);
+        expect(skill.install.map((option) => option.id)).toEqual(["node"]);
+      }
+      await fs.writeFile(
+        path.join(workspaceDir, process.platform === "win32" ? "brew.CMD" : "brew"),
+        "",
+        { mode: 0o755 },
+      );
+      const after = buildWorkspaceSkillStatus(workspaceDir, options);
+      for (const skill of after.skills) {
+        expect(skill.eligible).toBe(true);
+        expect(skill.missing.bins).toEqual([]);
+        expect(skill.install.map((option) => option.id)).toEqual(["brew"]);
+      }
+    });
+  });
+
   it("reports blank env requirements as missing", () => {
     const envName = "OPENCLAW_TEST_BLANK_SKILL_STATUS";
     const original = process.env[envName];
@@ -523,45 +560,68 @@ describe("buildWorkspaceSkillStatus", () => {
     expect(skill?.commandVisible).toBe(true);
   });
 
-  it("reports skills blocked by an agent skill filter", () => {
-    const alpha: SkillEntry = {
-      skill: createCanonicalFixtureSkill({
-        name: "alpha",
-        description: "test",
-        filePath: "/tmp/alpha/SKILL.md",
-        baseDir: "/tmp/alpha",
-        source: "test",
-      }),
-      frontmatter: {},
-    };
-    const beta: SkillEntry = {
-      skill: createCanonicalFixtureSkill({
-        name: "beta",
-        description: "test",
-        filePath: "/tmp/beta/SKILL.md",
-        baseDir: "/tmp/beta",
-        source: "test",
-      }),
-      frontmatter: {},
-    };
-
-    const report = buildWorkspaceSkillStatus("/tmp/ws", {
-      entries: [alpha, beta],
+  it("preserves source, custom keys, order, and agent exclusion in status", () => {
+    const workspaceDir = tempDirs.make("openclaw-skill-status-");
+    const report = buildWorkspaceSkillStatus(workspaceDir, {
+      managedSkillsDir: path.join(workspaceDir, ".managed"),
+      entries: [
+        createEntry("workspace", {
+          source: "openclaw-workspace",
+          baseDir: path.join(workspaceDir, "workspace"),
+          metadata: { skillKey: "workspace-key" },
+        }),
+        createEntry("custodian", {
+          source: "openclaw-custodian",
+          baseDir: path.join(workspaceDir, "custodian"),
+        }),
+        createEntry("bundle", {
+          source: "openclaw-bundled",
+          baseDir: path.join(workspaceDir, "bundle"),
+        }),
+      ],
       agentId: "specialist",
-      config: {
-        agents: {
-          list: [{ id: "specialist", skills: ["alpha"] }],
-        },
-      },
+      config: { agents: { list: [{ id: "specialist", skills: ["workspace"] }] } },
     });
 
     expect(report.agentId).toBe("specialist");
-    expect(report.agentSkillFilter).toEqual(["alpha"]);
-    expect(report.skills.find((skill) => skill.name === "alpha")?.blockedByAgentFilter).toBe(false);
-    const byName = skillStatusByName(report.skills);
-    expect(requireSkillStatus(byName, "alpha").modelVisible).toBe(true);
-    expect(requireSkillStatus(byName, "beta").blockedByAgentFilter).toBe(true);
-    expect(report.skills.find((skill) => skill.name === "beta")?.modelVisible).toBe(false);
+    expect(report.agentSkillFilter).toEqual(["workspace"]);
+    expect(
+      report.skills.map(
+        ({ name, source, skillKey, bundled, blockedByAgentFilter, modelVisible }) => ({
+          name,
+          source,
+          skillKey,
+          bundled,
+          blockedByAgentFilter,
+          modelVisible,
+        }),
+      ),
+    ).toEqual([
+      {
+        name: "workspace",
+        source: "openclaw-workspace",
+        skillKey: "workspace-key",
+        bundled: false,
+        blockedByAgentFilter: false,
+        modelVisible: true,
+      },
+      {
+        name: "custodian",
+        source: "openclaw-custodian",
+        skillKey: "custodian",
+        bundled: true,
+        blockedByAgentFilter: true,
+        modelVisible: false,
+      },
+      {
+        name: "bundle",
+        source: "openclaw-bundled",
+        skillKey: "bundle",
+        bundled: true,
+        blockedByAgentFilter: true,
+        modelVisible: false,
+      },
+    ]);
   });
 
   it("classifies a mixed broken skill pack without flattening visibility reasons", () => {

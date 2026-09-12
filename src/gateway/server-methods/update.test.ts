@@ -25,8 +25,6 @@ import {
   withTransferredUpdateHandoff,
   runGatewayUpdateMock,
   runGatewayUpdatePreflightMock,
-  resolveUpdateInstallSurfaceMock,
-  initializeGatewayUpdateStatusMock,
   recordLatestUpdateRestartSentinelMock,
   isRestartEnabledMock,
   detectRespawnSupervisorMock,
@@ -41,51 +39,11 @@ import {
   resolveGatewayLifecycleNoticeRouteMock,
   scheduleGatewaySigusr1RestartMock,
   runPostCoreFinalizeAfterGatewayUpdateMock,
-  type UpdateRunPayload,
+  invokeUpdateRun,
+  captureUpdateRunPayload,
+  mockGlobalInstallSurface,
+  mockGitInstallSurface,
 } from "./update.test-harness.js";
-
-async function invokeUpdateRun(
-  params: Record<string, unknown>,
-  respond?: (ok: boolean, response?: unknown) => void,
-  runtimeConfig: OpenClawConfig = { update: {} },
-) {
-  const { updateHandlers } = await import("./update.js");
-  const onRespond = respond ?? (() => {});
-  await expectDefined(
-    updateHandlers["update.run"],
-    'updateHandlers["update.run"] test invariant',
-  )({
-    params,
-    respond: onRespond as never,
-    context: { getRuntimeConfig: () => runtimeConfig },
-  } as never);
-}
-
-async function captureUpdateRunPayload(
-  params: Record<string, unknown> = {},
-  runtimeConfig?: OpenClawConfig,
-): Promise<UpdateRunPayload | undefined> {
-  let payload: UpdateRunPayload | undefined;
-  await invokeUpdateRun(
-    params,
-    (_ok: boolean, response: unknown) => {
-      payload = response as UpdateRunPayload;
-    },
-    runtimeConfig,
-  );
-  if (
-    payload?.result?.status &&
-    payload.result.status !== "ok" &&
-    payload.handoff?.status !== "started"
-  ) {
-    expect(getUpdateRun(payload.runId)).toMatchObject({
-      status: payload.result.status === "skipped" ? "skipped" : "failed",
-      phase: "finished",
-      reason: payload.result.reason,
-    });
-  }
-  return payload;
-}
 
 function readCapturedPayload(): RestartSentinelPayload {
   if (!sentinelState.capturedPayload) {
@@ -94,30 +52,82 @@ function readCapturedPayload(): RestartSentinelPayload {
   return sentinelState.capturedPayload;
 }
 
-function mockGlobalInstallSurface() {
-  initializeGatewayUpdateStatusMock.mockResolvedValueOnce({
-    root: "/tmp/openclaw-global",
-    status: { root: "/tmp/openclaw-global", installKind: "package", packageManager: "npm" },
-    installReceipt: null,
-  });
-  resolveUpdateInstallSurfaceMock.mockResolvedValueOnce({
-    kind: "global",
-    mode: "npm",
-    root: "/tmp/openclaw-global",
-    packageRoot: "/tmp/openclaw-global",
-  });
-}
-
-function mockGitInstallSurface(root: string) {
-  initializeGatewayUpdateStatusMock.mockResolvedValueOnce({
-    root,
-    status: { root, installKind: "git", packageManager: "pnpm" },
-    installReceipt: null,
-  });
-}
-
 describe("update.run acknowledgement", () => {
   const sessionKey = "agent:main:slack:dm:C0123ABC:thread:1234567890.123456";
+
+  it("keeps an operator update out of the selected non-owner chat", async () => {
+    const response = await captureUpdateRunPayload(
+      { sessionKey },
+      { commands: { ownerAllowFrom: ["telegram:12345"] } },
+    );
+    expect(response).toMatchObject({ ok: true, ackDelivered: false, ackQueued: false });
+    expect(runGatewayUpdateMock).toHaveBeenCalledOnce();
+    expect(sendGatewayLifecycleNoticeMock).not.toHaveBeenCalled();
+    expect(getUpdateRun(expectDefined(response, "update response").runId)).toMatchObject({
+      origin: { sessionKey },
+      verification: { noticeDelivered: false },
+    });
+  });
+  it.each([
+    {
+      name: "channel disabled",
+      base: false,
+      account: undefined,
+      accountId: "work",
+      allowed: false,
+    },
+    { name: "account enabled", base: false, account: true, accountId: "work", allowed: true },
+    { name: "account disabled", base: true, account: false, accountId: "work", allowed: false },
+    { name: "unset", base: undefined, account: undefined, accountId: "work", allowed: true },
+    {
+      name: "default account enabled",
+      base: false,
+      account: true,
+      accountId: undefined,
+      allowed: true,
+    },
+    {
+      name: "default account disabled",
+      base: true,
+      account: false,
+      accountId: undefined,
+      allowed: false,
+    },
+  ])("honors update notice send policy ($name)", async ({ base, account, accountId, allowed }) => {
+    const sessions = await import("../../config/sessions.js");
+    vi.mocked(sessions.extractDeliveryInfo).mockReturnValueOnce({
+      deliveryContext: { channel: "telegram", to: "12345", accountId },
+      threadId: undefined,
+    });
+    resolveGatewayLifecycleNoticeRouteMock.mockReturnValueOnce({
+      channel: "telegram",
+      to: "12345",
+      accountId,
+      threadId: undefined,
+    });
+    const response = await captureUpdateRunPayload(
+      { sessionKey: "agent:main:telegram:dm:12345" },
+      {
+        update: {},
+        commands: { ownerAllowFrom: ["telegram:12345"] },
+        channels: {
+          telegram: {
+            actions: { sendMessage: base },
+            defaultAccount: "work",
+            accounts: { work: { actions: { sendMessage: account } } },
+          },
+        },
+      },
+    );
+    expect(response).toMatchObject({ ok: true, ackDelivered: allowed, ackQueued: allowed });
+    expect(runGatewayUpdateMock).toHaveBeenCalledOnce();
+    expect(sendGatewayLifecycleNoticeMock).toHaveBeenCalledTimes(allowed ? 2 : 0);
+    if (!allowed) {
+      expect(getUpdateRun(expectDefined(response, "update response").runId)).toMatchObject({
+        verification: { noticeDelivered: false },
+      });
+    }
+  });
 
   it.each([false, true])(
     "awaits the chat acknowledgement before updating (managed=%s)",
@@ -188,7 +198,7 @@ describe("update.run acknowledgement", () => {
         expect.objectContaining({
           sessionKey,
           channel: "slack",
-          to: "slack:C0123ABC",
+          to: "C0123ABC",
           threadId: "1234567890.123456",
           message: `⬆️ Updating OpenClaw 1.0.0 → ${managed ? "2.0.0" : "the latest release"}. The gateway stays available while the update is validated; you'll get a message here when it finishes.`,
           deliveryIntentId: expect.stringMatching(/^update-run-ack:/),
@@ -215,7 +225,7 @@ describe("update.run acknowledgement", () => {
     expect(sendGatewayLifecycleNoticeMock).toHaveBeenCalledTimes(2);
     expect(sendGatewayLifecycleNoticeMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        to: "slack:C0456DEF",
+        to: "C0456DEF",
         message: expect.stringContaining("⚠️ OpenClaw update failed: build-failed."),
       }),
     );

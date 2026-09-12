@@ -39,6 +39,58 @@ afterAll(async () => {
 });
 
 describe("plugin state expiry cleanup", () => {
+  it("counts live rows in its namespace without deleting expired rows", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const scope = { pluginId: "discord", namespace: "count-expiry" };
+    seedPluginStateEntriesForTests([
+      { ...scope, key: "permanent", value: 1 },
+      { ...scope, key: "future", value: 2, expiresAt: 1_200 },
+      { ...scope, key: "boundary", value: 3, expiresAt: 1_000 },
+      { ...scope, key: "expired", value: 4, expiresAt: 999 },
+      { ...scope, namespace: "sibling", key: "permanent", value: 5 },
+      { ...scope, pluginId: "telegram", key: "permanent", value: 6 },
+    ]);
+    const options = { namespace: scope.namespace, maxEntries: 10 };
+    const sync = createPluginStateSyncKeyedStore(scope.pluginId, options);
+    const store = createPluginStateKeyedStore(scope.pluginId, options);
+
+    expect(sync.count()).toBe(2);
+    await expect(store.count()).resolves.toBe(2);
+    vi.setSystemTime(1_200);
+    expect(sync.count()).toBe(1);
+    await expect(store.count()).resolves.toBe(1);
+    expect(sweepExpiredPluginStateEntries()).toBe(3);
+  });
+
+  it("rechecks expiry time and newly written rows after an empty namespace cleanup", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const scope = { pluginId: "discord", namespace: "fresh-expiry" };
+    const store = createPluginStateKeyedStore(scope.pluginId, {
+      namespace: scope.namespace,
+      maxEntries: 10,
+    });
+    seedPluginStateEntriesForTests([{ ...scope, key: "future", value: 1, expiresAt: 1_200 }]);
+    await store.register("permanent", 2);
+    expect(sweepExpiredPluginStateEntries()).toBe(0);
+
+    vi.setSystemTime(1_200);
+    await store.register("permanent", 3);
+    expect(sweepExpiredPluginStateEntries()).toBe(0);
+    await expect(store.lookup("future")).resolves.toBeUndefined();
+
+    seedPluginStateEntriesForTests([
+      { ...scope, key: "new-expired", value: 4, expiresAt: 1_100 },
+      { ...scope, namespace: "sibling", key: "expired", value: 5, expiresAt: 1_100 },
+    ]);
+    await store.register("permanent", 6);
+    expect(sweepExpiredPluginStateEntries()).toBe(1);
+    await expect(store.entries()).resolves.toEqual([
+      { key: "permanent", value: 6, createdAt: 1_200 },
+    ]);
+  });
+
   it("registerIfAbsent replaces an expired target beyond the namespace cleanup batch", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_200);
