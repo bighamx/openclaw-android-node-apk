@@ -14,6 +14,7 @@ type ResultStep = Pick<
   | "termination"
   | "stdoutTail"
   | "stderrTail"
+  | "failureFacts"
   | "configChanges"
   | "configWriteRefusal"
   | "snapshotCapacity"
@@ -59,6 +60,9 @@ export function updateRunStepsFromResultStep(step: ResultStep): UpdateRunStep[] 
     {
       step: text(step.name),
       status: step.exitCode === 0 || step.advisory ? "completed" : "failed",
+      ...(step.failureFacts?.length && !step.advisory
+        ? { failureFacts: step.failureFacts.slice(0, 5) }
+        : {}),
       ...(configWriteRefusal ? { configWriteRefusal } : {}),
       ...(snapshotCapacity ? { snapshotCapacity } : {}),
       ...(step.exitCode !== 0

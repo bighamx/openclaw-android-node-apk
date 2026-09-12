@@ -9,6 +9,7 @@ import type {
   UpdateDoctorConfigWriteRefusal,
 } from "./update-doctor-config.js";
 import type { PackageUpdateStepAdvisory } from "./update-doctor-result.js";
+import type { UpdateFailureFact } from "./update-failure-facts.js";
 import type { GlobalInstallManager } from "./update-global.js";
 import type { UpdateRecovery } from "./update-recovery.js";
 import type { UpdateSnapshotCapacity } from "./update-snapshot-capacity.js";
@@ -31,6 +32,7 @@ export type UpdateStepResult = {
   advisory?: UpdateStepAdvisory;
   /** Complete owner-classified warnings when one step reports several outcomes. */
   warnings?: string[];
+  failureFacts?: UpdateFailureFact[];
   configChanges?: UpdateDoctorConfigChange[];
   configWriteRefusal?: UpdateDoctorConfigWriteRefusal;
   snapshotCapacity?: UpdateSnapshotCapacity;
@@ -55,6 +57,7 @@ export type UpdateRunResult = {
   recovery?: UpdateRecovery;
   postUpdate?: {
     plugins?: {
+      failureFacts?: UpdateFailureFact[];
       status: "ok" | "warning" | "skipped" | "error";
       reason?: string;
       changed: boolean;

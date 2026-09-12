@@ -51,6 +51,13 @@ let runtimeError = false;
 let runtimeContract: unknown;
 let lintReport: { ok: boolean; checksRun: number; findings: unknown[]; warnings: unknown[] };
 
+function stubHealthyGateway() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({ status: "started", ready: true })),
+  );
+}
+
 beforeEach(async () => {
   vi.clearAllMocks();
   pluginErrors = false;
@@ -189,10 +196,7 @@ describe("update candidate canary", () => {
           },
         ],
       };
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async () => Response.json({ status: "started", ready: true })),
-      );
+      stubHealthyGateway();
       const result = await validateUpdateCandidateCanary({
         root,
         stateDir: root,
@@ -210,10 +214,7 @@ describe("update candidate canary", () => {
     },
   );
   it("keeps snapshot and validation source selection inside the candidate", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ status: "started", ready: true })),
-    );
+    stubHealthyGateway();
     const servingRoot = path.join(root, "installed");
     const env = { OPENCLAW_DEV_SOURCE_ROOT: servingRoot };
     const result = await validateUpdateCandidateCanary({
@@ -235,10 +236,7 @@ describe("update candidate canary", () => {
   it("classifies a deadline before teardown when SIGTERM closes the child with zero", async () => {
     let now = 2_000_000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ status: "started", ready: true })),
-    );
+    stubHealthyGateway();
     mocks.spawn.mockImplementationOnce((_command, _args, options) => {
       const child = new FakeChild(nextPid++);
       children.set(child.pid, child);
@@ -275,10 +273,7 @@ describe("update candidate canary", () => {
       }
       return snapshot(command, options);
     });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ status: "started", ready: true })),
-    );
+    stubHealthyGateway();
     try {
       const result = await validateUpdateCandidateCanary({
         root,
@@ -330,10 +325,7 @@ describe("update candidate canary", () => {
           return child;
         },
       );
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async () => Response.json({ status: "started", ready: true })),
-      );
+      stubHealthyGateway();
       const result = await validateUpdateCandidateCanary({
         root,
         stateDir: root,
@@ -348,48 +340,75 @@ describe("update candidate canary", () => {
       );
     },
   );
-  it("accepts a classified Doctor advisory while capturing migration receipts", async () => {
-    mocks.spawn.mockImplementationOnce(
-      (_command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => {
-        expect(args).toContain("doctor");
-        const child = new FakeChild(nextPid++);
-        children.set(child.pid, child);
-        const resultPath = options.env[UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH_ENV];
-        if (!resultPath) {
-          throw new Error("Missing candidate Doctor receipt");
-        }
-        void writeUpdatePostInstallDoctorResult({
-          resultPath,
-          result: createDeferredConfiguredPluginRepairDoctorResult([
-            "Deferred configured plugin repair.",
-          ]),
-        }).then(
-          () => child.emit("close", 86),
-          (error: unknown) => child.emit("error", error),
-        );
-        return child;
+  it.each([
+    {
+      label: "advisory",
+      receipt: createDeferredConfiguredPluginRepairDoctorResult([
+        "Deferred configured plugin repair.",
+      ]),
+      exitCode: 86,
+      expectedStatus: "ok",
+    },
+    {
+      label: "error",
+      receipt: {
+        status: "error" as const,
+        failureFacts: [
+          {
+            check: "core/doctor/runtime-tool-schemas",
+            code: "doctor-failed",
+            affectedKey: "mcp.servers",
+            message: "connect ECONNREFUSED",
+          },
+        ],
       },
-    );
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ status: "started", ready: true })),
-    );
-    const result = await validateUpdateCandidateCanary({
-      root,
-      stateDir: root,
-      config: {},
-      env: {},
-      timeoutMs: 3000,
-    });
-    expect(result.status).toBe("ok");
-    expect(result.steps).toContainEqual(
-      expect.objectContaining({
-        name: "candidate migration rehearsal",
-        exitCode: 86,
-        advisory: expect.any(Object),
-      }),
-    );
-  });
+      exitCode: 1,
+      expectedStatus: "error",
+    },
+  ])(
+    "preserves classified Doctor $label and its receipt evidence",
+    async ({ receipt, exitCode, expectedStatus }) => {
+      mocks.spawn.mockImplementationOnce(
+        (_command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => {
+          expect(args).toContain("doctor");
+          const child = new FakeChild(nextPid++);
+          children.set(child.pid, child);
+          const resultPath = options.env[UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH_ENV];
+          if (!resultPath) {
+            throw new Error("Missing candidate Doctor receipt");
+          }
+          void writeUpdatePostInstallDoctorResult({
+            resultPath,
+            result: receipt,
+          }).then(
+            () => child.emit("close", exitCode),
+            (error: unknown) => child.emit("error", error),
+          );
+          return child;
+        },
+      );
+      stubHealthyGateway();
+      const result = await validateUpdateCandidateCanary({
+        root,
+        stateDir: root,
+        config: {},
+        env: {},
+        timeoutMs: 3000,
+      });
+      expect(result.status).toBe(expectedStatus);
+      const step = result.steps.find((entry) => entry.name === "candidate migration rehearsal");
+      expect(step?.exitCode).toBe(exitCode);
+      if (receipt.status === "advisory") {
+        expect(step?.advisory).toEqual({
+          kind: "recoverable-maintenance",
+          message: receipt.advisory.details.join("\n"),
+        });
+      } else {
+        expect(step?.advisory).toBeUndefined();
+      }
+      expect(step?.failureFacts).toEqual(receipt.failureFacts);
+    },
+  );
   it.each([
     {
       label: "plugin load failure",
@@ -413,10 +432,7 @@ describe("update candidate canary", () => {
     },
   ])("handles $label before proving core readiness", async ({ inventory, proceeds }) => {
     pluginInventory = inventory;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ status: "started", ready: true })),
-    );
+    stubHealthyGateway();
 
     const result = await validateUpdateCandidateCanary({
       root,
@@ -443,10 +459,7 @@ describe("update candidate canary", () => {
   });
 
   it("keeps verified readiness and records a warning when rehearsal cleanup fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ status: "started", ready: true })),
-    );
+    stubHealthyGateway();
     const remove = fs.rm.bind(fs);
     let retained: string | undefined;
     const denial = vi.spyOn(fs, "rm").mockImplementation(async (target, options) => {
@@ -499,10 +512,7 @@ describe("update candidate canary", () => {
         executorDelegation: "pid-start-v1",
         candidateMutation,
       };
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async () => Response.json({ status: "started", ready: true })),
-      );
+      stubHealthyGateway();
       const result = await validateUpdateCandidateCanary({
         root,
         stateDir: root,
@@ -517,10 +527,7 @@ describe("update candidate canary", () => {
   );
   it("reports unavailable validation when the candidate predates the migration-continuation contract", async () => {
     await fs.rm(path.join(root, "dist", "infra", "update-migrated-finalize.worker.js"));
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ status: "started", ready: true })),
-    );
+    stubHealthyGateway();
     const onStep = vi.fn();
     const result = await validateUpdateCandidateCanary({
       root,
@@ -718,6 +725,65 @@ describe("update candidate canary", () => {
       await rehearsal.cleanup();
     }
     await expect(fs.access(rehearsal.stateDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("preserves bounded Doctor findings before the diagnostic log tail", async () => {
+    const spawnNormally = mocks.spawn.getMockImplementation()!;
+    mocks.spawn.mockImplementation((command, args: string[], options) => {
+      if (!args.includes("--lint")) {
+        return spawnNormally(command, args, options);
+      }
+      const child = new FakeChild(nextPid++);
+      queueMicrotask(() => {
+        child.stdout.write(
+          `${JSON.stringify({
+            ok: false,
+            checksRun: 1,
+            findings: [
+              ...Array.from({ length: 8 }, (_, index) => ({
+                checkId: `optional.warning.${index}`,
+                severity: "warning",
+                message: "Optional check was skipped.",
+              })),
+              ...Array.from({ length: 8 }, (_, index) => ({
+                checkId: `config.invalid.${index}`,
+                severity: "error",
+                path: "mcp.servers.example",
+                message:
+                  "Invalid server at /Users/synthetic/private/config.json token=synthetic-canary-secret",
+                requirement: "connect ECONNREFUSED private-host.example:8443",
+              })),
+            ],
+          })}\n`,
+        );
+        child.stderr.write(Array.from({ length: 60 }, (_, index) => `cleanup ${index}\n`).join(""));
+        child.emit("close", 1);
+      });
+      return child;
+    });
+    const onStep = vi.fn();
+    const result = await validateUpdateCandidateCanary({
+      root,
+      stateDir: root,
+      config: {},
+      env: { API_TOKEN: "synthetic-canary-secret" },
+      timeoutMs: 3_000,
+      onStep,
+    });
+    expect(result).toMatchObject({ status: "error", phase: "lint" });
+    expect(result.steps.at(-1)).toMatchObject({
+      failureFacts: Array.from({ length: 5 }, (_, index) => ({
+        check: `config.invalid.${index}`,
+        code: "doctor-failed",
+        affectedKey: "mcp.servers.example",
+        message: expect.stringContaining("Invalid server"),
+      })),
+    });
+    expect(onStep).toHaveBeenLastCalledWith(result.steps.at(-1));
+    expect(result.steps.at(-1)?.failureFacts?.[0]?.message).toContain("ECONNREFUSED");
+    expect(JSON.stringify(result)).not.toContain("synthetic-canary-secret");
+    expect(JSON.stringify(result)).not.toContain("/Users/synthetic");
+    expect(result.logTail.join("\n")).not.toContain("config.invalid.0");
   });
 
   it.each(["snapshot", "doctor", "plugins", "runtime", "readiness"] as const)(

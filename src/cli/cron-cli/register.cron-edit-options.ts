@@ -1,4 +1,7 @@
-import { parseStrictPositiveInteger } from "@openclaw/normalization-core/number-coercion";
+import {
+  parseStrictNonNegativeInteger,
+  parseStrictPositiveInteger,
+} from "@openclaw/normalization-core/number-coercion";
 import {
   normalizeOptionalString,
   readNonBlankString,
@@ -59,23 +62,10 @@ export async function resolveCronEditPayloadDeliveryPatch(
     throw new CronCliError("Use --fallbacks or --clear-fallbacks, not both");
   }
   const toolsAllow = parseCronToolsAllow(opts.tools);
-  const timeoutSecondsValue = opts.timeoutSeconds;
-  const rawTimeoutSeconds =
-    timeoutSecondsValue === undefined
-      ? undefined
-      : typeof timeoutSecondsValue === "string" || typeof timeoutSecondsValue === "number"
-        ? String(timeoutSecondsValue).trim()
-        : "";
-  if (rawTimeoutSeconds !== undefined && !/^\d+$/u.test(rawTimeoutSeconds)) {
-    throw new CronCliError("Invalid --timeout-seconds (must be a positive integer).");
-  }
-  const timeoutSeconds = rawTimeoutSeconds === undefined ? undefined : Number(rawTimeoutSeconds);
-  const hasTimeoutSeconds =
-    typeof timeoutSeconds === "number" &&
-    Number.isSafeInteger(timeoutSeconds) &&
-    timeoutSeconds > 0;
-  if (rawTimeoutSeconds !== undefined && !hasTimeoutSeconds) {
-    throw new CronCliError("Invalid --timeout-seconds (must be a positive integer).");
+  const timeoutSeconds = parseStrictNonNegativeInteger(opts.timeoutSeconds);
+  const hasTimeoutSeconds = timeoutSeconds !== undefined;
+  if (opts.timeoutSeconds !== undefined && !hasTimeoutSeconds) {
+    throw new CronCliError("Invalid --timeout-seconds (must be a non-negative integer).");
   }
   const rawNoOutputTimeoutSeconds =
     opts.noOutputTimeoutSeconds ??

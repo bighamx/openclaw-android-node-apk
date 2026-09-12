@@ -60,8 +60,9 @@ import { withPluginRuntimeRegistryScope } from "../plugins/runtime/gateway-reque
 import { runOutsidePluginRuntimeGenerationScope } from "../plugins/runtime/generation-scope.js";
 import type { PluginRuntimeChannel } from "../plugins/runtime/types-channel.js";
 import { runOutsideGatewayRootWorkAdmission } from "../process/gateway-work-admission.js";
-import { resolveAccountEntry, resolveNormalizedAccountEntry } from "../routing/account-lookup.js";
-import { normalizeAccountId, normalizeOptionalAccountId } from "../routing/session-key.js";
+import { normalizeOptionalAccountId } from "../routing/account-id.js";
+import { resolveChannelAccountEntry } from "../routing/account-lookup.js";
+import { normalizeAccountId } from "../routing/session-key.js";
 import type { RuntimeEnv } from "../runtime.js";
 import {
   assertSecretOwnerAvailable,
@@ -364,23 +365,24 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
 
   const resolveAccountHealthMonitorOverride = (
     channelConfig: ChannelHealthMonitorConfig | undefined,
+    channelId: ChannelId,
     accountId: string,
   ): boolean | undefined => {
     if (!channelConfig?.accounts) {
       return undefined;
     }
-    const direct = resolveAccountEntry(channelConfig.accounts, accountId);
+    const direct = resolveChannelAccountEntry(channelConfig.accounts, accountId, channelId);
     if (typeof direct?.healthMonitor?.enabled === "boolean") {
       return direct.healthMonitor.enabled;
     }
-
     const normalizedAccountId = normalizeOptionalAccountId(accountId);
     if (!normalizedAccountId) {
       return undefined;
     }
-    const match = resolveNormalizedAccountEntry(
+    const match = resolveChannelAccountEntry(
       channelConfig.accounts,
       normalizedAccountId,
+      channelId,
       normalizeAccountId,
     );
     if (typeof match?.healthMonitor?.enabled !== "boolean") {
@@ -392,7 +394,11 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
   const isHealthMonitorEnabled = (channelId: ChannelId, accountId: string): boolean => {
     const cfg = getRuntimeConfig();
     const channelConfig = cfg.channels?.[channelId] as ChannelHealthMonitorConfig | undefined;
-    const accountOverride = resolveAccountHealthMonitorOverride(channelConfig, accountId);
+    const accountOverride = resolveAccountHealthMonitorOverride(
+      channelConfig,
+      channelId,
+      accountId,
+    );
     const channelOverride = channelConfig?.healthMonitor?.enabled;
 
     if (typeof accountOverride === "boolean") {

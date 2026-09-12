@@ -5,6 +5,10 @@ import { formatDurationPrecise } from "./format-time/format-duration.ts";
 import type { RestartSentinelPayload } from "./restart-sentinel-store.js";
 import { formatUpdateDoctorConfigWriteRefusal } from "./update-doctor-config.js";
 import {
+  formatUpdateFailureFact,
+  selectUpdateFailureReportSteps,
+} from "./update-failure-facts-format.js";
+import {
   LEGACY_UPDATE_RUN_ADVISORY,
   LEGACY_UPDATE_RUN_EXPIRED_REASON,
 } from "./update-run-legacy-expiry.js";
@@ -168,8 +172,11 @@ export function renderUpdateRunReport(
   if (phases.length) {
     lines.push(`Phases: ${phases.join(" → ")}`);
   }
-  for (const step of run.steps.filter((item) => item.status === "failed").slice(-3)) {
+  for (const step of selectUpdateFailureReportSteps(
+    run.steps.filter((item) => item.status === "failed"),
+  )) {
     lines.push(bounded(`Failed: ${step.step}${step.detail ? ` — ${step.detail}` : ""}`, 300));
+    lines.push(...(step.failureFacts ?? []).slice(0, 5).map(formatUpdateFailureFact));
   }
   for (const message of updateRunWarningMessages(run.steps).slice(-3)) {
     lines.push(`Warning: ${bounded(message, 500)}`);
@@ -298,6 +305,7 @@ export function updateRunReportInputFromSentinel(payload: RestartSentinelPayload
     steps: (stats?.steps ?? []).map((step) => ({
       step: step.name,
       status: step.log?.exitCode === 0 ? "completed" : "failed",
+      failureFacts: step.failureFacts,
     })),
   };
 }

@@ -7,7 +7,10 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import JSON5 from "json5";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveGatewayInstallEntrypoint } from "../daemon/gateway-entrypoint.js";
-import { redactSupportString } from "../logging/diagnostic-support-redaction.js";
+import {
+  redactSupportDiagnosticLine,
+  redactSupportString,
+} from "../logging/diagnostic-support-redaction.js";
 import { signalProcessTree } from "../process/kill-tree.js";
 import {
   parseOpenClawSchemaVersions,
@@ -28,7 +31,9 @@ import {
   normalizeUpdatePostInstallDoctorWarnings,
   UPDATE_POST_INSTALL_DOCTOR_ADVISORY_EXIT_CODE,
   UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH_ENV,
+  type UpdatePostInstallDoctorResult,
 } from "./update-doctor-result.js";
+import { createUpdateFailureFact } from "./update-failure-facts.js";
 import { cleanupUpdateTemporaryDirectory } from "./update-maintenance.js";
 import { resolveUpdateDoctorExecutionPolicy } from "./update-runner-doctor.js";
 import type { UpdateStepResult } from "./update-runner-types.js";
@@ -175,6 +180,7 @@ export async function validateUpdateCandidateCanary(params: {
       windowsHide: true,
     });
     let stdout = "";
+    let firstStderrLine: string | undefined;
     let stdoutBytes = 0;
     let outputExceeded = false;
     const flushers = [child.stdout, child.stderr].map((stream) => {
@@ -196,17 +202,32 @@ export async function validateUpdateCandidateCanary(params: {
         const lines = pending.split(/\r?\n/u);
         pending = lines.pop() ?? "";
         for (const line of lines) {
+          if (stream === child.stderr && line.trim()) {
+            firstStderrLine ??= redactSupportDiagnosticLine(line, {
+              env,
+              stateDir: params.stateDir,
+            });
+          }
           capture(line);
         }
         if (pending.length > 64 * 1024) {
           // Discard an oversized unterminated line whole, never through a secret.
           pending = "";
           droppingLine = true;
+          if (stream === child.stderr) {
+            firstStderrLine ??= "[oversized log line omitted]";
+          }
           capture("[oversized log line omitted]");
         }
       });
       return () => {
         if (pending) {
+          if (stream === child.stderr && pending.trim()) {
+            firstStderrLine ??= redactSupportDiagnosticLine(pending, {
+              env,
+              stateDir: params.stateDir,
+            });
+          }
           capture(pending);
           pending = "";
         }
@@ -223,6 +244,10 @@ export async function validateUpdateCandidateCanary(params: {
     let exited = false;
     const closed = new Promise<number | null>((resolve) => {
       child.once("error", (error) => {
+        firstStderrLine ??= redactSupportDiagnosticLine(error.message, {
+          env,
+          stateDir: params.stateDir,
+        });
         capture(error.message);
         exited = true;
         resolve(null);
@@ -240,6 +265,7 @@ export async function validateUpdateCandidateCanary(params: {
       closed,
       hasExited: () => exited,
       stdout: () => stdout,
+      firstStderrLine: () => firstStderrLine,
       outputExceeded: () => outputExceeded,
     };
   };
@@ -362,6 +388,7 @@ export async function validateUpdateCandidateCanary(params: {
       const running = launch(command.entry ?? entry, command.args);
       let code: number | null = null;
       let doctorAdvisory: UpdateStepResult["advisory"];
+      let doctorReceipt: UpdatePostInstallDoctorResult | null = null;
       const pluginObservations: string[] = [];
       let timedOut = false;
       try {
@@ -373,13 +400,13 @@ export async function validateUpdateCandidateCanary(params: {
       } finally {
         await terminateCanary(running.child, running.closed, deadline);
         if (doctorResultPath) {
-          const receipt = await consumeUpdatePostInstallDoctorResult(
+          doctorReceipt = await consumeUpdatePostInstallDoctorResult(
             doctorResultPath,
             doctorResultOptions,
           );
-          doctorConfigChanges = receipt?.configChanges ?? [];
+          doctorConfigChanges = doctorReceipt?.configChanges ?? [];
           // Shipped Doctors predate typed receipts; observe only their private write window.
-          if (!receipt?.configChanges && isRecord(configBeforeDoctor)) {
+          if (!doctorReceipt?.configChanges && isRecord(configBeforeDoctor)) {
             const after: unknown = JSON5.parse(await fs.readFile(rehearsal.configPath, "utf8"));
             if (isRecord(after)) {
               doctorConfigChanges = [
@@ -392,11 +419,11 @@ export async function validateUpdateCandidateCanary(params: {
           }
           if (
             code === UPDATE_POST_INSTALL_DOCTOR_ADVISORY_EXIT_CODE &&
-            receipt?.status === "advisory"
+            doctorReceipt?.status === "advisory"
           ) {
             doctorAdvisory = {
               kind: "recoverable-maintenance",
-              message: receipt.advisory.details.join("\n"),
+              message: doctorReceipt.advisory.details.join("\n"),
             };
           }
         }
@@ -484,6 +511,31 @@ export async function validateUpdateCandidateCanary(params: {
           ? { stdoutTail: pluginObservations.join("\n") }
           : {}),
       };
+      if (code !== 0 && !doctorAdvisory) {
+        let findings = doctorReceipt?.status === "error" ? doctorReceipt.failureFacts : undefined;
+        if (!findings?.length && phase === "lint" && !running.outputExceeded()) {
+          try {
+            findings = parseUpdateDoctorLintReport(running.stdout(), env).failureFacts;
+          } catch {
+            // A failed child may exit before emitting JSON; retain its first stderr line below.
+          }
+        }
+        step.failureFacts = findings?.length
+          ? findings
+          : [
+              createUpdateFailureFact(
+                {
+                  check: phase === "lint" ? "doctor" : phase,
+                  code:
+                    phase === "doctor" || phase === "lint"
+                      ? "doctor-failed"
+                      : `candidate-${phase}-failed`,
+                  message: running.firstStderrLine() ?? `Candidate ${phase} failed`,
+                },
+                env,
+              ),
+            ];
+      }
       if (lintWarnings.length > 0) {
         step.warnings = lintWarnings;
       }
@@ -584,6 +636,17 @@ export async function validateUpdateCandidateCanary(params: {
     if (error instanceof UpdateSnapshotCapacityError) {
       failed.snapshotCapacity = error.capacity;
     }
+    failed.failureFacts ??= [
+      createUpdateFailureFact(
+        {
+          check: phase === "readiness" ? "readyz" : phase === "startup" ? "startupz" : phase,
+          code:
+            phase === "doctor" || phase === "lint" ? "doctor-failed" : `candidate-${phase}-failed`,
+          message: error instanceof Error ? error.message : String(error),
+        },
+        env,
+      ),
+    ];
     params.onStep?.(failed);
     return {
       status: "error",

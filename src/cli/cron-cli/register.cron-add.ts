@@ -1,5 +1,8 @@
 // Cron status/list/add command registration and create-payload normalization.
-import { parseStrictPositiveInteger } from "@openclaw/normalization-core/number-coercion";
+import {
+  parseStrictNonNegativeInteger,
+  parseStrictPositiveInteger,
+} from "@openclaw/normalization-core/number-coercion";
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
@@ -201,9 +204,11 @@ export function registerCronAddCommand(cron: Command) {
                   script: await readCronPayloadScript(scriptPath),
                 };
               }
-              const timeoutSeconds = parseStrictPositiveInteger(opts.timeoutSeconds);
+              const timeoutSeconds = parseStrictNonNegativeInteger(opts.timeoutSeconds);
               if (opts.timeoutSeconds !== undefined && timeoutSeconds === undefined) {
-                throw new CronCliError("Invalid --timeout-seconds (must be a positive integer).");
+                throw new CronCliError(
+                  "Invalid --timeout-seconds (must be a non-negative integer).",
+                );
               }
               if (commandShell || commandArgv) {
                 const rawNoOutputTimeoutSeconds =

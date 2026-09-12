@@ -47,11 +47,13 @@ import {
   runUpdateFinalizationDoctorInFreshProcess,
   withPrePluginUpdateDoctorEnv,
 } from "./update-command-fresh-doctor.js";
+import { collectPostCorePluginFailureFacts } from "./update-command-plugins-internals.js";
 import {
   updatePluginsAfterCoreUpdate,
   type PostCorePluginUpdateResult,
 } from "./update-command-plugins.js";
 import { UpdateCommandFailure } from "./update-command-result.js";
+import { completeSourceUpdateRuntime } from "./update-command-runtime.js";
 import { resolveServiceRefreshEnv, withUpdateInProgressEnv } from "./update-command-service-env.js";
 import { reportPreMutationUpdateResult } from "./update-command-terminal.js";
 import { withUpdateFailureTriage } from "./update-command-triage.js";
@@ -202,6 +204,11 @@ async function updateFinalizeCommandInternal(
     lifecycle.recordWarnings(doctorWarnings);
   };
 
+  if ((await resolveUpdateInstallKind(root)) === "git") {
+    await withPluginLifecycleLease({}, async (lease) => {
+      await completeSourceUpdateRuntime({ root, timeoutMs: lifecycle.budget("plugins"), lease });
+    });
+  }
   const initialPluginUpdate = await withPrePluginUpdateDoctorEnv(async () => {
     await lifecycle.run("configSnapshot", createUpdateConfigSnapshot);
     await lifecycle.run("doctor", () =>
@@ -355,10 +362,15 @@ async function updateFinalizeCommandInternal(
   }
 }
 
-function pluginOutcome(result: PostCorePluginUpdateResult): "failed" | "warning" | "completed" {
-  return result.status === "error"
-    ? "failed"
-    : result.status === "warning"
-      ? "warning"
-      : "completed";
+function pluginOutcome(result: PostCorePluginUpdateResult): {
+  outcome: "failed" | "warning" | "completed";
+  failureFacts?: PostCorePluginUpdateResult["failureFacts"];
+} {
+  return {
+    outcome:
+      result.status === "error" ? "failed" : result.status === "warning" ? "warning" : "completed",
+    ...(result.status === "error"
+      ? { failureFacts: collectPostCorePluginFailureFacts(result) }
+      : {}),
+  };
 }

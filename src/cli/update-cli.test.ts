@@ -717,7 +717,8 @@ const { openOpenClawStateDatabase, closeOpenClawStateDatabaseForTest } =
   await import("../state/openclaw-state-db.js");
 // Real recovery dependencies need the initialized runtime and child-process mocks.
 const { runUpdateFailureTriage } = await import("../infra/update-triage.js");
-const { resolveOpenClawPackageRoot } = await import("../infra/openclaw-root.js");
+const { resolveOpenClawPackageRoot, resolveOpenClawPackageRootSync } =
+  await import("../infra/openclaw-root.js");
 const { resolveGatewayInstallEntrypoint } = await import("../daemon/gateway-entrypoint.js");
 const {
   mutateConfigFileWithRetry,
@@ -4085,6 +4086,9 @@ describe("update-cli", () => {
     "keeps downgrade consent separate from --yes (explicit=%s)",
     async (acceptCapabilities) => {
       const downgradedRoot = createCaseDir("openclaw-downgraded-consent-root");
+      vi.mocked(resolveUpdateInstallKind).mockImplementation(async (root) =>
+        root === downgradedRoot ? "package" : "git",
+      );
       setupUpdatedRootRefresh({
         targetVersion: "2026.4.10",
         gatewayUpdateImpl: async () =>
@@ -4124,6 +4128,9 @@ describe("update-cli", () => {
 
   it("pins the compatibility host version to the downgraded target during current-process post-core plugin convergence (#87914)", async () => {
     const downgradedRoot = createCaseDir("openclaw-downgraded-compat-root");
+    vi.mocked(resolveUpdateInstallKind).mockImplementation(async (root) =>
+      root === downgradedRoot ? "package" : "git",
+    );
     setupUpdatedRootRefresh({
       targetVersion: "2026.4.10",
       gatewayUpdateImpl: async () =>
@@ -6692,7 +6699,18 @@ describe("update-cli", () => {
         error: expect.stringContaining("openclaw-agent.sqlite"),
         result: expect.objectContaining({
           reason: "database-schema-preflight",
-          steps: [],
+          steps: [
+            expect.objectContaining({
+              name: "database-schema-preflight",
+              exitCode: 1,
+              failureFacts: [
+                expect.objectContaining({
+                  check: "database-schema-preflight",
+                  code: "database-schema-preflight",
+                }),
+              ],
+            }),
+          ],
         }),
       }),
     );
@@ -6892,6 +6910,22 @@ describe("update-cli", () => {
   ] as const)(
     "$name",
     async ({ installKind, options, storedChannel, expectedChannel, expectedPersistedChannel }) => {
+      let gitRoutingRoot: string | undefined;
+      if (installKind === "git" && expectedChannel !== undefined) {
+        const root = createCaseDir("openclaw-routing-legacy-git");
+        await writeOpenClawPackageFixture(root, "1.0.0", {
+          git: true,
+          entrySource: "export {};\n",
+        });
+        mockFileBackedPathExists();
+        gitRoutingRoot = await fs.realpath(root);
+        vi.mocked(resolveOpenClawPackageRoot).mockResolvedValue(gitRoutingRoot);
+        vi.mocked(resolveOpenClawPackageRootSync).mockReturnValue(gitRoutingRoot);
+        vi.mocked(resolveUpdateInstallKind).mockImplementation(async (target) => {
+          expect(target).toBe(gitRoutingRoot);
+          return "git";
+        });
+      }
       if (installKind === "package" && expectedChannel === undefined) {
         await mockPackageInstallAtCaseDir();
       }
@@ -6901,7 +6935,9 @@ describe("update-cli", () => {
         vi.mocked(resolveUpdateInstallIdentity).mockResolvedValue({ installKind: "git" });
       }
       if (installKind === "git" || expectedChannel !== undefined) {
-        vi.mocked(runGatewayUpdate).mockResolvedValue(makeOkUpdateResult({ mode: "git" }));
+        vi.mocked(runGatewayUpdate).mockResolvedValue(
+          makeOkUpdateResult({ mode: "git", root: gitRoutingRoot }),
+        );
       }
       if (storedChannel) {
         vi.mocked(readConfigFileSnapshot).mockResolvedValue({
@@ -6924,6 +6960,12 @@ describe("update-cli", () => {
           entrySource: "export {};\n",
         });
         const canonicalGitRoot = await fs.realpath(gitRoot);
+        vi.mocked(resolveUpdateInstallKind).mockImplementation(async (root) =>
+          root === canonicalGitRoot ? "git" : "package",
+        );
+        vi.mocked(resolveUpdateInstallIdentity).mockImplementation(async ({ root }) => ({
+          installKind: root === canonicalGitRoot ? "git" : "package",
+        }));
         mockFileBackedPathExists();
         mockNpmGlobalCommands(nodeModules, undefined, canonicalGitRoot);
         mockGitUpdateAfterMutation(
@@ -8072,7 +8114,18 @@ describe("update-cli", () => {
     expect(result).toMatchObject({
       status: "error",
       reason: "unsupported-package-target",
-      steps: [],
+      steps: [
+        expect.objectContaining({
+          name: "unsupported-package-target",
+          exitCode: 1,
+          failureFacts: [
+            expect.objectContaining({
+              check: "unsupported-package-target",
+              code: "unsupported-package-target",
+            }),
+          ],
+        }),
+      ],
     });
     expect(packageInstallCommandCall()?.[0]).toBeUndefined();
     expectNoSideEffects(resolveGlobalManager, replaceConfigFile, runGatewayUpdate);

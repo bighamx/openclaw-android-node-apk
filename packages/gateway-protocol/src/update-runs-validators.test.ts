@@ -63,6 +63,33 @@ const run = LedgerRecordSchema.parse({
 });
 
 describe("update run wire contract", () => {
+  it("carries a bounded failing check through history responses", () => {
+    const fact = {
+      check: "readyz",
+      code: "readyz-unhealthy",
+      message: "Readiness returned HTTP 503.",
+    };
+    const step = { step: "gateway verification", status: "failed", failureFacts: [fact] };
+    const failed = {
+      ...run,
+      steps: [step],
+    };
+    expect(validateUpdateRunsGetResult({ run: failed })).toBe(true);
+    expect(
+      validateUpdateRunsGetResult({
+        run: {
+          ...failed,
+          steps: [
+            {
+              ...step,
+              failureFacts: Array.from({ length: 6 }, () => fact),
+            },
+          ],
+        },
+      }),
+    ).toBe(false);
+  });
+
   it.each([
     {
       snapshotCapacity: {

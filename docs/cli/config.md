@@ -115,6 +115,9 @@ A schema-valid but unset path explains that the runtime default applies; an unkn
 `openclaw config schema`. With `--json`, both use the standard [CLI JSON failure envelope](/cli#json-failures)
 on stdout and exit with status 1. Without `--json`, diagnostics remain on stderr.
 
+Explicit `null`, `false`, `0`, and empty strings remain readable values in both modes;
+`--json` preserves their types. Optional fields with no runtime value are reported as unset.
+
 ```bash
 openclaw config get browser.executablePath
 openclaw config get agents.defaults.model --json
@@ -296,6 +299,8 @@ SecretRef assignments are rejected on unsupported runtime-mutable surfaces (for 
 </Warning>
 
 Batch parsing always uses the batch payload (`--batch-json`/`--batch-file`) as the source of truth; `--strict-json` / `--json` do not change batch parsing behavior.
+
+Supplying either batch option selects batch mode. Empty or whitespace-only values are rejected; omit both options to use positional `<path> <value>` mode.
 
 Batch assignments apply in order, then validation checks the final config. A SecretRef replaced by a later assignment is not resolved or counted in dry-run output, even with `--allow-exec`. Providers that remain in a changed provider collection still receive command-path trust checks.
 
