@@ -1,5 +1,6 @@
 import { sanitizeTriageUpdateFailure } from "../../commands/triage-update.js";
 import { readConfigFileSnapshot } from "../../config/config.js";
+import { hashConfigRaw } from "../../config/io.read-helpers.js";
 import { resolveInstallationTarget } from "../../infra/installation-target-context.js";
 import {
   prepareUpdateCandidateRehearsal,
@@ -83,7 +84,7 @@ export async function runUpdateCommandRepair(params: {
         rehearsal = await prepareUpdateCandidateRehearsal({
           candidateRoot: params.candidateRoot ?? params.root,
           config: snapshot.config,
-          sourceConfigHash: snapshot.hash,
+          sourceConfigHash: hashConfigRaw(snapshot.raw),
           stateDir: target.stateDir,
           env: params.env,
           nodeRunner: params.nodeRunner,
@@ -123,18 +124,6 @@ export async function runUpdateCommandRepair(params: {
           pending = (async () => {
             const validation = await params.validate(signal, assertCurrent, rehearsal);
             assertCurrent();
-            if (validation.ok && rehearsal) {
-              const keys = await rehearsal.changedConfigKeys();
-              assertCurrent();
-              if (keys.length) {
-                return {
-                  ...validation,
-                  ok: false,
-                  stopReason: "repair-requires-config-change",
-                  summary: `Config changes required in top-level keys: ${keys.join(", ")}. Copies were discarded; run openclaw doctor --fix under your own authority, or openclaw triage.`,
-                };
-              }
-            }
             return validation;
           })();
           return pending;

@@ -465,6 +465,46 @@ describe("channelsHandlers channels.status", () => {
     );
   });
 
+  it("reports recorded account state while reload has paused plugin callbacks", async () => {
+    const refuse = vi.fn(() => {
+      throw new Error("plugin is quiesced");
+    });
+    const plugin = createChannelPlugin({
+      probeAccount: refuse,
+      buildChannelSummary: refuse,
+      collectStatusIssues: refuse,
+    });
+    plugin.config.listAccountIds = refuse;
+    plugin.config.resolveAccount = refuse;
+    mocks.listChannelPlugins.mockReturnValue([plugin]);
+    const account = { accountId: "recorded", configured: true, running: false };
+    const respond = vi.fn();
+    const options = createOptions({ probe: true }, { respond });
+    options.context.getRuntimeSnapshot = () => ({
+      channels: { whatsapp: account },
+      channelAccounts: { whatsapp: { recorded: account } },
+      reloadingChannels: new Map([["whatsapp", "recorded"]]),
+    });
+    await expectDefined(channelsHandlers["channels.status"], "channel status handler")(options);
+    const payload = requireRespondPayload(respond);
+    expect(firstChannelAccount(payload, "whatsapp")).toEqual(account);
+    expect(payload.channelDefaultAccountId).toEqual({ whatsapp: "recorded" });
+    expect(payload.partial).toBe(true);
+    expect(payload.warnings).toEqual([
+      "whatsapp: plugin runtime is paused for reload; reporting recorded account state",
+    ]);
+    expect(payload.statusIssues).toEqual([
+      expect.objectContaining({
+        channel: "whatsapp",
+        accountId: "recorded",
+        kind: "runtime",
+        message: "Channel is enabled and configured, but its runtime is not running.",
+      }),
+    ]);
+    expect(refuse).not.toHaveBeenCalled();
+    expect(mocks.buildChannelAccountSnapshotFromAccount).not.toHaveBeenCalled();
+  });
+
   it("redacts base URL credentials returned by channel summary hooks", async () => {
     configureAutoEnabledChannels([
       createChannelPlugin({

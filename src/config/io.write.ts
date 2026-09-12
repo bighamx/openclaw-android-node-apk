@@ -6,7 +6,11 @@ import { isVerbose } from "../global-state.js";
 import { isVitestRuntimeEnv } from "../infra/env.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { replaceFileAtomic } from "../infra/replace-file.js";
-import { recordUpdateDoctorConfigWrite } from "../infra/update-doctor-result.js";
+import {
+  getUpdateDoctorConfigWriteAuthority,
+  assertUpdateDoctorConfigInputHash,
+  recordUpdateDoctorConfigWrite,
+} from "../infra/update-doctor-result.js";
 import { initializeNativeSessionCatalogPreferences } from "../plugins/native-session-catalog-config.js";
 import { maintainConfigBackups } from "./backup-rotation.js";
 import { collectChangedPaths } from "./config-change-paths.js";
@@ -48,7 +52,6 @@ import {
   hasConfigMeta,
   parseConfigJson5,
   rejectConfigNonFiniteNumbers,
-  resolveConfigSnapshotHash,
   resolveGatewayMode,
   restoreAuthoredTildePathsForWrite,
 } from "./io.read-helpers.js";
@@ -98,6 +101,7 @@ export async function writeConfigFileFromContext(
   const { deps, configPath } = context;
   let options = writeOptions;
   const sourceGuard = captureConfigWriteLockGuard(configPath);
+  const doctorAuthority = getUpdateDoctorConfigWriteAuthority(configPath);
   if (sourceGuard) {
     const original = options;
     options = {
@@ -122,6 +126,11 @@ export async function writeConfigFileFromContext(
       }
     : await readSnapshot();
   const snapshot = snapshotRead.snapshot;
+  if (doctorAuthority) {
+    sourceGuard?.();
+    assertUpdateDoctorConfigInputHash(configPath, hashConfigRaw(snapshot.raw));
+    options = { ...options, baseSnapshot: snapshot };
+  }
   const inputBasis: ConfigWriteInputBasis = {
     kind: options.inputBase ?? "runtime",
     config: options.inputBase === "source" ? snapshot.sourceConfig : snapshot.runtimeConfig,
@@ -315,7 +324,7 @@ export async function writeConfigFileFromContext(
   rejectConfigNonFiniteNumbers(stampedOutputConfig);
   const json = JSON.stringify(stampedOutputConfig, null, 2).trimEnd().concat("\n");
   const nextHash = hashConfigRaw(json);
-  const previousHash = resolveConfigSnapshotHash(snapshot);
+  const previousHash = hashConfigRaw(snapshot.raw);
   const changedPathCount = changedPaths.size;
   const previousBytes =
     typeof snapshot.raw === "string" ? Buffer.byteLength(snapshot.raw, "utf-8") : null;
@@ -543,7 +552,7 @@ export async function writeConfigFileFromContext(
       }
       throw error;
     }
-    recordUpdateDoctorConfigWrite(configPath, previousHash, nextHash);
+    recordUpdateDoctorConfigWrite(configPath, previousHash, nextHash, snapshot.parsed, json);
     try {
       recordConfigWriteMetadata(new Date().toISOString(), options.lastTouchedVersionOverride);
     } catch (error) {
@@ -610,6 +619,7 @@ export async function writeConfigFileFromContext(
     return {
       persistedHash: nextHash,
       persistedConfig: stampedOutputConfig,
+      persistedSourceConfig: sourceConfigForPreflight,
       [configWritePostCommitRollback]: (assertCurrent) => {
         assertCurrent();
         restoreConfigSnapshotAuditRecord({

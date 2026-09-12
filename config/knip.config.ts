@@ -17,6 +17,8 @@ function bundledPluginFile(pluginId: string, relativePath: string, suffix = ""):
 // Package scripts, workflows, Docker scenarios, and documented maintainer commands invoke these
 // files by path. They are executable roots rather than importable library modules.
 const repositoryScriptEntries = [
+  // apps/linux/README.md invokes this live Windows native-browser proof driver by path.
+  "apps/linux/scripts/test-inline-browser.mjs!",
   "scripts/render-proof-video.mts!",
   // CI imports this selector from its trusted harness inside an inline Node script.
   ".github/actions/git-owner/test-prerequisites.mjs!",
@@ -117,6 +119,8 @@ const repositoryScriptEntries = [
   "scripts/e2e/lib/upgrade-survivor/watchos-direct-node.mjs!",
   "scripts/embedded-run-abort-leak.ts!",
   "scripts/fixtures/packed-plugin-sdk-type-smoke.ts!",
+  // Generates the native browser page scripts from their UI source modules.
+  "scripts/generate-browser-inspect-script-swift.mts!",
   // CI executes screenshot evidence from the workflow-owned harness copy.
   "scripts/ios-screenshot-evidence.mjs!",
   "scripts/ios-release-cut.ts!",
