@@ -326,14 +326,17 @@ export function assertConversationDeliveryAttemptAuthorized(params: {
   );
 }
 
-export function assertQueuedConversationDeliveryAttemptAuthorized(params: {
-  config: OpenClawConfig;
-  agentId: string;
-  operationId: string;
-  storePath?: string;
-  routeFingerprint: string;
-}): void {
-  const scope = {
+export function assertQueuedConversationDeliveryAttemptAuthorized(
+  params: {
+    config: OpenClawConfig;
+    agentId: string;
+    operationId: string;
+    storePath?: string;
+    routeFingerprint: string;
+  },
+  capturedScope?: ConversationRegistryScope,
+): void {
+  const scope = capturedScope ?? {
     agentId: params.agentId,
     ...(params.storePath ? { storePath: params.storePath } : {}),
   };

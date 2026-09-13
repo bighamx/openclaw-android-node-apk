@@ -90,6 +90,20 @@ admission. Publish live session changes and other dependent effects only after
 the durable write succeeds. A future network-backed owner must preserve that
 ordering while awaiting its driver.
 
+Correlated conversation replies retain their original store and state environment
+while waiting for write admission. Capture rechecks the live reply claim and
+session lifecycle before recording a replayable reply. Cancellation or a changed
+session leaves the message for ordinary inbound dispatch. The durable reply is
+recorded before its optional side audit artifact and before completing the waiter;
+an audit failure does not discard an already recorded reply.
+
+Outbound queue work captures its state root and external-supervisor mode before
+asynchronous preparation. Enqueue, media custody, claims, completion and cleanup
+retain that context; SDK reconnect requests capture it before waiting for Gateway
+admission or loading the delivery runtime. A recovery root applies to an existing
+queue entry, while fresh sends use their selected default root. This context stays
+internal and is not added to durable payloads or plugin callback inputs.
+
 Board operations, board inventory reads, and widget document reads expose asynchronous
 contracts. Gateway callers await persistence before publishing board changes or replies.
 Writes carry the caller's current-authority assertion into the synchronous SQLite
@@ -193,6 +207,13 @@ database path before admission, and refresh-lock release retains that path and i
 original environment when the caller's directory or environment changes. Doctor reports rejected
 pruning operations before continuing to the next agent. Read-only cache snapshots
 retain their existing synchronous owner and do not create missing databases.
+
+Memory managers admit writes on their exact borrowed agent connection. Provider
+calls and source preparation run before admission; generated-cache and source
+writes recheck their generation, revision, and source predicates after waiting.
+Full reindex publication attaches, replaces, and detaches the completed shadow
+inside one synchronous admitted operation. Manager close drains accepted syncs
+through provider preparation and final writes before releasing the borrow.
 
 ### Preserve the data and concurrency contracts
 

@@ -75,6 +75,45 @@ describe("session event wake target concurrency", () => {
     expect(getActiveGatewayRootWorkCount()).toBe(0);
   });
 
+  it.each([100, 5_000])(
+    "preserves distinct target deadlines with a new %ims wake",
+    async (delay) => {
+      vi.useFakeTimers();
+      const handled: Array<{ reason: string | undefined; at: number }> = [];
+      const startedAt = Date.now();
+      setSessionEventWakeHandler(async (request) => {
+        handled.push({ reason: request.reason, at: Date.now() - startedAt });
+        return { status: "ran", durationMs: 1 };
+      });
+      for (const [reason, coalesceMs] of [
+        ["existing", 1_000],
+        ["new", delay],
+      ] as const) {
+        requestSessionEventWake({
+          source: "session-state",
+          intent: "immediate",
+          reason,
+          sessionKey: `agent:main:${reason}`,
+          coalesceMs,
+        });
+      }
+      await vi.advanceTimersByTimeAsync(Math.min(delay, 1_000) - 1);
+      expect(handled).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(handled).toEqual([
+        { reason: delay < 1_000 ? "new" : "existing", at: Math.min(delay, 1_000) },
+      ]);
+      await vi.advanceTimersByTimeAsync(Math.abs(delay - 1_000));
+      expect(handled).toEqual(
+        [
+          { reason: "existing", at: 1_000 },
+          { reason: "new", at: delay },
+        ].toSorted((left, right) => left.at - right.at),
+      );
+      expect(getActiveGatewayRootWorkCount()).toBe(0);
+    },
+  );
+
   it("starts independent target wakes without waiting for a blocked agent", async () => {
     vi.useFakeTimers();
     let finishBlockedWake: (() => void) | undefined;

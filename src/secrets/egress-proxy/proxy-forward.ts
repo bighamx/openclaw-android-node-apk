@@ -16,6 +16,7 @@ import {
 export const REFUSAL_BODY = "Secret egress proxy refused the request.\n";
 const UPSTREAM_ERROR_BODY = "Secret egress proxy could not reach the upstream host.\n";
 const MAX_BUFFERED_REQUEST_BODY_BYTES = 100 * 1024 * 1024;
+const BUFFERED_REQUEST_WRITE_BYTES = 64 * 1024;
 
 export type UpgradeRequest = { stream: PassThrough };
 export type RequestHandler = (
@@ -230,7 +231,38 @@ function sendSecretEgressRequest(
     upstream.end();
   } else if (body !== undefined) {
     bodyTransform.destroy();
-    upstream.end(body);
+    const bufferedBody = body;
+    let offset = 0;
+    let scheduled: ReturnType<typeof setImmediate> | undefined;
+    const writeBody = () => {
+      scheduled = undefined;
+      if (refused || !forward.isActive() || upstream.destroyed) {
+        upstream.destroy();
+        return;
+      }
+      if (offset === bufferedBody.length) {
+        upstream.off("close", stopSending);
+        upstream.end();
+        return;
+      }
+      const chunk = bufferedBody.subarray(offset, offset + BUFFERED_REQUEST_WRITE_BYTES);
+      offset += chunk.length;
+      // Yield even when the transport accepts more, so revocation can prevent
+      // handing later plaintext slices to the upstream transport.
+      if (upstream.write(chunk)) {
+        scheduled = setImmediate(writeBody);
+      } else {
+        upstream.once("drain", writeBody);
+      }
+    };
+    const stopSending = () => {
+      if (scheduled) {
+        clearImmediate(scheduled);
+      }
+      upstream.off("drain", writeBody);
+    };
+    upstream.once("close", stopSending);
+    writeBody();
   } else {
     forward.request.pipe(bodyTransform).pipe(upstream);
   }

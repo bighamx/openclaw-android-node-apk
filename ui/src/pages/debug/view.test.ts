@@ -471,6 +471,7 @@ describe("DebugOverlay", () => {
   it("graphs bounded status samples without clamping CPU and resets history on reopen", async () => {
     vi.useFakeTimers();
     let sampleCount = 0;
+    let uptimeMs = 60_000;
     let diskResponse: "available" | "single" | "empty" | "legacy" | "missing" | "rejected" =
       "available";
     const request = vi.fn(async (method: string) => {
@@ -517,7 +518,7 @@ describe("DebugOverlay", () => {
         } else if (diskResponse === "empty") {
           disks.length = 0;
         }
-        return { disks: sampleCount % 2 ? disks : disks.toReversed() };
+        return { uptimeMs, disks: sampleCount % 2 ? disks : disks.toReversed() };
       }
       if (method === "sessions.list") {
         return { sessions: [] };
@@ -544,6 +545,9 @@ describe("DebugOverlay", () => {
       expect(overlay.querySelectorAll(".gateway-vital")).toHaveLength(5);
       expect(normalizedText(overlay.querySelector(".gateway-vital--cpu"))).toContain("loop 42%");
       expect(overlay.querySelector(".sparkline-tile__chart")).toBeNull();
+      expect(normalizedText(overlay.querySelector(".debug-overlay__vitals-footer"))).toBe(
+        "Uptime 1m",
+      );
 
       await vi.advanceTimersByTimeAsync(2_000);
       await vitalUpdated();
@@ -582,6 +586,7 @@ describe("DebugOverlay", () => {
         ?.split(" ");
       expect(points).toHaveLength(90);
 
+      uptimeMs = 0;
       overlay.toggle();
       overlay.toggle();
       await vi.advanceTimersByTimeAsync(0);
@@ -589,6 +594,9 @@ describe("DebugOverlay", () => {
 
       expect(overlay.querySelectorAll(".gateway-vital")).toHaveLength(5);
       expect(overlay.querySelector(".sparkline-tile__chart")).toBeNull();
+      expect(normalizedText(overlay.querySelector(".debug-overlay__vitals-footer"))).toBe(
+        "Uptime 0ms",
+      );
 
       diskResponse = "single";
       await vi.advanceTimersByTimeAsync(2_000);
@@ -608,6 +616,9 @@ describe("DebugOverlay", () => {
 
         expect(overlay.querySelectorAll(".gateway-vital")).toHaveLength(3);
         expect(overlay.querySelector(".gateway-vital--disk")).toBeNull();
+        expect(normalizedText(overlay.querySelector(".debug-overlay__vitals-footer"))).toBe(
+          response === "empty" ? "Uptime 0ms" : undefined,
+        );
         for (const vital of ["cpu", "memory", "delay"]) {
           expect(overlay.querySelector(`.gateway-vital--${vital}`)).not.toBeNull();
         }

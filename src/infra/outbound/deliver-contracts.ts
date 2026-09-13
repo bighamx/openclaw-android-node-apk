@@ -11,7 +11,10 @@ import type { ReplyToMode } from "../../config/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { MessagePresentation, ReplyPayloadDeliveryPin } from "../../interactive/payload.js";
 import type { OutboundMediaAccess } from "../../media/load-options.js";
-import type { DeliveryQueueCompletionRetention } from "../delivery-queue-sqlite.js";
+import type {
+  DeliveryQueueCompletionRetention,
+  DeliveryQueueStateContext,
+} from "../delivery-queue-sqlite.js";
 import type { QueuedDeliveryOwner } from "./deliver-queue-state.js";
 import type {
   OutboundDeliveryQueuePolicy,
@@ -264,4 +267,9 @@ export type DeliverOutboundPayloadsParams = DeliverOutboundPayloadsCoreParams & 
   queuePolicy?: OutboundDeliveryQueuePolicy;
   renderedBatchPlan?: QueuedRenderedMessageBatchPlan;
   onDeliveryIntent?: (intent: OutboundDeliveryIntent) => void;
+};
+
+/** Private owner facts excluded from SDK delivery parameters and stored payloads. */
+export type InternalDeliverOutboundPayloadsParams = DeliverOutboundPayloadsParams & {
+  deliveryQueueStateContext?: DeliveryQueueStateContext;
 };

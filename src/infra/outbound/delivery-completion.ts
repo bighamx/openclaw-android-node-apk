@@ -8,9 +8,14 @@ import {
   markConversationDeliverySuppressed,
   markConversationDeliveryUnknown,
   type ConversationDeliveryRecord,
+  type ConversationDeliveryStoreScope,
 } from "../../config/sessions/conversation-delivery-store.js";
 import { patchSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import type { InternalSessionEntry } from "../../config/sessions/types.js";
+import {
+  resolveDeliveryQueueStateEnv,
+  type DeliveryQueueStateContext,
+} from "../delivery-queue-sqlite.js";
 import type { OutboundDeliveryResult } from "./deliver-types.js";
 
 /** Serializable owner callback for a durable queue entry. */
@@ -41,19 +46,25 @@ type DurableDeliveryCompletionResult = {
 
 function scopeForCompletion(
   completion: Extract<DurableDeliveryCompletion, { kind: "conversation" }>,
-) {
+  stateDir?: string,
+  stateContext?: DeliveryQueueStateContext,
+): ConversationDeliveryStoreScope {
   return {
     agentId: completion.agentId,
     ...(completion.storePath ? { storePath: completion.storePath } : {}),
+    env: resolveDeliveryQueueStateEnv(stateDir, stateContext),
   };
 }
 
 function conversationResult(
-  update: () => ConversationDeliveryRecord,
+  completion: Extract<DurableDeliveryCompletion, { kind: "conversation" }>,
+  update: (scope: ConversationDeliveryStoreScope) => ConversationDeliveryRecord,
+  stateDir?: string,
+  stateContext?: DeliveryQueueStateContext,
 ): DurableDeliveryCompletionResult {
   let record: ConversationDeliveryRecord;
   try {
-    record = update();
+    record = update(scopeForCompletion(completion, stateDir, stateContext));
   } catch (error) {
     // Full session deletion can retire the owner before its shared queue settles.
     if (error instanceof ConversationDeliveryMissingError) {
@@ -83,12 +94,20 @@ export async function settlePendingFinalDelivery(
   completion: Extract<DurableDeliveryCompletion, { kind: "pending-final" }>,
   state: Exclude<DurableDeliveryCompletionResult["state"], "rejected" | "stale">,
   expectedStates?: readonly ("prepared" | "queued" | "unknown")[],
-  options: { stateDir?: string; preserveActivity?: boolean } = {},
+  options: {
+    stateDir?: string;
+    preserveActivity?: boolean;
+    stateContext?: DeliveryQueueStateContext;
+  } = {},
 ): Promise<DurableDeliveryCompletionResult> {
   let settled: DurableDeliveryCompletionResult["state"] = "stale";
   let wakeRecovery = false;
   await patchSessionEntryCore(
-    { sessionKey: completion.sessionKey, storePath: completion.storePath },
+    {
+      sessionKey: completion.sessionKey,
+      storePath: completion.storePath,
+      env: resolveDeliveryQueueStateEnv(options.stateDir, options.stateContext),
+    },
     (entry) => {
       const internalEntry: InternalSessionEntry = entry;
       if (
@@ -189,6 +208,8 @@ export async function markDurableDeliveryQueued(
   completion: DurableDeliveryCompletion,
   queueId: string,
   expectedPendingFinalState?: "prepared",
+  stateDir?: string,
+  stateContext?: DeliveryQueueStateContext,
 ): Promise<DurableDeliveryCompletionResult> {
   return completion.kind === "pending-final"
     ? // The reply dispatcher may have claimed direct custody ("queued") before the
@@ -197,13 +218,13 @@ export async function markDurableDeliveryQueued(
         completion,
         "queued",
         expectedPendingFinalState ? ["prepared", "queued"] : undefined,
+        { stateDir, stateContext },
       )
-    : conversationResult(() =>
-        markConversationDeliveryQueued(
-          scopeForCompletion(completion),
-          completion.operationId,
-          queueId,
-        ),
+    : conversationResult(
+        completion,
+        (scope) => markConversationDeliveryQueued(scope, completion.operationId, queueId),
+        stateDir,
+        stateContext,
       );
 }
 
@@ -212,15 +233,23 @@ export async function completeDurableDelivery(
   completion: DurableDeliveryCompletion,
   result: OutboundDeliveryResult,
   stateDir?: string,
+  stateContext?: DeliveryQueueStateContext,
 ): Promise<DurableDeliveryCompletionResult> {
   return completion.kind === "pending-final"
-    ? await settlePendingFinalDelivery(completion, "delivered", undefined, { stateDir })
-    : conversationResult(() =>
-        markConversationDeliverySent(
-          scopeForCompletion(completion),
-          completion.operationId,
-          readPlatformMessageId(result),
-        ),
+    ? await settlePendingFinalDelivery(completion, "delivered", undefined, {
+        stateDir,
+        stateContext,
+      })
+    : conversationResult(
+        completion,
+        (scope) =>
+          markConversationDeliverySent(
+            scope,
+            completion.operationId,
+            readPlatformMessageId(result),
+          ),
+        stateDir,
+        stateContext,
       );
 }
 
@@ -228,11 +257,18 @@ export async function completeDurableDelivery(
 async function suppressDurableDelivery(
   completion: DurableDeliveryCompletion,
   stateDir?: string,
+  stateContext?: DeliveryQueueStateContext,
 ): Promise<DurableDeliveryCompletionResult> {
   return completion.kind === "pending-final"
-    ? await settlePendingFinalDelivery(completion, "suppressed", undefined, { stateDir })
-    : conversationResult(() =>
-        markConversationDeliverySuppressed(scopeForCompletion(completion), completion.operationId),
+    ? await settlePendingFinalDelivery(completion, "suppressed", undefined, {
+        stateDir,
+        stateContext,
+      })
+    : conversationResult(
+        completion,
+        (scope) => markConversationDeliverySuppressed(scope, completion.operationId),
+        stateDir,
+        stateContext,
       );
 }
 
@@ -241,17 +277,20 @@ export async function rejectDurableDelivery(
   completion: DurableDeliveryCompletion,
   error: string,
   stateDir?: string,
+  stateContext?: DeliveryQueueStateContext,
 ): Promise<DurableDeliveryCompletionResult> {
   // Proven no-send: terminal suppression, not the unknown state that owes an
   // uncertainty notice for a send the provider asserts never began.
   return completion.kind === "pending-final"
-    ? await settlePendingFinalDelivery(completion, "suppressed", undefined, { stateDir })
-    : conversationResult(() =>
-        markConversationDeliveryRejected(
-          scopeForCompletion(completion),
-          completion.operationId,
-          error,
-        ),
+    ? await settlePendingFinalDelivery(completion, "suppressed", undefined, {
+        stateDir,
+        stateContext,
+      })
+    : conversationResult(
+        completion,
+        (scope) => markConversationDeliveryRejected(scope, completion.operationId, error),
+        stateDir,
+        stateContext,
       );
 }
 
@@ -259,11 +298,15 @@ export async function rejectDurableDelivery(
 export async function failDurableDelivery(
   completion: DurableDeliveryCompletion,
   stateDir?: string,
+  stateContext?: DeliveryQueueStateContext,
 ): Promise<DurableDeliveryCompletionResult> {
   return completion.kind === "pending-final"
-    ? await settlePendingFinalDelivery(completion, "unknown", undefined, { stateDir })
-    : conversationResult(() =>
-        markConversationDeliveryUnknown(scopeForCompletion(completion), completion.operationId),
+    ? await settlePendingFinalDelivery(completion, "unknown", undefined, { stateDir, stateContext })
+    : conversationResult(
+        completion,
+        (scope) => markConversationDeliveryUnknown(scope, completion.operationId),
+        stateDir,
+        stateContext,
       );
 }
 
@@ -276,10 +319,11 @@ export async function settleDurableDelivery(
   completion: DurableDeliveryCompletion,
   evidence: DurableDeliveryTerminalEvidence,
   stateDir?: string,
+  stateContext?: DeliveryQueueStateContext,
 ): Promise<DurableDeliveryCompletionResult> {
   return "result" in evidence
-    ? completeDurableDelivery(completion, evidence.result, stateDir)
+    ? completeDurableDelivery(completion, evidence.result, stateDir, stateContext)
     : evidence.platformSendStarted
-      ? failDurableDelivery(completion, stateDir)
-      : suppressDurableDelivery(completion, stateDir);
+      ? failDurableDelivery(completion, stateDir, stateContext)
+      : suppressDurableDelivery(completion, stateDir, stateContext);
 }

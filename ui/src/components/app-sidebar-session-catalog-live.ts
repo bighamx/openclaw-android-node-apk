@@ -17,7 +17,7 @@ import {
 import { sessionCatalogHostKey } from "./app-sidebar-session-types.ts";
 
 export const SESSION_CATALOG_CHANGED_REFRESH_MS = 5_000;
-export const SESSION_CATALOG_STABLE_REFRESH_MS = 30_000;
+const SESSION_CATALOG_STABLE_REFRESH_MS = 30_000;
 
 function sessionCatalogMaterialSnapshot(catalogs: readonly SessionCatalog[]): string {
   // Fast follow-up polls cover catalog/host/session identity sets, labels, connectivity,
@@ -425,6 +425,8 @@ export async function refreshSessionCatalogsLive(params: {
   pageDepths: ReadonlyMap<string, number>;
   connected: () => boolean;
   applyFinal: (catalogs: SessionCatalog[], revisedCatalogIds: ReadonlySet<string>) => void;
+  /** Finish bounded discovery; true keeps the existing fast refresh cadence. */
+  continueRefresh: () => Promise<boolean>;
   applyError: (error: unknown) => void;
   refresh: () => void;
 }) {
@@ -436,6 +438,7 @@ export async function refreshSessionCatalogsLive(params: {
   const hadCatalogs = params.catalogs().length > 0;
   const previousMaterialSnapshot = sessionCatalogMaterialSnapshot(params.catalogs());
   let refetchOwner: symbol | null = null;
+  let continueSoon = false;
   const requestIsCurrent = () =>
     live.ownsRequest(requestOwner) &&
     generation === params.currentGeneration() &&
@@ -469,6 +472,9 @@ export async function refreshSessionCatalogsLive(params: {
       new Set([...params.catalogs(), ...catalogs].map((catalog) => catalog.id)),
     );
     live.markFinal({ catalogs, hadCatalogs, previousMaterialSnapshot, progressSequence });
+    live.endRefetch(refetchOwner);
+    refetchOwner = null;
+    continueSoon = await params.continueRefresh();
   } catch (error) {
     // A transient poll failure must not collapse already visible or expanded pages.
     if (revisionIsCurrent()) {
@@ -484,7 +490,7 @@ export async function refreshSessionCatalogsLive(params: {
     if (ownsRequest && requestIsCurrent() && params.connected()) {
       const delayMs = live.refreshPending
         ? 0
-        : live.sawChange
+        : live.sawChange || continueSoon
           ? SESSION_CATALOG_CHANGED_REFRESH_MS
           : SESSION_CATALOG_STABLE_REFRESH_MS;
       live.refreshPending = false;

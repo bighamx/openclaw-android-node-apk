@@ -1372,7 +1372,6 @@ extensions/xai/tts.ts	1
 extensions/xai/x-search.ts	7
 extensions/xiaomi/onboard.ts	1
 extensions/xiaomi/speech-provider.ts	2
-extensions/zai/detect.ts	1
 extensions/zai/index.ts	2
 extensions/zai/model-definitions.ts	1
 extensions/zalo/setup-api.ts	3
@@ -1726,14 +1725,13 @@ src/agents/embedded-agent-runner/run/attempt-setup.ts	1
 src/agents/embedded-agent-runner/run/attempt-stop-reason-recovery.ts	3
 src/agents/embedded-agent-runner/run/attempt-stream-prepare.ts	3
 src/agents/embedded-agent-runner/run/attempt-stream.ts	6
-src/agents/embedded-agent-runner/run/attempt-subscription-cleanup.ts	2
 src/agents/embedded-agent-runner/run/attempt-tool-call-replay-sanitization.ts	17
 src/agents/embedded-agent-runner/run/attempt-tool-call-stream-normalization.ts	4
 src/agents/embedded-agent-runner/run/attempt-tool-call-text-promotion.ts	3
 src/agents/embedded-agent-runner/run/attempt-tool-prepare.ts	3
 src/agents/embedded-agent-runner/run/attempt-transcript-lifecycle.ts	1
 src/agents/embedded-agent-runner/run/attempt-user-transcript-context-registry.ts	1
-src/agents/embedded-agent-runner/run/attempt.model-diagnostic-events.ts	6
+src/agents/embedded-agent-runner/run/attempt.model-diagnostic-events.ts	5
 src/agents/embedded-agent-runner/run/attempt.model-diagnostic-lifecycle.ts	3
 src/agents/embedded-agent-runner/run/attempt.model-diagnostic-observation.ts	1
 src/agents/embedded-agent-runner/run/attempt.tool-call-argument-repair.ts	11

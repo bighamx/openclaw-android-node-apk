@@ -306,7 +306,7 @@ describeControlUiE2e("Control UI chat file links", () => {
         await page.screenshot({
           path: path.join(artifactDir, `root-identity-file-${index + 1}.png`),
         });
-        await page.getByRole("button", { name: "Close Review", exact: true }).click();
+        await page.getByRole("button", { name: "Close tab: file.ts", exact: true }).click();
         await fileView.waitFor({ state: "detached" });
       }
       const requests = await gateway.getRequests("sessions.files.get");

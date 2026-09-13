@@ -46,6 +46,7 @@ import {
   selectChecksForShard,
 } from "../../scripts/run-additional-boundary-checks.mts";
 import { buildVitestRunPlans } from "../../scripts/test-projects.test-support.mts";
+import { resolveTestNodeExecPath } from "../../src/test-utils/node-process.js";
 import { createTempDirTracker, useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
 import { sharedVitestConfig } from "../vitest/vitest.shared.config.ts";
 import {
@@ -91,6 +92,7 @@ const AMBIGUOUS_MAIN_PUSH_GUARD = `if [ "$GITHUB_EVENT_NAME" = "push" ] && [[ "$
   exit 1
 fi`;
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
+const testNodeExecPath = resolveTestNodeExecPath();
 const rootPackageManager = (
   JSON.parse(readFileSync("package.json", "utf8")) as {
     packageManager: string;
@@ -6913,12 +6915,12 @@ setImmediate(() => {
     mkdirSync(path.join(workspace, "node_modules"));
     writeFileSync(path.join(workspace, "node_modules", "before"), "");
     writeFileSync(path.join(store, "before"), "");
-    symlinkSync(process.execPath, path.join(bin, "node"));
+    symlinkSync(testNodeExecPath, path.join(bin, "node"));
     const pnpm = path.join(bin, "pnpm");
     writeFileSync(
       pnpm,
       "#!" +
-        process.execPath +
+        testNodeExecPath +
         "\n" +
         String.raw`
 const fs = require("node:fs");
@@ -18349,7 +18351,8 @@ it("reports stale Linux release requests before selected code runs", () => {
   const requestRun = {
     repository: { full_name: "openclaw/openclaw" },
     event: "workflow_dispatch",
-    name: "Linux App Release Request",
+    name: "Linux App Release Request [v2026.8.2] desktop=false",
+    path: ".github/workflows/linux-app-release-request.yml",
     head_branch: "main",
     head_sha: requestSha,
     conclusion: "success",
@@ -18364,7 +18367,7 @@ it("reports stale Linux release requests before selected code runs", () => {
   for (const changedRun of [
     { repository: { full_name: "untrusted/openclaw" } },
     { event: "push" },
-    { name: "Another workflow" },
+    { path: ".github/workflows/another-workflow.yml" },
     { head_branch: "topic" },
     { conclusion: "failure" },
   ]) {
