@@ -86,6 +86,7 @@ import {
   withTestRunAdmission,
   wrapRunWithTestPreparedAdmission,
 } from "../admitted-run-context.test-support.js";
+import { createApiKeyCredential } from "../auth-profiles/credential-fixtures.test-support.js";
 import { resolveApiKeyForProfile as resolveApiKeyForProfileImpl } from "../auth-profiles/oauth.js";
 import {
   loadAuthProfileStoreWithoutExternalProfiles,
@@ -1102,11 +1103,7 @@ describe("prepareCliRunContext", () => {
       {
         version: 1,
         profiles: {
-          [authProfileId]: {
-            type: "api_key",
-            provider: "google",
-            key: "stored-api-key",
-          },
+          [authProfileId]: createApiKeyCredential("google", "stored-api-key"),
         },
       },
       agentDir,
@@ -1296,11 +1293,7 @@ describe("prepareCliRunContext", () => {
       {
         version: 1,
         profiles: {
-          [authProfileId]: {
-            type: "api_key",
-            provider: "test-cli",
-            key: "secret-key",
-          },
+          [authProfileId]: createApiKeyCredential("test-cli", "secret-key"),
         },
       },
       agentDir,

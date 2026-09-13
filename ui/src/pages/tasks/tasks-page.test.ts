@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createDeferred as deferred } from "../../../../test/helpers/promise.js";
 import {
   GatewayRequestError,
   type GatewayBrowserClient,
@@ -22,16 +23,6 @@ type TasksPageTestElement = HTMLElement & {
   recoverTask: (taskId: string, action: "retry" | "dismiss") => Promise<void>;
   refreshTasks: () => Promise<void>;
 };
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, reject, resolve };
-}
 
 function staleCursorError() {
   return new GatewayRequestError({
@@ -687,7 +678,7 @@ describe("TasksPage cancellation lifecycle", () => {
       deliveryStatus: "failed",
       terminalOutcome: "blocked",
     });
-    const clipboardWrite = deferred<void>();
+    const clipboardWrite = deferred();
     const writeText = vi.fn(() => clipboardWrite.promise);
     const request = vi.fn((method: string) => {
       if (method === "tasks.get") {

@@ -1704,7 +1704,7 @@ src/agents/embedded-agent-runner/prepared-compaction-runtime.ts	1
 src/agents/embedded-agent-runner/prompt-cache-observability.ts	2
 src/agents/embedded-agent-runner/replay-history.ts	53
 src/agents/embedded-agent-runner/result-fallback-classifier.ts	2
-src/agents/embedded-agent-runner/run-entry.ts	3
+src/agents/embedded-agent-runner/run-entry.ts	2
 src/agents/embedded-agent-runner/run.overflow-compaction.harness.ts	4
 src/agents/embedded-agent-runner/run/abortable.ts	2
 src/agents/embedded-agent-runner/run/attempt-async-tasks.ts	1
@@ -2137,7 +2137,7 @@ src/channels/model-overrides.ts	1
 src/channels/plugins/account-config-mutation.ts	1
 src/channels/plugins/account-helpers.ts	6
 src/channels/plugins/acp-configured-binding-consumer.ts	1
-src/channels/plugins/bootstrap-registry.ts	4
+src/channels/plugins/bootstrap-registry.ts	1
 src/channels/plugins/bundled-setup-policy.ts	2
 src/channels/plugins/bundled.ts	4
 src/channels/plugins/chat-target-prefixes.ts	2
@@ -2520,7 +2520,7 @@ src/config/sessions/legacy-main-session-migration-operations.ts	1
 src/config/sessions/legacy-main-session-migration.ts	6
 src/config/sessions/lifecycle.ts	1
 src/config/sessions/metadata.ts	1
-src/config/sessions/restart-recovery-state.ts	6
+src/config/sessions/restart-recovery-state.ts	5
 src/config/sessions/session-accessor.entry-mutation.ts	2
 src/config/sessions/session-accessor.entry.ts	1
 src/config/sessions/session-accessor.sqlite-active-events.ts	1
@@ -3024,7 +3024,7 @@ src/infra/sqlite-schema-contract.ts	9
 src/infra/sqlite-snapshot.ts	2
 src/infra/sqlite-strict.ts	7
 src/infra/sqlite-user-version.ts	1
-src/infra/sqlite-wal.ts	5
+src/infra/sqlite-wal.ts	4
 src/infra/startup-migration-checkpoint.ts	1
 src/infra/state-migrations.acp-replay.ts	1
 src/infra/state-migrations.audit-backup.ts	2
@@ -3287,7 +3287,7 @@ src/plugins/interactive.ts	4
 src/plugins/lazy-service-module.ts	1
 src/plugins/legacy-session-surfaces.ts	3
 src/plugins/loader-channel-runtime.ts	1
-src/plugins/loader-channel-setup.ts	17
+src/plugins/loader-channel-setup.ts	14
 src/plugins/loader-discovery.ts	1
 src/plugins/loader-load-context.ts	4
 src/plugins/loader-module-runtime.ts	7
@@ -3535,7 +3535,6 @@ src/tasks/task-flow-registry.store.ts	1
 src/tasks/task-flow-registry.ts	1
 src/tasks/task-flow-registry.types.ts	2
 src/tasks/task-registry-query.ts	4
-src/tasks/task-registry-state.ts	3
 src/tasks/task-registry.process-state.ts	1
 src/tasks/task-registry.sqlite.shared.ts	1
 src/tasks/task-registry.ts	1
@@ -3797,7 +3796,7 @@ ui/src/pages/chat/components/chat-session-workspace.ts	1
 ui/src/pages/chat/components/chat-sidebar-editor-menu.ts	2
 ui/src/pages/chat/components/chat-sidebar-region.runtime.ts	2
 ui/src/pages/chat/components/chat-task-suggestions.ts	1
-ui/src/pages/chat/components/chat-thread-interactions.ts	3
+ui/src/pages/chat/components/chat-thread-interactions.ts	2
 ui/src/pages/chat/components/chat-voice-activity.ts	1
 ui/src/pages/chat/components/session-diff-menus.ts	1
 ui/src/pages/chat/components/session-diff-panel.ts	2

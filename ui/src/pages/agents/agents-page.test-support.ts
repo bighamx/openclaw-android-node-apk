@@ -76,16 +76,6 @@ export function setPageGateway(
   page.gateway.applySnapshot(snapshot(client, connected), { initial: false, sourceChanged });
 }
 
-export function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((next, fail) => {
-    resolve = next;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
-}
-
 export function snapshot(
   client: GatewayBrowserClient | null,
   connected = true,

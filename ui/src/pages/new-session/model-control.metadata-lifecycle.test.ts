@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { createDeferred as deferred } from "../../../../test/helpers/promise.js";
 import type { ModelCatalogEntry, ModelCatalogResult } from "../../api/types.ts";
 import {
   beginChatMetadataPublication,
   subscribeChatMetadata,
 } from "../../lib/chat/chat-metadata-store.ts";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
-import { contextWith, deferred, renderControl } from "./model-control.test-support.ts";
+import { contextWith, renderControl } from "./model-control.test-support.ts";
 import { NewSessionModelControl } from "./model-control.ts";
 
 function retainedAccountDraft() {

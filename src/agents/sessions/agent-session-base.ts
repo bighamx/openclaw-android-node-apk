@@ -52,6 +52,7 @@ import {
   retireQueuedUserMessage,
 } from "./queued-user-message-retirement.js";
 import type { ResourceLoader } from "./resource-loader.js";
+import { withSessionManagerWrite } from "./session-manager-write-admission.js";
 import type { SessionManager } from "./session-manager.js";
 import { prepareSessionToolResult } from "./session-tool-result-redaction.js";
 import type { SettingsManager } from "./settings-manager.js";
@@ -406,11 +407,14 @@ export abstract class AgentSessionBase {
       // Check if this is a custom message from extensions
       if (event.message.role === "custom") {
         // Persist as CustomMessageEntry
-        this.sessionManager.appendCustomMessageEntry(
-          event.message.customType,
-          event.message.content,
-          event.message.display,
-          event.message.details,
+        const message = event.message;
+        await withSessionManagerWrite(this.sessionManager, () =>
+          this.sessionManager.appendCustomMessageEntry(
+            message.customType,
+            message.content,
+            message.display,
+            message.details,
+          ),
         );
       } else if (
         event.message.role === "user" ||
@@ -421,7 +425,6 @@ export abstract class AgentSessionBase {
         const toolResultChangedByExtension =
           event.message.role === "toolResult" &&
           this.extensionModifiedToolResultIds.delete(event.message.toolCallId);
-        let entryId: string;
         try {
           // Normalize live delivery facts before persistence makes its redacted copy.
           // Stored arguments must never replace the values used for tool execution.
@@ -430,16 +433,20 @@ export abstract class AgentSessionBase {
             invalidateSerializedPrefixCache: messageChanged || toolResultChangedByExtension,
           };
           prepareCodeModeSourceAppend(appendOptions, event.message, sourceSlots);
-          entryId = this.sessionManager.appendMessage(event.message, appendOptions);
+          const message = event.message;
+          await withSessionManagerWrite(this.sessionManager, () => {
+            const entryId = this.sessionManager.appendMessage(message, appendOptions);
+            if (message.role === "assistant") {
+              this.lastAssistantEntryId = entryId;
+            }
+          });
         } catch (error) {
           if (event.message.role === "user") {
             reportSteeringMessagePersistenceFailure(event.message, error);
           }
           throw error;
         }
-        if (event.message.role === "assistant") {
-          this.lastAssistantEntryId = entryId;
-        } else if (event.message.role === "user") {
+        if (event.message.role === "user") {
           // A queued user message_end normally follows a committed append before listeners consume it.
           // before_message_write suppression marks its recorder blocked first and is terminal without retry.
           this.emit(event);

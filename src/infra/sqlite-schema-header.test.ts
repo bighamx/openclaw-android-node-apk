@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { createDeferredCore } from "../shared/deferred.js";
+import { inspectAgentDatabaseSchemaInWorker } from "../state/openclaw-agent-schema-inspection-worker.js";
 import { requireNodeSqlite } from "./node-sqlite.js";
 import { inspectSqliteSchemaHeader } from "./sqlite-snapshot-source.js";
 import { sqliteWorkerPreloadEnv } from "./sqlite-worker-preload.test-support.js";
@@ -222,9 +223,16 @@ describe("schema-header native reader lifetime", () => {
     },
   );
 
-  it.each(["success", "read-failure", "close-failure", "cancel"] as const)(
-    "keeps a consistent read and its child lease through native close: %s",
-    async (outcome) => {
+  it.each(
+    (["header", "agent-shape"] as const).flatMap((reader) =>
+      (["success", "read-failure", "close-failure", "cancel"] as const).map((outcome) => ({
+        reader,
+        outcome,
+      })),
+    ),
+  )(
+    "keeps a consistent $reader read and its child lease through native close: $outcome",
+    async ({ reader, outcome }) => {
       const root = dirs.make("sqlite-header-lifetime-");
       const pathname = path.join(root, "source.sqlite");
       const cacheRoot = path.join(root, "cache");
@@ -298,10 +306,16 @@ describe("schema-header native reader lifetime", () => {
       const controller = new AbortController();
       const cancellation = new Error("header inspection cancelled");
       let settled = false;
-      const operation = inspectSqliteSchemaHeader(pathname, {
-        signal: controller.signal,
-        agentSchemaVersionForOwnership: 8,
-      });
+      const operation =
+        reader === "header"
+          ? inspectSqliteSchemaHeader(pathname, {
+              signal: controller.signal,
+              agentSchemaVersionForOwnership: 8,
+            })
+          : inspectAgentDatabaseSchemaInWorker(
+              { pathname, supportedVersion: 8, inspectOwnership: true },
+              controller.signal,
+            );
       void operation.then(
         () => {
           settled = true;
@@ -340,14 +354,17 @@ describe("schema-header native reader lifetime", () => {
             await expect(operation).rejects.toThrow("native read failure");
           } else {
             await expect(operation).resolves.toEqual({
-              userVersion: 7,
-              writerAppVersion: "writer-7",
+              ...(reader === "header"
+                ? { userVersion: 7, writerAppVersion: "writer-7" }
+                : { version: 7 }),
               agentSchemaMeta: { role: "agent", agentId: "owner-7", schemaVersion: 7 },
             });
           }
         }
         acquireStateDatabaseHandleExclusion({ databasePath: pathname, busyTimeoutMs: 0 }).release();
-        expect(fs.readdirSync(path.join(cacheRoot, "openclaw"))).toEqual([]);
+        if (reader === "header") {
+          expect(fs.readdirSync(path.join(cacheRoot, "openclaw"))).toEqual([]);
+        }
         expect(writer.prepare("PRAGMA user_version").get()).toEqual({ user_version: 8 });
       } finally {
         controller.abort(cancellation);

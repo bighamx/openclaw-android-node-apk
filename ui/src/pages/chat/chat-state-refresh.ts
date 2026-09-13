@@ -322,7 +322,7 @@ export async function refreshChatModelCatalogOnDemand(host: ChatPageHost): Promi
   }
   if (binding && (await loadChatModelCatalog(host, binding)) && binding.isCurrent()) {
     // Session-owned thinking/context facts must converge with the published model catalog.
-    await refreshCurrentChatSessionList(host).catch(() => undefined);
+    host.sessions.invalidate();
   }
 }
 

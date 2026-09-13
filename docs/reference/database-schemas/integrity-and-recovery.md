@@ -36,6 +36,12 @@ The Gateway startup preflight reads schema headers only. For ordinary rollback-m
 
 Private snapshots remain necessary inside owner-held source-exclusion or canonical-mutation scopes, for incomplete WAL families whose inspection would create source sidecars, and for rollback journals requiring private recovery. Those cases use the existing snapshot owner and deadline; ordinary inspection errors do not trigger a full-copy fallback. Shared-state preflight is unchanged. `openclaw database preflight` performs the release-local shape comparison for an explicit copied file. The background verifier also scans already-open databases about once daily.
 
+Schema-only agent inspections during Doctor and restart checks read metadata in
+a child process, within one SQLite read transaction, without copying the whole
+database. Empty files, rollback journals, incomplete WAL sidecars, and
+owner-provided snapshots retain the private snapshot path. Full startup integrity
+admission, writable-open integrity checks, and repair validation remain unchanged.
+
 Memory search and maintenance managers borrow the verified per-agent connection. Acquisition does not reopen or rescan a healthy shared handle. Native and transformed plugin modules share the same process-owned connection lifecycle, query cache, and commit observers. Nested synchronous writes use SQLite savepoints on that connection. A manager retains that exact connection against cache eviction until its work drains, then releases its borrow without closing the database. Explicit quarantine and disposal still revoke it. Full memory rebuilds use separate temporary shadow databases and publish their derived tables in one synchronous transaction. Read-only memory status keeps its separate diagnostic connection and does not create or migrate a missing database.
 
 If nested rollback or savepoint cleanup fails, the transaction owner preserves the original failure, discards staged state and post-commit observers, and closes the connection. Catching that failure cannot resume writes on the abandoned handle. A later operation must acquire a fresh connection through its database owner. Doctor plugin-state imports retain earlier committed batches; an aborted batch cannot commit its prefix. Ordinary row refusals that successfully roll back their savepoint still commit the successful prefix for resumable imports.
@@ -91,6 +97,35 @@ The heartbeat proves ownership, not migration progress. A live but stuck mainten
 ## Troubleshooting
 
 `SQLite read-only worker` failures append `code` and numeric SQLite `errcode` diagnostics when the underlying error supplies valid values, including through a bounded cause chain. Report the full code suffix when investigating a failure. Snapshot and integrity-child timeout errors include the applied budget and source file size; snapshot timeouts report an unknown size if the source stat failed. Integrity-child timeouts also retain `lastObservedPhase`. A generic `disk I/O error` or `SQLITE_IOERR` alone does not prove the disk is full.
+
+### The shared-state WAL keeps growing
+
+The running Gateway records the result of its existing WAL maintenance pass,
+normally every 30 minutes. `openclaw status --deep` and Doctor show a **SQLite
+WAL** warning after two consecutive blocked checkpoints, or after one blocked
+checkpoint when the WAL exceeds both twice the database size and the existing
+64 MiB journal-size limit. Checkpoint errors warn immediately. A later complete
+checkpoint clears the warning; a large WAL alone does not mean a checkpoint is
+blocked. File-size observation failures are recorded and logged separately from
+SQLite's completion result; they do not turn a completed checkpoint into a failure.
+
+The warning includes observed WAL and database sizes, checkpointed and total WAL
+frames, the last observed complete checkpoint, the consecutive blocked count,
+and the observation time. SQLite can report `busy=0` for an incomplete PASSIVE
+checkpoint; fewer checkpointed frames than total frames still records a blocked
+checkpoint. These facts do not identify which reader or competing checkpoint
+prevented completion.
+
+Observations belong to the open database handle in the Gateway process. They
+reset when that handle is replaced or the Gateway restarts. Status and Doctor
+read the recorded observation through the existing status RPC; they do not run
+a checkpoint or open a diagnostic database. Before the first observation, or
+when an older Gateway supplies no observations, this warning is absent.
+
+If the warning persists, capture `openclaw status --deep` output and restart the
+Gateway gracefully with `openclaw gateway restart`. Report the captured output
+if the warning returns. Do not delete the WAL: it can contain committed data
+that has not reached the main database file.
 
 ### Doctor reports orphan task delivery rows
 

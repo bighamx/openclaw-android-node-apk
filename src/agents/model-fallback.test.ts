@@ -18,6 +18,7 @@ import { GatewayDrainingError } from "../process/gateway-work-admission.js";
 import { AgentRunTerminalOutcomeError } from "./agent-run-terminal-error.js";
 import { resolveEffectiveModelFallbacks } from "./agent-scope.js";
 import { AUTH_STORE_VERSION, MINIMAX_CLI_PROFILE_ID } from "./auth-profiles/constants.js";
+import { createApiKeyCredential } from "./auth-profiles/credential-fixtures.test-support.js";
 import {
   createOAuthRefreshFence,
   isOAuthRefreshFence,
@@ -580,11 +581,7 @@ async function expectSkippedUnavailableProvider(params: {
     ...primaryStore,
     profiles: {
       ...primaryStore.profiles,
-      "fallback:default": {
-        type: "api_key",
-        provider: "fallback",
-        key: "test-key",
-      },
+      "fallback:default": createApiKeyCredential("fallback", "test-key"),
     },
   };
   const run = createFallbackOnlyRun();
@@ -1890,11 +1887,7 @@ describe("runWithModelFallback", () => {
     setAuthRuntimeStore(tempDir, {
       version: AUTH_STORE_VERSION,
       profiles: {
-        "claude-cli:default": {
-          type: "api_key",
-          provider: "claude-cli",
-          key: "test-key",
-        },
+        "claude-cli:default": createApiKeyCredential("claude-cli", "test-key"),
         "openai:default": { type: "api_key", provider: "openai", key: "test-key" },
       },
       usageStats: {
@@ -3755,11 +3748,7 @@ describe("runWithModelFallback", () => {
         },
       };
       if (kind === "cross-provider") {
-        store.profiles[userLockedAuthProfileId] = {
-          type: "api_key",
-          provider: "other",
-          key: "other-key",
-        };
+        store.profiles[userLockedAuthProfileId] = createApiKeyCredential("other", "other-key");
       } else if (kind === "ineligible") {
         store.profiles[userLockedAuthProfileId] = {
           type: "token",

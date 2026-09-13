@@ -244,16 +244,6 @@ export function successfulSessionPatch(key: string) {
   };
 }
 
-export function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
-
 export function createSessionsHarness(agentId: string, keys: string[]) {
   let state = createSessionState(agentId, keys);
   let canonicalListRevision = 1;
@@ -564,11 +554,12 @@ export function createContext(
     ensureList: async (): Promise<AgentsListResult | null> => agents.state.agentsList,
     subscribe: () => () => undefined,
   };
-  const { theme, agentSelection } = createSidebarContextLifecycle(gateway, agents, selectedAgentId);
-  sidebarSessionGatewayBindings.get(sessions)?.(gateway, agentSelection);
+  const lifecycle = createSidebarContextLifecycle(gateway, agents, selectedAgentId);
+  sidebarSessionGatewayBindings.get(sessions)?.(gateway, lifecycle.agentSelection);
   return {
     config: createApplicationConfigCapability({ resourceBasePath: "" }),
     gateway,
+    ...lifecycle,
     sessions,
     plugins: {
       registrations: () => [],
@@ -579,8 +570,6 @@ export function createContext(
     placementStartup: { pause: vi.fn<ApplicationContext["placementStartup"]["pause"]>() },
     agents,
     agentIdentity,
-    agentSelection,
-    theme,
     scopeUpgrade: hiddenScopeUpgradeCapability,
     overlays: {
       snapshot: { approvalQueue },

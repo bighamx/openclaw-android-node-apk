@@ -1,18 +1,14 @@
 /* @vitest-environment jsdom */
 
 import { describe, expect, it, vi } from "vitest";
+import { createDeferred as deferred } from "../../../test/helpers/promise.js";
 import type { GatewaySessionRow, SessionsListResult, SessionsPatchResult } from "../api/types.ts";
 import {
   createTestSessionCapability,
   sessionsResult,
 } from "../lib/sessions/session-capability.test-support.ts";
 import "../test-helpers/app-sidebar-suite.ts";
-import {
-  createGateway,
-  createGatewayHarness,
-  deferred,
-  mountSidebar,
-} from "../test-helpers/app-sidebar.ts";
+import { createGateway, createGatewayHarness, mountSidebar } from "../test-helpers/app-sidebar.ts";
 import { createTestGatewayClient } from "../test-helpers/gateway-client.ts";
 import { waitForFast } from "../test-helpers/wait-for.ts";
 import "./app-sidebar.ts";
@@ -472,7 +468,8 @@ describe("sidebar routed-lineage freshness", () => {
     "refreshes a routed child while preserving filtered membership (listed: $listed, rejected refresh: $rejectRefresh, pending selection: $pendingSelection)",
     async ({ listed, rejectRefresh, pendingSelection }) => {
       const parentKey = "agent:main:parent";
-      const key = "agent:main:subagent:child";
+      const key =
+        pendingSelection === "root" ? "agent:main:dashboard:child" : "agent:main:subagent:child";
       const otherKey = "agent:main:other-owner";
       const owner = { type: "human" as const, id: "ada", label: "Ada" };
       const otherOwner = { type: "human" as const, id: "bob", label: "Bob" };

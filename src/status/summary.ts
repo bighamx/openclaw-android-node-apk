@@ -42,6 +42,7 @@ import {
 import { createLazyImportLoader } from "../shared/lazy-promise.js";
 import { createLazyRuntimeSurface } from "../shared/lazy-runtime.js";
 import { sortAndLimitBy } from "../shared/sort-and-limit.js";
+import { readOpenClawStateWalHealth } from "../state/openclaw-state-db-cache.js";
 import {
   summarizeActionableTaskAuditFindings,
   summarizeRetainedLostTaskAuditFindings,
@@ -526,8 +527,10 @@ export async function getStatusSummary(
         await import("../gateway/desktop/host-source.js")
       ).inspectHostDesktop({ config: cfg.desktop?.host })
     ).status;
+  const sqliteWal = readOpenClawStateWalHealth();
   return {
     runtimeVersion: resolveRuntimeServiceVersion(process.env),
+    sqliteWal: sqliteWal && !includeSensitive ? { ...sqliteWal, error: undefined } : sqliteWal,
     hostDesktop: hostDesktopStatus,
     linkChannel: linkContext
       ? {

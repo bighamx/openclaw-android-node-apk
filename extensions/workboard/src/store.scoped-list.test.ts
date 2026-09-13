@@ -6,6 +6,8 @@ function observeReads(onRows: (sql: string, rows: Record<string, unknown>[]) => 
   // eslint-disable-next-line @typescript-eslint/unbound-method -- Retain native methods for the same receiver.
   const all = StatementSync.prototype.all;
   // eslint-disable-next-line @typescript-eslint/unbound-method -- Retain native methods for the same receiver.
+  const get = StatementSync.prototype.get;
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- Retain native methods for the same receiver.
   const iterate = StatementSync.prototype.iterate;
   const allSpy = vi.spyOn(StatementSync.prototype, "all").mockImplementation(function (
     this: StatementSync,
@@ -14,6 +16,14 @@ function observeReads(onRows: (sql: string, rows: Record<string, unknown>[]) => 
     const rows = all.apply(this, params);
     onRows(this.sourceSQL, rows);
     return rows;
+  });
+  const getSpy = vi.spyOn(StatementSync.prototype, "get").mockImplementation(function (
+    this: StatementSync,
+    ...params: Parameters<typeof get>
+  ) {
+    const row = get.apply(this, params);
+    onRows(this.sourceSQL, row ? [row] : []);
+    return row;
   });
   const iterateSpy = vi.spyOn(StatementSync.prototype, "iterate").mockImplementation(function (
     this: StatementSync,
@@ -25,6 +35,7 @@ function observeReads(onRows: (sql: string, rows: Record<string, unknown>[]) => 
   });
   return () => {
     allSpy.mockRestore();
+    getSpy.mockRestore();
     iterateSpy.mockRestore();
   };
 }
@@ -125,5 +136,114 @@ describe("Workboard board-scoped SQLite hydration", () => {
         },
       },
     ]);
+  });
+});
+
+describe("Workboard card-scoped notification reads", () => {
+  it("bounds fetched rows and preserves card scope, missing cards, and cursor advancement", async () => {
+    const { store } = createWorkboardSqliteTestHarness();
+    const selected = await store.create({
+      title: "Selected notifications",
+      boardId: "ops",
+      sessionKey: "session-1",
+      runId: "run-1",
+      metadata: {
+        notifications: [
+          { id: "later", kind: "completed", createdAt: 101, sequence: 101000, message: "Later" },
+          {
+            id: "earlier",
+            kind: "completed",
+            createdAt: 100,
+            sequence: 100000,
+            message: "Earlier",
+          },
+        ],
+      },
+    });
+    const other = await store.create({
+      title: "Unrelated",
+      boardId: "ops",
+      metadata: {
+        notifications: [
+          { id: "unrelated", kind: "completed", createdAt: 99, message: "Unrelated" },
+        ],
+      },
+    });
+    await store.addComment(other.id, { body: "Unrelated payload" });
+    await store.create({ title: "Another board", boardId: "other" });
+    const subscription = await store.subscribeNotifications({
+      cardId: selected.id,
+      boardId: "other",
+      sessionKey: "session-1",
+      runId: "run-1",
+      eventKinds: ["completed"],
+    });
+    let fetchedRows = 0;
+    const restore = observeReads((sql, rows) => {
+      if (/^select\b/iu.test(sql) && /\bfrom "?workboard_/iu.test(sql)) {
+        fetchedRows += rows.length;
+      }
+    });
+    try {
+      await expect(
+        store.notificationEvents({ subscriptionId: subscription.id, cardId: other.id, limit: 1 }),
+      ).resolves.toMatchObject({ events: [{ id: "earlier" }] });
+    } finally {
+      restore();
+    }
+    expect(
+      fetchedRows,
+      "card notification reads must not hydrate unrelated cards",
+    ).toBeLessThanOrEqual(5);
+    await expect(store.notificationEvents({ cardId: ` ${selected.id} ` })).resolves.toMatchObject({
+      events: [{ id: "earlier" }, { id: "later" }],
+    });
+    await expect(store.notificationEvents({ cardId: "missing" })).resolves.toEqual({ events: [] });
+    await expect(
+      store.advanceNotificationEvents({ subscriptionId: subscription.id, limit: 1 }),
+    ).resolves.toMatchObject({ events: [{ id: "earlier" }] });
+    await expect(
+      store.advanceNotificationEvents({ subscriptionId: subscription.id, limit: 1 }),
+    ).resolves.toMatchObject({ events: [{ id: "later" }] });
+    await expect(
+      store.notificationEvents({ subscriptionId: subscription.id }),
+    ).resolves.toMatchObject({ events: [] });
+  });
+
+  it("isolates unrelated card corruption while retaining selected-card and board-wide failures", async () => {
+    const { store, dbPath } = createWorkboardSqliteTestHarness();
+    const selected = await store.create({
+      title: "Selected",
+      boardId: "ops",
+      metadata: {
+        notifications: [
+          { id: "selected-event", kind: "completed", createdAt: 100, message: "Done" },
+        ],
+      },
+    });
+    const other = await store.create({ title: "Unrelated", boardId: "ops" });
+    await store.addComment(other.id, { body: "Valid before corruption" });
+    const raw = new DatabaseSync(dbPath);
+    try {
+      raw.prepare("UPDATE workboard_card_comments SET body = '' WHERE card_id = ?").run(other.id);
+      await expect(store.notificationEvents({ cardId: selected.id })).resolves.toMatchObject({
+        events: [{ id: "selected-event" }],
+      });
+      await expect(store.notificationEvents({ cardId: "missing" })).resolves.toEqual({
+        events: [],
+      });
+      await expect(store.notificationEvents({ cardId: other.id })).rejects.toThrow("missing body");
+      await expect(store.notificationEvents({ boardId: "ops" })).rejects.toThrow("missing body");
+      await expect(store.notificationEvents()).rejects.toThrow("missing body");
+      raw
+        .prepare("UPDATE workboard_card_comments SET body = 'Repaired' WHERE card_id = ?")
+        .run(other.id);
+      raw
+        .prepare("UPDATE workboard_cards SET automation_json = '{invalid' WHERE id = ?")
+        .run(selected.id);
+      await expect(store.notificationEvents({ cardId: selected.id })).rejects.toThrow(SyntaxError);
+    } finally {
+      raw.close();
+    }
   });
 });

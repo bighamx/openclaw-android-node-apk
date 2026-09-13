@@ -17,12 +17,16 @@ import {
 import type { SidebarContent, SidebarSelection } from "./chat-sidebar.ts";
 
 function recordSidebarContent(this: SessionWorkspaceHost, content: SidebarSelection | null) {
-  this.sidebarContent = content;
+  if (!content?.fileTab) {
+    this.sidebarContent = content;
+  }
 }
 
 function loadedSidebarContent(state: SessionWorkspaceHost): Promise<SidebarContent> {
   return vi.waitFor(() => {
-    const content = state.sidebarContent;
+    const content = state.sessionWorkspaceState?.previews.find(
+      (entry) => entry.id === state.sessionWorkspaceState?.activePreviewId,
+    )?.content;
     if (!content || content.kind === "loading" || content.kind === "unavailable") {
       throw new Error("Sidebar content is not loaded");
     }
@@ -85,7 +89,7 @@ describe("session workspace state", () => {
     expect(createSessionWorkspaceProps(state).filter).toBe("all");
   });
 
-  it("shows the Files skeleton only while a slow cloud workspace request is pending", async () => {
+  it("loads files and artifacts together while showing the Files skeleton until both settle", async () => {
     let resolveList!: (value: {
       sessionKey: string;
       root: string;
@@ -101,8 +105,15 @@ describe("session workspace state", () => {
           resolveList = resolve;
         }),
     );
+    let resolveArtifacts!: (value: { artifacts: [] }) => void;
+    const request = vi.fn(
+      () =>
+        new Promise<{ artifacts: [] }>((resolve) => {
+          resolveArtifacts = resolve;
+        }),
+    );
     const state = {
-      client: { request: vi.fn().mockResolvedValue({ artifacts: [] }) },
+      client: { request },
       connected: true,
       connectionEpoch: 1,
       handleOpenSidebar: vi.fn(),
@@ -123,6 +134,10 @@ describe("session workspace state", () => {
     );
 
     expect(listFiles).toHaveBeenCalledOnce();
+    expect(request).toHaveBeenCalledExactlyOnceWith("artifacts.list", {
+      sessionKey: state.sessionKey,
+      agentId: "main",
+    });
     const skeleton = mount.querySelector<HTMLElement & { variant: string }>(
       "openclaw-panel-loading-skeleton",
     );
@@ -135,6 +150,10 @@ describe("session workspace state", () => {
       root: "/workspace/cloud",
       files: [{ kind: "modified", name: "slow.ts", path: "src/slow.ts", missing: false }],
     });
+    await Promise.resolve();
+    expect(createSessionWorkspaceProps(state).loading).toBe(true);
+    expect(createSessionWorkspaceProps(state).list).toBeNull();
+    resolveArtifacts({ artifacts: [] });
     await vi.waitFor(() => expect(createSessionWorkspaceProps(state).loading).toBe(false));
     render(
       renderSessionWorkspaceRail(createSessionWorkspaceProps(state, { expanded: true }), {
@@ -174,6 +193,10 @@ describe("session workspace state", () => {
     }>((resolve) => {
       resolveOldFile = resolve;
     });
+    let resolveOldArtifacts!: (value: { artifacts: [] }) => void;
+    const oldArtifacts = new Promise<{ artifacts: [] }>((resolve) => {
+      resolveOldArtifacts = resolve;
+    });
     const listFiles = vi
       .fn()
       .mockResolvedValueOnce({
@@ -182,9 +205,20 @@ describe("session workspace state", () => {
         gitCheckout: true,
         files: [],
       })
+      .mockResolvedValueOnce({
+        sessionKey: "agent:main:current",
+        root: "/checkout/a-stale-refresh",
+        files: [],
+      })
       .mockReturnValueOnce(replacementList);
     const getFile = vi.fn().mockReturnValue(oldFile);
-    const client = { request: vi.fn().mockResolvedValue({ artifacts: [] }) };
+    const client = {
+      request: vi
+        .fn()
+        .mockResolvedValueOnce({ artifacts: [] })
+        .mockReturnValueOnce(oldArtifacts)
+        .mockResolvedValue({ artifacts: [] }),
+    };
     const state = {
       client,
       connected: true,
@@ -198,7 +232,9 @@ describe("session workspace state", () => {
       sessions: { getFile, listFiles },
     } as unknown as SessionWorkspaceHost;
     const handleOpenSidebar = vi.fn((content: SidebarSelection | null) => {
-      state.sidebarContent = content;
+      if (!content?.fileTab) {
+        state.sidebarContent = content;
+      }
     });
     state.handleOpenSidebar = handleOpenSidebar;
 
@@ -211,14 +247,18 @@ describe("session workspace state", () => {
     createSessionWorkspaceProps(state, { expanded: true }).onOpenDiff?.();
     expect(state.sidebarContent).toBe(oldDiff);
     openSessionWorkspaceFile(state, { path: "README.md" });
-    expect(handleOpenSidebar).toHaveBeenLastCalledWith({ kind: "loading" });
+    expect(handleOpenSidebar).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: "loading" }),
+    );
+    createSessionWorkspaceProps(state).onRefresh();
+    await vi.waitFor(() => expect(client.request).toHaveBeenCalledTimes(2));
 
     (state as SessionWorkspaceHost & { connectionEpoch: number }).connectionEpoch = 2;
     const pending = createSessionWorkspaceProps(state, { expanded: true });
 
     expect(pending.list).toBeNull();
     expect(pending.onOpenDiff).toBeTypeOf("function");
-    expect(listFiles).toHaveBeenCalledTimes(2);
+    expect(listFiles).toHaveBeenCalledTimes(3);
     expect(state.sidebarContent).toBeNull();
 
     resolveOldFile({
@@ -245,6 +285,13 @@ describe("session workspace state", () => {
     await vi.waitFor(() =>
       expect(createSessionWorkspaceProps(state).list?.root).toBe("/checkout/b"),
     );
+    const replacementWorkspace = state.sessionWorkspaceState;
+    const replacementContents = replacementWorkspace?.list;
+    resolveOldArtifacts({ artifacts: [] });
+    await oldArtifacts;
+    await Promise.resolve();
+    expect(state.sessionWorkspaceState).toBe(replacementWorkspace);
+    expect(state.sessionWorkspaceState?.list).toBe(replacementContents);
     expect(resolveSessionDiffSidebarContent(state)).not.toBe(oldDiff);
   });
 
@@ -405,6 +452,43 @@ describe("session workspace artifacts", () => {
     return { handleOpenSidebar, request, state };
   }
 
+  it.each([true, false])(
+    "uses artifact titles without changing tab identity (listed: %s)",
+    async (listed) => {
+      const { state, request } = createArtifactHost({
+        data: "iVBORw0KGgo=",
+        mimeType: "image/png",
+        title: "resolved-image.png",
+      });
+      const props = createSessionWorkspaceProps(state);
+      const workspace = state.sessionWorkspaceState!;
+      if (listed) {
+        workspace.list = {
+          sessionKey: state.sessionKey,
+          files: [],
+          artifacts: [
+            {
+              id: "artifact-1",
+              title: "listed-image.png",
+              type: "image",
+              mimeType: "image/png",
+              download: { mode: "bytes" },
+            },
+          ],
+        };
+      }
+      props.onOpenArtifact("artifact-1");
+      const preview = workspace.previews[0]!;
+      expect(preview.label).toBe(listed ? "listed-image.png" : "Artifacts");
+      await loadedSidebarContent(state);
+      expect(preview.label).toBe("resolved-image.png");
+      props.onOpenArtifact("artifact-1");
+      expect(workspace.previews).toEqual([preview]);
+      expect(preview.id).toBe("artifact:artifact-1");
+      expect(request).toHaveBeenCalledOnce();
+    },
+  );
+
   it("keeps nested code literal in a decoded text artifact preview", async () => {
     const source = [
       "Résumé 東京 🦀",
@@ -525,7 +609,9 @@ describe("session workspace artifacts", () => {
       expect(createSessionWorkspaceProps(state).error).toMatch(/InvalidCharacterError|invalid/i),
     );
     expect(handleOpenSidebar).toHaveBeenCalledOnce();
-    expect(state.sidebarContent).toMatchObject({ kind: "unavailable" });
+    expect(state.sessionWorkspaceState?.previews.at(-1)?.content).toMatchObject({
+      kind: "unavailable",
+    });
   });
 });
 
@@ -770,7 +856,7 @@ describe("openSessionWorkspaceFile", () => {
       ),
     );
     expect(handleOpenSidebar).toHaveBeenCalledOnce();
-    expect(state.sidebarContent).toEqual({
+    expect(state.sessionWorkspaceState?.previews.at(-1)?.content).toEqual({
       kind: "unavailable",
       message: "Failed to load screenshots/result.png",
     });
@@ -807,13 +893,13 @@ describe("openSessionWorkspaceFile", () => {
       expect(createSessionWorkspaceProps(state).error).toBe("Failed to load notes.txt"),
     );
     expect(handleOpenSidebar).toHaveBeenCalledOnce();
-    expect(state.sidebarContent).toEqual({
+    expect(state.sessionWorkspaceState?.previews.at(-1)?.content).toEqual({
       kind: "unavailable",
       message: "Failed to load notes.txt",
     });
   });
 
-  it("keeps a rejected file open as an unavailable Review selection", async () => {
+  it("keeps a rejected file open as an unavailable file tab", async () => {
     const handleOpenSidebar = vi.fn(recordSidebarContent);
     const state: SessionWorkspaceHost = {
       client: createGatewayBrowserClientFixture(),
@@ -831,7 +917,7 @@ describe("openSessionWorkspaceFile", () => {
     openSessionWorkspaceFile(state, { path: "/outside/workspace/chat.md" });
 
     await vi.waitFor(() =>
-      expect(state.sidebarContent).toEqual({
+      expect(state.sessionWorkspaceState?.previews.at(-1)?.content).toEqual({
         kind: "unavailable",
         message: "session file not found",
       }),

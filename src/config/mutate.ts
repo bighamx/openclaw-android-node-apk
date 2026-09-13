@@ -64,6 +64,7 @@ import {
   rollbackConfigFileWriteIfUnchanged,
 } from "./io.write-safety.js";
 import { warnIfJSON5CommentsWillBeStripped } from "./json5-comments.js";
+import { projectIncludeModelPolicyWrite } from "./model-policy-allowlist-migration.js";
 import {
   ConfigMutationConflictError,
   GUARDED_CONFIG_INCLUDE_WRITE_ERROR,
@@ -422,7 +423,7 @@ function resolveIncludeOwnedWriteCandidate(params: {
   };
   // Select includes from authored changes; custom IO retains its own runtime projection.
   // Apply explicit values before removals; provenance still owns the destination below.
-  const nextConfig = applyUnsetPathsForWrite(
+  const requestedConfig = applyUnsetPathsForWrite(
     injectExplicitlySetPaths({
       ...projection,
       valueSource: projection.explicitSetValueSource,
@@ -430,7 +431,23 @@ function resolveIncludeOwnedWriteCandidate(params: {
     }) as OpenClawConfig, // SAFETY: Projection and path edits preserve the config object.
     projection.unsetPaths,
   );
-  const changed = collectChangedConfigPaths(params.snapshot.sourceConfig, nextConfig);
+  const markerPath = ["meta", "migrations", "modelPolicyAllowlist"];
+  const nextConfig = projectIncludeModelPolicyWrite({
+    config: requestedConfig,
+    previousConfig: params.snapshot.sourceConfig,
+    preserveMarker:
+      params.writeOptions?.explicitSetPaths?.some(
+        (segments) =>
+          segments.length <= markerPath.length &&
+          segments.every((part, i) => part === markerPath[i]),
+      ) === true,
+  });
+  let changed = collectChangedConfigPaths(params.snapshot.sourceConfig, nextConfig);
+  if (changed.paths.length === 0 && !changed.rootChanged && nextConfig !== requestedConfig) {
+    // A policy deletion can normalize to an already-empty policy. Its original
+    // destination still owns the successful semantic no-op.
+    changed = collectChangedConfigPaths(params.snapshot.sourceConfig, requestedConfig);
+  }
   if (changed.rootChanged || changed.paths.length === 0) {
     return null;
   }

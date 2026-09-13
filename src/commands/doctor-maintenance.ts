@@ -202,17 +202,9 @@ export async function beginDoctorMaintenance(params: {
       // Classify unreadable state under the held owners without opening a writer.
       const { preflightOpenClawDatabaseSchemas } =
         await import("../state/openclaw-database-preflight.js");
-      const { OPENCLAW_STATE_SCHEMA_VERSION } =
-        await import("../state/openclaw-state-db-contract.js");
-      const { OPENCLAW_AGENT_SCHEMA_VERSION } =
-        await import("../state/openclaw-agent-db-contract.js");
       const schemas = await preflightOpenClawDatabaseSchemas({
         env,
         scope: "state",
-        supportedVersions: {
-          state: OPENCLAW_STATE_SCHEMA_VERSION,
-          agent: OPENCLAW_AGENT_SCHEMA_VERSION,
-        },
       });
       const unreadable = schemas.indeterminate.find((database) => database.kind === "state");
       if (unreadable) {

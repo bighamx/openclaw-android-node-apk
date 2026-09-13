@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { describe, expect, it, vi } from "vitest";
+import { createDeferred as deferred } from "../../../../test/helpers/promise.js";
 import { GatewayBrowserClient } from "../../api/gateway.ts";
 import type {
   AgentsFilesListResult,
@@ -16,7 +17,6 @@ import { loadCronJobsPage } from "../../lib/cron/index.ts";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
 import {
-  deferred,
   emitCatalogChanged,
   gateway,
   setPageGateway,
@@ -162,7 +162,7 @@ describe("AgentsPage gateway lifecycle", () => {
   });
 
   it("does not stage a default-agent change after a same-client reconnect", async () => {
-    const loading = deferred<void>();
+    const loading = deferred();
     const client = {} as GatewayBrowserClient;
     const currentGateway = gateway(snapshot(client));
     const agents = agentsCapability(async () => files("main", "unused"));
@@ -974,8 +974,8 @@ describe("AgentsPage gateway lifecycle", () => {
   });
 
   it("keeps replacement identity loading active when the old capability settles", async () => {
-    const oldEnsure = deferred<void>();
-    const nextEnsure = deferred<void>();
+    const oldEnsure = deferred();
+    const nextEnsure = deferred();
     const client = {} as GatewayBrowserClient;
     const currentGateway = gateway(snapshot(client));
     const agents = agentsCapability(async () => files("main", "unused"));
