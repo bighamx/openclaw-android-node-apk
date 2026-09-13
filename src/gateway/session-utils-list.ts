@@ -20,7 +20,7 @@ import {
   normalizeAgentId,
   parseAgentSessionKey,
 } from "../routing/session-key.js";
-import { isCronRunSessionKey } from "../sessions/session-key-utils.js";
+import { isCronRunSessionKey, isSubagentSessionKey } from "../sessions/session-key-utils.js";
 import { SESSIONS_LIST_OWNER_LIMIT } from "../shared/session-list-limits.js";
 import type { SessionOwnerFacetIdentity } from "../shared/session-types.js";
 import { runSynchronousWork, type SynchronousWork } from "../shared/synchronous-work.js";
@@ -53,10 +53,7 @@ import {
   populateSessionListAcpMetadata,
 } from "./session-utils-projection.js";
 import { buildGatewaySessionRow } from "./session-utils-row.js";
-import {
-  createSessionListSearchMatcher,
-  resolveSessionListRowContext,
-} from "./session-utils-search.js";
+import { createSessionListSearchMatcher } from "./session-utils-search.js";
 import type {
   GatewaySessionRow,
   SessionListModelCatalog,
@@ -165,6 +162,9 @@ function* filterSessionEntries(params: {
   > & { ownerEntries: SessionEntryPair[] }
 > {
   const { cfg, store, opts, now, shouldYield } = params;
+  let rowContext: SessionListRowContext | undefined;
+  const getRowContext = () =>
+    (rowContext ??= params.getRowContext?.() ?? buildSessionListRowMetadataContext({ now }));
   const includeGlobal = opts.includeGlobal === true;
   const includeUnknown = opts.includeUnknown === true;
   const spawnedBy = typeof opts.spawnedBy === "string" ? opts.spawnedBy : "";
@@ -234,6 +234,7 @@ function* filterSessionEntries(params: {
     const storeKey = target?.storeKey ?? key;
     if (
       isCronRunSessionKey(key) ||
+      (opts.excludeSubagents === true && isSubagentSessionKey(key)) ||
       (!includeGlobal && storeKey === "global") ||
       (!includeUnknown && storeKey === "unknown")
     ) {
@@ -252,12 +253,11 @@ function* filterSessionEntries(params: {
       if (storeKey === "unknown" || storeKey === "global") {
         return false;
       }
-      const filterRowContext = resolveSessionListRowContext(params);
       const keepSpawned = resolveSessionChildOwners({
         key,
         entry,
         now,
-        subagentRuns: filterRowContext?.subagentRuns,
+        subagentRuns: getRowContext().subagentRuns,
       }).includes(spawnedBy);
       if (!keepSpawned) {
         return false;
@@ -298,7 +298,7 @@ function* filterSessionEntries(params: {
         now,
         visibleEntries: candidateEntries,
         targetsBySessionKey: expectDefined(params.targetsBySessionKey, "search row owners"),
-        getRowContext: params.getRowContext,
+        getRowContext,
         projectActiveRun: params.projectActiveRun,
       })
     : undefined;

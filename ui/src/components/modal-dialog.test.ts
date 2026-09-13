@@ -79,17 +79,25 @@ describe("openclaw-modal-dialog", () => {
   it("occludes native tabs through nested dialogs, closing animations, and removal", async () => {
     const changes = vi.fn();
     const unsubscribe = subscribeNativeOverlayOcclusion(changes, () => null);
+    const modalChanges: boolean[] = [];
+    const onModalState = (event: Event) => {
+      modalChanges.push((event as CustomEvent<{ open: boolean }>).detail.open);
+    };
+    window.addEventListener("openclaw:native-modal-state", onModalState);
     try {
       const { modal, webAwesomeDialog } = await renderModal();
       const nested = document.createElement("openclaw-modal-dialog");
       modal.append(nested);
       await getRenderedModalDialog(modal);
       expect(changes.mock.calls).toEqual([[false], [true]]);
+      expect(modalChanges).toEqual([true]);
 
       nested.remove();
       expect(changes.mock.calls).toEqual([[false], [true]]);
+      expect(modalChanges).toEqual([true]);
       modal.hide();
       await modal.updateComplete;
+      expect(modalChanges).toEqual([true, false]);
       // The platform view must stay hidden until the dialog leaves the top layer.
       expect(changes.mock.calls).toEqual([[false], [true]]);
       webAwesomeDialog.dispatchEvent(new Event("wa-after-hide"));
@@ -98,13 +106,18 @@ describe("openclaw-modal-dialog", () => {
       modal.show();
       await modal.updateComplete;
       expect(changes).toHaveBeenLastCalledWith(true);
+      expect(modalChanges).toEqual([true, false, true]);
       modal.remove();
       expect(changes).toHaveBeenLastCalledWith(false);
+      expect(modalChanges).toEqual([true, false, true, false]);
       container.append(modal);
       expect(changes).toHaveBeenLastCalledWith(true);
+      expect(modalChanges).toEqual([true, false, true, false, true]);
       modal.remove();
       expect(changes).toHaveBeenLastCalledWith(false);
+      expect(modalChanges).toEqual([true, false, true, false, true, false]);
     } finally {
+      window.removeEventListener("openclaw:native-modal-state", onModalState);
       unsubscribe();
     }
   });
@@ -198,7 +211,7 @@ describe("openclaw-modal-dialog", () => {
       /:host\(\.drawer\)\s+wa-dialog\[open\]::part\(dialog\)\s*\{[^}]*animation:\s*openclaw-drawer-in 200ms cubic-bezier\(0\.32, 0\.72, 0, 1\);/u,
     );
     expect(styles).toMatch(
-      /@keyframes openclaw-drawer-in\s*\{\s*from\s*\{\s*transform:\s*translateX\(100%\);\s*\}\s*to\s*\{\s*transform:\s*translateX\(0\);/u,
+      /@keyframes openclaw-drawer-in\s*\{\s*from\s*\{\s*transform:\s*translateX\(calc\(100% \+ var\(--openclaw-drawer-inset, 0px\)\)\);\s*\}\s*to\s*\{\s*transform:\s*translateX\(0\);/u,
     );
   });
   it("emits modal-cancel on Escape", async () => {

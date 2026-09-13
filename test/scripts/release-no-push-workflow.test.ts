@@ -1935,7 +1935,9 @@ describe("release validation no-push transport", () => {
     });
     expect(fullText).toContain("-f publish_reports=false");
     expect(fullText).toContain("Report publication: disabled (artifacts only)");
-    expect(fullText).toContain('performanceReportPublication: "artifact-only"');
+    expect(
+      step(job(readWorkflow(FULL_RELEASE), "summary"), "Write release validation manifest").run,
+    ).toBe("node scripts/full-release-validation-state.mjs write-manifest");
     expect(publisher.if).toContain("inputs.publish_reports == true");
     const guard = job(performance, "artifact_only_guard");
     expect(guard.if).toContain("inputs.publish_reports != true");
@@ -2032,6 +2034,7 @@ describe("release validation no-push transport", () => {
     expect(job(releasePublish, "finalize_github_release").needs).toEqual([
       "publish",
       "publish_docker",
+      "approve_github_release",
     ]);
 
     const identity = step(
@@ -2101,6 +2104,7 @@ describe("release validation no-push transport", () => {
           needs: {
             publish: { result: scenario.npm },
             publish_docker: { result: scenario.docker },
+            approve_github_release: { result: "success" },
             verify_core_npm_registry: { result: "skipped" },
           },
         });

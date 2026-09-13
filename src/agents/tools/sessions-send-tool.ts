@@ -25,7 +25,7 @@ import {
   lookupFailedOperationMessage,
   sessionOwnershipLookupFailure,
 } from "../../plugin-sdk/session-visibility-internal.js";
-import { runWithGatewayIndependentRootWorkContinuation } from "../../process/gateway-work-admission.js";
+import { runWithGatewayDetachedWorkContinuation } from "../../process/gateway-work-admission.js";
 import { normalizeRouteBindingChannelId } from "../../routing/binding-scope.js";
 import { resolveAgentRoute } from "../../routing/resolve-route.js";
 import {
@@ -1070,10 +1070,10 @@ export function createSessionsSendTool(opts?: {
               return;
             }
             // This detached flow can outlive the tool request that launched it.
-            // Re-admit later turns without retaining the completed caller or its
-            // prepared-runtime generation.
+            // Later turns need their own resource scope without retaining the
+            // completed caller or its prepared-runtime generation.
             runWithGatewayToolCleanupContext(() => {
-              void runWithGatewayIndependentRootWorkContinuation(
+              void runWithGatewayDetachedWorkContinuation(
                 () =>
                   runOutsidePreparedModelRuntimePluginGenerationScope(() =>
                     runWithoutOwnedSessionTranscriptWrites(() =>

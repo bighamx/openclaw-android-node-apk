@@ -32,11 +32,11 @@ import {
   type UpdateChannel,
   UPDATE_EFFECTIVE_CHANNEL_ENV,
 } from "./update-channels.js";
+import { resolveUpdateFinalizationTimeoutMs } from "./update-finalization-budget.js";
 import {
   buildPostCoreHandoffEnv,
   type PreUpdateConfigRestoreInput,
 } from "./update-post-core-context.js";
-import { resolveUpdateFinalizationTimeoutMs } from "./update-run-timeouts.js";
 import type { UpdateRunResult } from "./update-runner.js";
 
 export async function readPreUpdateConfigForPostCoreFinalize(): Promise<
@@ -189,7 +189,11 @@ export async function runPostCoreFinalizeAfterGatewayUpdate(params: {
   // version so plugins reconcile against the new core, not the running process.
   const compatHostVersion = result.after?.version ?? undefined;
   // Outer whole-process backstop, decoupled from the per-step `--timeout` above.
-  const processTimeoutMs = resolveUpdateFinalizationTimeoutMs(perStepTimeoutMs);
+  const processTimeoutMs = await resolveUpdateFinalizationTimeoutMs(perStepTimeoutMs, {
+    env: params.env,
+    pluginCount: Object.keys(params.preUpdateConfig?.sourceConfig.plugins?.entries ?? {}).length,
+    nodeRunner: nodePath,
+  });
 
   let sourceConfigDir: string | undefined;
   try {

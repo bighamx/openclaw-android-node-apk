@@ -29,13 +29,13 @@ import {
   recordUpdateDoctorConfigWriteRefusal,
   writeUpdatePostInstallDoctorResult,
 } from "./update-doctor-result.js";
+import { resolveUpdateFinalizationTimeoutMs } from "./update-finalization-budget.js";
 import {
   createManagedUpdateRequesterAuthority,
   UpdateRequesterRevokedError,
 } from "./update-requester-authority.js";
 import { adoptUpdateRun, getUpdateRun, recordUpdateRunStep } from "./update-run-ledger.js";
 import type { UpdateRecoveryFence } from "./update-run-recovery.js";
-import { resolveUpdateFinalizationTimeoutMs } from "./update-run-timeouts.js";
 
 async function finalizeMigratedUpdate(): Promise<void> {
   // Validation imports this whole candidate graph before activation. The helper
@@ -74,6 +74,13 @@ async function finalizeMigratedUpdate(): Promise<void> {
       "Full-state checkpoint recovery is deferred; retained state was left unchanged.",
     );
   }
+  const activationTimeoutMs =
+    input.params.opts.run?.activationTimeoutMs ??
+    (await resolveUpdateFinalizationTimeoutMs(input.params.updateStepTimeoutMs, {
+      env: input.params.ownedManagedUpdateEnv ?? input.params.opts.run?.env,
+      databases: input.params.schemaVersions,
+      pluginCount: Object.keys(input.params.preUpdatePluginInstallRecords).length,
+    }));
   const finalized = await withUpdateCommandTerminalResult(async (registerRun) => {
     if (input.executor) {
       return await withDelegatedUpdateCommandExecutor(
@@ -82,7 +89,7 @@ async function finalizeMigratedUpdate(): Promise<void> {
         input.params.result.root ?? input.params.root,
         async (fence) => finalizeInput(input, fence, registerRun),
         {
-          activationTimeoutMs: resolveUpdateFinalizationTimeoutMs(input.params.updateStepTimeoutMs),
+          activationTimeoutMs,
         },
       );
     }
@@ -106,7 +113,7 @@ async function finalizeMigratedUpdate(): Promise<void> {
     // still cannot bypass a live original or descendant in that same domain.
     return await withUpdateCommandExecutor(input.params.opts.run?.runId ?? "", async (executor) => {
       const fence = await executor.enter(input.params.result.root ?? input.params.root, {
-        activationTimeoutMs: resolveUpdateFinalizationTimeoutMs(input.params.updateStepTimeoutMs),
+        activationTimeoutMs,
       });
       return await finalizeInput(input, fence, registerRun);
     });

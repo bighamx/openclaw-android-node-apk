@@ -7,8 +7,7 @@ import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { runtimeProcessEntrypoints } from "../infra/runtime-process-entrypoints.js";
 import * as leases from "../infra/update-managed-service-handoff-lease.js";
 import { getUpdateRun } from "../infra/update-run-ledger.js";
-import { resolveUpdateFinalizationTimeoutMs } from "../infra/update-run-timeouts.js";
-import { UPDATE_RUNNER_TIMEOUT_MS } from "../infra/update-runner-command.js";
+import { UPDATE_RUNNER_TIMEOUT_MS } from "../infra/update-run-timeouts.js";
 import { ExitError } from "../runtime.js";
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
 import { runDoctorUpdateChild } from "./doctor-update.executor.test-support.js";
@@ -71,9 +70,7 @@ describe("Doctor public caller durable outcome", () => {
       await activated.promise;
       await vi.advanceTimersByTimeAsync(UPDATE_RUNNER_TIMEOUT_MS + 1);
       expect(run.executorFence.assertCurrent).not.toThrow();
-      await vi.advanceTimersByTimeAsync(
-        resolveUpdateFinalizationTimeoutMs(UPDATE_RUNNER_TIMEOUT_MS) * 2,
-      );
+      await vi.advanceTimersByTimeAsync(run.activationTimeoutMs * 2);
       await vi.waitFor(() => {
         expect(getUpdateRun(run.runId, { env: run.env })).toMatchObject({
           phase: "finished",

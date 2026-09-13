@@ -11,7 +11,9 @@ import {
 } from "./redact-patterns.js";
 import { redactSourceInputTextWithConfig } from "./redact-source.js";
 import {
+  captureSensitiveTextRedactionSnapshot,
   computeSensitiveRedactionBitmap,
+  createSensitiveTextRedactor,
   getDefaultRedactPatterns,
   redactModelVisibleToolPayloadText,
   redactSecrets,
@@ -23,7 +25,11 @@ import {
   resolveRedactOptions,
 } from "./redact.js";
 import { withFullContextToolPayloadRedaction } from "./redact.test-support.js";
-import { registerSecretValueForRedaction } from "./secret-redaction-registry.js";
+import {
+  getSecretRedactionRegistryRevision,
+  redactRegisteredSecretValues,
+  registerSecretValueForRedaction,
+} from "./secret-redaction-registry.js";
 import { resetSecretRedactionRegistryForTest } from "./secret-redaction-registry.test-support.js";
 
 const defaults = getDefaultRedactPatterns();
@@ -156,6 +162,84 @@ describe("registered exact secret values", () => {
 
     expect(redactSensitiveText(first, { mode: "off" })).not.toContain(first);
     expect(redactSensitiveText(second, { mode: "off" })).toBe(second);
+  });
+
+  it("keeps outer matches fixed when a mask callback registers another value", () => {
+    const first = "first-exact-fixture";
+    const second = "second-exact-fixture";
+    registerSecretValueForRedaction(first);
+    const input = `${first} ${second} ${first}`;
+    const nested: string[] = [];
+
+    const output = redactRegisteredSecretValues(input, () => {
+      registerSecretValueForRedaction(second);
+      nested.push(redactRegisteredSecretValues(input, () => "nested"));
+      return "outer";
+    });
+
+    expect(output).toBe(`outer ${second} outer`);
+    expect(nested).toEqual(["nested nested nested", "nested nested nested"]);
+  });
+});
+
+describe("captured sensitive text redaction", () => {
+  it("preserves exact surface forms, longest matches, and built-in masking after transfer", () => {
+    const secret = 'opaque-fixture/"quoted"\nvalue';
+    const encoded = encodeURIComponent(secret);
+    const escaped = JSON.stringify(secret).slice(1, -1);
+    const doubleEncoded = encodeURIComponent(encoded);
+    registerSecretValueForRedaction(secret);
+    registerSecretValueForRedaction("overlap-fixture");
+    registerSecretValueForRedaction("overlap-fixture-complete");
+    const redact = createSensitiveTextRedactor(
+      structuredClone(captureSensitiveTextRedactionSnapshot()),
+    );
+    resetSecretRedactionRegistryForTest();
+
+    expect(
+      redact(
+        [
+          secret,
+          encoded,
+          escaped,
+          doubleEncoded,
+          "overlap-fixture-complete overlap-fixture",
+          "token=abcdef1234567890ghij",
+        ].join("\n"),
+      ),
+    ).toBe(
+      [
+        "opaque…alue",
+        "opaque…alue",
+        "opaque…alue",
+        doubleEncoded,
+        "overla…lete ***",
+        "token=abcdef…ghij",
+      ].join("\n"),
+    );
+    expect(redactSensitiveText(secret, { mode: "off" })).toBe(secret);
+  });
+
+  it("isolates captured membership from later registrations and resets", () => {
+    const first = "first-opaque-fixture";
+    const second = "second-opaque-fixture";
+    const input = `${first} ${second}`;
+    registerSecretValueForRedaction(first);
+    const firstSnapshot = captureSensitiveTextRedactionSnapshot();
+    const redactFirst = createSensitiveTextRedactor(firstSnapshot);
+    expect(firstSnapshot.registryRevision).toBe(getSecretRedactionRegistryRevision());
+
+    registerSecretValueForRedaction(second);
+    const secondSnapshot = captureSensitiveTextRedactionSnapshot();
+    const redactSecond = createSensitiveTextRedactor(secondSnapshot);
+    expect(firstSnapshot.registryRevision).not.toBe(getSecretRedactionRegistryRevision());
+    resetSecretRedactionRegistryForTest();
+    const redactEmpty = createSensitiveTextRedactor(captureSensitiveTextRedactionSnapshot());
+
+    expect(redactFirst(input)).toBe(`first-…ture ${second}`);
+    expect(redactSecond(input)).toBe("first-…ture second…ture");
+    expect(redactEmpty(input)).toBe(input);
+    expect(secondSnapshot.registryRevision).not.toBe(getSecretRedactionRegistryRevision());
   });
 });
 

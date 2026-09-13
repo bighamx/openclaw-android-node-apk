@@ -123,6 +123,7 @@ function renderChecks(pullRequest: ControlUiSessionPullRequest) {
       <summary class="chat-pr__checks-pill" aria-label=${label} title=${label}>
         <span class="chat-pr__checks-dot" aria-hidden="true"></span>
         ${t("chat.pullRequests.checks")}
+        <span class="chat-pr__checks-chevron" aria-hidden="true">${icons.chevronDown}</span>
       </summary>
       <div
         class="chat-pr__checks-menu"
@@ -154,25 +155,6 @@ const MAX_COLLAPSED_PULL_REQUESTS = 2;
 // Matches GitHub's own diff-stat rendering ("+2,819") in the viewer's locale.
 function formatDiffCount(value: number): string {
   return value.toLocaleString();
-}
-
-/**
- * The pre-PR publication row must not invite a duplicate PR, so live PRs
- * (even dismissed ones) hide it — decided on the undismissed PR list. The
- * gateway already omits branches with neither a creatable PR nor local
- * changed files.
- */
-export function createPullRequestBranch(
-  pullRequests: readonly ControlUiSessionPullRequest[],
-  branch: ControlUiSessionBranch | undefined,
-): ControlUiSessionBranch | undefined {
-  if (!branch) {
-    return undefined;
-  }
-  if (pullRequests.some((item) => item.state === "open" || item.state === "draft")) {
-    return undefined;
-  }
-  return branch;
 }
 
 // Collapsed rows lead with live work; merged/closed history sits behind the

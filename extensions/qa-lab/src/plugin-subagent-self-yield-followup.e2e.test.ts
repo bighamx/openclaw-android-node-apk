@@ -149,17 +149,38 @@ describe("plugin subagent sessions_yield follow-up", () => {
   it.skipIf(process.platform === "win32")(
     "rearms a failed task projection during automatic process-restart recovery",
     async () => {
+      const heartbeatProbe = "QA-RESTART-HEARTBEAT-MUST-NOT-RUN";
       let recoveryRequests = 0;
       let releaseRecovery: (() => void) | undefined;
       const recoveryGate = new Promise<void>((resolve) => {
         releaseRecovery = resolve;
       });
-      const { state, transport, gateway } = await startFixtureGateway(
+      const { state, transport, mock, gateway } = await startFixtureGateway(
         {
           forcedRuntime: "openclaw",
           useRepoCli: false,
           mutateConfig: (config) => ({
             ...withFixturePlugin(config),
+            agents: {
+              ...config.agents,
+              defaults: {
+                ...config.agents?.defaults,
+                heartbeat: {
+                  ...config.agents?.defaults?.heartbeat,
+                  every: "0m",
+                  prompt: heartbeatProbe,
+                },
+              },
+              entries: Object.fromEntries(
+                Object.entries(config.agents?.entries ?? {}).map(([id, agent]) => [
+                  id,
+                  {
+                    ...agent,
+                    heartbeat: { ...agent.heartbeat, every: "0m", prompt: heartbeatProbe },
+                  },
+                ]),
+              ),
+            },
             tools: {
               ...config.tools,
               alsoAllow: [
@@ -206,6 +227,29 @@ describe("plugin subagent sessions_yield follow-up", () => {
           return `http://127.0.0.1:${address.port}`;
         },
       );
+      const heartbeatDisabledPids: number[] = [];
+      const assertHeartbeatDisabled = async () => {
+        const snapshot = (await gateway.call("config.get", {})) as {
+          valid: boolean;
+          config: OpenClawConfig;
+          configRevisionHash: string;
+          appliedConfigHash: string;
+        };
+        expect(snapshot.valid).toBe(true);
+        expect(snapshot.appliedConfigHash).toBeTruthy();
+        expect(snapshot.appliedConfigHash).toBe(snapshot.configRevisionHash);
+        expect(snapshot.config.agents?.defaults?.heartbeat?.every).toBe("0m");
+        for (const agent of Object.values(snapshot.config.agents?.entries ?? {})) {
+          expect(agent.heartbeat?.every).toBe("0m");
+        }
+        const { jobs } = (await gateway.call("cron.list", {
+          includeDisabled: true,
+          includeDeliveryPreviews: false,
+        })) as { jobs: Array<{ enabled: boolean; payload: { kind: string } }> };
+        expect(jobs.filter((job) => job.payload.kind === "heartbeat" && job.enabled)).toEqual([]);
+        expect(gateway.pid).not.toBeNull();
+        heartbeatDisabledPids.push(gateway.pid!);
+      };
       const sessionKey = buildAgentSessionKey({
         agentId: "qa",
         channel: "qa-channel",
@@ -227,6 +271,7 @@ describe("plugin subagent sessions_yield follow-up", () => {
         state.getSnapshot().messages.filter((message) => message.direction === "outbound");
       try {
         await transport.waitReady({ gateway });
+        await assertHeartbeatDisabled();
         await transport.sendInbound({
           accountId: transport.accountId,
           conversation: REQUESTER_CONVERSATION,
@@ -337,6 +382,7 @@ describe("plugin subagent sessions_yield follow-up", () => {
         });
         expect(gateway.pid).not.toBe(pid);
         await transport.waitReady({ gateway });
+        await assertHeartbeatDisabled();
         const recovered = await transport.waitForCondition(
           async () => {
             const observation = await observe();
@@ -435,6 +481,7 @@ describe("plugin subagent sessions_yield follow-up", () => {
         await gateway.restartAfterStateMutation(async () => {});
         expect(gateway.pid).not.toBe(completedPid);
         await transport.waitReady({ gateway });
+        await assertHeartbeatDisabled();
         // Observe a complete 60-second registry sweep after the second restart,
         // rather than checking only the interval before deferred work runs.
         await transport.waitForNoOutbound({ sinceIndex: deliveryStart + 1, quietMs: 65_000 });
@@ -461,6 +508,14 @@ describe("plugin subagent sessions_yield follow-up", () => {
         expect(finalTranscript.assistantToolCallCounts).toEqual(
           original.transcript.assistantToolCallCounts,
         );
+        const providerRequests = (await fetch(`${mock.baseUrl}/debug/requests`).then((response) =>
+          response.json(),
+        )) as Array<{ prompt: string }>;
+        const heartbeatRequests = providerRequests.filter((request) =>
+          request.prompt.includes(heartbeatProbe),
+        );
+        expect(heartbeatRequests).toHaveLength(0);
+        expect(new Set(heartbeatDisabledPids).size).toBe(3);
         await mkdir(path.dirname(VERDICT_PATH), { recursive: true });
         await writeFile(
           path.join(path.dirname(VERDICT_PATH), "restart-recovery-verdict.json"),
@@ -471,6 +526,8 @@ describe("plugin subagent sessions_yield follow-up", () => {
               gateway: "ephemeral",
               channel: "qa-channel",
               provider: "mock-openai",
+              heartbeatDisabledPids,
+              heartbeatRequests: heartbeatRequests.length,
               faultInjection: "terminal task/flow projection while Gateway stopped",
               originalGeneration: before.run.generation,
               recoveredGeneration: recovered.backing.run.generation,

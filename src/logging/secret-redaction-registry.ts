@@ -6,13 +6,12 @@ const MAX_SECRET_VALUES = 512;
 
 const registeredValues = new Map<string, true>();
 let registryRevision = 0;
-let compiledMatcher: { prefixes: RegExp; buckets: Map<string, string[]> } | undefined;
-let firstChars: Set<string> | undefined;
+type SecretValueRedactor = (text: string, mask: (value: string, index: number) => string) => string;
+let registeredValueRedactor: SecretValueRedactor | undefined;
 
 function invalidateMatcher(): void {
   registryRevision += 1;
-  firstChars = undefined;
-  compiledMatcher = undefined;
+  registeredValueRedactor = undefined;
 }
 
 function registerOneSecretValue(value: string): void {
@@ -60,6 +59,14 @@ export function getSecretRedactionRegistryRevision(): number {
   return registryRevision;
 }
 
+/** Exact surface forms are already expanded; snapshots must not register them again. */
+export function captureSecretRedactionRegistrySnapshot(): {
+  revision: number;
+  values: readonly string[];
+} {
+  return { revision: registryRevision, values: [...registeredValues.keys()] };
+}
+
 /** Replaces registered exact values while preserving the caller's mask convention. */
 export function redactRegisteredSecretValues(
   text: string,
@@ -68,59 +75,69 @@ export function redactRegisteredSecretValues(
   if (!text || registeredValues.size === 0) {
     return text;
   }
-  let couldMatch = false;
-  // Registration can add several surface forms; prepare their probe once on first use.
-  firstChars ??= new Set([...registeredValues.keys()].map((value) => value.charAt(0)));
-  for (const firstChar of firstChars) {
-    if (text.includes(firstChar)) {
-      couldMatch = true;
-      break;
+  registeredValueRedactor ??= createSecretValueRedactor([...registeredValues.keys()]);
+  return registeredValueRedactor(text, mask);
+}
+
+export function createSecretValueRedactor(values: readonly string[]): SecretValueRedactor {
+  let compiledMatcher: { prefixes: RegExp; buckets: Map<string, string[]> } | undefined;
+  let firstChars: Set<string> | undefined;
+  return (text, mask) => {
+    if (!text || values.length === 0) {
+      return text;
     }
-  }
-  if (!couldMatch) {
-    return text;
-  }
-  if (!compiledMatcher) {
-    const buckets = new Map<string, string[]>();
-    for (const value of [...registeredValues.keys()].toSorted(
-      (left, right) => right.length - left.length,
-    )) {
-      const prefix = value.slice(0, MIN_SECRET_VALUE_LENGTH);
-      const bucket = buckets.get(prefix);
-      if (bucket) {
-        bucket.push(value);
-      } else {
-        buckets.set(prefix, [value]);
+    let couldMatch = false;
+    // Registration can add several surface forms; prepare their probe once on first use.
+    firstChars ??= new Set(values.map((value) => value.charAt(0)));
+    for (const firstChar of firstChars) {
+      if (text.includes(firstChar)) {
+        couldMatch = true;
+        break;
       }
     }
-    // Supported store values can exceed the regex engine's literal span limit.
-    // Compile fixed-width prefixes; verify complete values against the text.
-    compiledMatcher = {
-      prefixes: new RegExp([...buckets.keys()].map(escapeRegExp).join("|"), "g"),
-      buckets,
-    };
-  }
-  const { prefixes, buckets } = compiledMatcher;
-  const matches: { index: number; value: string }[] = [];
-  prefixes.lastIndex = 0;
-  for (let match = prefixes.exec(text); match; match = prefixes.exec(text)) {
-    const index = match.index;
-    const value = buckets.get(match[0])?.find((candidate) => text.startsWith(candidate, index));
-    if (value !== undefined) {
-      matches.push({ index, value });
+    if (!couldMatch) {
+      return text;
     }
-    // A rejected prefix may overlap a real match beginning one code unit later.
-    prefixes.lastIndex = index + (value?.length ?? 1);
-  }
-  // Global replacement fixes its matches before callbacks. Nested registration
-  // must affect the next/nested call, never the remainder of this one.
-  let result = "";
-  let cursor = 0;
-  for (const match of matches) {
-    result += `${text.slice(cursor, match.index)}${mask(match.value, match.index)}`;
-    cursor = match.index + match.value.length;
-  }
-  return result + text.slice(cursor);
+    if (!compiledMatcher) {
+      const buckets = new Map<string, string[]>();
+      for (const value of values.toSorted((left, right) => right.length - left.length)) {
+        const prefix = value.slice(0, MIN_SECRET_VALUE_LENGTH);
+        const bucket = buckets.get(prefix);
+        if (bucket) {
+          bucket.push(value);
+        } else {
+          buckets.set(prefix, [value]);
+        }
+      }
+      // Supported store values can exceed the regex engine's literal span limit.
+      // Compile fixed-width prefixes; verify complete values against the text.
+      compiledMatcher = {
+        prefixes: new RegExp([...buckets.keys()].map(escapeRegExp).join("|"), "g"),
+        buckets,
+      };
+    }
+    const { prefixes, buckets } = compiledMatcher;
+    const matches: { index: number; value: string }[] = [];
+    prefixes.lastIndex = 0;
+    for (let match = prefixes.exec(text); match; match = prefixes.exec(text)) {
+      const index = match.index;
+      const value = buckets.get(match[0])?.find((candidate) => text.startsWith(candidate, index));
+      if (value !== undefined) {
+        matches.push({ index, value });
+      }
+      // A rejected prefix may overlap a real match beginning one code unit later.
+      prefixes.lastIndex = index + (value?.length ?? 1);
+    }
+    // Global replacement fixes its matches before callbacks. Nested registration
+    // must affect the next/nested call, never the remainder of this one.
+    let result = "";
+    let cursor = 0;
+    for (const match of matches) {
+      result += `${text.slice(cursor, match.index)}${mask(match.value, match.index)}`;
+      cursor = match.index + match.value.length;
+    }
+    return result + text.slice(cursor);
+  };
 }
 
 function resetSecretRedactionRegistryForTest(): void {

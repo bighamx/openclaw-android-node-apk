@@ -12,7 +12,7 @@ import { defaultRuntime } from "../../runtime.js";
 import { resolveOpenClawStateSqlitePath } from "../../state/openclaw-state-db.paths.js";
 import { exitCliAfterOutput } from "../one-shot-exit.js";
 import { printResult } from "./progress.js";
-import type { UpdateCommandOptions } from "./shared.js";
+import { parseUpdateTimeoutMs, type UpdateCommandOptions } from "./shared.js";
 import { UpdateActivationTimeoutError } from "./update-command-activation.js";
 import type { FinishUpdateParams } from "./update-command-finish-types.js";
 import { UpdateCommandRecoveryPendingError } from "./update-command-recovery.js";
@@ -276,7 +276,7 @@ export async function reportPreMutationUpdateResult(
     ...(params.opts.dryRun !== true && params.status !== "skipped"
       ? {
           recovery: await (params.installKind === "git"
-            ? readCurrentGitUpdateRecovery(params.root)
+            ? readCurrentGitUpdateRecovery(params.root, parseUpdateTimeoutMs(params.opts.timeout))
             : verifyPackageUpdateRecovery(params.root)),
         }
       : {}),

@@ -40,6 +40,14 @@ provider or plugin runtime ownership. Kernels and their transaction callbacks
 remain synchronous. The asynchronous task and flow read facade runs these read
 kernels in the shared-state worker.
 
+Routine status reads stream task audit metadata through the same shared worker
+and return fixed-size history aggregates plus candidates for live reconciliation.
+They do not decode retained task payloads or restore delivery-state maps. Reads
+use one snapshot and bypass secondary indexes so stale indexes cannot hide rows.
+Only pending reads coalesce; completed results are not cached. Physical integrity
+verification remains with full registry restoration and Doctor, while known
+database failures and quarantine still refuse summary reads.
+
 Gateway user-preference RPCs and Talk appearance reads resolve merged profile IDs
 and access preferences in the shared-state worker. Preference writes keep profile
 resolution, quota validation, and mutation in one synchronous write transaction;
@@ -54,6 +62,21 @@ opening, with Gateway schema authority delegated by its live coordinator owner.
 Classified database errors survive transport, and canonical close joins worker
 operations and native cleanup. Cold registry restoration and runtime-configuration
 preparation still retain their existing main-thread behavior.
+
+Model-context reads and session transcript preparation use the session-transcript
+worker with separate bounded queues. Background preparation cannot occupy the
+foreground context queue. Session exports read events, statistics, and session
+classification from one read-only SQLite snapshot, then prepare text and
+provenance off the Gateway thread. The caller carries its current exact-secret
+redaction snapshot and rejects results prepared against an obsolete registry.
+Reset-recall metadata crosses the worker boundary with the prepared content.
+Incognito databases, archive materialization, and caller-owned transcript
+observers retain their existing local execution. Index publication and
+restoration remain with their existing database and lifecycle owners.
+Worker admission and transport failures preserve the published index and its
+retry state. The existing chunking revision triggers a one-time rebuild to repair
+previously indexed reset boundaries. Rebuilds reuse cached embeddings when
+available and retain the existing atomic publication path.
 
 The optional `tasks.async.managedFlows` creation and revision mutations use the
 same row kernels in the shared worker, with fresh owner, managed-mode, and

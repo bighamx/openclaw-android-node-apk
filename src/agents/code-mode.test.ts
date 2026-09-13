@@ -310,6 +310,14 @@ describe("Code Mode catalog and model-visible surface", () => {
     expect(execTool.description).toContain("`-> ?` means unknown output");
     expect(execTool.description).toContain("do not feed it into guessed field-dependent logic");
     expect(execTool.description).toContain("use a later `exec` for dependent composition");
+    expect(execTool.description).toContain("await results.save(value)");
+    expect(execTool.description).toContain(
+      "Oversized final objects/arrays may return `value.reference`",
+    );
+    expect(execTool.description).toContain("{id,bytes,count,shape,preview,previewTruncated}");
+    expect(execTool.description).toContain("emit that descriptor directly; full JSON stays stored");
+    expect(execTool.description).toContain("results.load(id)");
+    expect(execTool.description).toContain("results.delete(id)");
     expect(execTool.description).not.toContain("ALL_TOOLS");
     expect(execTool.description).not.toContain("tools.call");
     expect(execTool.description).not.toContain("exact id");
@@ -648,7 +656,9 @@ describe("Code Mode catalog and model-visible surface", () => {
     expect(description).toContain("`catalog.search(query)`");
     expect(description).toContain("API.list");
     expect(description).toContain("tools/");
-    expect(description).not.toContain("MCP tools are available only through");
+    expect(description).not.toContain(
+      "MCP tools use the `MCP` namespace or callable `catalog.search` handles",
+    );
     expect(description).not.toContain("MCP namespace globals");
   });
 
@@ -677,7 +687,9 @@ describe("Code Mode catalog and model-visible surface", () => {
 
     const description = compacted.tools[0]?.description ?? "";
     expect(description).toContain("API.list(prefix?)");
-    expect(description).toContain("MCP tools are available only through");
+    expect(description).toContain(
+      "MCP tools use the `MCP` namespace or callable `catalog.search` handles",
+    );
     expect(description).toContain("- fake_noop ");
     expect(description).not.toContain("openclaw:fake-code-mode");
     expect(description).not.toContain("github__create_issue");

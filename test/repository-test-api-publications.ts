@@ -5,9 +5,6 @@ import { normalizeModuleId } from "vite/module-runner";
 // distinct; override stores and production singletons have separate lifecycle owners.
 const publications: Record<string, string | symbol> = {
   "extensions/google/vertex-adc.ts": Symbol.for("openclaw.google.vertexAdcTestApi"),
-  "extensions/memory-lancedb/lancedb-runtime.ts": Symbol.for(
-    "openclaw.memoryLanceDbRuntimeTestApi",
-  ),
   "src/agents/agent-hooks/compaction-safeguard.ts": Symbol.for(
     "openclaw.compactionSafeguardTestApi",
   ),
@@ -92,7 +89,6 @@ const publications: Record<string, string | symbol> = {
   "src/commands/onboard-non-interactive/local.ts": Symbol.for(
     "openclaw.onboardNonInteractiveLocalTestApi",
   ),
-  "src/commands/status.command.ts": Symbol.for("openclaw.statusCommandTestApi"),
   "src/cron/service/active-run-cancellation.ts": Symbol.for("openclaw.activeCronTaskRunTestApi"),
   "src/cron/service/timer.ts": Symbol.for("openclaw.cronTimerTestApi"),
   "src/cron/session-reaper.ts": Symbol.for("openclaw.cronSessionReaperTestApi"),

@@ -460,9 +460,10 @@ function collectPlatformSources(
     }
     platforms.set(id, source);
   };
-  const promotionPattern = /promote_([a-z0-9_]+)_release_assets?\(\)\s*\{([\s\S]*?)^\s*\}/gmu;
+  const platformHelperPattern =
+    /(?:promote|dispatch)_([a-z0-9_]+)_release_assets?\(\)\s*\{([\s\S]*?)^\s*\}/gmu;
   const dispatchPattern =
-    /dispatch_workflow(?:_at_ref)?\s+(?:(?:"[^"]+"|'[^']+')\s+){0,2}([a-z0-9][a-z0-9-]+\.yml)/u;
+    /dispatch_workflow(?:_at_ref)?\s+(?:(?:"[^"]+"|'[^']+'|main)\s+){0,2}([a-z0-9][a-z0-9-]+\.yml)/u;
   let linkedHelper: string | undefined;
   const readLinkedHelper = () => {
     if (linkedHelper !== undefined) {
@@ -482,11 +483,11 @@ function collectPlatformSources(
     );
     return linkedHelper;
   };
-  for (const match of workflowText.matchAll(promotionPattern)) {
+  for (const match of workflowText.matchAll(platformHelperPattern)) {
     const id = match[1]?.replaceAll("_", "-");
     const workflowName = dispatchPattern.exec(match[2] ?? "")?.[1];
     if (!id || !workflowName) {
-      throw new Error(`${PUBLICATION_WORKFLOW_PATH} has an invalid platform promotion function`);
+      throw new Error(`${PUBLICATION_WORKFLOW_PATH} has an invalid platform publication function`);
     }
     addPlatform(id, `.github/workflows/${workflowName}`);
   }
@@ -499,7 +500,7 @@ function collectPlatformSources(
         continue;
       }
       for (const call of step.run.matchAll(
-        /^[ \t]*(promote_([a-z0-9_]+)_release_assets?)[ \t]*(?:#.*)?$/gmu,
+        /^[ \t]*((?:promote|dispatch)_([a-z0-9_]+)_release_assets?)[ \t]*(?:#.*)?$/gmu,
       )) {
         const beforeCall = step.run.slice(0, call.index);
         const sources = [
@@ -507,7 +508,7 @@ function collectPlatformSources(
             /^[ \t]*source scripts\/lib\/release-publish-children\.sh[ \t]*$/gmu,
           ),
         ];
-        const inline = [...beforeCall.matchAll(promotionPattern)].some((definition) =>
+        const inline = [...beforeCall.matchAll(platformHelperPattern)].some((definition) =>
           definition[0].startsWith(`${call[1]}()`),
         );
         if (inline && sources.length === 0) {
@@ -518,7 +519,7 @@ function collectPlatformSources(
             `platform call ${call[1]} requires one preceding static source in its run step`,
           );
         }
-        const definitions = [...readLinkedHelper().matchAll(promotionPattern)].filter(
+        const definitions = [...readLinkedHelper().matchAll(platformHelperPattern)].filter(
           (definition) => definition[0].startsWith(`${call[1]}()`),
         );
         if (definitions.length !== 1) {

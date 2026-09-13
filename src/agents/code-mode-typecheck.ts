@@ -2,7 +2,19 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { truncateUtf8Prefix } from "../utils/utf8-truncate.js";
 import { ToolInputError } from "./tool-input-error.js";
+
+const MAX_DIAGNOSTICS = 5;
+const MAX_DIAGNOSTIC_BYTES = 1024;
+
+type LibraryFile = { text: string; references: string[] };
+// Each warm compiler worker keeps only pinned standard-library text and its
+// import graph. Programs, ASTs, guest declarations, and diagnostics remain per-cell.
+const librariesByCompiler = new WeakMap<
+  typeof import("typescript"),
+  Map<string, Promise<LibraryFile>>
+>();
 
 export async function checkCodeModeTypes(
   ts: typeof import("typescript"),
@@ -23,6 +35,11 @@ export async function checkCodeModeTypes(
   };
   add("user.ts", "async function __openclawPreflight() {\n" + code + "\n}");
   add("guest.d.ts", options.declarations);
+  let libraries = librariesByCompiler.get(ts);
+  if (!libraries) {
+    libraries = new Map();
+    librariesByCompiler.set(ts, libraries);
+  }
   const libDir = dirname(createRequire(import.meta.url).resolve("typescript"));
   const loadLib = async (name: string): Promise<void> => {
     if (files.has(name)) {
@@ -31,10 +48,22 @@ export async function checkCodeModeTypes(
     if (!/^lib\.[a-z0-9.]+\.d\.ts$/u.test(name)) {
       throw new ToolInputError("Invalid preflight standard library.");
     }
-    const text = await readFile(join(libDir, name), "utf8");
+    let library = libraries.get(name);
+    if (!library) {
+      library = readFile(join(libDir, name), "utf8").then((text) => ({
+        text,
+        references: ts
+          .preProcessFile(text)
+          .libReferenceDirectives.map((ref) => "lib." + ref.fileName + ".d.ts"),
+      }));
+      libraries.set(name, library);
+      void library.catch(() => libraries.delete(name));
+    }
+    const { text, references } = await library;
+    // Warm libraries still consume this cell's full compiler-input allowance.
     add(name, text);
-    for (const ref of ts.preProcessFile(text).libReferenceDirectives) {
-      await loadLib("lib." + ref.fileName + ".d.ts");
+    for (const reference of references) {
+      await loadLib(reference);
     }
   };
   await loadLib("lib.es2022.d.ts");
@@ -68,10 +97,13 @@ export async function checkCodeModeTypes(
     },
     host,
   );
-  const failure = ts
+  const failures = ts
     .getPreEmitDiagnostics(program)
-    .find((d) => d.category === ts.DiagnosticCategory.Error);
-  if (failure) {
+    .filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
+  if (failures.length === 0) {
+    return;
+  }
+  const messages = failures.slice(0, MAX_DIAGNOSTICS).map((failure) => {
     const point =
       failure.file && failure.start !== undefined
         ? failure.file.getLineAndCharacterOfPosition(failure.start)
@@ -84,10 +116,12 @@ export async function checkCodeModeTypes(
           (point.character + 1) +
           ": "
         : "";
-    throw new ToolInputError(
-      "TypeScript preflight failed: " +
-        location +
-        ts.flattenDiagnosticMessageText(failure.messageText, "\n"),
-    );
+    const message = location + ts.flattenDiagnosticMessageText(failure.messageText, "\n");
+    const prefix = truncateUtf8Prefix(message, MAX_DIAGNOSTIC_BYTES);
+    return prefix === message ? message : prefix + " [diagnostic truncated]";
+  });
+  if (failures.length > messages.length) {
+    messages.push(`${failures.length - messages.length} additional errors omitted.`);
   }
+  throw new ToolInputError("TypeScript preflight failed: " + messages.join("\n"));
 }

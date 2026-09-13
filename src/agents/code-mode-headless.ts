@@ -261,6 +261,7 @@ export async function runCodeModeScriptHeadless(params: {
     );
     const catalogProjection = createCodeModeCatalogProjection(runtime.all({ includeMcp: false }), {
       reservedNames: namespaces.map((descriptor) => descriptor.globalName),
+      mcpIds: namespaceRuntime.mcpBindings.keys(),
     });
     const parentToolCallId = `headless:${randomUUID()}`;
     const dispatch = (
@@ -292,6 +293,7 @@ export async function runCodeModeScriptHeadless(params: {
         ...createPendingBridgeStates(newRequests, {
           config,
           inbox: owner.inbox,
+          results: owner.results,
           runtime,
           catalogProjection,
           namespaceRuntime,

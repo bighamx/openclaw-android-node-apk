@@ -32,7 +32,12 @@ import {
 } from "../../test/vitest/vitest.unit-paths.mjs";
 import { buildVitestRunPlans, isTestFileTarget } from "../test-projects.test-support.mts";
 import { rebalanceRuntimeTestJobs } from "./ci-runtime-test-placement.mts";
-import { readCompactGroupTimings } from "./ci-test-timings.mts";
+import { isRuntimePlacementIncludePatterns } from "./ci-test-timings-schema.mts";
+import {
+  readCompactGroupTimings,
+  readRuntimePlacementTimings,
+  resolveRuntimePlacementSeconds,
+} from "./ci-test-timings.mts";
 import { listTrackedTestFiles } from "./list-test-files.mts";
 import {
   listVitestRuntimeConsumerFiles,
@@ -46,7 +51,6 @@ import {
   estimateVitestTestFileSeconds as stripeFileWeight,
   estimateVitestToolingFileSeconds as toolingFileWeight,
   parseCompactSplitTimingKey,
-  runtimePlacementTimingKey,
 } from "./vitest-shard-metadata.mts";
 
 export type NodeTestShardGroup = {
@@ -3376,22 +3380,18 @@ function createCompactNodeTestShardBundles(
   // Only the public complete-plan entry normalizes this option. Precise plans
   // retain their original template capacity before projecting selected files.
   if (options.runnerBackend === "hybrid" && options.compactMode !== undefined) {
-    const timings = readCompactGroupTimings("blacksmith");
-    const runtimeJobs = compactJobs.filter(
+    const timings = readRuntimePlacementTimings("blacksmith");
+    const placementJobs = compactJobs.filter(
       (job) =>
-        job.pretestBuildMode === "runtime" &&
+        job.pretestBuildMode !== "private-qa" &&
         !job.requiresDist &&
-        job.planConcurrency === 1 &&
         runnerRank(job) >= 0 &&
         job.groups.every(
-          (group) => group.pretestBuildMode === "runtime" && !isExclusiveCompactGroup(group),
+          (group) => group.pretestBuildMode !== "private-qa" && !isExclusiveCompactGroup(group),
         ),
     );
-    const measured = (group: NodeTestShardGroup) => {
-      const key = runtimePlacementTimingKey(group);
-      return key === undefined ? undefined : timings[key];
-    };
-    if (runtimeJobs.some((job) => job.groups.some((group) => measured(group) !== undefined))) {
+    const measured = (group: NodeTestShardGroup) => resolveRuntimePlacementSeconds(group, timings);
+    if (placementJobs.some((job) => job.groups.some((group) => measured(group) !== undefined))) {
       // Observe complete existing envelopes only after splitting/packing. These
       // floors cannot feed a runtime cost back into ordinary stripe generation.
       const cost = (groups: NodeTestShardGroup[]) =>
@@ -3409,7 +3409,28 @@ function createCompactNodeTestShardBundles(
         );
       const admits = (groups: NodeTestShardGroup[]) =>
         admitsCompactBin(groups, COMPACT_HYBRID_RUNTIME_JOB_SECONDS, cost);
-      rebalanceRuntimeTestJobs(runtimeJobs, { cost, admits, runnerRank });
+      const prepareRecipient = (job: CompactNodeTestShard) => {
+        if (job.planConcurrency !== 2) {
+          return job.groups;
+        }
+        if (
+          job.groups.some(
+            (group) =>
+              group.env?.OPENCLAW_VITEST_MAX_WORKERS === undefined &&
+              !isRuntimePlacementIncludePatterns(group.includePatterns),
+          )
+        ) {
+          return undefined;
+        }
+        // Preserve the executed allowance and its prepared timing identity.
+        // Re-keying an equivalent cap would break a complete parent generation.
+        return job.groups.map((group) =>
+          group.env?.OPENCLAW_VITEST_MAX_WORKERS !== undefined
+            ? group
+            : Object.assign({}, group, { env: { ...group.env, ...PINNED_COMPACT_GROUP_ENV } }),
+        );
+      };
+      rebalanceRuntimeTestJobs(placementJobs, { cost, admits, runnerRank, prepareRecipient });
     }
   }
 

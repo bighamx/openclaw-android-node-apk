@@ -2,6 +2,7 @@
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { PluginInstallRecord } from "../../config/types.plugins.js";
 import { createSubsystemLogger } from "../../logging.js";
+import { normalizePluginsConfig } from "../config-state.js";
 import { resolvePluginRegistrationConfigKey } from "../loader-registration-config.js";
 import type { PluginLoadOptions } from "../loader-types.js";
 import type { PluginManifestRegistry } from "../manifest-registry.js";
@@ -49,7 +50,10 @@ export function setPluginRuntimeLoadContext(
     registrationConfigKey:
       previous?.registrationConfigKey ??
       registrationConfigKey ??
-      resolvePluginRegistrationConfigKey(context),
+      resolvePluginRegistrationConfigKey({
+        runtimeEntries: normalizePluginsConfig(context.config.plugins).entries,
+        sourceEntries: normalizePluginsConfig(context.activationSourceConfig.plugins).entries,
+      }),
     declaredProviderOwners:
       context.metadataSnapshot &&
       context.metadataSnapshot.manifestRegistry === context.manifestRegistry

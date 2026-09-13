@@ -244,6 +244,7 @@ function buildFixtureRepo(root: string, version: string, options: FixtureOptions
   for (const name of [
     "android-release.yml",
     "docker-release.yml",
+    "linux-app-release-request.yml",
     "plugin-npm-release.yml",
     "vercel-container-registry-publish.yml",
     "windows-node-release.yml",
@@ -1657,13 +1658,14 @@ mutateModule.syncBuiltinESMExports();
     expect(plan.inventory.platforms).toEqual([
       { id: "android", source: ".github/workflows/android-release.yml" },
       { id: "docker", source: ".github/workflows/docker-release.yml" },
+      { id: "linux", source: ".github/workflows/linux-app-release-request.yml" },
       { id: "vcr", source: ".github/workflows/vercel-container-registry-publish.yml" },
       { id: "windows", source: ".github/workflows/windows-node-release.yml" },
     ]);
     expect(
       verifyReleasePlanLock(canonicalReleasePlanLockJson(createReleasePlanLock(plan)), params).plan,
     ).toEqual(plan);
-    for (const omitted of ["android", "windows"]) {
+    for (const omitted of ["android", "linux", "windows"]) {
       const partial = structuredClone(plan);
       partial.inventory.platforms = partial.inventory.platforms.filter(({ id }) => id !== omitted);
       expect(() =>
@@ -1717,7 +1719,7 @@ mutateModule.syncBuiltinESMExports();
       }
     }
     if (fault === "unlinked") {
-      for (const id of ["publish_windows", "publish_android"]) {
+      for (const id of ["publish_windows", "publish_android", "publish_linux"]) {
         delete publisher.jobs[id];
       }
     }
@@ -1762,7 +1764,7 @@ mutateModule.syncBuiltinESMExports();
     if (fault === "dormant" || fault === "unlinked") {
       const ids = produceReleasePlan(params).inventory.platforms.map(({ id }) => id);
       expect(ids).toEqual(
-        fault === "unlinked" ? ["docker", "vcr"] : ["android", "docker", "vcr", "windows"],
+        fault === "unlinked" ? ["docker", "vcr"] : ["android", "docker", "linux", "vcr", "windows"],
       );
     } else {
       expect(() => produceReleasePlan(params)).toThrow(/platform|release-publish-children/u);

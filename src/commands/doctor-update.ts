@@ -42,10 +42,10 @@ import { readGatewayServiceState, resolveGatewayService } from "../daemon/servic
 import { isTruthyEnvValue } from "../infra/env.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { readUpdateStateSchemaVersions } from "../infra/update-candidate-state.js";
+import { resolveUpdateFinalizationTimeoutMs } from "../infra/update-finalization-budget.js";
 import type { UpdateRecovery } from "../infra/update-recovery.js";
 import { recordUpdateRunPhase } from "../infra/update-run-ledger.js";
-import { resolveUpdateFinalizationTimeoutMs } from "../infra/update-run-timeouts.js";
-import { UPDATE_RUNNER_TIMEOUT_MS } from "../infra/update-runner-command.js";
+import { UPDATE_RUNNER_TIMEOUT_MS } from "../infra/update-run-timeouts.js";
 import { readCurrentGitUpdateRecovery } from "../infra/update-runner-git-recovery.js";
 import { runGatewayUpdate } from "../infra/update-runner.js";
 import type { UpdateRunResult } from "../infra/update-runner.js";
@@ -289,6 +289,7 @@ export async function maybeOfferUpdateBeforeDoctor(params: {
                       root: candidateRoot,
                       env: resolveUpdatedInstallCommandEnv({ processEnv: run.env, invocationCwd }),
                       executor: candidateExecutor,
+                      timeoutMs: UPDATE_RUNNER_TIMEOUT_MS,
                     });
                     assertCurrent();
                     if (!supported) {
@@ -318,13 +319,21 @@ export async function maybeOfferUpdateBeforeDoctor(params: {
               assertCurrent();
               candidateSchemaVersions = target.schemaVersions;
               await executor.enter(updateRoot, {
-                activationTimeoutMs: resolveUpdateFinalizationTimeoutMs(UPDATE_RUNNER_TIMEOUT_MS),
+                activationTimeoutMs: (run.activationTimeoutMs =
+                  await resolveUpdateFinalizationTimeoutMs(UPDATE_RUNNER_TIMEOUT_MS, {
+                    env: run.env,
+                    databases: schemaVersions,
+                    pluginCount: Object.keys(preUpdatePluginInstallRecords).length,
+                  })),
               });
               assertCurrent();
               recordUpdateRunPhase(run.runId, "activating", undefined, { env: run.env });
               if (serviceLifecycle) {
                 // A native stop can mutate before preparation returns or Git starts.
-                originalRecovery = await readCurrentGitUpdateRecovery(updateRoot);
+                originalRecovery = await readCurrentGitUpdateRecovery(
+                  updateRoot,
+                  UPDATE_RUNNER_TIMEOUT_MS,
+                );
                 assertCurrent();
                 const previousSkip = inspection?.serviceMutationSkipMessage;
                 inspection = await serviceLifecycle.maybeStopManagedServiceBeforeMutableUpdate({

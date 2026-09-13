@@ -2,8 +2,7 @@ import { createHash } from "node:crypto";
 import { asNonNegativeFiniteNumber } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { SESSION_PARTICIPANT_LIMIT } from "../../packages/gateway-protocol/src/schema/session-participant.js";
-import { resolveAuthoredModelContextTokens } from "../agents/context-resolution.js";
-import { resolveContextTokensForModel } from "../agents/context.js";
+import { resolveModelContextTokenProjection } from "../agents/context.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { resolveFastModeState } from "../agents/fast-mode.js";
 import type { ModelCatalogEntry } from "../agents/model-catalog.js";
@@ -72,6 +71,7 @@ import {
   resolveSessionDisplayModelIdentityRefCached,
 } from "./session-utils-model.js";
 import {
+  buildSessionListRowMetadataContext,
   resolveSessionSelectedModelRef,
   resolveTranscriptUsageFallback,
 } from "./session-utils-projection.js";
@@ -107,18 +107,15 @@ export function buildGatewaySessionRow(params: {
   const { cfg, storePath, store, key, entry } = params;
   const lightweight = params.lightweightListRow === true;
   const now = params.now ?? Date.now();
+  const rowContext = params.rowContext ?? buildSessionListRowMetadataContext({ now });
   const agentStatus = resolveActiveSessionAgentStatus(entry?.agentStatus, now);
   const owner = projectSessionOwner(
     entry,
-    params.rowContext?.userProfileIdentityById,
+    rowContext.userProfileIdentityById,
     cfg,
     params.configuredAgentIds,
   );
-  const participants = projectSessionParticipants(
-    entry,
-    params.rowContext?.userProfileIdentityById,
-    cfg,
-  );
+  const participants = projectSessionParticipants(entry, rowContext.userProfileIdentityById, cfg);
   if (owner?.actor.identity) {
     participants.delete(JSON.stringify(owner.actor.identity));
   }
@@ -149,7 +146,6 @@ export function buildGatewaySessionRow(params: {
   const displayName = resolveGatewaySessionDisplayName(key, entry);
   const sessionAgentId = params.agentId;
   const skipTranscriptUsage = params.skipTranscriptUsageFallback === true;
-  const rowContext = params.rowContext;
   const {
     subagentRun,
     subagentOwner,
@@ -174,7 +170,7 @@ export function buildGatewaySessionRow(params: {
         fallbackModelRef: subagentRun?.model,
         allowPluginNormalization: !lightweight,
         maxTranscriptBytes: params.transcriptUsageMaxBytes,
-        rowContext: params.rowContext,
+        rowContext,
         agentId: sessionAgentId,
       })
     : null;
@@ -196,7 +192,7 @@ export function buildGatewaySessionRow(params: {
       store,
       keys: [key],
       now,
-      subagentRuns: rowContext?.subagentRuns,
+      subagentRuns: rowContext.subagentRuns,
     })
   ).get(key);
   const pinnedAt =
@@ -216,7 +212,7 @@ export function buildGatewaySessionRow(params: {
     cfg,
     provider: rowModelProvider,
     model: rowModel,
-    rowContext: params.rowContext,
+    rowContext,
   });
   // Display aliases do not change the selected route's catalog or runtime policy.
   const completedModel = readSessionFallbackModel({
@@ -249,7 +245,7 @@ export function buildGatewaySessionRow(params: {
         provider: rowModelProvider,
         model: rowModel,
         entry,
-        rowContext: params.rowContext,
+        rowContext,
       }) ?? asNonNegativeFiniteNumber(transcriptUsage?.estimatedCostUsd));
   let derivedTitle: string | undefined;
   let lastMessagePreview: string | undefined;
@@ -298,29 +294,22 @@ export function buildGatewaySessionRow(params: {
     catalogEntry,
     selected: entry?.contextWindow,
   });
-  const resolvedModelContextTokens = resolvePositiveNumber(
-    resolveContextTokensForModel({
-      cfg,
-      provider: rowModelProvider,
-      model: rowModel,
-      modelContextTokens: catalogEntry?.contextTokens,
-      modelContextWindow: contextWindowProfile.contextTokens,
-      allowAsyncLoad: false,
-    }),
-  );
+  const modelContext = resolveModelContextTokenProjection({
+    cfg,
+    provider: rowModelProvider,
+    model: rowModel,
+    modelContextTokens: catalogEntry?.contextTokens,
+    modelContextWindow: contextWindowProfile.contextTokens,
+    allowAsyncLoad: false,
+  });
+  const resolvedModelContextTokens = resolvePositiveNumber(modelContext.contextTokens);
   const resolvedCurrentContextTokens = contextWindowProfile.contextTokens
     ? Math.min(
         resolvedModelContextTokens ?? contextWindowProfile.contextTokens,
         contextWindowProfile.contextTokens,
       )
     : resolvedModelContextTokens;
-  const authoredContextTokens = resolvePositiveNumber(
-    resolveAuthoredModelContextTokens({
-      cfg,
-      provider: rowModelProvider,
-      model: rowModel,
-    }),
-  );
+  const authoredContextTokens = resolvePositiveNumber(modelContext.authoredContextTokens);
   const contextTokens = resolveProjectedSessionContextTokens({
     entry,
     provider: rowModelProvider,
@@ -356,15 +345,15 @@ export function buildGatewaySessionRow(params: {
       : undefined;
 
   const swarm = buildSessionSwarmSummary(
-    rowContext?.subagentRuns.swarmRunsByRequesterSessionKey.get(key) ?? [],
+    params.rowContext?.subagentRuns.swarmRunsByRequesterSessionKey.get(key) ?? [],
     key,
     sessionAgentId,
     { includeChildren: params.includeSwarmChildren },
   );
   return {
     key,
-    // Presence records a completed registry projection; event merges may clear only that fact.
-    ...(rowContext ? { swarm } : {}),
+    // Only explicitly requested summaries may clear swarm state in event merges.
+    ...(params.rowContext ? { swarm } : {}),
     visibility: entry ? (entry.visibility ?? "shared") : undefined,
     incognito: entry?.incognito,
     spawnedBy: subagentOwner || entry?.spawnedBy,
@@ -390,7 +379,7 @@ export function buildGatewaySessionRow(params: {
     createdVia: entry?.createdVia,
     createdActor: projectSessionActor(
       entry?.createdActor,
-      rowContext?.userProfileIdentityById,
+      rowContext.userProfileIdentityById,
       cfg,
       Boolean(sessionCreatorProfileId(entry?.createdActor)),
     ),
@@ -427,7 +416,7 @@ export function buildGatewaySessionRow(params: {
     updatedAt,
     archived: entry?.archivedAt !== undefined,
     archivedAt: entry?.archivedAt,
-    archivedBy: projectSessionActor(entry?.archivedBy, rowContext?.userProfileIdentityById, cfg),
+    archivedBy: projectSessionActor(entry?.archivedBy, rowContext.userProfileIdentityById, cfg),
     archiveReason: entry?.archiveReason,
     pinned: pinnedAt !== undefined,
     pinnedAt,

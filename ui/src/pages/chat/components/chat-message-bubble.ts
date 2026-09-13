@@ -92,11 +92,15 @@ function renderInlineToolCards(
   opts: Omit<Parameters<typeof renderToolCard>[1], "expanded" | "onToggleExpanded"> & {
     isToolExpanded?: (toolCardId: string) => boolean;
     onToggleToolExpanded?: (toolCardId: string, expanded?: boolean) => void;
+    toolCardOverrides?: ReadonlyMap<ToolCard, unknown>;
   },
 ) {
   return html`
     <div class="chat-tools-inline">
       ${toolCards.map((card, index) => {
+        if (opts.toolCardOverrides?.has(card)) {
+          return opts.toolCardOverrides.get(card);
+        }
         const disclosureId = `${opts.messageKey}:toolcard:${index}`;
         const expanded = opts.isToolExpanded?.(disclosureId) ?? false;
         return renderToolCard(card, {
@@ -235,6 +239,7 @@ export function renderGroupedMessage(
     messageActions?: MessageActionDetails | null;
     isToolExpanded?: (toolCardId: string) => boolean;
     onToggleToolExpanded?: (toolCardId: string, expanded?: boolean) => void;
+    toolCardOverrides?: ReadonlyMap<ToolCard, unknown>;
     onRequestUpdate?: () => void;
     canvasPluginSurfaceUrl?: string | null;
     resourceBasePath?: string;
@@ -413,7 +418,10 @@ export function renderGroupedMessage(
     toolMessageLabel,
   );
   const toolMessageIcon = singleToolDisplay
-    ? renderToolIcon(singleToolDisplay.icon, opts.pluginToolIcons?.get(singleToolDisplay.name))
+    ? renderToolIcon(singleToolDisplay.icon, {
+        toolName: singleToolDisplay.name,
+        pluginToolIcons: opts.pluginToolIcons,
+      })
     : icons.zap;
   const assistantViewContent =
     sourceRole === "assistant" && assistantViewBlocks.length > 0
@@ -460,6 +468,10 @@ export function renderGroupedMessage(
     visibleAttachments.length === 0 &&
     assistantViewBlocks.length === 0 &&
     !reasoningMarkdown;
+
+  if (onlyToolCards && toolCards.every((card) => opts.toolCardOverrides?.get(card) === nothing)) {
+    return nothing;
+  }
 
   const toolRenderOptions = { ...opts, messageKey, onOpenSidebar };
   const renderText = () =>

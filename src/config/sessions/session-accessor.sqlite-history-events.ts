@@ -51,7 +51,7 @@ import {
   assertVisibleMessageRangeJson,
   hasUnindexedVisibleMessages,
   iterateVisibleMessageRange,
-  readVisibleMessageMetadata,
+  iterateVisibleMessageMetadata,
   readVisibleMessageRange,
   resolveVisibleMessagePositions,
 } from "./session-accessor.sqlite-reset-window.js";
@@ -162,67 +162,81 @@ function resolveRecentHistoryStart(
   // No result can include more than maxMessages events, so older metadata would
   // only add synchronous work before the backward scan stops.
   const metadataStart = Math.max(messageStart, messageEnd - maxMessages);
-  const messageBytes = new Map(
-    readVisibleMessageMetadata(projection, metadataStart, messageEnd).map((row) => [
-      row.logicalPosition,
-      row.serialized_bytes,
-    ]),
-  );
+  const metadata = iterateVisibleMessageMetadata(projection, metadataStart, messageEnd, "desc");
+  let nextMetadata: ReturnType<typeof metadata.next> | undefined;
   let messageIndex = messageEnd - 1;
   let selectedStart = boundedEnd;
   let selectedCount = 0;
   let bytes = 0;
-  for (
-    let displayPosition = boundedEnd - 1;
-    displayPosition >= boundedStart;
-    displayPosition -= 1
-  ) {
-    if (selectedCount >= maxMessages) {
-      break;
+  try {
+    for (
+      let displayPosition = boundedEnd - 1;
+      displayPosition >= boundedStart;
+      displayPosition -= 1
+    ) {
+      if (selectedCount >= maxMessages) {
+        break;
+      }
+      const boundary = boundaries.get(displayPosition);
+      let serializedBytes = boundary?.serializedBytes;
+      if (!boundary) {
+        nextMetadata ??= metadata.next();
+        if (!nextMetadata.done && nextMetadata.value.logicalPosition === messageIndex) {
+          serializedBytes = nextMetadata.value.serialized_bytes;
+          nextMetadata = undefined;
+        }
+        messageIndex -= 1;
+      }
+      if (serializedBytes === undefined) {
+        continue;
+      }
+      if ((!allowOversizedFirst || selectedCount > 0) && bytes + serializedBytes > maxBytes) {
+        break;
+      }
+      selectedStart = displayPosition;
+      selectedCount += 1;
+      bytes += serializedBytes;
     }
-    const boundary = boundaries.get(displayPosition);
-    const logicalPosition = boundary ? undefined : messageIndex--;
-    const serializedBytes =
-      boundary?.serializedBytes ??
-      (logicalPosition === undefined ? undefined : messageBytes.get(logicalPosition));
-    if (serializedBytes === undefined) {
-      continue;
-    }
-    if ((!allowOversizedFirst || selectedCount > 0) && bytes + serializedBytes > maxBytes) {
-      break;
-    }
-    selectedStart = displayPosition;
-    selectedCount += 1;
-    bytes += serializedBytes;
+  } finally {
+    metadata.return?.();
   }
   return selectedStart;
 }
+
+type SessionTranscriptMessageById = SessionTranscriptMessageEvent & { serializedBytes?: number };
+export type SessionTranscriptMessageByIdOptions =
+  | { currentOnly?: false; maxBytes?: never }
+  | { currentOnly: true; maxBytes: number };
 
 function readVisibleMessageById(
   projection: CurrentTranscriptProjection,
   eventId: string,
   history: VisibleHistoryProjection,
-): SessionTranscriptMessageEvent | undefined {
+  maxBytes?: number,
+): SessionTranscriptMessageById | undefined {
   const db = getActiveTranscriptKysely(projection.database);
-  const row = executeSqliteQueryTakeFirstSync(
-    projection.database.db,
-    db
-      .selectFrom("transcript_event_identities as identity")
-      .innerJoin("session_transcript_active_events as active", (join) =>
-        join
-          .onRef("active.session_id", "=", "identity.session_id")
-          .onRef("active.event_seq", "=", "identity.seq"),
-      )
-      .innerJoin("transcript_events as event", (join) =>
-        join
-          .onRef("event.session_id", "=", "active.session_id")
-          .onRef("event.seq", "=", "active.event_seq"),
-      )
-      .select(["active.event_seq", "active.message_position", "event.event_json"])
-      .where("identity.session_id", "=", projection.resolved.sessionId)
-      .where("identity.event_id", "=", eventId)
-      .where("active.message_position", "is not", null),
-  );
+  let query = db
+    .selectFrom("transcript_event_identities as identity")
+    .innerJoin("session_transcript_active_events as active", (join) =>
+      join
+        .onRef("active.session_id", "=", "identity.session_id")
+        .onRef("active.event_seq", "=", "identity.seq"),
+    )
+    .innerJoin("transcript_events as event", (join) =>
+      join
+        .onRef("event.session_id", "=", "active.session_id")
+        .onRef("event.seq", "=", "active.event_seq"),
+    )
+    .select(["active.event_seq", "active.message_position", "event.event_json"])
+    .where("identity.session_id", "=", projection.resolved.sessionId)
+    .where("identity.event_id", "=", eventId)
+    .where("active.message_position", "is not", null);
+  if (maxBytes !== undefined) {
+    query = query.where((eb) =>
+      eb(eb.fn<number>("octet_length", ["event.event_json"]), "<=", maxBytes),
+    );
+  }
+  const row = executeSqliteQueryTakeFirstSync(projection.database.db, query);
   if (!row || row.message_position === null) {
     return undefined;
   }
@@ -237,6 +251,9 @@ function readVisibleMessageById(
         event: parseStoredTranscriptEvent(row.event_json),
         eventSeq: row.event_seq,
         seq,
+        ...(maxBytes !== undefined
+          ? { serializedBytes: Buffer.byteLength(row.event_json, "utf8") }
+          : {}),
       };
 }
 
@@ -244,15 +261,24 @@ function resolveHistoryEventById(
   projection: CurrentTranscriptProjection,
   eventId: string,
   history = resolveVisibleHistoryProjection(projection),
-): SessionTranscriptMessageEvent | undefined {
+  maxBytes?: number,
+): SessionTranscriptMessageById | undefined {
   const boundary = history.boundaries.find((candidate) => candidate.eventId === eventId);
   if (boundary) {
+    if (maxBytes !== undefined && boundary.serializedBytes > maxBytes) {
+      return undefined;
+    }
     const event = readBoundaryEvents(projection, [boundary]).get(boundary.eventSeq);
     return event
-      ? { event, eventSeq: boundary.eventSeq, seq: boundary.displayPosition + 1 }
+      ? {
+          event,
+          eventSeq: boundary.eventSeq,
+          seq: boundary.displayPosition + 1,
+          ...(maxBytes !== undefined ? { serializedBytes: boundary.serializedBytes } : {}),
+        }
       : undefined;
   }
-  return readVisibleMessageById(projection, eventId, history);
+  return readVisibleMessageById(projection, eventId, history, maxBytes);
 }
 
 type SessionTranscriptRawDeltaPage = Extract<SessionTranscriptRawDeltaResult, { kind: "page" }>;
@@ -481,15 +507,22 @@ export function readSessionTranscriptHistoryEventCount(scope: SessionTranscriptR
 export function readSessionTranscriptHistoryEventById(
   scope: SessionTranscriptReadScope,
   eventId: string,
-): SessionTranscriptMessageEvent | undefined {
+  options: SessionTranscriptMessageByIdOptions = {},
+): SessionTranscriptMessageById | undefined {
   return withCurrentProjectionSnapshot(scope, (projection) => {
     const history = resolveVisibleHistoryProjection(projection);
-    const event =
-      resolveHistoryEventById(projection, eventId, history) ??
-      resolveHistoricalHistoryEventById(projection, eventId);
-    return event
-      ? positionTranscriptDisplayEvents(projection, history.displaySource, [event])[0]
-      : undefined;
+    const event: SessionTranscriptMessageById | undefined =
+      resolveHistoryEventById(projection, eventId, history, options.maxBytes) ??
+      (options.currentOnly ? undefined : resolveHistoricalHistoryEventById(projection, eventId));
+    if (!event) {
+      return undefined;
+    }
+    const positioned = positionTranscriptDisplayEvents(projection, history.displaySource, [
+      event,
+    ])[0];
+    return positioned && event.serializedBytes !== undefined
+      ? { ...positioned, serializedBytes: event.serializedBytes }
+      : positioned;
   });
 }
 

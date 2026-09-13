@@ -1,4 +1,5 @@
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
+import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { html, nothing } from "lit";
 import { stripShellPreamble } from "../../../../../src/agents/tool-display-exec-shell.js";
 import {
@@ -24,9 +25,9 @@ import {
   resolveCollapsedToolArgumentPreview as toolArgumentPreview,
   resolveToolCardOutcome,
 } from "../../../lib/chat/tool-cards.ts";
-import { resolveToolDisplay } from "../../../lib/chat/tool-display.ts";
+import { resolveToolActivityIcon, resolveToolDisplay } from "../../../lib/chat/tool-display.ts";
 import { renderPluginSurface } from "../../../plugins/control-ui-view.ts";
-import type { PluginToolIcon } from "../chat-tool-icon-controller.ts";
+import type { PluginToolIcons } from "../chat-tool-icon-controller.ts";
 import { renderHighlightedCommand } from "./chat-command-highlight.ts";
 import { renderDiffStatChips } from "./chat-diff-render.ts";
 import {
@@ -87,7 +88,18 @@ export function shouldToggleSelectableDisclosure(event: MouseEvent): boolean {
   );
 }
 
-export function renderToolIcon(name: string, pluginIcon?: PluginToolIcon) {
+export function renderToolIcon(
+  name: string,
+  tool?: { toolName: string; pluginToolIcons?: PluginToolIcons },
+) {
+  // Tool identity outranks argument-shape glyphs and generic plugin artwork.
+  const activityIcon = resolveToolActivityIcon(tool?.toolName);
+  if (activityIcon) {
+    return activityIcon === "claw"
+      ? html`<span class="chat-tool-claw">${icons.claw}</span>`
+      : icons[activityIcon];
+  }
+  const pluginIcon = tool?.pluginToolIcons?.get(tool.toolName);
   if (pluginIcon) {
     return html`<img
       src=${pluginIcon.url}
@@ -173,8 +185,11 @@ const TOOL_ROW_ICONS: Partial<Record<ToolCallView["kind"], string>> = {
   fetch: "globe",
 };
 
-function firstCommandLine(command: string): string {
-  return (stripShellPreamble(command).command || command).split("\n")[0]?.trim() ?? "";
+function commandPreview(command: string): string {
+  return truncateUtf16Safe(
+    (stripShellPreamble(command).command || command).replace(/\s+/gu, " ").trim(),
+    200,
+  );
 }
 
 function compactToolTarget(target: string, kind: ToolCallView["kind"]): string {
@@ -208,10 +223,11 @@ function renderToolRowContent(
   }
 
   if (view.kind === "command" && view.command) {
-    const commandPreview = firstCommandLine(view.command);
     return html`
       <span class="chat-tool-row__prompt" aria-hidden="true">$</span>
-      <code class="chat-tool-row__cmd">${renderHighlightedCommand(commandPreview)}</code>
+      <code class="chat-tool-row__cmd"
+        >${renderHighlightedCommand(commandPreview(view.command))}</code
+      >
     `;
   }
 
@@ -368,7 +384,7 @@ export function resolveToolRowText(card: ToolCard, runActive?: boolean): string 
     return view.title;
   }
   if (view.kind === "command" && view.command) {
-    return `$ ${firstCommandLine(view.command)}`;
+    return `$ ${commandPreview(view.command)}`;
   }
   const verb = resolveToolRowVerb(view, resolveToolCardOutcome(card, runActive));
   if (verb && view.target) {
@@ -441,23 +457,26 @@ export function renderToolCard(
     expanded: boolean;
     onToggleExpanded: (id: string) => void;
     showApprovalReviews?: boolean;
+    children?: unknown;
+    activityCards?: readonly ToolCard[];
   },
 ) {
   const outcome = resolveToolCardOutcome(card, opts.runActive);
   const progressReceipt = renderProgressCardReceipt(card, outcome);
-  if (progressReceipt) {
+  if (progressReceipt && !opts.children) {
     return renderPluginToolResult(card, opts, progressReceipt);
   }
   const view = resolveToolCallView({ name: card.name, args: card.args, details: card.details });
   const display = resolveToolDisplay({ name: card.name, args: card.args, detailMode: "explain" });
-  const isRunning = outcome === "running";
+  const activityCards = opts.activityCards ?? [card];
+  const isRunning = activityCards.some((item) => isRunningToolCard(item, opts.runActive));
   const expanded = opts.expanded;
   const icon = TOOL_ROW_ICONS[view.kind] ?? display.icon;
   const workspaceFilePath = toolWorkspacePath(card, view);
   const isFileRow = Boolean(workspaceFilePath);
   const rowContent = html`
     <span class="chat-tool-msg-summary__icon"
-      >${renderToolIcon(icon, opts.pluginToolIcons?.get(card.name))}</span
+      >${renderToolIcon(icon, { toolName: display.name, pluginToolIcons: opts.pluginToolIcons })}</span
     >
     <span class="chat-tool-disclosure__content"
       >${renderToolRowContent(
@@ -468,7 +487,7 @@ export function renderToolCard(
         opts.onOpenWorkspaceFile,
       )}</span
     >
-    ${expanded ? nothing : renderToolFailures([card], false)}
+    ${expanded ? nothing : renderToolFailures(activityCards, Boolean(opts.children))}
     <span class="chat-tool-row__chevron" aria-hidden="true">${icons.chevronRight}</span>
   `;
 
@@ -516,9 +535,19 @@ export function renderToolCard(
         }
         ${
           expanded
-            ? html`
-                <div class="chat-tool-msg-body">${renderExpandedToolCardContent(card, opts)}</div>
-              `
+            ? opts.children
+              ? html`<div class="chat-tool-children">
+                  ${opts.children}
+                  <details class="chat-tool-wrapper-details">
+                    <summary>${t("chat.toolCards.toolInput")}</summary>
+                    <div class="chat-tool-msg-body">
+                      ${renderExpandedToolCardContent(card, opts)}
+                    </div>
+                  </details>
+                </div>`
+              : html`<div class="chat-tool-msg-body">
+                  ${renderExpandedToolCardContent(card, opts)}
+                </div>`
             : nothing
         }
         ${opts.showApprovalReviews === false ? nothing : renderToolApprovalReviews(card)}

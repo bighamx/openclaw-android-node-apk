@@ -238,6 +238,22 @@
   stroke-linejoin: round;
 }
 
+.chat-tool-claw {
+  display: inline-flex;
+}
+
+.chat-tool-msg-summary__icon .chat-tool-claw svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* Match the progress claw's open resting pose without its looping animation. */
+.chat-tool-claw .claw-icon__jaw {
+  transform-box: view-box;
+  transform-origin: 8.6px 11px;
+  transform: rotate(-10deg);
+}
+
 /* Labels stay intact; only the following summary truncates. */
 .chat-tool-msg-summary__label {
   flex: none;
@@ -555,6 +571,20 @@
 
 .chat-activity-group__body .chat-tool-msg-collapse.is-open {
   margin-bottom: 8px;
+}
+
+.chat-tool-children {
+  min-width: 0;
+  margin: 4px 0 8px 8px;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+}
+
+.chat-tool-wrapper-details > summary {
+  padding: 8px 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  cursor: default;
 }
 
 .chat-tool-msg-body .chat-diff {

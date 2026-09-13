@@ -230,6 +230,12 @@ export const CODE_MODE_CONTROLLER_SOURCE = String.raw`
     read: (name) => request("skillsRead", [name]),
   });
 
+  const results = Object.freeze({
+    save: (value) => request("resultSave", [value]),
+    load: (id) => request("resultLoad", [id]),
+    delete: (id) => request("resultDelete", [id]),
+  });
+
   if (globalThis.__openclawSwarmEnabled === true) {
     Object.defineProperties(globalThis, {
       agents: {
@@ -299,7 +305,11 @@ export const CODE_MODE_CONTROLLER_SOURCE = String.raw`
     if (!callableName) return null;
     const existing = callableHandles.get(callableName);
     if (existing) return existing;
-    const handle = (input) => request("callValue", [callableName, input]);
+    const isMcp = binding.source === "mcp";
+    const path = isMcp ? Object.freeze(binding.path.slice()) : undefined;
+    const handle = isMcp
+      ? namespaceFunction(binding.namespaceId, path)
+      : (input) => request("callValue", [callableName, input]);
     const metadata = Object.freeze({
       callableName,
       toolName: typeof binding.name === "string" ? binding.name : callableName,
@@ -308,13 +318,19 @@ export const CODE_MODE_CONTROLLER_SOURCE = String.raw`
       source: binding.source,
       input: binding.input,
       output: binding.output,
+      ...(isMcp ? { apiPath: binding.apiPath } : {}),
     });
     for (const [key, value] of Object.entries(metadata)) {
       Object.defineProperty(handle, key, { value, enumerable: true });
     }
     Object.defineProperties(handle, {
       name: { value: callableName },
-      describe: { value: () => request("describe", [callableName]), enumerable: true },
+      describe: {
+        value: isMcp
+          ? () => request("namespace", [binding.namespaceId, [path[0], "$api"], [path.slice(1).join("."), { schema: true }]])
+          : () => request("describe", [callableName]),
+        enumerable: true,
+      },
       toJSON: { value: () => metadata },
     });
     const frozen = Object.freeze(handle);
@@ -348,11 +364,13 @@ export const CODE_MODE_CONTROLLER_SOURCE = String.raw`
   const catalog = Object.freeze({
     search: async (query, options) => {
       const matches = await request("search", [query, options]);
-      return Object.freeze(matches.map((name) =>
-        callableHandles.get(String(name))
-      ).filter(Boolean));
+      return Object.freeze(matches.map((match) => {
+        const handle = typeof match === "string" ? callableHandles.get(match) : callableHandle(match);
+        if (!handle) throw new Error("Search result has no callable handle.");
+        return handle;
+      }));
     },
-    all: () => Object.freeze([...callableHandles.values()]),
+    all: () => Object.freeze(catalogBindings.map(binding => callableHandles.get(binding.callableName))),
   });
 
   const namespaceGlobals = Object.create(null);
@@ -391,6 +409,7 @@ export const CODE_MODE_CONTROLLER_SOURCE = String.raw`
     nodes: { value: nodes, enumerable: true },
     namespaces: { value: Object.freeze(namespaceGlobals), enumerable: true },
     skills: { value: skills, enumerable: true },
+    results: { value: results, enumerable: true },
     setTimeout: { value: (callback, delay, ...args) => scheduleTimer(callback, delay, args), enumerable: true },
     clearTimeout: { value: cancelTimer, enumerable: true },
     console: { value: guestConsole, enumerable: true },

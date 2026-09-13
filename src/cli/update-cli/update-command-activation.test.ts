@@ -115,3 +115,31 @@ it.each([false, true])(
     expect(vi.getTimerCount()).toBe(0);
   },
 );
+
+it.each([undefined, 48 * 60 * 60_000])(
+  "keeps activation alive for measured state and caller allowance %s",
+  async (callerTimeoutMs) => {
+    const { resolveUpdateFinalizationTimeoutMs } =
+      await import("../../infra/update-finalization-budget.js");
+    const root = fs.realpathSync(dirs.make("update-activation-size-"));
+    const database = path.join(root, "agent.sqlite");
+    const descriptor = fs.openSync(database, "w");
+    fs.ftruncateSync(descriptor, 2 * 1024 ** 3);
+    fs.closeSync(descriptor);
+    const budget = await resolveUpdateFinalizationTimeoutMs(callerTimeoutMs, {
+      databases: [{ path: database }],
+      env: { ...process.env, OPENCLAW_STATE_DIR: root },
+    });
+    const legacyBudget = Math.max(30 * 60_000, (callerTimeoutMs ?? 0) * 6);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    await expect(
+      withUpdateCommandExecutor("measured-activation", async (executor) => {
+        const fence = await executor.enter(root, { activationTimeoutMs: budget });
+        vi.setSystemTime(Date.now() + (callerTimeoutMs ?? legacyBudget + 1));
+        fence.assertCurrent();
+        return "completed";
+      }),
+    ).resolves.toBe("completed");
+    expect(createManagedHandoffLeaseStore().read(root)).toEqual({ kind: "absent" });
+  },
+);

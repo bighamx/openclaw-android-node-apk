@@ -23,7 +23,10 @@ openclaw update status --timeout 10
 | Flag                  | Default | Description                         |
 | --------------------- | ------- | ----------------------------------- |
 | `--json`              | `false` | Print machine-readable status JSON. |
-| `--timeout <seconds>` | `3`     | Timeout for checks.                 |
+| `--timeout <seconds>` | `300`   | Timeout for checks.                 |
+
+Explicit timeouts replace the default. Local installation discovery keeps its
+own inspection budget.
 
 For extended-stable package installs, status performs the same public selector
 and exact-package verification as foreground update. It can report
@@ -99,6 +102,13 @@ user text, and show config key families instead of operator-defined names. Only
 catalog-confirmed public check and plugin IDs are included; unknown IDs and codes
 remain complete locally and are redacted publicly. Older runs cannot recover facts that their updater did not record. Existing history
 and report size limits still apply.
+
+Failed finalization steps record their reason code before failure reporting starts.
+Standalone finalization also records the package or Git install kind. For package
+installs it records that package rollback is unnecessary because finalization does
+not replace the core package; this does not claim that Doctor left config or state
+unchanged, or that Gateway health was verified. Failure reports include the failing
+step's first recognized diagnostic line when no process exit code was recorded.
 
 Recoverable maintenance failures appear as recorded warnings even when the update
 succeeds. Each warning names the skipped work, the cause, and a repair command.

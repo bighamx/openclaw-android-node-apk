@@ -51,7 +51,6 @@ function buildSandboxDocumentGuardHtml(blockDescendantFrames: boolean): string {
   wrapMethod(Element.prototype,"insertAdjacentHTML",[1]);wrapMethod(Document.prototype,"write");wrapMethod(Document.prototype,"writeln");wrapMethod(Range.prototype,"createContextualFragment",[0]);wrapMethod(DOMParser.prototype,"parseFromString",[0]);
   wrapMethod(Element.prototype,"setHTMLUnsafe",[0]);wrapMethod(Element.prototype,"setHTML",[0]);
   if(globalThis.ShadowRoot){wrapMethod(ShadowRoot.prototype,"setHTMLUnsafe",[0]);wrapMethod(ShadowRoot.prototype,"setHTML",[0]);}
-  lock(globalThis,"open",undefined);
 })();</script>`;
 }
 
@@ -254,9 +253,10 @@ function buildSandboxHostProxyHtml(csp?: SandboxHostCsp): string {
   try { void window.top.document; throw new Error("MCP App sandbox isolation failed"); } catch (error) {
     if (error instanceof Error && error.message === "MCP App sandbox isolation failed") throw error;
   }
-  const createInner = () => {
+  const createInner = (allowScripts = true) => {
     const frame = document.createElement("iframe");
-    frame.setAttribute("sandbox", "allow-scripts allow-forms");
+    // Block native popups here without reserving widget globals such as open.
+    frame.setAttribute("sandbox", allowScripts ? "allow-scripts allow-forms" : "");
     return frame;
   };
   let inner = createInner();
@@ -290,7 +290,7 @@ function buildSandboxHostProxyHtml(csp?: SandboxHostCsp): string {
           const guardedHtml = guardDocument(params.html);
           // Replace the browsing context so a superseded document cannot race
           // the new wrapper's first private bridge-port offer.
-          const nextInner = createInner();
+          const nextInner = createInner(params.allowScripts !== false);
           nextInner.addEventListener("load", () => {
             if (inner !== nextInner || typeof params.renderId !== "string") return;
             window.parent.postMessage({

@@ -260,7 +260,10 @@ it.each([
       expect(mocks.triageCommand).not.toHaveBeenCalled();
     } else if (!native) {
       expect(events.map((event) => event.phase)).toEqual(["config", "prepare"]);
-      expect(outcome).toEqual({ updated: true, handled: true });
+      expect(
+        outcome,
+        mocks.completeUpdateCommandRun.mock.calls.at(-1)?.[0].steps.at(-1)?.stderrTail ?? undefined,
+      ).toEqual({ updated: true, handled: true });
       expect(mocks.completeUpdateCommandRun).toHaveBeenCalledWith(
         expect.objectContaining({ status: "ok" }),
         originalRun,
