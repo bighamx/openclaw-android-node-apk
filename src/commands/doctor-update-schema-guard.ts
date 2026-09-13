@@ -39,7 +39,7 @@ async function readDrivingUpdater(): Promise<
       database.close();
     }
   } finally {
-    snapshot.cleanup();
+    await snapshot.cleanupAsync();
   }
 }
 

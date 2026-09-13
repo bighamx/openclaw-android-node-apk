@@ -502,6 +502,17 @@ export function createGatewayChatMetadataRuntime(params: {
     return trackRefresh(promise, facts);
   };
 
+  const authStoresCurrent = (generation: PreparedMetadataGeneration) =>
+    generation.facts.agents.every(
+      ({ owner, authStoreRevision }) =>
+        authStoreRevision ===
+        `${deps.getAuthStoreRevision(owner.agentDir)}:${deps.getAuthStoreRevision(owner.inheritedAuthDir)}`,
+    );
+  const isCurrentGeneration = (generation: PreparedMetadataGeneration) =>
+    current === generation &&
+    generation.epoch === invalidationEpoch &&
+    authStoresCurrent(generation);
+
   const readCurrent = async <Result>(
     project: (generation: PreparedMetadataGeneration) => Promise<PreparedProjection<Result>>,
   ): Promise<Result> => {
@@ -531,6 +542,10 @@ export function createGatewayChatMetadataRuntime(params: {
         }
         throw new ChatMetadataSnapshotUnavailableError();
       }
+      if (!params.refreshOnRead && !authStoresCurrent(generation)) {
+        await refresh();
+        continue;
+      }
       if (params.refreshOnRead) {
         let latest: PreparedGenerationFacts | undefined;
         try {
@@ -559,15 +574,11 @@ export function createGatewayChatMetadataRuntime(params: {
         const readProjection = await project(generation);
         // Lazy projections may outlive their generation. Never return an obsolete success after
         // invalidation; retry through the replacement gate so the caller sees one coherent epoch.
-        if (
-          current === generation &&
-          generation.epoch === invalidationEpoch &&
-          readProjection.isCurrent()
-        ) {
+        if (isCurrentGeneration(generation) && readProjection.isCurrent()) {
           return readProjection.read();
         }
       } catch (error) {
-        if (current === generation && generation.epoch === invalidationEpoch) {
+        if (isCurrentGeneration(generation)) {
           throw error;
         }
       }
@@ -658,7 +669,7 @@ export function createGatewayChatMetadataRuntime(params: {
     const generation = current;
     // Optional reads consume only settled exact-profile facts. Never start preparation
     // or wait for a lifecycle replacement just to decorate an available transcript.
-    if (!generation || replacement || pending || generation.epoch !== invalidationEpoch) {
+    if (!generation || replacement || pending || !isCurrentGeneration(generation)) {
       return undefined;
     }
     if (params.refreshOnRead) {

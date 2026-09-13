@@ -30,10 +30,8 @@ import {
   noteOpencodeProviderOverrides,
   noteSandboxOriginProxyWarning,
 } from "./doctor-config-analysis.js";
-import {
-  runDoctorConfigPreflight,
-  shouldSkipPluginValidationForDoctorConfigPreflight,
-} from "./doctor-config-preflight.js";
+import { shouldSkipPluginValidationForDoctorConfigPreflight } from "./doctor-config-preflight-plugin-index.js";
+import { runDoctorConfigPreflight } from "./doctor-config-preflight.js";
 import type { DoctorOptions, DoctorPrompter } from "./doctor-prompter.js";
 import { createWorkspaceAliasMigrationRepair } from "./doctor-workspace-alias.js";
 import { cronCodexRuntimePolicyTargetKey } from "./doctor/cron/store-migration.js";
@@ -53,6 +51,7 @@ import { listDoctorConfiguredChannelIds } from "./doctor/shared/configured-chann
 import { containsAuthoredInclude } from "./doctor/shared/include-migration-ownership.js";
 import { normalizeCompatibilityConfigValues } from "./doctor/shared/legacy-config-core-migrate.js";
 import type { DoctorPluginMetadataSnapshotState } from "./doctor/shared/plugin-metadata-snapshot-scope.js";
+import { shouldSkipLegacyUpdateDoctorConfigWrite } from "./doctor/shared/update-phase.js";
 
 function collectInvalidHookTransformsDirWarnings(
   cfg: OpenClawConfig,
@@ -185,6 +184,7 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
   const { importShippedPluginInstallConfigForDoctor } =
     await import("./doctor/shared/plugin-registry-migration.js");
   const pluginInstallConfigImport =
+    !shouldSkipLegacyUpdateDoctorConfigWrite(process.env) &&
     inspectShippedPluginInstallConfigRecords(preflight.snapshot.sourceConfig).status === "valid"
       ? await importShippedPluginInstallConfigForDoctor(preflight.snapshot)
       : undefined;

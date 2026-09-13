@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
+import type { AuthProfileStore } from "./auth-profiles/types.js";
 import type { ModelCatalogSnapshot } from "./model-catalog.types.js";
 import { setPreparedModelFullCatalogAuth } from "./prepared-model-runtime-auth.js";
 import type { ModelRegistry } from "./sessions/model-registry.js";
@@ -149,6 +150,8 @@ vi.mock("./prepared-model-catalog-worker.js", () => ({
       return {
         modelCatalog: catalog,
         runtimeModels: new Map(),
+        providerExpiries: new Map(),
+        configuredProviderModelIds: new Map(),
         configuredRuntimeModels: agentFacts.configuredRuntimeModels,
       };
     },
@@ -199,6 +202,8 @@ vi.mock("./agent-scope-config.js", async (importOriginal) => ({
 }));
 
 vi.mock("./auth-profiles/runtime-snapshots.js", () => ({
+  // This fixture has no published auth owner, so usage stays with its captured store.
+  createPreparedRuntimeAuthProfileUsageReader: () => (store: AuthProfileStore) => store,
   getPreparedRuntimeAuthProfileStoreSnapshotCore: () => undefined,
   getRuntimeAuthProfileStoreCredentialsRevision: () => 0,
   registerRuntimeAuthProfileStoreMutationListener: (

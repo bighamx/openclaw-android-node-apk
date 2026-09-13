@@ -1354,7 +1354,7 @@ describe("subagent registry lifecycle hardening", () => {
     }
   });
 
-  it("does not reject completion when task finalization throws", async () => {
+  it("does not reject completion when optional task tracking is absent and finalization throws", async () => {
     const persist = vi.fn();
     const persistOrThrow = vi.fn();
     const warn = vi.fn();
@@ -2800,6 +2800,9 @@ describe("subagent registry lifecycle hardening", () => {
   });
 
   it("updates replacement task delivery through the durable task run id", async () => {
+    taskExecutorMocks.completeTaskRunByRunId.mockReturnValueOnce([
+      { taskId: "task-before-replacement", status: "succeeded" },
+    ]);
     const entry = createRunEntry({ runId: "run-after-replacement" });
     const controller = createLifecycleController({
       entry,
@@ -3548,6 +3551,7 @@ describe("subagent registry lifecycle hardening", () => {
           expectedLifecycleRevision: "child-lifecycle-revision",
         },
         timeoutMs: 10_000,
+        assertDispatchCurrent: expect.any(Function),
       }),
     );
     await waitForLifecycleState(() =>
@@ -3680,6 +3684,7 @@ describe("subagent registry lifecycle hardening", () => {
           expectedLifecycleRevision: "child-lifecycle-revision",
         },
         timeoutMs: 10_000,
+        assertDispatchCurrent: expect.any(Function),
       }),
     );
     expect(runSubagentAnnounceFlow).not.toHaveBeenCalled();

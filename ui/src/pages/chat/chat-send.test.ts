@@ -600,6 +600,7 @@ describe("refreshChat", () => {
       agentDefaultModel: undefined,
       modelAccess: { allowed: true, requiredScope: "operator.write" },
       effortAccess: { allowed: true, requiredScope: "operator.write" },
+      contextWindowAccess: { allowed: true, requiredScope: "operator.admin" },
       permissionAccess: { allowed: true, requiredScope: "operator.write" },
       canSelectFull: true,
       onModelSetup: vi.fn(),
@@ -7049,7 +7050,7 @@ describe("handleSendChat", () => {
           expect(beginQueuedMessageEdit(host, queued.id)).toBe("started");
           expect(updateQueuedMessageEdit(host, "correction in progress")).toBe(true);
         } else {
-          moveQueuedChatMessage(host, queued.id, 1);
+          moveQueuedChatMessage(host, queued.id, host.chatQueue[1]!.id);
         }
         host.connected = true;
       });

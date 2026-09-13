@@ -242,6 +242,11 @@ an inner `srcdoc` iframe with `allow-scripts allow-forms`, without
 access nor the proxy's origin. Inline views adopt only the wrapper's private
 prompt channel. Dashboard views initialize their separate ticket-bound bridge.
 
+The public proxy shell uses a URL fingerprint of its HTML and security headers.
+Browsers can cache that exact version for repeated widget mounts; changing the
+shell or its policy changes the URL. Unversioned or mismatched requests remain
+uncached. This cache contains no widget documents, credentials, or view tickets.
+
 The shared loader fetches board HTML while the sandbox proxy starts, then
 delivers it only after that exact proxy reports ready. Dashboard widgets keep a
 themed loading placeholder until the proxy confirms that the current inner
@@ -260,6 +265,26 @@ sandbox field. Explicit strict previews remain script-free.
 There is no completed-document cache: Canvas permits replacing named document
 IDs, so a remount reads the current source again. Reconnection retires pending
 results from the previous connection.
+
+### Website widgets
+
+`session:website` uses the existing native widget descriptor with validated
+`props: { url }`. The board store owns persistence, revision, same-name updates,
+and deletion; no schema, protocol method, or configuration change is needed.
+Older renderers show the ordinary unavailable-widget state for this unknown kind.
+
+The Control UI renders an HTTPS website in its own sandboxed frame, with scripts,
+same-origin website storage, forms, and popups enabled. It rejects URLs containing
+userinfo and refuses the Control UI and connected Gateway hostnames across ports,
+since browser cookies share a hostname boundary. OpenClaw injects no Gateway token,
+capability ticket, message bridge, or parent-navigation
+permission. Its own HTTP headers and browser cookie rules still apply. The Gateway
+never fetches or relays its content. Passive gallery previews never mount the frame.
+
+Website widgets do not use the HTML document sandbox or its capability grants.
+That owner continues to block descendant frames. A full-width website can fill
+the existing expanded dashboard; shared grids retain their ordinary sizing.
+See [Show a website fullscreen](/web/dashboards#show-a-website-fullscreen).
 
 ### Native data reports
 

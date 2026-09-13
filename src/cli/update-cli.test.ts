@@ -191,7 +191,8 @@ vi.mock("@clack/prompts", () => ({
   note: vi.fn(),
 }));
 
-vi.mock("../infra/update-managed-service-handoff.js", () => ({
+vi.mock("../infra/update-managed-service-handoff.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../infra/update-managed-service-handoff.js")>()),
   startManagedServiceUpdateHandoff: managedUpdateHandoff.start,
   transferManagedServiceUpdateHandoff: managedUpdateHandoff.transfer,
   cancelManagedServiceUpdateHandoff: managedUpdateHandoff.cancel,

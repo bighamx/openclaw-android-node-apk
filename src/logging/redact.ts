@@ -9,6 +9,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { compileConfigRegex } from "../security/config-regex.js";
 import { readLoggingConfig } from "./config.js";
 import { replacePatternBounded } from "./redact-bounded.js";
+import { modelVisibleToolTextRedactionState } from "./redact-internal-state.js";
 import { isFullContextToolPayloadRedaction } from "./redact-internal.js";
 import {
   iterateRedactMatches,
@@ -874,6 +875,22 @@ export function redactInputTextWithSourcePolicy(
 // intentionally narrower than diagnostic and logging redaction.
 export function redactModelVisibleToolPayloadText(text: string): string {
   return redactModelVisibleToolPayloadTextWithConfig(text, readLoggingConfig());
+}
+
+/** Owns the admitted text and its provenance so persistence can reuse its exact bytes. */
+export function prepareModelVisibleToolTextBlock<T extends { type: "text"; text: string }>(
+  block: T,
+  loggingConfig: LoggingConfig = readLoggingConfig(),
+): T {
+  if (modelVisibleToolTextRedactionState.matches(block, block.text, loggingConfig)) {
+    return block;
+  }
+  const prepared = {
+    ...block,
+    text: redactModelVisibleSensitiveFieldValueWithConfig("text", block.text, loggingConfig),
+  };
+  modelVisibleToolTextRedactionState.record(prepared, prepared.text, loggingConfig);
+  return prepared;
 }
 
 export function redactModelVisibleToolPayloadTextWithConfig(

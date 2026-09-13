@@ -2,6 +2,7 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  appendFileSync,
   chmodSync,
   copyFileSync,
   existsSync,
@@ -416,6 +417,7 @@ function runCiManifestFixture(options: {
   bundledPlanner: boolean;
   nodeTestShards?: Record<string, unknown>[];
   nodeTestGroupsCodec?: boolean;
+  startupCorpusCoverage?: boolean;
   changedPlannerSource?: string | null;
   changedPaths?: string[] | null;
   changedCoreTestSupport?: boolean;
@@ -497,6 +499,12 @@ function runCiManifestFixture(options: {
         `,
       "utf8",
     );
+    if (options.startupCorpusCoverage) {
+      appendFileSync(
+        path.join(scriptsDir, "ci-node-test-plan.mts"),
+        `\nexport { hasCompleteStartupCorpusCoverage } from ${JSON.stringify(pathToFileURL(path.resolve("scripts/lib/ci-node-test-plan.mts")).href)};\n`,
+      );
+    }
     if (options.changedCoreTestSupport) {
       for (const file of [
         "scripts/changed-lanes.mts",
@@ -10104,13 +10112,13 @@ server.listen(0, "127.0.0.1", () => {
         ".github/workflows/ci-check-testbox.yml",
         "1",
         "${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'HEAD' }}",
-        "1.27.0",
+        "1.27.1",
       ],
       [
         ".github/workflows/ci-check-arm-testbox.yml",
         "0",
         "${{ github.event.pull_request.base.sha || 'refs/remotes/origin/main' }}",
-        "1.27.0",
+        "1.27.1",
       ],
       [
         ".github/workflows/ci-build-artifacts-testbox.yml",
@@ -11968,6 +11976,118 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       }
     },
     55_000,
+  );
+
+  it("runs the startup corpus once when a canonical PR admits both complete Node files", () => {
+    const revision = "a".repeat(40);
+    const shards = createNodeTestShardBundles({
+      compactMode: "pull-request",
+      includeReleaseOnlyPluginShards: false,
+    });
+    const manifest = runCiManifestFixture({
+      bundledPlanner: true,
+      eventName: "pull_request",
+      nodeTestShards: shards,
+      startupCorpusCoverage: true,
+      changedPaths: ["scripts/lib/ci-node-test-plan.mts"],
+      scopeEnv: { OPENCLAW_CI_WORKFLOW_REVISION: revision },
+    });
+    expect(manifest.status, manifest.output).toBe(0);
+    expect(manifest.outputs.startup_corpus_node_revision).toBe(revision);
+    expect(manifest.outputs.run_checks_node_core_nondist).toBe("true");
+    const step = readCiWorkflow().jobs["checks-fast-core"].steps.find(
+      (entry: WorkflowStep) => entry.name === "Check startup corpus",
+    );
+    expect(
+      evaluateWorkflowExpression(`\${{ ${step.if} }}`, {
+        eventName: "pull_request",
+        repository: "openclaw/openclaw",
+        matrix: { task: "baseline-ratchets" },
+        runAttempt: 1,
+        preflightOutputs: { ...manifest.outputs, checkout_revision: revision },
+      }),
+    ).toBe(false);
+    for (const result of ["failure", "skipped"]) {
+      expect(
+        runCiGateFixture(
+          `checks-fast-core=success|true\nchecks-node-core-test-nondist-shard=${result}|true`,
+        ).status,
+      ).toBe(1);
+    }
+  });
+
+  it.each<{ label: string } & Partial<Parameters<typeof runCiManifestFixture>[0]>>([
+    { label: "missing planner capability", startupCorpusCoverage: false },
+    { label: "different source tree", scopeEnv: { OPENCLAW_CI_WORKFLOW_REVISION: "b".repeat(40) } },
+    {
+      label: "unknown source",
+      scopeEnv: { OPENCLAW_CI_CHECKOUT_REVISION: "", OPENCLAW_CI_WORKFLOW_REVISION: "" },
+    },
+    { label: "fast-only PR", nodeFastOnly: true },
+    { label: "Node not admitted", runNode: false },
+    { label: "different repository", repository: "fixture/openclaw" },
+    { label: "release merge", eventName: "workflow_dispatch", releaseGate: true },
+    {
+      label: "frozen target",
+      eventName: "workflow_dispatch",
+      scopeEnv: { OPENCLAW_CI_WORKFLOW_REVISION: "b".repeat(40) },
+    },
+  ])(
+    "retains the startup corpus without a coverage receipt: $label",
+    ({ label: _label, ...options }) => {
+      const manifest = runCiManifestFixture({
+        bundledPlanner: true,
+        startupCorpusCoverage: true,
+        eventName: "pull_request",
+        changedPaths: ["scripts/lib/ci-node-test-plan.mts"],
+        scopeEnv: { OPENCLAW_CI_WORKFLOW_REVISION: "a".repeat(40) },
+        nodeTestShards: [
+          {
+            checkName: "complete-corpus",
+            shardName: "complete-corpus",
+            requiresDist: false,
+            configs: [],
+            runner: "ubuntu-24.04",
+            groups: [
+              {
+                shard_name: "core-runtime-config",
+                requiresDist: false,
+                runner: "ubuntu-24.04",
+                configs: ["test/vitest/vitest.runtime-config.config.ts"],
+                includePatterns: [
+                  "src/config/config-startup-corpus.test.ts",
+                  "src/config/state-startup-corpus.test.ts",
+                ],
+              },
+            ],
+          },
+        ],
+        ...options,
+      });
+      expect(manifest.status, manifest.output).toBe(0);
+      expect(manifest.outputs.startup_corpus_node_revision).toBe("");
+    },
+  );
+
+  it.each(["", "b".repeat(40)])(
+    "retains the startup corpus for an unbound receipt %j",
+    (revision) => {
+      const step = readCiWorkflow().jobs["checks-fast-core"].steps.find(
+        (entry: WorkflowStep) => entry.name === "Check startup corpus",
+      );
+      expect(
+        evaluateWorkflowExpression(`\${{ ${step.if} }}`, {
+          eventName: "pull_request",
+          repository: "openclaw/openclaw",
+          matrix: { task: "baseline-ratchets" },
+          runAttempt: 1,
+          preflightOutputs: {
+            startup_corpus_node_revision: revision,
+            checkout_revision: "a".repeat(40),
+          },
+        }),
+      ).toBe(true);
+    },
   );
 
   it("runs the startup corpus once on full canonical main pushes", () => {
@@ -15056,7 +15176,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       uses: SETUP_GO_V6,
       with: {
         cache: false,
-        "go-version": "1.27.0",
+        "go-version": "1.27.1",
       },
     });
     expect(setupGoStep.with).not.toHaveProperty("go-version-file");
@@ -15079,12 +15199,12 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     });
     expect(verifyGoStep).toMatchObject({
       if: "matrix.requires_go == true",
-      run: 'test "$(go env GOVERSION)" = "go1.27.0"',
+      run: 'test "$(go env GOVERSION)" = "go1.27.1"',
     });
 
     const goMod = readTrackedText("scripts/docs-i18n/go.mod");
     expect(goMod).toMatch(/^go 1\.26\.0$/mu);
-    expect(goMod).toMatch(/^toolchain go1\.27\.0$/mu);
+    expect(goMod).toMatch(/^toolchain go1\.27\.1$/mu);
 
     const tooling = {
       configs: ["test/vitest/vitest.tooling.config.ts"],

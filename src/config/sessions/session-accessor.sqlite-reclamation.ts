@@ -484,6 +484,7 @@ export async function runSqliteSessionReclamation(params: {
         runSqliteTranscriptArchiveWorkerOperation<SqliteSessionReclamationWorkerResult>({
           diagnostics: params.diagnostics,
           expectedMessageType: "reclaimed",
+          validationOwner: { database, isCurrent: claim.isCurrent },
           onCommitRequest: () => recoveredCommitErrors.push(...authorize()),
           withWriteAdmission: async (run, reclamationAdmission) =>
             await runExclusiveSqliteSessionWrite(
@@ -503,6 +504,7 @@ export async function runSqliteSessionReclamation(params: {
               },
               "session.reclamation.worker-commit",
               { ...params.diagnostics, reclamationAdmission },
+              "worker",
             ),
           transferList: prepareReclamationWorkerTransferList(plan),
           workerData: {

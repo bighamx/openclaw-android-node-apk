@@ -327,6 +327,8 @@ describe("GPT-Live Gateway direct transport", () => {
 
       bridge.sendAudio(Buffer.from([0x01, 0x02]));
       vi.useFakeTimers();
+      // Keep the second-granularity expiry a full second away during delegation.
+      vi.setSystemTime(new Date("2026-09-12T00:00:00Z"));
       emitSideband(connectedSocket, {
         type: "session.started",
         session: { expires_at: Math.floor(Date.now() / 1000) + 1 },

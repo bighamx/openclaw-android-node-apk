@@ -413,7 +413,7 @@ export async function finishGatewayStartup(params: {
     log: log.child("tls"),
   });
   if (tlsRenewal) {
-    registerGatewayLifetimeSidecars([tlsRenewal]);
+    registerGatewayLifetimeSidecars(tlsRenewal);
   }
   const configReloaderParams: Parameters<typeof startManagedGatewayConfigReloader>[0] = {
     onReloadEnabledChange: tlsRenewal?.setEnabled,

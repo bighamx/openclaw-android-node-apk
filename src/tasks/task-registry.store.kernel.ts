@@ -14,7 +14,7 @@ import {
   prepareSqliteQuerySync,
 } from "../infra/kysely-sync.js";
 import { assertSqliteTableIntegrity } from "../infra/sqlite-integrity.js";
-import { normalizeSqliteNumber } from "../infra/sqlite-number.js";
+import { coerceRequiredSqliteNumber, normalizeSqliteNumber } from "../infra/sqlite-number.js";
 import { runSqliteDeferredTransactionSync } from "../infra/sqlite-transaction.js";
 import { tableExists, tableHasColumns } from "../state/openclaw-state-db-schema-helpers.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
@@ -25,6 +25,10 @@ import {
 } from "./task-registry-records.js";
 import { parseDeliveryContextJson, parseSqliteJsonValue } from "./task-registry.sqlite.shared.js";
 import type { TaskRegistryStoreSnapshot } from "./task-registry.store.types.js";
+import {
+  addTaskRegistrySummaryCounts,
+  createEmptyTaskRegistrySummary,
+} from "./task-registry.summary.js";
 import {
   parseOptionalTaskTerminalOutcome,
   parseTaskDeliveryStatus,
@@ -225,6 +229,9 @@ type TaskRegistryQueries = {
   viewOwner?: TaskRegistryQuery<string>;
   viewFlow?: TaskRegistryQuery<string>;
   viewRunId?: TaskRegistryQuery<string>;
+  flowSummary?: ReturnType<
+    typeof prepareSqliteQuerySync<string, { runtime: string; status: string; count: number }>
+  >;
 };
 const taskRegistryQueries = new WeakMap<DatabaseSync, TaskRegistryQueries>();
 
@@ -414,6 +421,37 @@ export function listTaskRecordsForFlowReadInDatabase(
         .orderBy("task_id", "desc"),
   ));
   return read(flowId).rows.map(rowToTaskRecord).toSorted(compareTaskViewOrder);
+}
+
+export function summarizeTaskRecordsForFlowInDatabase(db: DatabaseSync, flowId: string) {
+  const queries = getTaskRegistryQueries(db);
+  const read = (queries.flowSummary ??= prepareSqliteQuerySync<
+    string,
+    { runtime: string; status: string; count: number }
+  >(db, (parameter) =>
+    getTaskRegistryKysely(db)
+      .selectFrom("task_runs")
+      .select(["runtime", "status"])
+      .select((eb) => eb.fn.countAll<number>().as("count"))
+      .where(
+        "parent_flow_id",
+        "=",
+        parameter((value) => value),
+      )
+      .groupBy(["runtime", "status"])
+      .orderBy((eb) => eb.fn.max("task_id"), "desc"),
+  ));
+  const summary = createEmptyTaskRegistrySummary();
+  // Summary reads validate count inputs; full record reads own other metadata diagnostics.
+  for (const row of read(flowId).rows) {
+    addTaskRegistrySummaryCounts(
+      summary,
+      parseTaskRuntime(row.runtime),
+      parseTaskStatus(row.status),
+      coerceRequiredSqliteNumber(row.count),
+    );
+  }
+  return summary;
 }
 
 export function findTaskRecordByRunIdForViewInDatabase(

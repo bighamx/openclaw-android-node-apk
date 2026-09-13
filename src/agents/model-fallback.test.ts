@@ -2204,49 +2204,28 @@ describe("runWithModelFallback", () => {
   });
 
   it.each([
-    ["direct", () => new GatewayDrainingError()],
-    ["cause", () => new Error("session send failed", { cause: new GatewayDrainingError() })],
+    ["aborts fallback on direct gateway drain failures", () => new GatewayDrainingError()],
     [
-      "aggregate",
+      "aborts fallback on cause gateway drain failures",
+      () => new Error("session send failed", { cause: new GatewayDrainingError() }),
+    ],
+    [
+      "aborts fallback on aggregate gateway drain failures",
       () =>
         new AggregateError(
           [new Error("cleanup failed"), new GatewayDrainingError()],
           "agent run failed",
         ),
     ],
-  ])("aborts fallback on %s gateway drain failures", async (_label, makeError) => {
-    const error = makeError();
-    const run = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce("too late");
-    const onError = vi.fn();
-    const onFallbackStep = vi.fn();
-
-    await expect(
-      runWithModelFallback({
-        cfg: undefined,
-        provider: "openai",
-        model: "gpt-5.6-sol",
-        fallbacksOverride: ["openai/gpt-5.4-mini"],
-        skipAuthProfileRuntime: true,
-        run,
-        onError,
-        onFallbackStep,
-      }),
-    ).rejects.toBe(error);
-    expect(run).toHaveBeenCalledTimes(1);
-    expect(onError).not.toHaveBeenCalled();
-    expect(onFallbackStep).not.toHaveBeenCalled();
-  });
-
-  it.each([
     [
-      "direct",
+      "aborts fallback on direct worker coordination failures",
       () =>
         Object.assign(new Error("device worker capacity remained full"), {
           name: "WorkerRunnerCapacityError",
         }),
     ],
     [
-      "wrapped",
+      "aborts fallback on wrapped worker coordination failures",
       () =>
         new Error("worker turn failed", {
           cause: Object.assign(new Error("device worker capacity remained full"), {
@@ -2255,14 +2234,14 @@ describe("runWithModelFallback", () => {
         }),
     ],
     [
-      "workspace reconciliation",
+      "aborts fallback on workspace reconciliation worker coordination failures",
       () =>
         Object.assign(new Error("cloud worker workspace result could not be reconciled"), {
           name: "WorkerWorkspaceReconciliationError",
         }),
     ],
     [
-      "wrapped workspace reconciliation",
+      "aborts fallback on wrapped workspace reconciliation worker coordination failures",
       () =>
         new Error("worker turn failed", {
           cause: Object.assign(new Error("cloud worker workspace result could not be reconciled"), {
@@ -2271,14 +2250,14 @@ describe("runWithModelFallback", () => {
         }),
     ],
     [
-      "active turn claim",
+      "aborts fallback on active turn claim worker coordination failures",
       () =>
         Object.assign(new Error("session already has an active turn claim"), {
           name: "ActiveTurnClaimError",
         }),
     ],
     [
-      "wrapped active turn claim",
+      "aborts fallback on wrapped active turn claim worker coordination failures",
       () =>
         new Error("worker turn failed", {
           cause: Object.assign(new Error("session already has an active turn claim"), {
@@ -2286,7 +2265,7 @@ describe("runWithModelFallback", () => {
           }),
         }),
     ],
-  ])("aborts fallback on %s worker coordination failures", async (_label, makeError) => {
+  ])("%s", async (_label, makeError) => {
     const error = makeError();
     const run = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce("too late");
     const onError = vi.fn();

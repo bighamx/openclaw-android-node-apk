@@ -1,6 +1,9 @@
+import type { DatabaseSync } from "node:sqlite";
+import type { InferResult, RawBuilder } from "kysely";
 import type { TranscriptDisplayPosition } from "../../chat/transcript-display-position.js";
-import { executeSqliteQueryTakeFirstSync, getNodeSqliteKysely } from "../../infra/kysely-sync.js";
+import { getNodeSqliteKysely, prepareSqliteQuerySync } from "../../infra/kysely-sync.js";
 import { runSqliteDeferredTransactionSync } from "../../infra/sqlite-transaction.js";
+import { withOpenClawAgentDatabaseReadOnly } from "../../state/openclaw-agent-db-readonly.js";
 import type { DB as OpenClawAgentKyselyDatabase } from "../../state/openclaw-agent-db.generated.js";
 import {
   openOpenClawAgentDatabase,
@@ -14,23 +17,25 @@ import {
   resolveSqliteTranscriptReadScope,
   toDatabaseOptions,
 } from "./session-accessor.sqlite-scope.js";
-import { assertSessionTranscriptHot } from "./session-cold-storage-state.js";
+import { SessionTranscriptColdError } from "./session-cold-storage-state.js";
 import type { SessionTranscriptProjectionState } from "./session-transcript-index.js";
 import { SessionTranscriptProjectionUnavailableError } from "./session-transcript-projection-error.js";
-import { hasUnclassifiedSessionTranscriptEvents } from "./session-transcript-projection-rebuild.js";
 import { startSessionTranscriptIndexReconcile } from "./session-transcript-reconcile.js";
 
 type ActiveTranscriptDatabase = Pick<
   OpenClawAgentKyselyDatabase,
   | "session_transcript_active_events"
+  | "session_transcript_cold_archives"
   | "transcript_rewrite_watermarks"
   | "session_transcript_index_state"
   | "transcript_event_identities"
   | "transcript_events"
 >;
 
+type TranscriptReadDatabase = Pick<OpenClawAgentDatabase, "agentId" | "db" | "path">;
+
 export type CurrentTranscriptProjection = {
-  database: OpenClawAgentDatabase;
+  database: TranscriptReadDatabase;
   generation: string | undefined;
   resolved: ReturnType<typeof resolveSqliteTranscriptReadScope>;
   state: SessionTranscriptProjectionState;
@@ -51,7 +56,7 @@ const EMPTY_PROJECTION_STATE: SessionTranscriptProjectionState = {
   needsRebuild: false,
 };
 
-export function getActiveTranscriptKysely(database: OpenClawAgentDatabase) {
+export function getActiveTranscriptKysely(database: TranscriptReadDatabase) {
   return getNodeSqliteKysely<ActiveTranscriptDatabase>(database.db);
 }
 
@@ -73,57 +78,85 @@ export function parseActiveTranscriptMessageRow(row: {
   };
 }
 
-function readEmptyTranscriptGeneration(
-  database: OpenClawAgentDatabase,
-  sessionId: string,
-): string | undefined {
-  return executeSqliteQueryTakeFirstSync(
-    database.db,
-    getActiveTranscriptKysely(database)
-      .selectFrom("transcript_rewrite_watermarks")
-      .select("generation")
-      .where("session_id", "=", sessionId),
-  )?.generation;
+function buildProjectionSnapshotQuery(
+  database: TranscriptReadDatabase,
+  sessionId: RawBuilder<string>,
+) {
+  const db = getActiveTranscriptKysely(database);
+  // The target survives empty and archived transcripts, which have no hot event rows.
+  const target = db.selectNoFrom(sessionId.as("session_id")).as("target");
+  return db
+    .selectFrom(target)
+    .leftJoin("session_transcript_index_state as state", "state.session_id", "target.session_id")
+    .leftJoin(
+      "transcript_rewrite_watermarks as watermark",
+      "watermark.session_id",
+      "target.session_id",
+    )
+    .select([
+      "watermark.generation",
+      "state.active_event_count",
+      "state.active_message_count",
+      "state.indexed_seq",
+      "state.leaf_event_id",
+      "state.needs_rebuild",
+    ])
+    .select((eb) => [
+      eb
+        .selectFrom("transcript_events")
+        .select(({ fn }) => fn.max<number | null>("seq").as("latest_seq"))
+        .whereRef("transcript_events.session_id", "=", "target.session_id")
+        .as("latest_seq"),
+      eb
+        .exists(
+          eb
+            .selectFrom("session_transcript_cold_archives")
+            .select("session_id")
+            .whereRef("session_transcript_cold_archives.session_id", "=", "target.session_id"),
+        )
+        .as("is_cold"),
+      eb
+        .exists(
+          eb
+            .selectFrom("session_transcript_active_events")
+            .select("session_id")
+            .whereRef("session_transcript_active_events.session_id", "=", "target.session_id")
+            .where("context_eligible", "is", null),
+        )
+        .as("has_unclassified"),
+    ]);
 }
 
-function readProjectionSnapshot(
-  database: OpenClawAgentDatabase,
-  sessionId: string,
-):
-  | {
-      generation: string | undefined;
-      latestSeq: number;
-      state?: SessionTranscriptProjectionState;
-    }
-  | undefined {
-  const row = executeSqliteQueryTakeFirstSync(
-    database.db,
-    getActiveTranscriptKysely(database)
-      .selectFrom("transcript_events as latest")
-      .leftJoin("session_transcript_index_state as state", "state.session_id", "latest.session_id")
-      .leftJoin(
-        "transcript_rewrite_watermarks as watermark",
-        "watermark.session_id",
-        "latest.session_id",
-      )
-      .select([
-        "watermark.generation",
-        "latest.seq as latest_seq",
-        "state.active_event_count",
-        "state.active_message_count",
-        "state.indexed_seq",
-        "state.leaf_event_id",
-        "state.needs_rebuild",
-      ])
-      .where("latest.session_id", "=", sessionId)
-      .orderBy("latest.seq", "desc")
-      .limit(1),
-  );
-  if (!row) {
-    return undefined;
+// Cache compilation only; bindings and rows belong to each read snapshot.
+const projectionSnapshotReaders = new WeakMap<
+  DatabaseSync,
+  ReturnType<
+    typeof prepareSqliteQuerySync<
+      string,
+      InferResult<ReturnType<typeof buildProjectionSnapshotQuery>>[number]
+    >
+  >
+>();
+
+function readProjectionSnapshot(database: TranscriptReadDatabase, sessionId: string) {
+  let read = projectionSnapshotReaders.get(database.db);
+  if (!read) {
+    read = prepareSqliteQuerySync<
+      string,
+      InferResult<ReturnType<typeof buildProjectionSnapshotQuery>>[number]
+    >(database.db, (parameter) =>
+      buildProjectionSnapshotQuery(
+        database,
+        parameter((id) => id),
+      ),
+    );
+    projectionSnapshotReaders.set(database.db, read);
   }
+  const row = read(sessionId).rows[0]!;
   return {
+    cold: Boolean(row.is_cold),
     generation: row.generation ?? undefined,
+    hasUnclassified: Boolean(row.has_unclassified),
     latestSeq: row.latest_seq,
     ...(typeof row.indexed_seq === "number"
       ? {
@@ -142,57 +175,72 @@ function readProjectionSnapshot(
 export function withCurrentProjectionSnapshot<T>(
   scope: SessionTranscriptReadScope,
   read: (projection: CurrentTranscriptProjection) => T,
+  options: { readOnly?: boolean } = {},
 ): T {
   const resolved = resolveSqliteTranscriptReadScope(scope);
   const databaseOptions = toDatabaseOptions(resolved);
-  const database = openOpenClawAgentDatabase(databaseOptions);
-  const result = runSqliteDeferredTransactionSync(
-    database.db,
-    () => {
-      assertSessionTranscriptHot(database.db, resolved.sessionId);
-      const snapshot = readProjectionSnapshot(database, resolved.sessionId);
-      if (!snapshot) {
-        return {
-          kind: "value" as const,
-          value: read({
-            database,
-            generation: readEmptyTranscriptGeneration(database, resolved.sessionId),
-            resolved,
-            state: EMPTY_PROJECTION_STATE,
-          }),
-        };
-      }
-      if (
-        snapshot.state &&
-        !snapshot.state.needsRebuild &&
-        snapshot.state.indexedSeq === snapshot.latestSeq &&
-        !hasUnclassifiedSessionTranscriptEvents(database.db, resolved.sessionId)
-      ) {
-        return {
-          kind: "value" as const,
-          value: read({
-            database,
-            generation: snapshot.generation,
-            resolved,
-            state: snapshot.state,
-          }),
-        };
-      }
-      return { kind: "unavailable" as const };
-    },
-    {
-      databaseLabel: database.path,
-      operationLabel: "sessions.history.read",
-    },
-  );
-  if (result.kind === "value") {
-    return result.value;
+  const readSnapshot = (database: TranscriptReadDatabase) =>
+    runSqliteDeferredTransactionSync(
+      database.db,
+      () => {
+        const snapshot = readProjectionSnapshot(database, resolved.sessionId);
+        if (snapshot.cold) {
+          throw new SessionTranscriptColdError(resolved.sessionId);
+        }
+        if (snapshot.latestSeq === null) {
+          return {
+            kind: "value" as const,
+            value: read({
+              database,
+              generation: snapshot.generation,
+              resolved,
+              state: EMPTY_PROJECTION_STATE,
+            }),
+          };
+        }
+        if (
+          snapshot.state &&
+          !snapshot.state.needsRebuild &&
+          snapshot.state.indexedSeq === snapshot.latestSeq &&
+          !snapshot.hasUnclassified
+        ) {
+          return {
+            kind: "value" as const,
+            value: read({
+              database,
+              generation: snapshot.generation,
+              resolved,
+              state: snapshot.state,
+            }),
+          };
+        }
+        return { kind: "unavailable" as const };
+      },
+      {
+        databaseLabel: database.path,
+        operationLabel: "sessions.history.read",
+      },
+    );
+  const result = options.readOnly
+    ? withOpenClawAgentDatabaseReadOnly(readSnapshot, databaseOptions, {
+        throwOnMissingTable: true,
+      })
+    : { found: true as const, value: readSnapshot(openOpenClawAgentDatabase(databaseOptions)) };
+  if (!result.found) {
+    throw new Error(
+      "Session transcript storage is unavailable; open the source gateway and retry.",
+    );
   }
-  // Request latency never scales with transcript size. The maintenance owner
-  // rebuilds after this stack unwinds; callers return a retryable response.
-  startSessionTranscriptIndexReconcile({
-    ...databaseOptions,
-    preferredSessionId: resolved.sessionId,
-  });
+  if (result.value.kind === "value") {
+    return result.value.value;
+  }
+  // Only the writer lifecycle may rebuild after this stack unwinds. Read-only catalogs
+  // report unavailable and leave reconciliation to the source Gateway.
+  if (!options.readOnly) {
+    startSessionTranscriptIndexReconcile({
+      ...databaseOptions,
+      preferredSessionId: resolved.sessionId,
+    });
+  }
   throw new SessionTranscriptProjectionUnavailableError(resolved.sessionId);
 }

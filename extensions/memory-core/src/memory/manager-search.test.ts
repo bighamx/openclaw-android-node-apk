@@ -2,6 +2,7 @@ import nodePath from "node:path";
 // Memory Core tests cover manager search plugin behavior.
 import type { DatabaseSync } from "node:sqlite";
 import { expectDefined } from "@openclaw/normalization-core";
+import { truncateUtf16Safe } from "openclaw/plugin-sdk/memory-core-host-engine-knn";
 import {
   ensureMemoryIndexSchema,
   loadSqliteVecExtension,
@@ -1567,6 +1568,120 @@ describe("searchVector sqlite-vec KNN", () => {
       db.close();
     }
   });
+
+  it.each(
+    ["UTF-8", "UTF-16le", "UTF-16be"].flatMap((encoding) =>
+      ["KNN", "fallback"].map((mode) => ({ encoding, mode })),
+    ),
+  )(
+    "bounds $mode body fetches while preserving snippets in a $encoding database",
+    async ({ encoding, mode }) => {
+      const db = new DatabaseSync(":memory:", { allowExtension: true });
+      try {
+        db.exec(`PRAGMA encoding = '${encoding}'`);
+        const loaded = await loadSqliteVecExtension({ db });
+        expect(loaded.ok, loaded.error).toBe(true);
+        ensureMemoryIndexSchema({ db, cacheEnabled: false, ftsEnabled: false });
+        db.exec(`CREATE VIRTUAL TABLE memory_index_chunks_vec USING vec0(
+          id TEXT PRIMARY KEY, embedding FLOAT[2]
+        )`);
+        const texts = [
+          "",
+          "brief",
+          "\0before and after\0",
+          "abc😀de",
+          "😀😀😀😀",
+          "中文é\u0301\u2003memory",
+          "\ud800unpaired\udfff",
+          "a".repeat(2_799) + "😀" + "tail".repeat(4_000),
+          "a".repeat(699) + "\0" + "tail".repeat(4_000),
+          "文".repeat(16_000),
+        ];
+        for (const [index, text] of texts.entries()) {
+          const id = `snippet-${index}`;
+          insertFallbackChunk(db, { id, model: "target-model", vector: [1, index / 10] });
+          db.prepare("UPDATE memory_index_chunks SET text = ? WHERE id = ?").run(text, id);
+          db.prepare("INSERT INTO memory_index_chunks_vec (id, embedding) VALUES (?, ?)").run(
+            id,
+            vectorToBlob([1, index / 10]),
+          );
+        }
+        // Read stored text first: the SQLite binding normalizes unpaired surrogates.
+        const stored = db.prepare("SELECT id, text FROM memory_index_chunks ORDER BY rowid").all();
+        let fetchedBytes = 0;
+        const prepare = db.prepare.bind(db);
+        const prepareSpy = vi.spyOn(db, "prepare").mockImplementation((sql) => {
+          const statement = prepare(sql);
+          statement.get = new Proxy(statement.get.bind(statement), {
+            apply(get, _receiver, values) {
+              const row = get(...values);
+              if (typeof row?.text === "string") {
+                fetchedBytes += Buffer.byteLength(row.text);
+              }
+              return row;
+            },
+          });
+          statement.all = new Proxy(statement.all.bind(statement), {
+            apply(all, _receiver, values) {
+              const rows = all(...values);
+              for (const row of rows) {
+                if (typeof row.text === "string") {
+                  fetchedBytes += Buffer.byteLength(row.text);
+                }
+              }
+              return rows;
+            },
+          });
+          return statement;
+        });
+        try {
+          const snippetLimits = [1, 2, 3, 4, 7, 700];
+          for (const snippetMaxChars of snippetLimits) {
+            const results = await searchVectorFixture(db, {
+              limit: texts.length,
+              snippetMaxChars,
+              ensureVectorReady: async () => mode === "KNN",
+            });
+            expect(results.map(({ id, snippet }) => ({ id, snippet }))).toEqual(
+              stored.map(({ id, text }) => ({
+                id,
+                snippet: truncateUtf16Safe(String(text), snippetMaxChars),
+              })),
+            );
+          }
+          // Allow encoding expansion without materializing complete chunk bodies.
+          const totalSnippetLimit = snippetLimits.reduce((sum, limit) => sum + limit, 0);
+          expect(fetchedBytes).toBeLessThanOrEqual(texts.length * totalSnippetLimit * 8);
+          if (mode === "fallback") {
+            for (const snippetMaxChars of [
+              0,
+              -1,
+              1.5,
+              Number.NaN,
+              Infinity,
+              Number.MAX_SAFE_INTEGER,
+              Number.MAX_SAFE_INTEGER + 1,
+            ]) {
+              const results = await searchVectorFixture(db, {
+                limit: texts.length,
+                snippetMaxChars,
+              });
+              expect(results.map(({ id, snippet }) => ({ id, snippet }))).toEqual(
+                stored.map(({ id, text }) => ({
+                  id,
+                  snippet: truncateUtf16Safe(String(text), snippetMaxChars),
+                })),
+              );
+            }
+          }
+        } finally {
+          prepareSpy.mockRestore();
+        }
+      } finally {
+        db.close();
+      }
+    },
+  );
 
   it("falls back when filters hide matches beyond sqlite-vec's KNN cap", async () => {
     const db = new DatabaseSync(":memory:", { allowExtension: true });

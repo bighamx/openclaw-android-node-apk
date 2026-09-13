@@ -23,9 +23,11 @@ import {
   authorizeClientVoiceConfirmation,
   bindAuthorizedClientVoiceConfirmation,
   checkClientVoiceToolConfirmationPolicy,
-  noteClientVoiceConfirmationUtterance,
 } from "../talk/client-voice-confirmation.js";
-import { resetClientVoiceConfirmationStateForTest } from "../talk/client-voice-confirmation.test-support.js";
+import {
+  noteClientVoiceConfirmationUtteranceForTest as noteClientVoiceConfirmationUtterance,
+  resetClientVoiceConfirmationStateForTest,
+} from "../talk/client-voice-confirmation.test-support.js";
 import { ensureClientVoiceAgentSessionEntry } from "../talk/client-voice-session.js";
 import { clientVoiceSessionTesting } from "../talk/client-voice-session.test-support.js";
 import { resolveRealtimeVoiceProviderCapabilities } from "../talk/provider-resolver.js";
@@ -44,7 +46,7 @@ import {
 import { registerChatAbortController, type ChatAbortControllerEntry } from "./chat-abort.js";
 import { createChatRunState } from "./server-chat-state.js";
 import { bindTalkRealtimeRelayAgentConsult } from "./talk-realtime-relay-agent-consult.js";
-import { projectTalkRealtimeRelayProviderError } from "./talk-realtime-relay-issues.js";
+import { resolveTalkRealtimeRelayPresentation } from "./talk-realtime-relay-issues.js";
 import { drainingRelaySessions, relaySessions } from "./talk-realtime-relay-state.js";
 import { MAX_RELAY_TOOL_CALL_IDENTITIES } from "./talk-realtime-relay-tool-call-ledger.js";
 import {
@@ -135,7 +137,7 @@ function createTalkRealtimeRelaySession(
   const session = createTalkRealtimeRelaySessionRaw({
     ...request,
     controlSource: capabilities?.handlesAgentConsult === true ? "delegation" : "transcript",
-    supportsToolCalls: capabilities?.supportsToolCalls,
+    capabilities,
     context: {
       ...request.context,
       chatAbortControllers: request.context.chatAbortControllers ?? new Map(),
@@ -180,23 +182,28 @@ function ensureActiveRelayTurnId(relaySessionId: string): string {
   return relay.harness.talk.activeTurnId ?? "turn-1";
 }
 
+function createIdleRelayProvider(): RealtimeVoiceProviderPlugin {
+  return {
+    id: "relay-test",
+    label: "Relay Test",
+    isConfigured: () => true,
+    createBridge: () => makeRelayTransport(),
+  };
+}
+
 describe("talk realtime relay provider error projection", () => {
   it.each(providerErrorCases)(
     "projects public $name failures to fixed copy",
     ({ error, expected }) => {
-      const message = projectTalkRealtimeRelayProviderError("relay-test", false, error);
+      const message = resolveTalkRealtimeRelayPresentation({
+        provider: createIdleRelayProvider(),
+        providerConfig: {},
+      }).publicError(error).message;
 
       expect(message).toBe(expected);
       expect(message).not.toContain(error.message);
     },
   );
-
-  it.each(providerErrorCases)("keeps opaque $name failures generic", ({ error }) => {
-    const message = projectTalkRealtimeRelayProviderError("relay-test", true, error);
-
-    expect(message).toBe(RELAY_GENERIC_ERROR);
-    expect(message).not.toContain(error.message);
-  });
 });
 
 describe("talk realtime gateway relay", () => {
@@ -214,7 +221,11 @@ describe("talk realtime gateway relay", () => {
       },
     );
     let current = true;
-    const runAgentConsult = bindTalkRealtimeRelayAgentConsult(runPrompt as never, () => current);
+    const runAgentConsult = bindTalkRealtimeRelayAgentConsult(
+      runPrompt as never,
+      () => current,
+      async () => {},
+    );
     (
       runAgentConsult as RealtimeVoiceAgentConsultRunner & {
         adoptCompletionClaims?: () => void;
@@ -244,7 +255,11 @@ describe("talk realtime gateway relay", () => {
         revokeRequesterFinal,
       },
     );
-    const runAgentConsult = bindTalkRealtimeRelayAgentConsult(runPrompt as never, () => true);
+    const runAgentConsult = bindTalkRealtimeRelayAgentConsult(
+      runPrompt as never,
+      () => true,
+      async () => {},
+    );
 
     (
       runAgentConsult as RealtimeVoiceAgentConsultRunner & {
@@ -506,15 +521,6 @@ describe("talk realtime gateway relay", () => {
       testState = undefined;
     }
   });
-
-  function createIdleRelayProvider(): RealtimeVoiceProviderPlugin {
-    return {
-      id: "relay-test",
-      label: "Relay Test",
-      isConfigured: () => true,
-      createBridge: () => makeRelayTransport(),
-    };
-  }
 
   it("settles relay-owned registrations after refusal invalidates a detached grant", async () => {
     const provider = createIdleRelayProvider();
@@ -1481,6 +1487,7 @@ describe("talk realtime gateway relay", () => {
       broadcastToConnIds,
       broadcast,
       nodeSendToSession,
+      logGateway: { warn: vi.fn() },
       chatAbortControllers: new Map([
         [
           "run-1",
@@ -3702,6 +3709,110 @@ describe("talk realtime gateway relay", () => {
       expect(relay?.harness.talk.activeTurnId).toBeUndefined();
       expect(abortController.signal.aborted).toBe(true);
       expect(broadcast).toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { mode: "continuous", fails: false },
+    { mode: "capability", fails: false },
+    { mode: "continuous", fails: true },
+  ] as const)(
+    "keeps automatic interruption provider-owned and finalizes an explicit stop ($mode, failure=$fails)",
+    async ({ mode, fails }) => {
+      const finalization = createDeferred();
+      const close = vi.fn(() => finalization.promise);
+      const handleBargeIn = vi.fn();
+      const sendAudio = vi.fn();
+      let bridgeRequest: RealtimeVoiceBridgeCreateRequest | undefined;
+      const provider = createIdleRelayProvider();
+      if (mode === "capability") {
+        provider.capabilities = {
+          transports: ["gateway-relay"],
+          inputAudioFormats: [],
+          outputAudioFormats: [],
+          supportsBargeIn: false,
+        };
+      }
+      provider.createBridge = (request) => {
+        bridgeRequest = request;
+        return makeRelayTransport({
+          close,
+          handleBargeIn,
+          sendAudio,
+          ...(mode === "continuous" ? { outputAudioMode: "continuous" as const } : {}),
+        });
+      };
+      const { abortController, broadcastToConnIds, session } =
+        createAbortableRelayRunFixture(provider);
+      const turnId = ensureActiveRelayTurnId(session.relaySessionId);
+      bridgeRequest?.onAudio(Buffer.from([1, 2]));
+      const target = { relaySessionId: session.relaySessionId, connId: "conn-1" };
+      try {
+        await expect(
+          cancelTalkRealtimeRelayTurn({ ...target, turnId: "stale-turn", reason: "user" }),
+        ).resolves.toEqual({ status: "stale" });
+        const eventsBeforeBargeIn = broadcastToConnIds.mock.calls.length;
+        const automaticCancellation = cancelTalkRealtimeRelayTurn({
+          ...target,
+          turnId,
+          reason: "barge-in",
+        });
+        expect(close).not.toHaveBeenCalled();
+        await expect(automaticCancellation).resolves.toEqual({ status: "idle" });
+        expect(abortController.signal.aborted).toBe(false);
+        expect(broadcastToConnIds.mock.calls).toHaveLength(eventsBeforeBargeIn);
+        expect(relaySessions.get(session.relaySessionId)?.harness.talk.activeTurnId).toBe(turnId);
+        await sendTalkRealtimeRelayAudio({ ...target, audioBase64: "AQI=" });
+        expect(sendAudio).toHaveBeenCalledExactlyOnceWith(Buffer.from([1, 2]));
+
+        const cancellation = cancelTalkRealtimeRelayTurn({ ...target, turnId, reason: "user" });
+        expect(close).toHaveBeenCalledExactlyOnceWith({ disposition: "abort" });
+        expect(handleBargeIn).not.toHaveBeenCalled();
+        expect(abortController.signal.aborted).toBe(true);
+        expect(broadcastToConnIds).toHaveBeenCalledWith(
+          "talk.event",
+          expect.objectContaining({
+            type: "clear",
+            talkEvent: expect.objectContaining({ type: "turn.cancelled", turnId }),
+          }),
+          new Set(["conn-1"]),
+          { dropIfSlow: false },
+        );
+        expect(() => sendTalkRealtimeRelayAudio({ ...target, audioBase64: "AQI=" })).toThrow(
+          "Unknown realtime relay session",
+        );
+        const eventCount = broadcastToConnIds.mock.calls.length;
+        bridgeRequest?.onAudio(Buffer.from([3, 4]));
+        expect(broadcastToConnIds.mock.calls).toHaveLength(eventCount);
+        const settled = vi.fn();
+        void cancellation.then(settled, settled);
+        await Promise.resolve();
+        expect(settled).not.toHaveBeenCalled();
+        const completion = fails
+          ? expect(cancellation).rejects.toThrow("finalization failed")
+          : expect(cancellation).resolves.toEqual({ status: "applied", turnId });
+        if (fails) {
+          finalization.reject(new Error("finalization failed"));
+        } else {
+          finalization.resolve();
+        }
+        await completion;
+        expect(broadcastToConnIds).toHaveBeenLastCalledWith(
+          "talk.event",
+          expect.objectContaining({
+            type: "close",
+            reason: fails ? "error" : "completed",
+            talkEvent: expect.objectContaining({
+              type: "session.closed",
+              payload: { reason: fails ? "error" : "output-cancelled" },
+            }),
+          }),
+          new Set(["conn-1"]),
+          { dropIfSlow: false },
+        );
+      } finally {
+        finalization.resolve();
+      }
     },
   );
 

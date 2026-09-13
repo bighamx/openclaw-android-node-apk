@@ -18,6 +18,7 @@ import {
   shouldRebuildSessionTranscriptIndexSynchronously,
   SYNC_REBUILD_MAX_BYTES,
 } from "./session-transcript-index.js";
+import { transcriptMessage } from "./transcript-message.test-support.js";
 
 type SqliteInstruction = {
   opcode: string;
@@ -88,19 +89,15 @@ it.each(readers)("sizes %s without reading transcript overflow payloads", async 
     };
     await persistSessionTranscriptTurn(scope, {
       messages: [
-        { eventId: "large", parentId: null, message: { role: "user", content: "🦞".repeat(4096) } },
-        {
-          eventId: "display",
-          parentId: "large",
-          message: {
-            role: "custom",
-            customType: "activity",
-            excludeFromContext: true,
-            display: true,
-            content: "🦞".repeat(4096),
-          },
-        },
-        { eventId: "small", parentId: "display", message: { role: "assistant", content: "done" } },
+        transcriptMessage("large", null, { role: "user", content: "🦞".repeat(4096) }),
+        transcriptMessage("display", "large", {
+          role: "custom",
+          customType: "activity",
+          excludeFromContext: true,
+          display: true,
+          content: "🦞".repeat(4096),
+        }),
+        transcriptMessage("small", "display", { role: "assistant", content: "done" }),
       ],
       touchSessionEntry: false,
     });
@@ -133,7 +130,7 @@ it.each(readers)("sizes %s without reading transcript overflow payloads", async 
       }
       if (
         query.includes("context_eligible") &&
-        statement.columns().some(({ name }) => name === "session_id")
+        statement.columns().some(({ name }) => name === "session_id" || name === "has_unclassified")
       ) {
         readinessQueries.push(query);
       }

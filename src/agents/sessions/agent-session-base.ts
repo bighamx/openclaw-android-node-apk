@@ -53,6 +53,7 @@ import {
 } from "./queued-user-message-retirement.js";
 import type { ResourceLoader } from "./resource-loader.js";
 import type { SessionManager } from "./session-manager.js";
+import { prepareSessionToolResult } from "./session-tool-result-redaction.js";
 import type { SettingsManager } from "./settings-manager.js";
 import type { SourceInfo } from "./source-info.js";
 import { reportSteeringMessagePersistenceFailure } from "./steering-message-identity.js";
@@ -361,6 +362,8 @@ export abstract class AgentSessionBase {
       await this.runWithSessionWriteSettlement(
         async () => await this.handleAgentEventUnlocked(event),
       );
+      // Supported callbacks can change the current result or register another secret.
+      prepareSessionToolResult(this.sessionManager, event);
       return;
     }
     await this.handleAgentEventUnlocked(event);
@@ -380,7 +383,9 @@ export abstract class AgentSessionBase {
     const sourceSlots =
       event.type === "message_end" ? takeCodeModeResponseSource(event.message) : undefined;
     // Emit to extensions first
-    const messageChanged = await this.emitExtensionEvent(event);
+    let messageChanged = await this.emitExtensionEvent(event);
+    // Extensions can replace the final result. Protect listeners before publishing it.
+    messageChanged = prepareSessionToolResult(this.sessionManager, event) || messageChanged;
     const publishAfterPersistence = event.type === "message_end" && event.message.role === "user";
 
     // Notify all listeners
@@ -393,6 +398,8 @@ export abstract class AgentSessionBase {
     } else if (!publishAfterPersistence) {
       this.emit(event);
     }
+    // Persist the same prepared bytes after synchronous listener changes.
+    messageChanged = prepareSessionToolResult(this.sessionManager, event) || messageChanged;
 
     // Handle session persistence
     if (event.type === "message_end") {

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { isMainThread, threadId } from "node:worker_threads";
 import { afterEach, expect, it, vi } from "vitest";
+import { trackSqliteStatementExecutions } from "../../../test/helpers/sqlite-statement-execution-counter.js";
 import { visitSessionMessagesAsync } from "../../gateway/session-transcript-readers.js";
 import {
   clearNodeSqliteKyselyCacheForDatabase,
@@ -22,6 +23,7 @@ import {
 } from "../../test-utils/openclaw-test-state.js";
 import { copySqliteSessionOwnedStateForCanonicalRepair } from "./session-accessor.sqlite-canonical-repair.js";
 import { replaceSessionEntry } from "./session-accessor.sqlite-entry.js";
+import { readRecentSessionTranscriptHistoryEvents } from "./session-accessor.sqlite-history-events.js";
 import {
   createTranscriptIdentityReader,
   findTranscriptEventInDatabase,
@@ -167,6 +169,15 @@ async function prepareRace(state: OpenClawTestState) {
 
 type Race = Awaited<ReturnType<typeof prepareRace>>;
 const readers: Array<{ name: string; read: (race: Race) => unknown }> = [
+  {
+    name: "history page",
+    read: ({ scope }) =>
+      readRecentSessionTranscriptHistoryEvents(scope, {
+        maxMessages: 20,
+        maxLines: 20,
+        maxBytes: 64 * 1024,
+      }),
+  },
   { name: "header", read: ({ scope }) => loadTranscriptHeaderSync(scope) },
   { name: "tail", read: ({ scope }) => loadTranscriptTailEventsSync(scope, 2) },
   { name: "checkpoint suffix", read: ({ scope }) => loadTranscriptEventRowsAfterSeqSync(scope, 0) },
@@ -274,6 +285,29 @@ it("identifies a slow transcript matcher while retaining its hot read snapshot",
   });
 });
 
+it("reads hot and cold transcript stats with one SQLite selection each", async () => {
+  await withOpenClawTestState({ label: "cold-stats-query-budget" }, async (state) => {
+    const race = await prepareRace(state);
+    const expected = readTranscriptStatsSync(race.scope);
+    const reads = trackSqliteStatementExecutions(race.database.db, ["stats"], (query) =>
+      query.startsWith("select ") &&
+      /"(?:transcript_events|session_transcript_cold_archives|session_windows)"/u.test(query)
+        ? "stats"
+        : null,
+    );
+    try {
+      expect(readTranscriptStatsSync(race.scope)).toEqual(expected);
+      race.commitArchive();
+      expect(readTranscriptStatsSync(race.scope)).toEqual(expected);
+      expect(reads.counts.stats).toBeLessThanOrEqual(2);
+      expect(reads.rowCounts.stats).toBe(2);
+    } finally {
+      reads.restore();
+      race.writer.close();
+    }
+  });
+});
+
 it.each(["stats", "search"] as const)(
   "keeps %s coherent when another connection archives",
   async (kind) => {
@@ -285,7 +319,11 @@ it.each(["stats", "search"] as const)(
           : searchSessionTranscripts({ ...race.scope, query: "Original" });
       try {
         const original = read();
-        race.commitAfterMarkerRead();
+        race.commitAfterMarkerRead((query) =>
+          kind === "stats"
+            ? query.includes('"session_transcript_cold_archives"')
+            : query.includes('from "session_transcript_cold_archives"'),
+        );
         expect(read()).toEqual(original);
         expect(race.committed()).toBe(true);
         if (kind === "stats") {

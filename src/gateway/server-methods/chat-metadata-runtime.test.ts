@@ -156,7 +156,7 @@ describe("gateway chat metadata runtime", () => {
   });
 
   test.each(["metadata", "startup"] as const)(
-    "serves published %s without request-time generation reads",
+    "serves published %s with only auth revision reads",
     async (surface) => {
       const harness = createChatMetadataHarness();
       await harness.runtime.refresh();
@@ -181,7 +181,8 @@ describe("gateway chat metadata runtime", () => {
       expect(harness.buildProjection).toHaveBeenCalledTimes(1);
       expect(harness.getPreparedOwner).not.toHaveBeenCalled();
       expect(harness.getPreparedAuthStore).not.toHaveBeenCalled();
-      expect(harness.getAuthStoreRevision).not.toHaveBeenCalled();
+      expect(harness.getAuthStoreRevision).toHaveBeenCalledWith("/tmp/first/agent");
+      expect(harness.getAuthStoreRevision).toHaveBeenCalledWith(undefined);
       expect(harness.getSkillsVersion).not.toHaveBeenCalled();
       expect(harness.getPluginRegistryVersion).not.toHaveBeenCalled();
     },
@@ -937,6 +938,54 @@ describe("gateway chat metadata runtime", () => {
         models: [expect.objectContaining({ id: "replacement" })],
         swarmEnabled: true,
       });
+    },
+  );
+
+  test.each(["resolve", "reject"] as const)(
+    "discards a late projection's %s after a usage-only revision changes",
+    async (settlement) => {
+      const harness = createChatMetadataHarness(undefined, { refreshOnRead: false });
+      const blocked: AuthProfileStore = {
+        version: 1,
+        profiles: { "test:session": { type: "api_key", provider: "test", key: "not-real" } },
+        usageStats: { "test:session": { cooldownUntil: Date.now() + 60_000 } },
+      };
+      harness.setAuthStore(blocked);
+      const project = async ({ facts }: Parameters<typeof harness.buildProjection>[0]) => ({
+        modelCatalog: facts.modelCatalog.entries,
+        models: facts.modelCatalog.entries.map((entry) => ({
+          ...entry,
+          available: !facts.authStore.usageStats?.["test:session"]?.cooldownUntil,
+        })),
+      });
+      harness.buildProjection.mockImplementation(project);
+      await harness.runtime.refresh();
+      const entered = createDeferred();
+      const release = createDeferred();
+      harness.buildProjection.mockImplementationOnce(async (params) => {
+        entered.resolve();
+        await release.promise;
+        if (settlement === "reject") {
+          throw new Error("obsolete usage projection failed");
+        }
+        return project(params);
+      });
+      const reading = harness.runtime.read({
+        agentId: "main",
+        sessionEntry: { authProfileOverride: "test:session" },
+      });
+      try {
+        await entered.promise;
+        harness.setAuthStore({ ...blocked, usageStats: {} });
+        harness.setAuthStoreRevision(2);
+        release.resolve();
+        await expect(reading).resolves.toMatchObject({
+          models: [expect.objectContaining({ available: true })],
+        });
+      } finally {
+        release.resolve();
+        await Promise.allSettled([reading, harness.runtime.stop()]);
+      }
     },
   );
 

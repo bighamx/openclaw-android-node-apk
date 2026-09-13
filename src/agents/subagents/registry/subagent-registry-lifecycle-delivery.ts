@@ -7,6 +7,10 @@ import {
 } from "../../../config/sessions/session-accessor.js";
 import { resolveSessionStorePathForScope } from "../../../config/sessions/session-store-path.js";
 import { formatErrorMessage, readErrorName } from "../../../infra/errors.js";
+import {
+  getGatewayContextResolver,
+  withPluginRuntimeGatewayContextResolver,
+} from "../../../plugins/runtime/gateway-request-scope.js";
 import { resolveAgentIdFromSessionKey } from "../../../routing/session-key.js";
 import { extractTextFromChatContent } from "../../../shared/chat-content.js";
 import type { DetachedTaskFindResult } from "../../../tasks/detached-task-runtime-contract.js";
@@ -15,7 +19,10 @@ import {
   failTaskRunByRunId,
   setDetachedTaskDeliveryStatusByRunId,
 } from "../../../tasks/detached-task-runtime.js";
-import type { TaskDeliveryStatus } from "../../../tasks/task-registry.types.js";
+import {
+  isTerminalTaskStatus,
+  type TaskDeliveryStatus,
+} from "../../../tasks/task-registry.types.js";
 import {
   buildAnnounceIdFromChildRun,
   buildAnnounceIdempotencyKey,
@@ -175,17 +182,21 @@ export const hasPriorRequesterDeliveryMirror = async (
       value.startsWith(`${entry.runId}:message-tool:`) ||
       value.startsWith(`${entry.runId}:internal-source-reply:`));
   try {
-    const history = await params.callGateway<{
-      messages?: unknown[];
-    }>({
-      method: "chat.history",
-      params: {
-        sessionKey: entry.requesterSessionKey,
-        limit: 25,
-        maxChars: DELIVERY_MIRROR_HISTORY_MAX_CHARS,
-      },
-      timeoutMs: 5_000,
-    });
+    const history = await withPluginRuntimeGatewayContextResolver(
+      getGatewayContextResolver(entry),
+      () =>
+        params.callGateway<{
+          messages?: unknown[];
+        }>({
+          method: "chat.history",
+          params: {
+            sessionKey: entry.requesterSessionKey,
+            limit: 25,
+            maxChars: DELIVERY_MIRROR_HISTORY_MAX_CHARS,
+          },
+          timeoutMs: 5_000,
+        }),
+    );
     const mirror = history.messages?.find((message) => {
       if (!message || typeof message !== "object") {
         return false;
@@ -264,7 +275,7 @@ export const safeSetSubagentTaskDeliveryStatus = (
   }
 };
 
-export const safeFinalizeSubagentTaskRun = (
+export const finalizeSubagentTaskRun = (
   params: SubagentLifecycleOptions,
   args: {
     entry: SubagentRunRecord;
@@ -276,12 +287,20 @@ export const safeFinalizeSubagentTaskRun = (
   if (!terminal) {
     return [];
   }
-  const target = resolveSubagentTaskTarget(params, args.entry, args.taskResolution);
+  const taskResolution = args.taskResolution ?? params.resolveSubagentTask(args.entry);
+  const pendingTask =
+    taskResolution.lookup === "available" &&
+    taskResolution.task &&
+    !isTerminalTaskStatus(taskResolution.task.status)
+      ? taskResolution.task
+      : undefined;
+  const target = resolveSubagentTaskTarget(params, args.entry, taskResolution);
   const { status, error, terminalOutcome, ...details } = terminal;
   const suppressDelivery = args.entry.suppressCompletionDelivery === true;
+  let finalized: ReturnType<typeof completeTaskRunByRunId>;
   try {
     if (status === "succeeded") {
-      return completeTaskRunByRunId({
+      finalized = completeTaskRunByRunId({
         runId: target.runId,
         runtime: "subagent",
         sessionKey: target.sessionKey,
@@ -289,16 +308,17 @@ export const safeFinalizeSubagentTaskRun = (
         terminalOutcome,
         suppressDelivery,
       });
+    } else {
+      finalized = failTaskRunByRunId({
+        runId: target.runId,
+        runtime: "subagent",
+        sessionKey: target.sessionKey,
+        ...details,
+        status,
+        error,
+        suppressDelivery,
+      });
     }
-    return failTaskRunByRunId({
-      runId: target.runId,
-      runtime: "subagent",
-      sessionKey: target.sessionKey,
-      ...details,
-      status,
-      error,
-      suppressDelivery,
-    });
   } catch (err) {
     params.warn("failed to finalize subagent background task state", {
       error: buildSafeLifecycleErrorMeta(err),
@@ -306,8 +326,22 @@ export const safeFinalizeSubagentTaskRun = (
       childSessionKey: maskLifecycleIdentifier(args.entry.childSessionKey, "session"),
       outcomeStatus: args.outcome.status,
     });
+    if (pendingTask) {
+      throw err;
+    }
     return [];
   }
+  // A failed task write must keep the native terminal owner replayable.
+  // Otherwise cleanup can discard the only outcome that repairs the running task.
+  if (
+    pendingTask &&
+    !finalized?.some(
+      (task) => task.taskId === pendingTask.taskId && isTerminalTaskStatus(task.status),
+    )
+  ) {
+    throw new Error("subagent task projection did not finalize");
+  }
+  return finalized;
 };
 
 export const freezeRunResultAtCompletion = async (
@@ -349,11 +383,15 @@ export const freezeRunResultAtCompletion = async (
         : undefined);
     const sessionTarget: SessionTranscriptRuntimeTarget | undefined =
       agentId && sessionId && storePath ? { agentId, sessionId, sessionKey, storePath } : undefined;
-    const captured = await params.captureSubagentCompletionReply(entry.childSessionKey, {
-      waitForReply: entry.expectsCompletionMessage === true,
-      outcome,
-      ...(sessionTarget ? { sessionTarget } : {}),
-    });
+    const captured = await withPluginRuntimeGatewayContextResolver(
+      getGatewayContextResolver(entry),
+      () =>
+        params.captureSubagentCompletionReply(entry.childSessionKey, {
+          waitForReply: entry.expectsCompletionMessage === true,
+          outcome,
+          ...(sessionTarget ? { sessionTarget } : {}),
+        }),
+    );
     resultText = captured?.trim() ? capFrozenResultText(captured) : null;
   } catch {
     resultText = null;
@@ -425,7 +463,9 @@ export const refreshFrozenResultFromSession = async (
 
   let captured: string | undefined;
   try {
-    captured = await params.captureSubagentCompletionReply(sessionKey);
+    captured = await withPluginRuntimeGatewayContextResolver(getGatewayContextResolver(entry), () =>
+      params.captureSubagentCompletionReply(sessionKey),
+    );
   } catch {
     return false;
   }

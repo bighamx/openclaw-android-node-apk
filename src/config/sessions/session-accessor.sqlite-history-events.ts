@@ -34,6 +34,7 @@ import {
   parseStoredTranscriptEvent,
   readHistoricalHistoryAnchorPage,
   resolveHistoricalHistoryEventById,
+  resolveHistoryAnchorPageRange,
 } from "./session-accessor.sqlite-history-interval.js";
 import {
   assertVisibleMessageRangeJson,
@@ -386,9 +387,18 @@ function resolveHistoryMessageSequence(
   if (logicalPosition < 0) {
     return undefined;
   }
-  const precedingBoundaries = history.boundaries.filter(
-    (candidate) => candidate.messagePosition <= logicalPosition,
-  ).length;
+  // Boundaries follow active order; equal positions all precede this message.
+  let precedingBoundaries = 0;
+  let end = history.boundaries.length;
+  while (precedingBoundaries < end) {
+    const middle = Math.floor((precedingBoundaries + end) / 2);
+    // The half-open search range stays inside the dense boundary projection.
+    if (history.boundaries[middle]!.messagePosition <= logicalPosition) {
+      precedingBoundaries = middle + 1;
+    } else {
+      end = middle;
+    }
+  }
   return logicalPosition + 1 + precedingBoundaries;
 }
 
@@ -542,50 +552,54 @@ export function readRecentSessionTranscriptHistoryEvents(
 
 export function readSessionTranscriptHistoryEventPage(
   scope: SessionTranscriptReadScope,
-  options: { maxMessages: number; offset: number; maxBytes?: number },
+  options: { maxMessages: number; offset: number; maxBytes?: number; readOnly?: boolean },
 ): SessionTranscriptMessageEventPage {
-  return withCurrentProjectionSnapshot(scope, (projection) => {
-    const history = resolveVisibleHistoryProjection(projection);
-    const offset = Math.min(
-      Math.max(0, Math.floor(Number.isFinite(options.offset) ? options.offset : 0)),
-      history.total,
-    );
-    const maxMessages = Math.max(
-      0,
-      Math.floor(Number.isFinite(options.maxMessages) ? options.maxMessages : 0),
-    );
-    const endExclusive = Math.max(0, history.total - offset);
-    const requestedStart = Math.max(0, endExclusive - maxMessages);
-    const boundedStart =
-      options.maxBytes === undefined
-        ? requestedStart
-        : resolveRecentHistoryStart(
-            projection,
-            requestedStart,
-            endExclusive,
-            history,
-            Math.max(
-              1024,
-              Math.floor(Number.isFinite(options.maxBytes) ? options.maxBytes : 1024 * 1024),
-            ),
-            maxMessages,
-            false,
-          );
-    // A single oversized event must not defeat the hard limit or trap pagination.
-    // Skip its source position explicitly; callers disclose the omission to readers.
-    const omittedOversized = maxMessages > 0 && endExclusive > 0 && boundedStart === endExclusive;
-    const consumedStart = omittedOversized ? endExclusive - 1 : boundedStart;
-    return {
-      activeLeafEntryId: projection.state.leafEventId,
-      events: readVisibleHistoryRange(projection, boundedStart, endExclusive, history),
-      displaySource: history.displaySource,
-      totalMessages: history.total,
-      ...(options.maxBytes !== undefined && maxMessages > 0 && consumedStart > 0
-        ? { olderOffset: history.total - consumedStart }
-        : {}),
-      ...(omittedOversized ? { omittedOversized: true } : {}),
-    };
-  });
+  return withCurrentProjectionSnapshot(
+    scope,
+    (projection) => {
+      const history = resolveVisibleHistoryProjection(projection);
+      const offset = Math.min(
+        Math.max(0, Math.floor(Number.isFinite(options.offset) ? options.offset : 0)),
+        history.total,
+      );
+      const maxMessages = Math.max(
+        0,
+        Math.floor(Number.isFinite(options.maxMessages) ? options.maxMessages : 0),
+      );
+      const endExclusive = Math.max(0, history.total - offset);
+      const requestedStart = Math.max(0, endExclusive - maxMessages);
+      const boundedStart =
+        options.maxBytes === undefined
+          ? requestedStart
+          : resolveRecentHistoryStart(
+              projection,
+              requestedStart,
+              endExclusive,
+              history,
+              Math.max(
+                1024,
+                Math.floor(Number.isFinite(options.maxBytes) ? options.maxBytes : 1024 * 1024),
+              ),
+              maxMessages,
+              false,
+            );
+      // A single oversized event must not defeat the hard limit or trap pagination.
+      // Skip its source position explicitly; callers disclose the omission to readers.
+      const omittedOversized = maxMessages > 0 && endExclusive > 0 && boundedStart === endExclusive;
+      const consumedStart = omittedOversized ? endExclusive - 1 : boundedStart;
+      return {
+        activeLeafEntryId: projection.state.leafEventId,
+        events: readVisibleHistoryRange(projection, boundedStart, endExclusive, history),
+        displaySource: history.displaySource,
+        totalMessages: history.total,
+        ...(options.maxBytes !== undefined && maxMessages > 0 && consumedStart > 0
+          ? { olderOffset: history.total - consumedStart }
+          : {}),
+        ...(omittedOversized ? { omittedOversized: true } : {}),
+      };
+    },
+    options,
+  );
 }
 
 export function readSessionTranscriptHistoryEventCount(scope: SessionTranscriptReadScope): number {
@@ -682,22 +696,12 @@ export function readSessionTranscriptHistoryAnchorPage(
         }
       );
     }
-    const pageSize = Math.max(
-      1,
-      Math.floor(Number.isFinite(options.maxMessages) ? options.maxMessages : 1),
-    );
-    const anchorPosition = anchor.seq - 1;
-    const newerMessages = Math.floor(pageSize / 2);
-    const olderMessages = pageSize - newerMessages - 1;
-    const latestStart = Math.max(0, history.total - pageSize);
-    const start = Math.min(Math.max(0, anchorPosition - olderMessages), latestStart);
-    const endExclusive = Math.min(history.total, start + pageSize);
-    const readStart = Math.max(0, start - 1);
+    const range = resolveHistoryAnchorPageRange(history.total, anchor.seq - 1, options.maxMessages);
     return {
-      events: readVisibleHistoryRange(projection, readStart, endExclusive, history),
+      events: readVisibleHistoryRange(projection, range.readStart, range.endExclusive, history),
       found: true,
-      hasOverreadContext: readStart < start,
-      offset: history.total - endExclusive,
+      hasOverreadContext: range.hasOverreadContext,
+      offset: range.offset,
       displaySource: history.displaySource,
       totalMessages: history.total,
     };
