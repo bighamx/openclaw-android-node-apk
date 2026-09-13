@@ -8,6 +8,8 @@ Reading tabs share a private browser session, isolated from the dashboard's nati
 
 The tray's **Stop Gateway** and **Restart Gateway** actions request graceful shutdown. Running work can delay completion; **Start Gateway** brings a stopped local Gateway back online.
 
+After a connection drops, the companion keeps reconnecting while the service state is unknown. **Start Gateway** remains available only for a confirmed stopped service.
+
 Published AMD64 AppImages are built on Ubuntu 22.04 and require glibc 2.35 or
 newer plus a `libstdc++` that provides `GLIBCXX_3.4.30`. Ubuntu 22.04 and
 Debian 12 meet that ABI floor. RHEL 9 and Rocky Linux 9 ship glibc 2.34, so

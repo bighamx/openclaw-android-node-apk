@@ -2649,6 +2649,7 @@ describe("deliverOutboundPayloads", () => {
       "atomic message limit",
       expectedQueueStateDir,
       expect.objectContaining({ stateDir: expectedQueueStateDir }),
+      undefined,
     );
     expect(queueMocks.failDeliveryBeforePlatformSend).not.toHaveBeenCalled();
     expect(queueMocks.failDelivery).not.toHaveBeenCalled();
@@ -2690,6 +2691,7 @@ describe("deliverOutboundPayloads", () => {
       "Platform rejected the message before dispatch",
       expectedQueueStateDir,
       expect.objectContaining({ stateDir: expectedQueueStateDir }),
+      undefined,
     );
   });
 

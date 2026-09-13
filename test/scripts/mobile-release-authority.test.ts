@@ -39,6 +39,7 @@ const TOOLING_FILES = [
   "scripts/lib/direct-run.mjs",
   "scripts/lib/ios-release-plan.ts",
   "scripts/lib/ios-version.ts",
+  "scripts/lib/mobile-changelog.ts",
   "scripts/lib/mobile-version.ts",
   "scripts/lib/release-version.mjs",
 ] as const;

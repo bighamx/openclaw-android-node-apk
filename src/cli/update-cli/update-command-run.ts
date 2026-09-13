@@ -30,6 +30,7 @@ import {
   UPDATE_DEV_TARGET_REF_ENV,
 } from "../../infra/update-dev-target.js";
 import { resolveUpdateInstallRoot } from "../../infra/update-install-root.js";
+import { cleanupStaleManagedServiceUpdateHandoffs } from "../../infra/update-managed-service-handoff-cleanup.js";
 import {
   POST_CORE_UPDATE_CHANNEL_ENV,
   POST_CORE_UPDATE_ENV,
@@ -52,9 +53,14 @@ import {
 } from "../../infra/update-run-ledger.js";
 import type { UpdateRunRecord, UpdateRunStep } from "../../infra/update-run-record.js";
 import { assertUpdateRecoveryAdmission } from "../../infra/update-run-recovery-admission.js";
-import { inspectUpdateRecoveries, loadUpdateRecovery } from "../../infra/update-run-recovery.js";
+import {
+  inspectUpdateRecoveries,
+  loadUpdateRecovery,
+  type UpdateRecoveryFence,
+} from "../../infra/update-run-recovery.js";
 import { updateRunStepsFromResultStep } from "../../infra/update-run-step.js";
 import type { UpdateRunResult, UpdateStepProgress } from "../../infra/update-runner.js";
+import { loadInstalledPluginIndexInstallRecords } from "../../plugins/installed-plugin-index-records.js";
 import { defaultRuntime } from "../../runtime.js";
 import { resolveOpenClawStateSqlitePath } from "../../state/openclaw-state-db.paths.js";
 import { assertOpenClawStateWriteAllowedAtPath } from "../../state/openclaw-state-ownership.js";
@@ -72,6 +78,7 @@ import {
 import { UpdateCommandPendingRecoveryFailure } from "./update-command-result.js";
 import {
   resolveOwnedManagedUpdateEnv,
+  withOwnedManagedUpdateEnv,
   resolveServiceRefreshEnv,
 } from "./update-command-service-env.js";
 import {
@@ -574,4 +581,25 @@ export async function prepareUpdateCommand(opts: UpdateCommandOptions) {
     installKind,
     servicePlan,
   };
+}
+
+/** Prepare mutable runtime state only under the admitted installation owner. */
+export async function prepareMutableUpdateRuntime(
+  env: NodeJS.ProcessEnv | undefined,
+  fence: UpdateRecoveryFence,
+) {
+  return await withOwnedManagedUpdateEnv(env, async () => {
+    fence.assertCurrent();
+    await cleanupStaleManagedServiceUpdateHandoffs().catch(() => undefined);
+    fence.assertCurrent();
+    await assertOpenClawStateWriteAllowedAtPath({
+      databasePath: resolveOpenClawStateSqlitePath(process.env),
+    });
+    fence.assertCurrent();
+    await disableCurrentOpenClawUpdateLaunchdJob().catch(() => undefined);
+    fence.assertCurrent();
+    const records = await loadInstalledPluginIndexInstallRecords();
+    fence.assertCurrent();
+    return records;
+  });
 }

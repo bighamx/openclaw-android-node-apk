@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createDeferred } from "../../test/helpers/promise.js";
 import {
   getActiveGatewayRootWorkCount,
   resetGatewayWorkAdmission,
@@ -116,10 +117,7 @@ describe("session event wake target concurrency", () => {
 
   it("starts independent target wakes without waiting for a blocked agent", async () => {
     vi.useFakeTimers();
-    let finishBlockedWake: (() => void) | undefined;
-    const blockedWake = new Promise<void>((resolve) => {
-      finishBlockedWake = resolve;
-    });
+    const { promise: blockedWake, resolve: finishBlockedWake } = createDeferred();
     const handler = vi.fn(async (request: WakeRequest) => {
       if (request.agentId === "blocked") {
         await blockedWake;
@@ -181,10 +179,7 @@ describe("session event wake target concurrency", () => {
 
   it("starts newly requested target wakes while another agent remains blocked", async () => {
     vi.useFakeTimers();
-    let finishBlockedWake: (() => void) | undefined;
-    const blockedWake = new Promise<void>((resolve) => {
-      finishBlockedWake = resolve;
-    });
+    const { promise: blockedWake, resolve: finishBlockedWake } = createDeferred();
     const handler = vi.fn(async (request: WakeRequest) => {
       if (request.agentId === "blocked") {
         await blockedWake;
@@ -224,10 +219,7 @@ describe("session event wake target concurrency", () => {
 
   it("serializes redundant agent-plus-session identity with the same canonical session", async () => {
     vi.useFakeTimers();
-    let finishFirstWake: (() => void) | undefined;
-    const firstWakeFinished = new Promise<void>((resolve) => {
-      finishFirstWake = resolve;
-    });
+    const { promise: firstWakeFinished, resolve: finishFirstWake } = createDeferred();
     const handler = vi.fn(async (request: WakeRequest) => {
       if (request.reason === "session-only") {
         await firstWakeFinished;
@@ -542,10 +534,7 @@ describe("session event wake target concurrency", () => {
 
   it("does not apply an active target's old delay to a newly ready wake", async () => {
     vi.useFakeTimers();
-    let finishBlockedWake: (() => void) | undefined;
-    const blockedWake = new Promise<void>((resolve) => {
-      finishBlockedWake = resolve;
-    });
+    const { promise: blockedWake, resolve: finishBlockedWake } = createDeferred();
     const handler = vi.fn(async (request: WakeRequest) => {
       if (request.reason === "cron:blocked") {
         await blockedWake;
@@ -588,10 +577,7 @@ describe("session event wake target concurrency", () => {
 
   it("does not delay a ready target behind another target's deferred retry", async () => {
     vi.useFakeTimers();
-    let finishBlockedWake: (() => void) | undefined;
-    const blockedWake = new Promise<void>((resolve) => {
-      finishBlockedWake = resolve;
-    });
+    const { promise: blockedWake, resolve: finishBlockedWake } = createDeferred();
     let deferredAttempts = 0;
     const handler = vi.fn(async (request: WakeRequest) => {
       if (request.reason === "cron:blocked") {

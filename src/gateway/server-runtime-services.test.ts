@@ -763,9 +763,8 @@ describe("server-runtime-services", () => {
 
     expect(hoisted.assertQueuedConversationDeliveryAttemptAuthorized).toHaveBeenCalledWith(
       expect.objectContaining({
-        agentId: "main",
+        readCurrentConfig: expect.any(Function),
         operationId: "operation-recovery",
-        storePath: "/tmp/agent.sqlite",
         routeFingerprint: "route-recovery",
       }),
       expect.objectContaining({ agentId: "main", storePath: "/tmp/agent.sqlite" }),

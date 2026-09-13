@@ -1467,14 +1467,8 @@ describe("gateway startup config secret preflight", () => {
     });
     activateSecretsRuntimeSnapshotForTest(initial);
     const initialRevision = getActiveSecretsRuntimeSnapshotRevisionState();
-    let releasePublication: (() => void) | undefined;
-    const publicationBlocked = new Promise<void>((resolve) => {
-      releasePublication = resolve;
-    });
-    let publicationStarted: (() => void) | undefined;
-    const publicationEntered = new Promise<void>((resolve) => {
-      publicationStarted = resolve;
-    });
+    const { promise: publicationBlocked, resolve: releasePublication } = createDeferred();
+    const { promise: publicationEntered, resolve: publicationStarted } = createDeferred();
 
     const candidateActivation = activateRuntimeSecrets.activatePreparedSnapshotIfCurrent?.(
       candidate,

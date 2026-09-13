@@ -135,11 +135,10 @@ describe("new-session model metadata lifecycle", () => {
         savePreference,
       } = retainedAccountDraft();
       const { completion } = await chooseAccount();
-      expect(request).toHaveBeenLastCalledWith(
+      expect(request.mock.calls.at(-1)?.slice(0, 2)).toEqual([
         "models.list",
         { view: "configured", agentId: "main", authProfileId: account.authProfileId },
-        { signal: expect.any(AbortSignal), timeoutMs: 30_000 },
-      );
+      ]);
       expect(control.modelSelectionBlockedReason(agent)).toBe("Loading models…");
       preview.resolve({ ...connected, refreshFailed });
       await completion;
@@ -408,20 +407,13 @@ describe("new-session model metadata lifecycle", () => {
     remountedControl.reset();
   });
 
-  it("aborts a retired control request and gives the remounted control its own result", async () => {
+  it("retires a control immediately and gives its remount a fresh result after pending work finishes", async () => {
     const models: ModelCatalogEntry[] = [
       { id: "gpt-5.6-luna", name: "GPT-5.6 Luna", provider: "openai" },
     ];
     const pending = deferred<{ models: ModelCatalogEntry[] }>();
     const { context, request } = contextWith([]);
-    request.mockImplementationOnce((_method, _params, options?: { signal?: AbortSignal }) => {
-      options?.signal?.addEventListener(
-        "abort",
-        () => pending.reject(new DOMException("metadata request aborted", "AbortError")),
-        { once: true },
-      );
-      return pending.promise;
-    });
+    request.mockImplementationOnce(() => pending.promise);
     const firstControl = new NewSessionModelControl(() => undefined);
     firstControl.load(context, "main", true);
     await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
@@ -430,7 +422,8 @@ describe("new-session model metadata lifecycle", () => {
     request.mockResolvedValueOnce({ models });
     const remountedControl = new NewSessionModelControl(() => undefined);
     remountedControl.load(context, "main", true);
-    pending.resolve({ models });
+    expect(request).toHaveBeenCalledOnce();
+    pending.resolve({ models: [] });
 
     await vi.waitFor(() => {
       const container = renderControl(remountedControl, context);
@@ -440,7 +433,6 @@ describe("new-session model metadata lifecycle", () => {
       ).not.toBeNull();
     });
     expect(request).toHaveBeenCalledTimes(2);
-    expect(request.mock.calls[0]?.[2]?.signal.aborted).toBe(true);
     remountedControl.reset();
   });
 

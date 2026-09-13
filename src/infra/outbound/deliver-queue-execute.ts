@@ -97,6 +97,7 @@ export async function deliverOutboundPayloadsWithQueueCleanup(
       result ? { result } : { platformSendStarted: platformSendStarted && !allPayloadsSuppressed },
       platformQueueStateDir,
       params.deliveryQueueStateContext,
+      params.conversationDeliveryTarget,
     );
   };
   // Deliberately process-local: message_sent is best-effort after queue
@@ -634,6 +635,7 @@ export async function deliverOutboundPayloadsWithQueueCleanup(
                       permanentRejection.message,
                       platformQueueStateDir,
                       params.deliveryQueueStateContext,
+                      params.conversationDeliveryTarget,
                     );
                     ownerRejected = true;
                   }

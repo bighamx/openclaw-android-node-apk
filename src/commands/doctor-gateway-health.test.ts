@@ -235,12 +235,15 @@ describe("checkGatewayHealth", () => {
     },
   );
 
-  it("reports startup migration warnings without marking the gateway unhealthy", async () => {
-    const startupMigrationWarning = 'Retained legacy state. Run "openclaw doctor --fix".';
-    callGateway.mockResolvedValueOnce({ startupMigrationWarning }).mockResolvedValue({});
+  it.each([
+    ["startupMigrationWarning", "Startup migration warnings"],
+    ["startupRecoveryWarning", "Startup session recovery"],
+  ])("reports %s without marking the gateway unhealthy", async (field, title) => {
+    const warning = 'Inspect the affected state. Run "openclaw doctor".';
+    callGateway.mockResolvedValueOnce({ [field]: warning }).mockResolvedValue({});
     const runtime = { log: vi.fn(), error: vi.fn(), exit: vi.fn() };
     await expect(checkGatewayHealth({ runtime, cfg })).resolves.toMatchObject({ healthOk: true });
-    expect(note).toHaveBeenCalledWith(startupMigrationWarning, "Startup migration warnings");
+    expect(note).toHaveBeenCalledWith(warning, title);
   });
 
   it.each([true, false])("reports the Gateway's recorded SQLite warning=%s", async (warning) => {

@@ -8,6 +8,7 @@ import {
   resolveOutboundMediaAccessForSend,
   stripInternalRuntimeScaffoldingFromPayload,
 } from "./deliver-payload.js";
+import { resolveConversationDeliveryScope } from "./delivery-completion.js";
 import { releaseSpoolArtifacts, stageQueuePayloadMedia } from "./delivery-queue-media-spool.js";
 import { cancelDeliveryQueueMediaRetention } from "./delivery-queue-media-staging.js";
 import type { StableDeliveryPreparation } from "./delivery-queue-preparation.js";
@@ -50,6 +51,19 @@ export function restoreQueuedDeliveryCustody(
     legacyPreparedContentUnavailable: _legacyPreparedContentUnavailable,
     ...custody
   } = entry;
+  const target = params.conversationDeliveryTarget;
+  const completion = custody.deliveryCompletion;
+  if (target) {
+    if (completion?.kind !== "conversation") {
+      throw new Error("Conversation delivery target does not match durable custody");
+    }
+    resolveConversationDeliveryScope(
+      completion,
+      params.deliveryQueueStateDir,
+      params.deliveryQueueStateContext,
+      target,
+    );
+  }
   const payloads = acceptedPreparedOutboundEntries(custody.preparedBatch).map(
     (prepared) => prepared.payload,
   );

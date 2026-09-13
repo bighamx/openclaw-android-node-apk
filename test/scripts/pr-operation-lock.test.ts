@@ -928,7 +928,7 @@ describePosix("scripts/pr per-PR operation lock", () => {
         "    fi",
         '    printf "viewer:0\\n" >> "$OPENCLAW_TEST_GH_EVENTS"',
         '    printf \'HTTP/2.0 200 OK\\n\\n{"data":{"viewer":{"login":"fixture-user"}}}\\n\' ;;',
-        '  "pr view 42 --json headRefOid")',
+        '  "pr view 42 --json headRefOid"|"pr view 42 --json headRefName,headRefOid,headRepository,headRepositoryOwner")',
         '    cat "$OPENCLAW_TEST_PR_METADATA"; printf "head:0\\n" >> "$OPENCLAW_TEST_GH_EVENTS" ;;',
         '  "pr view 42 --json number,title,state,isDraft,author,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner,url,body,labels,assignees,changedFiles,additions,deletions,statusCheckRollup,files")',
         '    cat "$OPENCLAW_TEST_PR_METADATA"; printf "metadata:0\\n" >> "$OPENCLAW_TEST_GH_EVENTS" ;;',
@@ -1128,7 +1128,7 @@ describePosix("scripts/pr per-PR operation lock", () => {
           );
           expect(events.filter((event) => event.startsWith("fetch:"))).toEqual([
             ...Array.from({ length: existing ? 1 : 2 }, () => "fetch:main:0"),
-            "fetch:pull/42/head:pr-42:0",
+            `fetch:+${pullHead}:refs/heads/pr-42:0`,
           ]);
           expect(refExists(repoDir, lockRef, childEnv), output).toBe(false);
           return;

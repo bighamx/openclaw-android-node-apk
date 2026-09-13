@@ -63,6 +63,9 @@ export type StatusSummary = {
     rssBytes: number;
     heapUsedBytes: number;
     heapTotalBytes: number;
+    externalBytes?: number;
+    /** Included in externalBytes, not an additional memory category. */
+    arrayBuffersBytes?: number;
   };
   linkChannel?: {
     id: ChannelId;
@@ -77,6 +80,7 @@ export type StatusSummary = {
   channelSummary: string[];
   queuedSystemEvents: string[];
   startupMigrationWarning?: string;
+  startupRecoveryWarning?: string;
   secretEgressProxy?: import("../secrets/egress-proxy/certificates.js").SecretEgressCertificateStatus;
   degradedSecretOwners?: Array<{
     ownerKind: "account" | "capability" | "gateway" | "provider" | "route";

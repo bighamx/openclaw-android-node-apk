@@ -16,6 +16,7 @@ import {
   SLASH_COMMANDS,
 } from "../../lib/chat/commands.ts";
 import { extractText } from "../../lib/chat/message-extract.ts";
+import { clearModelCatalogCache } from "../../lib/model-catalog-cache.ts";
 import { createSessionCapability } from "../../lib/sessions/index.ts";
 import {
   createGatewayHarness,
@@ -4595,6 +4596,7 @@ describe("refreshChatMetadata", () => {
         kind === "picker" ? refreshChatModelCatalogOnDemand(state) : refreshChatMetadata(state);
       state.connected = false;
       retireChatMetadataRequests(state);
+      clearModelCatalogCache(state.client!);
       invalidateChatMetadataStore(state.client!);
       expect(state.chatModelCatalog).toEqual([]);
       expect(state.chatAccountSelection).toBeNull();
@@ -4757,11 +4759,11 @@ describe("refreshChatMetadata", () => {
     await refreshChatMetadata(state);
     expect(request.mock.calls.filter(([method]) => method === "models.list")).toHaveLength(3);
     expect(state.chatModelCatalog[0]?.id).toBe("other-model");
-    expect(request).toHaveBeenLastCalledWith(
-      "models.list",
-      { view: "configured", agentId: "other", sessionKey: "agent:other:main" },
-      { signal: expect.any(AbortSignal) },
-    );
+    expect(request).toHaveBeenLastCalledWith("models.list", {
+      view: "configured",
+      agentId: "other",
+      sessionKey: "agent:other:main",
+    });
   });
 
   it("ignores metadata after switching to a different agent", async () => {

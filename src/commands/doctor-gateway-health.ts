@@ -161,6 +161,9 @@ export async function checkGatewayHealth(params: {
     if (sqliteWalWarning) {
       note(sqliteWalWarning, "SQLite WAL");
     }
+    if (status.startupRecoveryWarning) {
+      note(sanitizeTerminalText(status.startupRecoveryWarning), "Startup session recovery");
+    }
     const secretDegradations = projectDoctorSecretRuntimeDegradations(status);
     if (secretDegradations.length > 0) {
       note(

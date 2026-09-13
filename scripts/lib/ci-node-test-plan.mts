@@ -7,6 +7,7 @@ import {
 } from "../../test/vitest/vitest.agents-paths.mjs";
 import { cliProcessTestFiles } from "../../test/vitest/vitest.cli-process-paths.mjs";
 import { commandsLightTestFiles } from "../../test/vitest/vitest.commands-light-paths.mjs";
+import { databaseWorkerCoreTestFiles } from "../../test/vitest/vitest.database-worker-core-paths.mjs";
 import {
   gatewayPluginTestFiles,
   gatewayServerExcludedTestFiles,
@@ -1198,14 +1199,11 @@ function resolveAgentCoreShardName(file: string): string {
 }
 
 function createAgentCoreSplitShards(): NodeTestSplitShard[] {
-  const isolatedTests = new Set([
-    ...agentVitestProjectOwners.spawnProductionBoundary.include,
-    ...agentVitestProjectOwners.coreIsolated.include,
-  ]);
+  const excludedTests = new Set(agentVitestProjectOwners.core.exclude);
   const groups = new Map<string, string[]>();
   for (const file of listTestFiles("src/agents")) {
     const name = relative("src/agents", file).replaceAll("\\", "/");
-    if (name.includes("/") || isolatedTests.has(file)) {
+    if (name.includes("/") || excludedTests.has(file)) {
       continue;
     }
     const shardName = resolveAgentCoreShardName(file);
@@ -1630,6 +1628,10 @@ function createInfraSplitShards(): NodeTestSplitShard[] {
     const shardName = resolveInfraShardName(file);
     groups.set(shardName, [...(groups.get(shardName) ?? []), file]);
   }
+  groups.set("core-runtime-infra-storage-state", [
+    ...(groups.get("core-runtime-infra-storage-state") ?? []),
+    ...databaseWorkerCoreTestFiles,
+  ]);
 
   return [
     "core-runtime-infra-approval-exec",
@@ -2298,6 +2300,7 @@ function listCompactToolingTestFiles(): string[] {
     ...unitFastFiles,
     TOOLING_DOCKER_TEST_FILE,
     ...toolingIsolatedTestFiles,
+    ...databaseWorkerCoreTestFiles,
   ]);
   return [...listTestFiles("test"), ...listTestFiles("src/scripts")].filter(
     (file) =>
@@ -2477,7 +2480,11 @@ const WHOLE_CONFIG_SPLIT_FILE_LISTERS = new Map<string, () => string[]>([
       listScopedOwnerTestFiles({
         root: "src/plugins",
         include: ["src/plugins/**/*.test.ts"],
-        exclude: ["src/plugins/contracts/**", "src/plugins/loader.test.ts"],
+        exclude: [
+          "src/plugins/contracts/**",
+          "src/plugins/loader.test.ts",
+          ...databaseWorkerCoreTestFiles,
+        ],
       }),
   ],
   [
@@ -2486,7 +2493,7 @@ const WHOLE_CONFIG_SPLIT_FILE_LISTERS = new Map<string, () => string[]>([
       listScopedOwnerTestFiles({
         root: "src/plugin-sdk",
         include: ["src/plugin-sdk/**/*.test.ts"],
-        exclude: bundledPluginDependentUnitTestFiles,
+        exclude: [...bundledPluginDependentUnitTestFiles, ...databaseWorkerCoreTestFiles],
       }),
   ],
   [

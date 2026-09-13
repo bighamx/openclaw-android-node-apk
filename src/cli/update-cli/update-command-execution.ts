@@ -536,6 +536,9 @@ export async function executeMutableUpdate(
     await recheckSchemas(admittedTargetSchemaVersions);
     assertUpdateCommandRecovery(opts);
     assertRequesterCurrent();
+    await params.prepareMutableUpdate(env, updateStepTimeoutMs);
+    assertUpdateCommandRecovery(opts);
+    assertRequesterCurrent();
     if (opts.run) {
       recordUpdateRunPhase(opts.run.runId, "activating", undefined, { env: opts.run.env });
     }

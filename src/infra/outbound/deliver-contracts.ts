@@ -22,7 +22,10 @@ import type {
   OutboundPayloadDeliveryOutcome,
   PlatformSendRoute,
 } from "./deliver-types.js";
-import type { DurableDeliveryCompletion } from "./delivery-completion.js";
+import type {
+  ConversationDeliveryTarget,
+  DurableDeliveryCompletion,
+} from "./delivery-completion.js";
 import type {
   QueuedReplyPayloadSendingHook,
   QueuedRenderedMessageBatchPlan,
@@ -271,5 +274,6 @@ export type DeliverOutboundPayloadsParams = DeliverOutboundPayloadsCoreParams & 
 
 /** Private owner facts excluded from SDK delivery parameters and stored payloads. */
 export type InternalDeliverOutboundPayloadsParams = DeliverOutboundPayloadsParams & {
+  conversationDeliveryTarget?: ConversationDeliveryTarget;
   deliveryQueueStateContext?: DeliveryQueueStateContext;
 };

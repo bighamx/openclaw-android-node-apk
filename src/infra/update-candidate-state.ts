@@ -23,11 +23,11 @@ import {
   SQLITE_READONLY_CHILD_ARG,
 } from "./runtime-process-entrypoints.js";
 import { resolveRuntimeWorkerArgv, resolveRuntimeWorkerUrl } from "./runtime-worker-url.js";
+import { removeTempDirectory } from "./sqlite-readonly-location-cleanup.js";
 import {
   createSqliteSnapshotStagingDirectory,
   inspectSqliteSchemaHeaderInProcess,
   prepareSqliteReadOnlyLocationSyncInProcess,
-  removeTempDirectory,
 } from "./sqlite-readonly-location.js";
 import { resolveAggregateSqliteInspectionTimeoutMs } from "./sqlite-readonly-worker.js";
 import { readSqliteUserVersion } from "./sqlite-user-version.js";

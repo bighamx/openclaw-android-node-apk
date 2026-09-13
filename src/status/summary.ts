@@ -5,6 +5,7 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { withAgentRosterFactsBatch } from "../agents/agent-scope-config.js";
 import { resolveAgentConfig } from "../agents/agent-scope.js";
 import { DEFAULT_CONTEXT_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
+import { readStartupRecoveryWarning } from "../agents/main-session-recovery/main-session-restart-recovery-diagnostics.js";
 import { areRuntimeModelRefsEquivalent } from "../agents/model-runtime-aliases.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { resolveProjectedSessionContextTokens } from "../config/sessions/context-token-provenance.js";
@@ -547,6 +548,7 @@ export async function getStatusSummary(
     channelSummary,
     queuedSystemEvents,
     startupMigrationWarning: readStartupMigrationWarning(includeSensitive),
+    startupRecoveryWarning: readStartupRecoveryWarning(includeSensitive),
     secretEgressProxy: getSecretEgressCertificateStatus(),
     degradedSecretOwners: listActiveDegradedSecretOwners().map(
       ({ ownerKind, ownerId, state, degradationState, paths: ownerPaths, reason }) => {

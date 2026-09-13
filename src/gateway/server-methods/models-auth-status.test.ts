@@ -135,6 +135,7 @@ vi.mock("../server-model-catalog-auth.js", () => ({
   readPreparedCatalog: mocks.readPreparedCatalog,
 }));
 
+import { createDeferred } from "../../../test/helpers/promise.js";
 import { modelsAuthOrderHandlers } from "./models-auth-order.js";
 import { clearModelAuthStatusUsageCache } from "./models-auth-status-usage-cache.js";
 import {
@@ -544,10 +545,7 @@ describe("models.authStatus", () => {
   });
 
   it("does not wait for full catalog discovery during auth status refresh", async () => {
-    let releaseDiscovery!: () => void;
-    const discovery = new Promise<void>((resolve) => {
-      releaseDiscovery = resolve;
-    });
+    const { promise: discovery, resolve: releaseDiscovery } = createDeferred();
     mocks.loadDeferredCatalog.mockImplementation(async (_context, agentId, options) => {
       const deferredOptions = requireRecord(options);
       if (deferredOptions.refreshFullCatalog !== false) {
@@ -1756,10 +1754,7 @@ describe("models.authStatus", () => {
       expect(warmed.providers[0]?.usage?.windows[0]?.usedPercent).toBe(10);
     });
 
-    let releaseRefresh: (() => void) | undefined;
-    const refreshBlocked = new Promise<void>((resolve) => {
-      releaseRefresh = resolve;
-    });
+    const { promise: refreshBlocked, resolve: releaseRefresh } = createDeferred();
     now.mockReturnValue(61_000);
     mocks.loadProviderUsageSummary.mockImplementationOnce(async () => {
       await refreshBlocked;
@@ -1806,10 +1801,7 @@ describe("models.authStatus", () => {
       expect(warmed.providers[0]?.usage?.windows[0]?.usedPercent).toBe(10);
     });
 
-    let releaseRefresh: (() => void) | undefined;
-    const refreshBlocked = new Promise<void>((resolve) => {
-      releaseRefresh = resolve;
-    });
+    const { promise: refreshBlocked, resolve: releaseRefresh } = createDeferred();
     mocks.loadProviderUsageSummary.mockImplementationOnce(async () => {
       await refreshBlocked;
       return emptyUsageSummary();

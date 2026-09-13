@@ -205,12 +205,10 @@ function startPendingOutboundDeliveryRecovery(params: {
               if (!attemptAuthority.routeFingerprint) {
                 return;
               }
-              assertQueuedConversationDeliveryAttemptAuthorized(
+              await assertQueuedConversationDeliveryAttemptAuthorized(
                 {
-                  config: getRuntimeConfig(),
-                  agentId: attemptAuthority.agentId,
+                  readCurrentConfig: getRuntimeConfig,
                   operationId: attemptAuthority.operationId,
-                  ...(attemptAuthority.storePath ? { storePath: attemptAuthority.storePath } : {}),
                   routeFingerprint: attemptAuthority.routeFingerprint,
                 },
                 {

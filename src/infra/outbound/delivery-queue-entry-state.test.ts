@@ -58,6 +58,7 @@ describe("delivery queue entry state", () => {
       fs.mkdirSync(injectedRoot);
       vi.stubEnv("OPENCLAW_STATE_DIR", originalRoot);
       const sendText = vi.fn(async (input: object) => {
+        expect(input).not.toHaveProperty("conversationDeliveryTarget");
         expect(input).not.toHaveProperty("deliveryQueueStateContext");
         expect(readQueuedEntries(originalRoot)).toHaveLength(1);
         expect(readQueuedEntries(injectedRoot)).toEqual([]);
@@ -73,6 +74,12 @@ describe("delivery queue entry state", () => {
         durability: "required" as const,
         requireUnknownSendReconciliation: false,
         deliveryIntentId: "public-state-selector",
+        conversationDeliveryTarget: {
+          agentId: "main",
+          databaseAgentId: "main",
+          storePath: path.join(injectedRoot, "agent.sqlite"),
+          stateDir: injectedRoot,
+        },
         deliveryQueueStateContext: { stateDir: injectedRoot },
         deliveryQueueStateDir: injectedRoot,
       };

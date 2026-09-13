@@ -28,13 +28,16 @@ import {
 import { expectNoNodeFsScans } from "../../src/test-utils/fs-scan-assertions.js";
 import { listGitTrackedFiles, sortRepoPaths, toRepoPath } from "../../src/test-utils/repo-files.js";
 import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
+import { createAgentsCoreVitestConfig } from "../vitest/vitest.agents-core.config.ts";
 import {
   agentVitestProjectOwners,
   embeddedAgentVitestProjectOwners,
 } from "../vitest/vitest.agents-paths.mjs";
+import { createAgentsVitestConfig } from "../vitest/vitest.agents.config.ts";
 import { cliProcessTestFiles } from "../vitest/vitest.cli-process-paths.mjs";
 import { createCliProcessVitestConfig } from "../vitest/vitest.cli-process.config.ts";
 import { createCommandsVitestConfig } from "../vitest/vitest.commands.config.ts";
+import { databaseWorkerCoreTestFiles } from "../vitest/vitest.database-worker-core-paths.mjs";
 import { createGatewayClientVitestConfig } from "../vitest/vitest.gateway-client.config.ts";
 import { createGatewayCoreVitestConfig } from "../vitest/vitest.gateway-core.config.ts";
 import { createGatewayMethodsIsolatedVitestConfig } from "../vitest/vitest.gateway-methods-isolated.config.ts";
@@ -42,18 +45,21 @@ import { createGatewayMethodsVitestConfig } from "../vitest/vitest.gateway-metho
 import { createGatewayServerIsolatedVitestConfig } from "../vitest/vitest.gateway-server-isolated.config.ts";
 import { isGatewayServerTestFile } from "../vitest/vitest.gateway-server-paths.mjs";
 import { createGatewayServerVitestConfig } from "../vitest/vitest.gateway-server.config.ts";
+import { createInfraVitestConfig } from "../vitest/vitest.infra.config.ts";
 import { createMediaUnderstandingVitestConfig } from "../vitest/vitest.media-understanding.config.ts";
 import { createMediaVitestConfig } from "../vitest/vitest.media.config.ts";
 import { createPluginSdkLightVitestConfig } from "../vitest/vitest.plugin-sdk-light.config.ts";
 import { createPluginSdkVitestConfig } from "../vitest/vitest.plugin-sdk.config.ts";
 import { createPluginsVitestConfig } from "../vitest/vitest.plugins.config.ts";
 import { createRuntimeConfigVitestConfig } from "../vitest/vitest.runtime-config.config.ts";
+import { createTasksVitestConfig } from "../vitest/vitest.tasks.config.ts";
 import { fullSuiteVitestShards } from "../vitest/vitest.test-shards.mjs";
 import { createToolingVitestConfig } from "../vitest/vitest.tooling.config.ts";
 import { createTuiVitestConfig } from "../vitest/vitest.tui.config.ts";
 import { createUiIsolatedVitestConfig } from "../vitest/vitest.ui-isolated.config.ts";
 import { createUiVitestConfig } from "../vitest/vitest.ui.config.ts";
 import { getUnitFastTestFilesForIncludePatterns } from "../vitest/vitest.unit-fast-paths.mjs";
+import { createUnitFastVitestConfig } from "../vitest/vitest.unit-fast.config.ts";
 import { createUnitVitestConfigWithOptions } from "../vitest/vitest.unit.config.ts";
 import { createWizardVitestConfig } from "../vitest/vitest.wizard.config.ts";
 
@@ -2999,8 +3005,46 @@ describe("scripts/lib/ci-node-test-plan.mts", () => {
       "core-runtime-infra-system-runtime",
       "core-runtime-infra-process",
     ]);
-    expect(actual).toEqual(listTestFiles("src/infra"));
+    expect(actual).toEqual(
+      [...listTestFiles("src/infra"), ...databaseWorkerCoreTestFiles].toSorted((a, b) =>
+        a.localeCompare(b),
+      ),
+    );
     expect(new Set(actual).size).toBe(actual.length);
+  });
+
+  it("keeps host-owned database consumers in forks and out of their former projects", () => {
+    const infra = createInfraVitestConfig({});
+    expect(infra.test?.pool).toBe("forks");
+    const admitted = new Set(listMatchedTestFiles(infra));
+    const former = new Set(
+      [
+        createUnitVitestConfigWithOptions({}),
+        createUnitFastVitestConfig(),
+        createAgentsCoreVitestConfig({}),
+        createAgentsVitestConfig({}),
+        createPluginSdkLightVitestConfig({}),
+        createPluginSdkVitestConfig({}),
+        createPluginsVitestConfig({}),
+        createTasksVitestConfig({}),
+        createToolingVitestConfig({}),
+      ].flatMap(listMatchedTestFiles),
+    );
+    for (const file of databaseWorkerCoreTestFiles) {
+      expect(admitted.has(file), file).toBe(true);
+      expect(former.has(file), file).toBe(false);
+    }
+    const selected = [
+      "src/plugin-state/plugin-state-store.test.ts",
+      "test/plugins/beam-http-identity.test.ts",
+    ];
+    const includeFile = join(tempDirs.make("database-worker-routing-"), "include.json");
+    writeFileSync(includeFile, JSON.stringify(selected));
+    expect(
+      listMatchedTestFiles(
+        createInfraVitestConfig({ OPENCLAW_VITEST_INCLUDE_FILE: includeFile }),
+      ).toSorted(),
+    ).toEqual(selected.toSorted());
   });
 
   it("covers every cron test exactly once across core runtime cron shards", () => {
@@ -3396,7 +3440,9 @@ describe("scripts/lib/ci-node-test-plan.mts", () => {
         relative("src/agents", file).replaceAll("\\", "/").includes("/"),
       ),
       ...agentVitestProjectOwners.spawnProductionBoundary.include,
-    ].toSorted((a, b) => a.localeCompare(b));
+    ]
+      .filter((file) => !databaseWorkerCoreTestFiles.includes(file))
+      .toSorted((a, b) => a.localeCompare(b));
 
     expect(actual).toEqual(expected);
     expect(new Set(actual).size).toBe(actual.length);

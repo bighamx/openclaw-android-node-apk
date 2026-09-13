@@ -204,6 +204,9 @@ it.each(
           exitCode: result.code,
           stderrTail: result.stderr.toString(),
         });
+        expect(recorded?.detail).toMatch(
+          /^Exit code: 1; (?:Caused by: )?no such column: "path".* \| ERR_SQLITE_ERROR$/u,
+        );
         expect(recorded?.detail).toContain("ERR_SQLITE_ERROR");
         expect(recorded?.detail).toContain('no such column: "path"');
         expect(recorded?.detail?.length).toBeLessThanOrEqual(300);

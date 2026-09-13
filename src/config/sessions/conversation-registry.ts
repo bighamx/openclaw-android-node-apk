@@ -61,10 +61,17 @@ export type ConversationRegistryScope = {
   storePath?: string;
 };
 
+export type PreparedConversationRegistryScope = {
+  agentId: string;
+  databaseAgentId: string;
+  env: NodeJS.ProcessEnv;
+  storePath: string;
+};
+
 export function resolveConversationRegistryScope(params: {
   agentId: string;
   config: OpenClawConfig;
-}): ConversationRegistryScope {
+}): PreparedConversationRegistryScope {
   const scope = {
     agentId: params.agentId,
     storePath: resolveSessionStorePathCore(params.config.session?.store, {
@@ -91,7 +98,7 @@ function pinConversationDatabaseScope(input: ConversationRegistryScope) {
 /** Keep the logical agent and physical store fixed while its synchronous write waits. */
 export function runConversationDatabaseWrite<T>(
   input: ConversationRegistryScope,
-  operation: (scope: ConversationRegistryScope) => T,
+  operation: (scope: PreparedConversationRegistryScope) => T,
 ): Promise<T> {
   const { options, scope } = pinConversationDatabaseScope(input);
   return withOpenClawAgentDatabaseWrite(options, () => operation(scope));

@@ -93,6 +93,10 @@ export class SessionCatalogLiveState {
   requestGeneration: number | null = null;
   sawChange = false;
   refreshPending = false;
+  readonly discoveryPages = new Map<
+    string,
+    { headCursor: string; nextCursor: string; depth: number; cursors: Set<string> }
+  >();
 
   private activationTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   private activationQueueIfActive = false;
@@ -126,7 +130,36 @@ export class SessionCatalogLiveState {
     this.presenceSignature = null;
     this.sawChange = false;
     this.refreshPending = false;
+    this.discoveryPages.clear();
     this.refetchOwner = null;
+  }
+
+  resumeDiscovery(catalogs: SessionCatalog[]): SessionCatalog[] {
+    const currentKeys = new Set<string>();
+    const result = catalogs.map((catalog) => ({
+      ...catalog,
+      hosts: catalog.hosts.map((host) => {
+        const key = sessionCatalogHostKey(catalog.id, host.hostId);
+        currentKeys.add(key);
+        const discovery = this.discoveryPages.get(key);
+        if (!discovery || host.error || catalog.error) {
+          return host;
+        }
+        // Recheck the head on every poll. A changed anchor or newly visible row
+        // starts fresh; empty prefixes only belong to the current finite sweep.
+        if (host.sessions.length > 0 || host.nextCursor !== discovery.headCursor) {
+          this.discoveryPages.delete(key);
+          return host;
+        }
+        return { ...host, nextCursor: discovery.nextCursor };
+      }),
+    }));
+    for (const key of this.discoveryPages.keys()) {
+      if (!currentKeys.has(key)) {
+        this.discoveryPages.delete(key);
+      }
+    }
+    return result;
   }
 
   mergeFinal(catalogs: SessionCatalog[], currentCatalogs: readonly SessionCatalog[]) {
@@ -316,8 +349,16 @@ export class SessionCatalogLiveState {
       );
     } else {
       const currentHost = currentCatalog.hosts.find((host) => host.hostId === freshHost.hostId);
+      const discovery = this.discoveryPages.get(hostKey);
+      if (
+        discovery &&
+        !freshHost.error &&
+        (freshHost.sessions.length > 0 || freshHost.nextCursor !== discovery.headCursor)
+      ) {
+        this.discoveryPages.delete(hostKey);
+      }
       const mergedHost =
-        (params.pageDepths.get(hostKey) ?? 0) > 0
+        (params.pageDepths.get(hostKey) ?? 0) > 0 || this.discoveryPages.has(hostKey)
           ? preserveExpandedCatalogHost(freshHost, currentHost)
           : freshHost;
       const hosts = currentHost
