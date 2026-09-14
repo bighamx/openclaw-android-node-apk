@@ -26,6 +26,7 @@ import {
   listSessionPendingInputs,
   readSessionPendingInput,
   stageSessionPendingInput,
+  withSessionPendingInputPersistence,
   type SessionPendingInputReceipt,
 } from "./session-accessor.pending-inputs.js";
 import { resolveSqliteScope, toDatabaseOptions } from "./session-accessor.sqlite-scope.js";
@@ -93,6 +94,36 @@ describe("committed pending input release", () => {
     }
     closeOpenClawAgentDatabasesForTest();
   });
+
+  it.each([false, true])(
+    "permits only exact committed persistence after custody closes (collected: %s)",
+    async (collected) => {
+      const source = await stage("closed-persistence");
+      const receipt = collected
+        ? bindSessionPendingInputSources([source], message("closed-aggregate"))!
+        : source;
+      if (collected) {
+        receipts.push(receipt);
+      }
+      await promote(receipt);
+      receipt.finish("cancelled");
+      expect(() => receipt.run(() => {})).toThrow("ownership ended");
+      const before = await loadTranscriptEvents(scope());
+      expect(
+        await withSessionPendingInputPersistence(receipt, () =>
+          appendTranscriptMessage(scope(), { message: receipt.message }),
+        ),
+      ).toMatchObject({ appended: false, messageId: receipt.inputId });
+      expect(await loadTranscriptEvents(scope())).toEqual(before);
+      await replaceTranscriptEvents(scope(), []);
+      await expect(
+        withSessionPendingInputPersistence(receipt, () =>
+          appendTranscriptMessage(scope(), { message: receipt.message }),
+        ),
+      ).rejects.toThrow("custody ended");
+      expect(await loadTranscriptEvents(scope())).toEqual([]);
+    },
+  );
 
   it.each(
     [false, true].flatMap((collected) =>

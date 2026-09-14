@@ -38,15 +38,13 @@ import {
 import { formatUiError } from "../../lib/format-error.ts";
 import { loadModelCatalog, modelCatalogRefreshError } from "../../lib/model-catalog-store.ts";
 import { shouldHandleNavigationClick } from "../../lib/navigation-click.ts";
-import {
-  resolveSessionNavigationAgentId,
-  sessionNavigationTarget,
-} from "../../lib/sessions/route-navigation.ts";
+import { resolveSessionNavigationAgentId } from "../../lib/sessions/route-navigation.ts";
 import { GatewayPageController } from "../../lit/gateway-page-controller.ts";
 import { OpenClawLightDomElement } from "../../lit/openclaw-element.ts";
 import { SubscriptionsController } from "../../lit/subscriptions-controller.ts";
 import { buildCronSuggestions, THINKING_SUGGESTIONS } from "./form-suggestions.ts";
 import { resolveCronRouteData } from "./route-model.ts";
+import { CronRunTranscript } from "./run-transcript.ts";
 import { renderCron, type CronDetailTab, type CronListTab } from "./view.ts";
 
 registerCronEnglish();
@@ -64,6 +62,17 @@ class CronPage extends OpenClawLightDomElement {
   @state() private detailTab: CronDetailTab = "settings";
   @state() private heartbeatScratch = "";
 
+  private readonly runTranscript = new CronRunTranscript(this, () => {
+    const scope = this.gateway.capture();
+    const cron = this.cron;
+    return scope
+      ? {
+          client: scope.client,
+          epoch: this.gateway.epoch,
+          isCurrent: () => this.gateway.isCurrent(scope) && this.cron === cron,
+        }
+      : null;
+  });
   private pendingRouteData: ReturnType<typeof resolveCronRouteData> | null = null;
   private routeJobRequested = false;
   private highlightedRunId: string | null = null;
@@ -134,6 +143,9 @@ class CronPage extends OpenClawLightDomElement {
             this.gateway.connected &&
             this.gateway.client
           ) {
+            if (event.event === "task") {
+              this.runTranscript.observe(event.payload);
+            }
             if (event.event === "cron") {
               void this.refreshCron({ tableFilters: true, coalesce: true });
             } else if (
@@ -152,6 +164,7 @@ class CronPage extends OpenClawLightDomElement {
   }
 
   private resetGatewayState(snapshot?: ApplicationContext["gateway"]["snapshot"]) {
+    this.runTranscript.close();
     this.clearHeartbeatScratch();
     invalidateCronRefresh(this.cron);
     const connected = snapshot?.phase === "connected";
@@ -207,6 +220,7 @@ class CronPage extends OpenClawLightDomElement {
 
   override willUpdate(changed: PropertyValues) {
     if (changed.has("routeSearch")) {
+      this.runTranscript.close();
       this.cron.cronError = null;
       const routeData = resolveCronRouteData(this.routeSearch);
       // A route filter owns a new inventory snapshot; late responses keep the retired state.
@@ -559,6 +573,7 @@ class CronPage extends OpenClawLightDomElement {
               selection: this.context.agentSelection,
             }),
       })}
+      ${this.runTranscript.render()}
       ${renderSettingsWorkspace(
         renderCron({
           basePath: this.context.basePath,
@@ -654,15 +669,7 @@ class CronPage extends OpenClawLightDomElement {
               updateCronRunsFilter(cronState, patch);
               await loadCronRuns(cronState);
             }),
-          onNavigateToChat: (sessionKey) =>
-            this.context.navigate(
-              "chat",
-              sessionNavigationTarget({
-                context: this.context,
-                face: "chat",
-                sessionKey,
-              }).options,
-            ),
+          onViewRunTranscript: (entry) => void this.runTranscript.open(entry),
         }),
       )}
     `;

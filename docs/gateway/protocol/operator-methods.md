@@ -126,7 +126,9 @@ Methods an operator client calls on behalf of a person: helper reads, exec appro
 Ordinary requests read the published catalog without starting provider discovery.
 Views select rows; they do not decide whether discovery runs. If the owner is not
 published yet, the request reports that the model catalog is not ready. A result
-whose owner becomes stale during projection is rejected for retry.
+whose owner becomes stale during projection is rejected with `UNAVAILABLE`,
+`retryable: true`, and `retryAfterMs: 0`. The Control UI shares one retry across
+catalog consumers, retaining cancellation and any explicit request deadline.
 
 - `preparedOnly: true` remains supported for automatic clients. Ordinary reads
   are passive with or without this flag.
@@ -158,6 +160,10 @@ The Gateway advertises `session-scoped-model-catalog` for this contract.
 `chat.metadata` remains available to legacy clients; the Control UI reads models
 directly and keeps commands in its metadata cache. Opening a conversation picker
 performs a passive read, without a model-cache timer or implicit provider refresh.
+During metadata preparation, a request can use its agent's ready command list and
+model projection while other agents are still preparing. Shared model or account
+replacement still gates these reads; metadata refresh completion waits for all
+agents.
 The Models settings page uses `preparedOnly: true` for its initial load, then
 requests `refresh: true` the first time a primary, utility, or fallback model
 picker opens for the current core-data snapshot. Pending opens share that page's request; completed reopens read the

@@ -1,3 +1,4 @@
+import "../../styles/chat/startup-layout.css";
 import {
   normalizeStringEntries,
   uniqueStrings,
@@ -152,7 +153,7 @@ type CronProps = {
     cronRunsQuery?: string;
     cronRunsSortDir?: CronSortDir;
   }) => void | Promise<void>;
-  onNavigateToChat?: (sessionKey: string) => void;
+  onViewRunTranscript?: (entry: CronRunLogEntry) => void;
 };
 
 // ── Shared option helpers ──

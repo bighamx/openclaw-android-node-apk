@@ -91,6 +91,7 @@ export function waitForCliProcessStderrMarker(
 /** Runs one CLI child to completion under {@link CLI_PROCESS_DEADLOCK_GUARD_MS}. */
 export async function runCliProcessChild(params: {
   nodeArgs: string[];
+  nodeExecutable?: string;
   env: NodeJS.ProcessEnv;
   cwd?: string;
   input?: string;
@@ -99,11 +100,13 @@ export async function runCliProcessChild(params: {
   timeoutMs?: number;
 }): Promise<CliProcessChildResult> {
   const timeoutMs = params.timeoutMs ?? CLI_PROCESS_DEADLOCK_GUARD_MS;
+  const executable = params.nodeExecutable ?? process.execPath;
   // CLI children use the test runner's V8 policy without inheriting its preloads.
-  const nodeArgs = process.versions.bun
-    ? params.nodeArgs
-    : [...resolveVitestNodeArgs(params.env), ...params.nodeArgs];
-  const child = spawn(process.execPath, nodeArgs, {
+  const nodeArgs =
+    process.versions.bun && params.nodeExecutable === undefined
+      ? params.nodeArgs
+      : [...resolveVitestNodeArgs(params.env), ...params.nodeArgs];
+  const child = spawn(executable, nodeArgs, {
     cwd: params.cwd ?? path.resolve("."),
     env: params.env,
     stdio: ["pipe", "pipe", "pipe"],

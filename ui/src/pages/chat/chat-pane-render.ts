@@ -57,7 +57,6 @@ import {
 } from "./chat-state-route.ts";
 import type { ChatProps } from "./chat-view.ts";
 import { getChatComposerState } from "./components/chat-composer-state.ts";
-import { chatPullRequestId } from "./components/chat-pull-requests.ts";
 import {
   openSessionWorkspaceFile,
   revealSessionWorkspaceFile,
@@ -70,6 +69,7 @@ import { resolveChatProjectionRunId } from "./tool-stream-status.ts";
 import { workspaceResultConflictFromPlacement } from "./workspace-conflict.ts";
 
 export class ChatPane extends ChatPaneLayoutRender {
+  private presentationUserId: string | null = null;
   // Stable absent inputs let catalog renders reuse the transcript cache.
   private readonly emptyTranscriptItems: [] = [];
 
@@ -226,6 +226,9 @@ export class ChatPane extends ChatPaneLayoutRender {
       presenceEntries: readPresenceEntries(this.presencePayload),
       presenceInstanceId: gatewaySnapshot.client?.instanceId,
     });
+    if (selfUser?.identity?.type === "profile") {
+      this.presentationUserId = selfUser.identity.id;
+    }
     const projectionRunId = resolveChatProjectionRunId({
       localRunId: state.chatRunId,
       activeRunIds: selectedSession?.activeRunIds,
@@ -527,10 +530,9 @@ export class ChatPane extends ChatPaneLayoutRender {
       permissionPicker: composerControls?.permissionPicker,
       backgroundTasks: catalogKey ? undefined : backgroundTasks,
       ...this.suggestionChatProps(state.connected, selectedSessionArchived, multiIdentity),
-      pullRequests: this.sessionPullRequests.filter(
-        (pullRequest) => !this.dismissedSessionPullRequestIds.has(chatPullRequestId(pullRequest)),
-      ),
+      pullRequests: this.visibleSessionPullRequests,
       githubRepo: this.githubRepo,
+      pullRequestsGateway: this.context.gateway,
       pullRequestsBranch: this.sessionPullRequestsBranch,
       pullRequestsStatus: this.sessionPullRequestsStatus,
       pullRequestsExpanded: this.sessionPullRequestsExpanded,
@@ -664,7 +666,7 @@ export class ChatPane extends ChatPaneLayoutRender {
         agentsList: this.context.agents.state.agentsList,
         hello: this.context.gateway.snapshot.hello,
       }),
-      userId: selfUser?.identity?.type === "profile" ? selfUser.identity.id : null,
+      userId: this.presentationUserId,
       userName: selfUser?.name ?? state.userName,
       userAvatar: selfUser?.avatarUrl ?? state.userAvatar,
       personActivity: personActivityRouting(this.context),

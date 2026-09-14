@@ -124,7 +124,10 @@ export async function runHeartbeatOnce(opts: HeartbeatRunOptions): Promise<Heart
               }
             : {}),
           abortSignal: signal,
-          timeoutOverrideSeconds: resolveHeartbeatTimeoutOverrideSeconds(cfg, heartbeat),
+          // Admitted task continuations retain their ordinary agent budget even after wake coalescing.
+          timeoutOverrideSeconds: prepared.hasTaskContinuation
+            ? undefined
+            : resolveHeartbeatTimeoutOverrideSeconds(cfg, heartbeat),
           bootstrapContextMode: heartbeat?.lightContext === true ? "lightweight" : undefined,
           disableBlockStreaming: true,
           suppressToolProgressMessages: true,

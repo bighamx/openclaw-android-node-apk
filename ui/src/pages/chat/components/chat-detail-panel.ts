@@ -662,6 +662,7 @@ class ChatDetailPanel extends OpenClawLightDomElement {
       : 0;
     return renderSidebarPanel({
       content: this.visibleContent,
+      showingRawText: this.showingRawText,
       error: file ? null : this.error,
       onRetry: this.retryFileEditor,
       fileView: {

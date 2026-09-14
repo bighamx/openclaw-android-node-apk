@@ -285,10 +285,7 @@ export async function stageSessionPendingInput(
             finish: () => {},
           };
         }
-        const hasOwner = readSessionPendingInputOwnerIds(database, [existing]).has(
-          existing.input_id,
-        );
-        if (hasOwner) {
+        if (readSessionPendingInputOwnerIds(database, [existing]).has(existing.input_id)) {
           throw new Error("Pending input is already admitted; wait for its current turn");
         }
         if (
@@ -450,7 +447,7 @@ export async function stageSessionPendingInput(
 function readPendingInputRows(
   scope: PendingInputScope,
   options: { limit?: number; before?: number; id?: string },
-): { rows: SessionPendingInputRow[]; total: number; nextBefore?: number } {
+): { rows: SessionPendingInputRow[]; total: number | undefined; nextBefore?: number } {
   const resolved = resolveSqliteTranscriptScope(scope);
   const databaseOptions = toDatabaseOptions(resolved);
   const limit = Math.max(1, Math.min(20, Math.trunc(options.limit ?? 20)));
@@ -467,10 +464,12 @@ function readPendingInputRows(
       base = base.where("consumed_event_id", "is", null);
     }
     const total =
-      executeSqliteQueryTakeFirstSync(
-        database.db,
-        base.select(db.fn.count<number>("input_id").as("total")),
-      )?.total ?? 0;
+      options.id === undefined
+        ? (executeSqliteQueryTakeFirstSync(
+            database.db,
+            base.select(db.fn.count<number>("input_id").as("total")),
+          )?.total ?? 0)
+        : undefined;
     let query = base.orderBy("seq", "desc").limit(limit + 1);
     if (options.before !== undefined) {
       query = query.where("seq", "<", options.before);
@@ -528,7 +527,7 @@ function readPendingInputRows(
         database.db,
         db
           .selectFrom("session_pending_inputs")
-          .selectAll()
+          .select(["input_id", "session_key", "session_id", "lifecycle_generation"])
           .where("input_id", "in", snapshot.staleIds)
           .where("state", "=", "queued")
           .where("consumed_event_id", "is", null),
@@ -563,7 +562,7 @@ export function listSessionPendingInputs(
   const { rows, total, nextBefore } = readPendingInputRows(scope, options);
   return {
     items: rows.toReversed().map(projectSessionPendingInput),
-    total,
+    total: total ?? 0,
     ...(nextBefore !== undefined ? { nextBefore } : {}),
   };
 }

@@ -56,20 +56,15 @@ const GatewayContextWindowOptionSchema = closedObject({
   contextWindow: Type.Integer({ minimum: 1 }),
 });
 
-export const ModelChoiceSchema = closedObject({
-  id: NonEmptyString,
-  name: NonEmptyString,
-  provider: NonEmptyString,
-  alias: Type.Optional(NonEmptyString),
-  tags: Type.Optional(Type.Array(NonEmptyString)),
+const ModelUnavailableReasonSchema = Type.Union([
+  Type.Literal("missing-auth"),
+  Type.Literal("auth-failed"),
+  Type.Literal("cooldown"),
+]);
+
+const ModelRuntimeProperties = {
   available: Type.Optional(Type.Boolean()),
-  unavailableReason: Type.Optional(
-    Type.Union([
-      Type.Literal("missing-auth"),
-      Type.Literal("auth-failed"),
-      Type.Literal("cooldown"),
-    ]),
-  ),
+  unavailableReason: Type.Optional(ModelUnavailableReasonSchema),
   /** Earliest known retry time in epoch milliseconds, only for unavailable models. */
   unavailableUntil: Type.Optional(Type.Integer({ minimum: 0 })),
   contextWindow: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -84,8 +79,6 @@ export const ModelChoiceSchema = closedObject({
   /** Local selected-request applicability, not preference or upstream fulfillment. */
   supportsFastMode: Type.Optional(Type.Boolean()),
   supportsTools: Type.Optional(Type.Boolean()),
-  agentRuntime: Type.Optional(GatewayAgentRuntimeSchema),
-  apiKeySupported: Type.Optional(Type.Boolean()),
   input: Type.Optional(
     Type.Array(
       Type.Union([
@@ -97,6 +90,27 @@ export const ModelChoiceSchema = closedObject({
       ]),
     ),
   ),
+};
+
+/** Runtime-specific capabilities for an additional choice of the same canonical model. */
+export const ModelRuntimeChoiceSchema = closedObject({
+  agentRuntime: GatewayAgentRuntimeSchema,
+  ...ModelRuntimeProperties,
+  unavailableReason: Type.Optional(
+    Type.Union([ModelUnavailableReasonSchema, Type.Literal("unsupported-runtime")]),
+  ),
+});
+
+export const ModelChoiceSchema = closedObject({
+  id: NonEmptyString,
+  name: NonEmptyString,
+  provider: NonEmptyString,
+  alias: Type.Optional(NonEmptyString),
+  tags: Type.Optional(Type.Array(NonEmptyString)),
+  ...ModelRuntimeProperties,
+  agentRuntime: Type.Optional(GatewayAgentRuntimeSchema),
+  apiKeySupported: Type.Optional(Type.Boolean()),
+  runtimeChoices: Type.Optional(Type.Array(ModelRuntimeChoiceSchema, { maxItems: 8 })),
 });
 
 /** Semantic owner of an agent roster entry. */
@@ -1513,6 +1527,7 @@ export type AgentsFilesSetResult = Static<typeof AgentsFilesSetResultSchema>;
 export type AgentsListParams = Static<typeof AgentsListParamsSchema>;
 export type AgentsListResult = Static<typeof AgentsListResultSchema>;
 export type ModelChoice = Static<typeof ModelChoiceSchema>;
+export type ModelRuntimeChoice = Static<typeof ModelRuntimeChoiceSchema>;
 export type ModelsListParams = Static<typeof ModelsListParamsSchema>;
 export type ModelCatalogProviderOutcome = Static<typeof ModelCatalogProviderOutcomeSchema>;
 export type ModelsListResult = Static<typeof ModelsListResultSchema>;

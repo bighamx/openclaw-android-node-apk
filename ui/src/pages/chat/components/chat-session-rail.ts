@@ -1,3 +1,4 @@
+import "../../../styles/chat/session-rail.css";
 import { html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { ref } from "lit/directives/ref.js";
@@ -242,6 +243,8 @@ export class ChatSessionRailElement extends OpenClawLightDomElement {
   @property({ attribute: false }) onVisibilityChange?: (visible: boolean) => void;
   @property({ type: Boolean }) embedded = false;
   @property({ type: Boolean }) presented = false;
+  @property({ attribute: false }) focusRequest?: () => boolean;
+  @property({ attribute: false }) canFocus?: () => boolean;
   @state() private now = Date.now();
 
   private readonly railState = new ChatSessionRailState();
@@ -305,9 +308,16 @@ export class ChatSessionRailElement extends OpenClawLightDomElement {
   }
 
   override updated(changedProperties: PropertyValues<this>) {
-    // Retained tabs stay mounted while hidden. Only a presentation edge owns
-    // focus; history, replies, and reconnects must not interrupt another input.
-    if (changedProperties.has("presented") && this.presented) {
+    // Retained tabs stay mounted while hidden. Presentation and explicit commands
+    // own focus; history, ordinary replies, and reconnects must not interrupt it.
+    const focusRequested = changedProperties.has("focusRequest")
+      ? this.focusRequest?.()
+      : undefined;
+    if (
+      this.presented &&
+      (this.canFocus?.() ?? true) &&
+      (focusRequested ?? changedProperties.has("presented"))
+    ) {
       this.querySelector<HTMLTextAreaElement>(".chat-session-rail__input:not(:disabled)")?.focus({
         preventScroll: true,
       });

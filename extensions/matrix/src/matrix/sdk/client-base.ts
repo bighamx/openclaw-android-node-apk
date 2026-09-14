@@ -15,6 +15,7 @@ import type { PinnedDispatcherPolicy } from "openclaw/plugin-sdk/ssrf-dispatcher
 import type { SsrFPolicy } from "openclaw/plugin-sdk/ssrf-runtime";
 import { SqliteBackedMatrixSyncStore } from "../client/file-sync-store.js";
 import { createMatrixJsSdkClientLogger } from "../client/logging.js";
+import type { MatrixSyncStateRuntime } from "../crypto-state-store.js";
 import { createMatrixStartupAbortError, throwIfMatrixStartupAborted } from "../startup-abort.js";
 import {
   isMatrixReadySyncState,
@@ -83,6 +84,7 @@ export abstract class MatrixClientBase {
   protected readonly syncStore?: SqliteBackedMatrixSyncStore;
   protected readonly idbSnapshotPath?: string;
   protected readonly cryptoDatabasePrefix?: string;
+  protected readonly stateRuntime?: MatrixSyncStateRuntime;
   protected bridgeRegistered = false;
   protected started = false;
   protected cryptoBootstrapped = false;
@@ -163,6 +165,7 @@ export abstract class MatrixClientBase {
       autoBootstrapCrypto?: boolean;
       ssrfPolicy?: SsrFPolicy;
       dispatcherPolicy?: PinnedDispatcherPolicy;
+      stateRuntime?: MatrixSyncStateRuntime;
     } = {},
   ) {
     this.transactionScopeHomeserver = homeserver;
@@ -187,6 +190,7 @@ export abstract class MatrixClientBase {
       : undefined;
     this.idbSnapshotPath = opts.idbSnapshotPath;
     this.cryptoDatabasePrefix = opts.cryptoDatabasePrefix;
+    this.stateRuntime = opts.stateRuntime;
     this.selfUserId = opts.userId?.trim() || null;
     this.autoBootstrapCrypto = opts.autoBootstrapCrypto !== false;
     this.recoveryKeyStore = new MatrixRecoveryKeyStore(opts.recoveryKeyPath);
@@ -604,6 +608,7 @@ export abstract class MatrixClientBase {
         snapshotPath: this.idbSnapshotPath,
         databasePrefix: this.cryptoDatabasePrefix,
         strict: true,
+        stateRuntime: this.stateRuntime,
       });
       this.syncStore?.markCleanShutdown();
       await this.syncStore?.flush();
@@ -710,7 +715,7 @@ export abstract class MatrixClientBase {
     const { persistIdbToDisk, restoreIdbFromDisk } = await loadMatrixCryptoRuntime();
 
     // Restore persisted IndexedDB crypto store before initializing WASM crypto.
-    await restoreIdbFromDisk(this.idbSnapshotPath);
+    await restoreIdbFromDisk(this.idbSnapshotPath, this.stateRuntime);
     throwIfMatrixStartupAborted(abortSignal);
 
     try {
@@ -725,6 +730,7 @@ export abstract class MatrixClientBase {
         snapshotPath: this.idbSnapshotPath,
         databasePrefix: this.cryptoDatabasePrefix,
         abortSignal,
+        stateRuntime: this.stateRuntime,
       });
       throwIfMatrixStartupAborted(abortSignal);
 
@@ -739,6 +745,7 @@ export abstract class MatrixClientBase {
           snapshotPath: this.idbSnapshotPath,
           databasePrefix: this.cryptoDatabasePrefix,
           abortSignal: abortController.signal,
+          stateRuntime: this.stateRuntime,
         })
           .catch(noop)
           .finally(() => {

@@ -569,18 +569,6 @@ function runSuccessfulWindowsHydrate(...args: string[]): ParsedWrapperRun {
   return runSuccessfulWrapper(azureProviderHelp, windowsHydrateArgs(...args));
 }
 
-const remotePosixHydratedModulesBootstrap =
-  'openclaw_modules_dir="${CRABBOX_PNPM_MODULES_DIR:-${PNPM_CONFIG_MODULES_DIR:-}}"; if [ -n "$openclaw_modules_dir" ] && [ -d "$openclaw_modules_dir" ] && [ ! -e node_modules ]; then ln -s "$openclaw_modules_dir" node_modules; fi;';
-
-function expectHydratedPosixShell(
-  run: Pick<ParsedWrapperRun, "output" | "remoteCommand">,
-  command: string,
-): void {
-  expect(run.output.args).toContain("--shell");
-  expect(run.remoteCommand).toContain(remotePosixHydratedModulesBootstrap);
-  expect(run.remoteCommand).toContain(command);
-}
-
 function normalizeShellLineEndings(value: string): string {
   return value.replace(/\r\n/g, "\n");
 }
@@ -969,9 +957,9 @@ describe("scripts/crabbox-wrapper", () => {
       "name=proof",
       "--provider",
       "local-container",
-      "--shell",
       "--",
-      `${remotePosixHydratedModulesBootstrap} echo ok`,
+      "echo",
+      "ok",
     ]);
   });
 
@@ -1003,7 +991,7 @@ describe("scripts/crabbox-wrapper", () => {
     expect(output.args).not.toContain("blacksmith-testbox");
     expect(output.args).toContain("90m");
     expect(output.args).toContain("240m");
-    expectHydratedPosixShell({ output, remoteCommand }, "corepack pnpm check:changed");
+    expect(remoteCommand).toContain("corepack pnpm check:changed");
     expect(result.stderr).toContain("route workload=ci-fast selected=daytona");
   });
 
@@ -2066,9 +2054,8 @@ esac
       "macos",
       "--market",
       "on-demand",
-      "--shell",
       "--",
-      `${remotePosixHydratedModulesBootstrap} 'echo ok'`,
+      "echo ok",
     ]);
   });
 
@@ -2351,15 +2338,7 @@ esac
       "--",
       "echo ok",
     ]);
-    expect(output.args).toEqual([
-      "run",
-      "--provider",
-      "aws",
-      ...options,
-      "--shell",
-      "--",
-      `${remotePosixHydratedModulesBootstrap} 'echo ok'`,
-    ]);
+    expect(output.args).toEqual(["run", "--provider", "aws", ...options, "--", "echo ok"]);
   });
 
   it("bootstraps only Node for raw AWS macOS node commands", () => {
@@ -2465,9 +2444,7 @@ esac
       "bash -lc 'env -i PATH=/usr/bin:/bin pnpm --version'",
     );
     expect(remoteCommand).not.toContain("openclaw_crabbox_bootstrap_macos_js");
-    expect(remoteCommand).toBe(
-      `${remotePosixHydratedModulesBootstrap} bash -lc 'env -i PATH=/usr/bin:/bin pnpm --version'`,
-    );
+    expect(remoteCommand).toBe("bash -lc 'env -i PATH=/usr/bin:/bin pnpm --version'");
   });
 
   it.each([
@@ -2585,9 +2562,9 @@ esac
       "macos",
       "--market",
       "on-demand",
-      "--shell",
       "--",
-      `${remotePosixHydratedModulesBootstrap} echo scripts/package-mac-app.sh`,
+      "echo",
+      "scripts/package-mac-app.sh",
     ]);
   });
 
@@ -2703,10 +2680,10 @@ esac
       expected: "exec env -i PATH=/usr/bin:/bin pnpm --version",
     },
     { command: ["env", "-i", "-S", "pnpm --version"], expected: "env -i -S 'pnpm --version'" },
-  ])("keeps unshimmable env commands outside JS bootstrap: $expected", ({ command, expected }) => {
-    const run = runSuccessfulMacosCommand(command);
-    expect(run.remoteCommand).not.toContain("openclaw_crabbox_bootstrap_macos_js");
-    expectHydratedPosixShell(run, expected);
+  ])("keeps unshimmable env commands outside JS bootstrap: $expected", ({ command }) => {
+    const { output } = runSuccessfulMacosCommand(command);
+    expect(output.args.slice(output.args.indexOf("--") + 1)).toEqual(command);
+    expect(output.args).not.toContain("--shell");
   });
 
   it("bootstraps env commands behind command when they keep the inherited PATH", () => {
@@ -3022,9 +2999,9 @@ esac
       "aws",
       "--target",
       "linux",
-      "--shell",
       "--",
-      `${remotePosixHydratedModulesBootstrap} pnpm --version`,
+      "pnpm",
+      "--version",
     ]);
   });
 
@@ -3074,16 +3051,8 @@ esac
         'mklink /J "$openclawWorkspaceModules" "$openclawModulesDir"',
       );
       expect(run.remoteCommand).toContain(expected);
-      expect(run.remoteCommand).not.toContain('ln -s "$PNPM_CONFIG_MODULES_DIR" node_modules');
     },
   );
-
-  it("restores hydrated node_modules before POSIX run commands", () => {
-    expectHydratedPosixShell(
-      runSuccessfulDefaultWrapper(["run", "--provider", "aws", "--", "echo", "ok"]),
-      "echo ok",
-    );
-  });
 
   it.each([
     {
@@ -3098,13 +3067,10 @@ esac
         configJson: managedBrokerConfig("aws", { target: "windows", windowsMode: "normal" }),
       },
     },
-  ])("keeps $source-selected native Windows outside POSIX bootstrap", ({ args, options }) => {
-    const { output, remoteCommand } = runSuccessfulDefaultWrapper(
-      ["run", ...args, "--", "echo", "ok"],
-      options,
-    );
+  ])("preserves $source-selected native Windows argv", ({ args, options }) => {
+    const { output } = runSuccessfulDefaultWrapper(["run", ...args, "--", "echo", "ok"], options);
     expect(output.args).not.toContain("--shell");
-    expect(remoteCommand).not.toContain(remotePosixHydratedModulesBootstrap);
+    expect(output.args.slice(-2)).toEqual(["echo", "ok"]);
   });
 
   it("keeps env-selected WSL2 runs on the POSIX bootstrap path", () => {
@@ -3419,7 +3385,6 @@ esac
     );
     expect(output.args).toContain("--shell");
     expectChangedGateGitBootstrap(remoteCommand);
-    expectHydratedPosixShell({ output, remoteCommand }, "corepack pnpm check:changed");
     expect(remoteCommand).toContain("refs/openclaw/source-capsule");
     expect(remoteCommand).toMatch(
       /; env OPENCLAW_CHECK_CHANGED_REMOTE_CHILD=1 OPENCLAW_CHANGED_LANES_RAW_SYNC=1 CI=1 corepack pnpm check:changed$/u,

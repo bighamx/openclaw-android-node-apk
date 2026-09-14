@@ -400,6 +400,8 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
   @litState() protected resetConfirmationOpen = false;
   protected deferredSessionHydrationRequestVersion = 0;
   protected sessionCompanionHydrationKey = "";
+  protected sessionCompanionFocusGeneration = 0;
+  @litState() protected sessionCompanionFocusRequest?: () => boolean;
   protected readonly sessionCompanionThreads = new ChatSessionCompanionThreads(() => {
     this.requestUpdate();
   });
@@ -462,6 +464,43 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
     this.setSessionObserverVisibility(true);
   }
 
+  protected async openSessionCompanion(pageState: ChatPageHost, question: string): Promise<void> {
+    const sessionKey = pageState.sessionKey;
+    const agentId = resolveChatAgentId(pageState);
+    const generation = this.connectionGeneration;
+    const focusGeneration = this.sessionCompanionFocusGeneration;
+    const composer = getChatComposerState(this.presentationId);
+    const editRevision = composer.editRevision;
+    const draft = pageState.chatMessage;
+    const ownsFocus = () =>
+      this.state === pageState &&
+      pageState.sessionKey === sessionKey &&
+      resolveChatAgentId(pageState) === agentId &&
+      this.connectionGeneration === generation &&
+      this.sessionCompanionFocusGeneration === focusGeneration &&
+      composer.editRevision === editRevision &&
+      pageState.chatMessage === draft &&
+      isSidebarSlotVisible(pageState.sidebarLayout, "companion") &&
+      (this.ownerDocument.activeElement === this.ownerDocument.body ||
+        this.contains(this.ownerDocument.activeElement)) &&
+      this.isConnected &&
+      this.active &&
+      this.presented;
+    // Consume even an invalidated request so a lazy mount cannot fall back to autofocus.
+    const requestFocus = () => {
+      if (this.sessionCompanionFocusRequest === requestFocus) {
+        this.sessionCompanionFocusRequest = undefined;
+      }
+      return ownsFocus();
+    };
+    // The first lazy mount and the completed answer share the same input intent.
+    this.sessionCompanionFocusRequest = requestFocus;
+    await this.submitSessionCompanionQuestion(question);
+    if (ownsFocus()) {
+      this.sessionCompanionFocusRequest = requestFocus;
+    }
+  }
+
   protected readonly submitSessionCompanionQuestion = async (question: string) => {
     const state = this.state;
     if (!state || !state.sessionKey) {
@@ -470,6 +509,9 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
     const sessionKey = state.sessionKey;
     const agentId = resolveChatAgentId(state);
     this.requestSessionRail("open");
+    if (!question.trim()) {
+      return;
+    }
     if (!state.connected || !state.client) {
       this.sessionCompanionThreads.setDraft(sessionKey, question, agentId);
       return;

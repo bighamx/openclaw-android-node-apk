@@ -62,4 +62,19 @@ export const updateExecutorNativeEntrypoints = {
     sourceWorkerName: "../../config/io.factory",
     distWorkerPath: "config/io.factory.js",
   },
+  leaseFixture: {
+    currentModuleUrl,
+    sourceWorkerName: "update-command-lease.test-support",
+    distWorkerPath: "cli/update-cli/update-command-lease.test-support.js",
+  },
+  failureOutput: {
+    currentModuleUrl,
+    sourceWorkerName: "../failure-output",
+    distWorkerPath: "cli/failure-output.js",
+  },
+  sealedRegistry: {
+    currentModuleUrl,
+    sourceWorkerName: "../../infra/sealed-runtime-registry",
+    distWorkerPath: "infra/sealed-runtime-registry.js",
+  },
 } as const;

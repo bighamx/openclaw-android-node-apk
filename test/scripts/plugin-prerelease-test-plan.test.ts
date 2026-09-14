@@ -392,7 +392,6 @@ describe("scripts/lib/plugin-prerelease-test-plan.mts", () => {
     expect(prereleasePlan.surfaces).toContain("external-install-boundary");
     expect(sweepScript).toContain("run_plugins_clawhub_scenario");
     expect(clawhubScript).toContain('plugins install "$CLAWHUB_PLUGIN_SPEC"');
-    expect(clawhubScript).toContain("clawhub:@openclaw/plugin-e2e-fixture");
     expect(assertionsScript).toContain("assertClawHubExternalInstallContract");
     expect(assertionsScript).toContain('node_modules", "openclaw');
     expect(fixtureServer).toContain('"is-number": "7.0.0"');

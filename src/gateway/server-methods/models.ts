@@ -6,6 +6,7 @@ import {
   validateModelsListParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { tryResolveAmbientOwnerAgentId } from "../../agents/agent-scope-config.js";
+import { PreparedModelRuntimePublicationSupersededError } from "../../agents/prepared-model-runtime.errors.js";
 import { ModelAccountConnectAuthorityError } from "../model-account-connect.js";
 import { resolveAgentIdOrRespondError } from "./agent-id-shared.js";
 import type { ChatMetadataReadParams } from "./chat-metadata-contract.js";
@@ -63,6 +64,14 @@ export const modelsHandlers: GatewayRequestHandlers = {
         undefined,
       );
     } catch (error) {
+      if (error instanceof PreparedModelRuntimePublicationSupersededError) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.UNAVAILABLE, error.message, { retryable: true, retryAfterMs: 0 }),
+        );
+        return;
+      }
       if (!(error instanceof ModelAccountConnectAuthorityError)) {
         throw error;
       }

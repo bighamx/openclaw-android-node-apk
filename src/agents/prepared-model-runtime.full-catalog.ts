@@ -159,6 +159,7 @@ export function mergePreparedNativeCatalog(
       (entry) =>
         JSON.stringify([
           keyOf(entry),
+          entry.nativeRuntime ?? "",
           entry.api ?? "",
           normalizeCatalogRouteBaseUrl(entry.baseUrl) ?? "",
         ]),

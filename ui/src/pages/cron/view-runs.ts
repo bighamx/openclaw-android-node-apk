@@ -21,8 +21,6 @@ import {
   createMsFormatter,
   formatCompactTokenCount,
 } from "../../lib/format.ts";
-import { shouldHandleNavigationClick } from "../../lib/navigation-click.ts";
-import { sessionNavigationTarget } from "../../lib/sessions/route-navigation.ts";
 import { cronRunEntryMatchesLink } from "./route-model.ts";
 
 registerCronEnglish();
@@ -53,7 +51,7 @@ type CronRunsSectionProps = {
     cronRunsQuery?: string;
     cronRunsSortDir?: CronSortDir;
   }) => void | Promise<void>;
-  onNavigateToChat?: (sessionKey: string) => void;
+  onViewRunTranscript?: (entry: CronRunLogEntry) => void;
 };
 
 function renderConditionMetric(label: string, value: string) {
@@ -340,11 +338,9 @@ export function renderRunsSection(props: CronRunsSectionProps) {
                 ${runs.map((entry) =>
                   renderRun(
                     entry,
-                    props.agentId,
-                    props.basePath,
                     formatTimestamp,
                     props.highlightedRunId,
-                    props.onNavigateToChat,
+                    props.onViewRunTranscript,
                   ),
                 )}
               </div>
@@ -400,21 +396,10 @@ function runDeliveryLabel(value: string): string {
 
 function renderRun(
   entry: CronRunLogEntry,
-  fallbackAgentId: string,
-  basePath: string,
   formatTimestamp: ReturnType<typeof createMsFormatter>,
   highlightedRunId?: string | null,
-  onNavigateToChat?: (sessionKey: string) => void,
+  onViewRunTranscript?: (entry: CronRunLogEntry) => void,
 ) {
-  const chatUrl =
-    typeof entry.sessionKey === "string" && entry.sessionKey.trim().length > 0
-      ? sessionNavigationTarget({
-          face: "chat",
-          sessionKey: entry.sessionKey,
-          fallbackAgentId,
-          basePath,
-        }).href
-      : null;
   const status = runStatusLabel(entry.status ?? "unknown");
   const delivery = runDeliveryLabel(entry.deliveryStatus ?? "not-requested");
   const usage = entry.usage;
@@ -471,22 +456,11 @@ function renderRun(
               : nothing
           }
           ${
-            chatUrl
+            entry.sessionKey
               ? html`<div>
-                  <a
-                    class="session-link"
-                    href=${chatUrl}
-                    @click=${(e: MouseEvent) => {
-                      if (!shouldHandleNavigationClick(e)) {
-                        return;
-                      }
-                      if (onNavigateToChat && entry.sessionKey) {
-                        e.preventDefault();
-                        onNavigateToChat(entry.sessionKey);
-                      }
-                    }}
-                    >${t("cron.runEntry.openRunChat")}</a
-                  >
+                  <button class="btn btn--sm" @click=${() => onViewRunTranscript?.(entry)}>
+                    ${t("tasksPage.viewTranscript")}
+                  </button>
                 </div>`
               : nothing
           }

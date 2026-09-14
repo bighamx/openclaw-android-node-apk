@@ -63,6 +63,28 @@ transcript entry. Acceptance does not imply that a transcript row already
 exists; the accepted input replaces its local pending copy and later becomes
 one canonical message, including its attachments.
 
+## Systems workspace
+
+Open **Systems** in the sidebar, or visit `/systems`, to inspect the Gateway,
+worker environments, and paired devices available to your connection. If your
+customized sidebar does not include Systems, add it from **Edit pinned items**.
+
+Systems replaces the lower conversation list with a machine list. The global
+navigation and footer stay in place, and returning to conversations restores
+their sidebar scroll position. Navigation changes this context; background
+machine or session activity does not switch your workspace.
+
+Select a desktop-capable system to open the existing Desktop viewer in the main
+workspace. It uses the same connection, control, sizing, and fullscreen behavior
+as the Desktop panel. Headless and offline entries remain inspectable instead
+of opening an empty desktop. Pairing, desktop enablement, and operator permissions
+still apply; opening Systems does not grant additional access.
+
+System details use reported facts. A connected device is not necessarily the
+machine running a session, and unavailable measurements are not shown as zero.
+See [Cloud Worker Desktop](/gateway/cloud-workers/desktop) for worker desktop
+enablement and sizing.
+
 ## Sidebar navigation
 
 Drag page destinations, including plugin-provided pages, to reorder them together.
@@ -149,7 +171,7 @@ The menu groups routine actions first: **Pin/Unpin**, **Rename**, **Mark as unre
 
 - **Icon & color** opens one picker with color swatches, an icon grid, and **Reset to default**. It stays open while you change both; the sidebar reflects your changes.
 - **Move to group** includes **New group** and **Remove from group**. Multi-user gateways also offer **Assign to** ([session ownership](/concepts/multi-user#assigning-an-owner)).
-- **Fork conversation** creates a separate conversation; while a run is active, it forks from the last completed message.
+- **Fork conversation** creates a separate conversation; while a run is active, it forks from the last completed message. Forks of local folder and project sessions keep that workspace, so existing file references continue to open. **Fork from here** keeps the same local workspace as well.
 - **Copy** offers a session link, conversation text as Markdown, and the session ID. The link requires normal Gateway authentication and session access; copying it does not grant access. Markdown loads the available conversation history, not just the messages currently visible. Both copied Markdown and `/export` downloads retain the conversation's sender labels, so messages from different participants remain distinguishable.
 - The chat header's **Session sharing** control manages authenticated teammate visibility and membership. For a saved, non-incognito session, its creator or a Gateway admin can also enable world-readable, read-only public access.
 - **Open in** offers a new browser tab or window. Desktop chat also offers **Split right** and **Split below**. Eligible local workspaces expose native editor destinations, and the chat header includes **Continue in terminal** in this submenu.
@@ -193,7 +215,7 @@ Choose **Icon & color** from a session menu and select a color swatch to add a n
 
 New session **+** controls are links: click to open the draft in the current browser tab, Command-click (macOS) or Ctrl-click (Windows/Linux) to open another tab, or right-click for the browser's **Open Link in New Tab/Window** menu. Middle-click works too. The smaller plus controls on group and catalog sections preserve their target in the new tab; your current conversation stays open.
 
-The **+** in the sidebar's **Sessions** toolbar opens a full-page draft at `/new`: nothing is created until you send the first message. Separate destination and project controls choose where the session runs and which project or folder it uses. Connections with `operator.write` can choose **Local** (the Gateway host), **Auto** (least-busy device), or any paired device returned by `environments.list`; administrators additionally see configured cloud profiles and, when no devices are connected, **Connect a device**. A cloud profile is selectable when its advertised execution modes include the selected runtime, so one Crabbox profile row in the **Cloud** section supports both OpenClaw and Codex. Automatic selection chooses the eligible host with the most available worker slots, breaking ties by device ID; runtimes that do not consume worker slots use device ID order. Device eligibility remains authoritative to the environment catalog and the selected runtime: OpenClaw `worker-turn` requires an available current session host with valid worker capacity and at least one free slot; Codex `remote-exec` requires its currently invocable, explicitly authorized exec-server command and consumes no worker slot. When that command is unavailable, the picker distinguishes a node that did not declare it, a declaration that awaits pairing approval, and a declaration blocked by Gateway command policy. Offline known hosts, connected non-hosts, incompatible or saturated hosts, hosts missing required capabilities, outdated hosts, and unavailable hosts remain visible with a reason and next step.
+The **+** in the sidebar's **Sessions** toolbar opens a full-page draft at `/new`: nothing is created until you send the first message. Separate destination and project controls choose where the session runs and which project or folder it uses. Connections with `operator.write` can choose **Local** (the Gateway host), **Auto** (least-busy device), or any paired device returned by `environments.list`; administrators additionally see configured cloud profiles and, when no devices are connected, **Connect a device**. A cloud profile is selectable when its advertised execution modes include the selected runtime, so one Crabbox profile row in the **Cloud** section supports both OpenClaw and Codex. For runtimes that consume worker slots, automatic selection first prefers eligible hosts with less admitted work relative to worker capacity, then compares free slots after accounting for pending dispatches, and breaks remaining ties by device ID. Runtimes that do not consume worker slots use device ID order. Device eligibility remains authoritative to the environment catalog and the selected runtime: OpenClaw `worker-turn` requires an available current session host with valid worker capacity and at least one free slot; Codex `remote-exec` requires its currently invocable, explicitly authorized exec-server command and consumes no worker slot. When that command is unavailable, the picker distinguishes a node that did not declare it, a declaration that awaits pairing approval, and a declaration blocked by Gateway command policy. Offline known hosts, connected non-hosts, incompatible or saturated hosts, hosts missing required capabilities, outdated hosts, and unavailable hosts remain visible with a reason and next step.
 
 The destination picker opens with **Search environments** focused. Its compact, single-line results are grouped under **Local**, **Your devices**, and **Cloud**. Only the environment list scrolls. Local uses the Gateway's name when available, with a house icon; it means the Gateway host, not necessarily the computer running your browser. Connected Macs named MacBook, Mac mini, or Mac Studio use the matching hardware outline; unknown devices use a monitor. The macOS app shell supplies native SF Symbols for those three shapes; other clients keep the web outlines. This is a display-name hint, not hardware detection, and never changes placement eligibility. Search matches destination names, types, IDs, and device facts, including capabilities and unavailable reasons. Usable devices appear before unavailable devices. Hover or keyboard focus reveals device details and available capacity; blocked devices explain their reason and next step, while offline devices remain muted without a details card.
 

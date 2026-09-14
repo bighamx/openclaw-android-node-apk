@@ -152,7 +152,7 @@ describe("direct session model catalogs", () => {
     "store close",
     "access change",
     "catalog owner",
-  ] as const)("rejects saved metadata after %s while preparation is held", async (change) => {
+  ] as const)("replies with retryable unavailability after %s", async (change) => {
     await withOpenClawTestState(isolated, async (state) => {
       const f = fixture();
       await state.writeConfig(f.config);
@@ -192,7 +192,17 @@ describe("direct session model catalogs", () => {
       } finally {
         release.resolve();
       }
-      await expect(pending).rejects.toThrow(/changed|current/);
+      const respond = await pending;
+      expect(respond).toHaveBeenCalledExactlyOnceWith(
+        false,
+        undefined,
+        expect.objectContaining({
+          code: "UNAVAILABLE",
+          message: expect.stringMatching(/changed|current/),
+          retryable: true,
+          retryAfterMs: 0,
+        }),
+      );
       expect(hasOpenClawAgentDatabaseAsyncResources()).toBe(false);
     });
   });
