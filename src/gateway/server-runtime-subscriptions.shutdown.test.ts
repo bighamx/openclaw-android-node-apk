@@ -47,6 +47,7 @@ function createParams(signal: AbortSignal): Parameters<typeof startGatewayEventS
     chatAbortControllers: new Map(),
     restartRecoveryCandidates: new Map(),
     terminalSessions: { closeTaskSessions: vi.fn() },
+    refreshConnectedUserProfiles: vi.fn(),
   };
 }
 

@@ -983,6 +983,7 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
             inheritedToolDenylist,
             onYield: options?.onYield,
             claimYieldCompletion: options?.claimYieldCompletion,
+            processScopeKey: scopeKey,
             allowGatewaySubagentBinding: options?.allowGatewaySubagentBinding,
             recordToolPrepStage: options?.recordToolPrepStage,
           }),

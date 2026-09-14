@@ -2215,6 +2215,70 @@ describe("frozen admission workflow barriers", () => {
     },
   );
 
+  it("acquires a sparse selected typed-onboarding assertion helper before admission", () => {
+    const helper = "scripts/e2e/lib/release-assertion-files.mjs";
+    const scenario = "scripts/e2e/lib/release-typed-onboarding/scenario.sh";
+    const fixture = frozenWorkflowFixture(
+      PACKAGE_ACCEPTANCE_WORKFLOW,
+      "resolve_package",
+      {
+        source: "ref",
+        suite_profile: "custom",
+        docker_lanes: "release-typed-onboarding",
+        allow_frozen_target_scenario_omissions: true,
+      },
+      {
+        [helper]: readFileSync(helper, "utf8"),
+        [scenario]: readFileSync(scenario, "utf8"),
+      },
+      { ADMISSION_STAGE: "known-source" },
+      [
+        "scripts/e2e/lib/release-scenarios/assertions.mjs",
+        "scripts/e2e/lib/release-assertion-files.mjs",
+        "scripts/e2e/lib/fixtures/mock-openai-config.mjs",
+      ],
+    );
+    const planned = fixture.run("Plan known package source admission");
+    expect(planned.status, planned.stderr).toBe(0);
+    expect(fixture.selection().sourcePaths).toContain(helper);
+
+    const origin = join(fixture.root, "origin.git");
+    fixture.git("clone", "--bare", "--no-hardlinks", fixture.target, origin);
+    fixture.git("-C", origin, "config", "uploadpack.allowFilter", "true");
+    fixture.git("remote", "add", "origin", pathToFileURL(origin).href);
+    fixture.git("config", "remote.origin.promisor", "true");
+    fixture.git("config", "remote.origin.partialclonefilter", "blob:none");
+    const oid = fixture.git("rev-parse", `${fixture.sha}:${helper}`);
+    unlinkSync(join(fixture.target, ".git", "objects", oid.slice(0, 2), oid.slice(2)));
+
+    const unavailable = fixture.admit({}, "Admit known package source before packing");
+    expect(unavailable.status).not.toBe(0);
+    expect(unavailable.stderr).toContain("unable to read selected source");
+    const acquisitionBin = join(fixture.root, "typed-onboarding-acquisition-bin");
+    const requested = join(fixture.root, "typed-onboarding-requested-blob");
+    mkdirSync(acquisitionBin);
+    const gitPath = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+    writeFileSync(
+      join(acquisitionBin, "git"),
+      `#!/bin/sh\nif [ "$#" = 5 ] && [ "$3" = cat-file ] && [ "$4" = blob ] && [ "$5" = '${oid}' ]; then printf '%s\\n' "$5" >> '${requested}'; fi\nexec '${gitPath}' "$@"\n`,
+      { mode: 0o755 },
+    );
+    const acquired = fixture.run("Acquire known package contract objects", {
+      PATH: `${acquisitionBin}:${process.env.PATH}`,
+    });
+    expect(acquired.status, acquired.stderr).toBe(0);
+    expect(readFileSync(requested, "utf8")).toBe(`${oid}\n`);
+
+    const admitted = fixture.admit({}, "Admit known package source before packing");
+    expect(admitted.status, admitted.stderr).toBe(0);
+    const record = JSON.parse(
+      readFileSync(join(fixture.root, "frozen-admission-known-source.json"), "utf8"),
+    );
+    expect(
+      reconstructAdmissionEvaluations(record).flatMap((entry) => entry.sources.selected),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ path: helper, oid })]));
+  });
+
   it("blocks a known package source before packing and admits a different exact acquired package source", () => {
     const known = frozenWorkflowFixture(
       PACKAGE_ACCEPTANCE_WORKFLOW,

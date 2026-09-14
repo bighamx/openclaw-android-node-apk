@@ -12269,6 +12269,12 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       "OPENCLAW_E2E_SKIP_BUILD=1 OPENCLAW_TEST_BUN_LAUNCHER=1 pnpm test test/openclaw-launcher.e2e.test.ts",
     );
     expect(checksFastRun.run).toContain(
+      "if [[ -f src/plugins/plugin-module-generation.test.ts ]]; then",
+    );
+    expect(checksFastRun.run).toContain(
+      'elif [[ "${{ needs.preflight.outputs.frozen_target }}" != "true" ]]; then',
+    );
+    expect(checksFastRun.run).toContain(
       "for required_script in check:max-lines-ratchet check:assertion-safety config:docs:check plugins:inventory:check; do",
     );
     expect(checksFastRun.run).toContain('has_package_script "$required_script"');

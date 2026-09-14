@@ -1,7 +1,12 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { stableStringify } from "@openclaw/normalization-core/stable-stringify";
 import { sql } from "kysely";
 import type { AgentRunTerminalOutcome } from "../../agents/agent-run-terminal-outcome.types.js";
+import {
+  normalizeMessageClientSources,
+  readMessageClientSources,
+} from "../../chat/message-client-source.js";
 import { MAX_PAYLOAD_BYTES } from "../../gateway/server-constants.js";
 import {
   getAgentEventLifecycleGeneration,
@@ -25,6 +30,10 @@ import {
   hasSessionPendingInputsSchema,
 } from "../../state/openclaw-agent-pending-inputs-schema.js";
 import type { OpenClawConfig } from "../types.openclaw.js";
+import {
+  preparePendingInputRequest,
+  matchesSessionPendingInputRequest,
+} from "./session-accessor.pending-input-request.js";
 import type { SessionAccessScope } from "./session-accessor.sqlite-contract.js";
 import { readSessionEntryRow } from "./session-accessor.sqlite-entry-store.js";
 import {
@@ -130,8 +139,18 @@ export function bindSessionPendingInputSources(
   }
   // Collected framing still passes storage redaction; its staged sources have
   // already passed approval and must not run through another plugin hook.
+  const clients = normalizeMessageClientSources(
+    receipts.flatMap((receipt) => readMessageClientSources(receipt.message)),
+  );
+  const collectedMessage = { ...message };
+  if (clients.length) {
+    collectedMessage["__openclaw"] = {
+      ...message["__openclaw"],
+      transport: { ...asOptionalRecord(message["__openclaw"]?.transport), clients },
+    };
+  }
   const messageJson = JSON.stringify(
-    redactTranscriptMessageForStorage(message, { config: sources.at(-1)?.config }),
+    redactTranscriptMessageForStorage(collectedMessage, { config: sources.at(-1)?.config }),
   );
   if (Buffer.byteLength(messageJson, "utf8") > MAX_PAYLOAD_BYTES) {
     throw new Error("Collected input exceeds the Gateway payload limit");
@@ -175,6 +194,8 @@ export async function stageSessionPendingInput(
     ) => PersistedUserTurnMessage | undefined;
     config?: OpenClawConfig;
     assertCurrent: () => void;
+    /** Retained only after the full admission checks and custody transaction commit. */
+    assertAdmittedCurrent?: () => void;
     assertCompletionCurrent?: () => void;
   },
 ): Promise<SessionPendingInputReceipt | undefined> {
@@ -184,13 +205,10 @@ export async function stageSessionPendingInput(
   if (!idempotencyKey || !options.runId) {
     throw new Error("Pending input requires an exact run and message idempotency key");
   }
-  const { timestamp: _timestamp, ...stableMessage } = options.message;
-  if (Buffer.byteLength(JSON.stringify(stableMessage), "utf8") > MAX_PAYLOAD_BYTES) {
-    throw new Error("Pending input exceeds the Gateway payload limit");
-  }
-  const requestHash = options.requestFingerprint
-    ? `request:${options.requestFingerprint}`
-    : createHash("sha256").update(stableStringify(stableMessage)).digest("hex");
+  const { stableMessage, requestHash } = preparePendingInputRequest(
+    options.message,
+    options.requestFingerprint,
+  );
   return runExclusiveSqliteSessionWrite(
     resolved,
     async () => {
@@ -250,14 +268,10 @@ export async function stageSessionPendingInput(
           }, databaseOptions);
       }
       if (existing) {
-        // Older collectors retain consumed receipts with the original message hash.
-        // Preserve their idempotent reply, without adopting pre-upgrade input custody.
-        const matchesRequest =
-          existing.request_hash === requestHash ||
-          (existing.consumed_event_id != null &&
-            existing.request_hash ===
-              createHash("sha256").update(stableStringify(stableMessage)).digest("hex"));
-        if (!matchesRequest || existing.run_id !== options.runId) {
+        if (
+          !matchesSessionPendingInputRequest(existing, stableMessage, requestHash) ||
+          existing.run_id !== options.runId
+        ) {
           throw new Error("Pending input idempotency key conflicts with the accepted input");
         }
         if (existing.consumed_event_id != null) {
@@ -395,7 +409,7 @@ export async function stageSessionPendingInput(
         lifecycleGeneration,
         messageJson,
         config: options.config,
-        assertCurrent: options.assertCurrent,
+        assertCurrent: options.assertAdmittedCurrent ?? options.assertCurrent,
         ...(existing ? { restartRecovered: true as const } : {}),
         finish: (disposition) => {
           if (finished) {

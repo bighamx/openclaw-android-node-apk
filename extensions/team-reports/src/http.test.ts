@@ -4,11 +4,13 @@ import { createServer, request, type IncomingHttpHeaders, type Server } from "no
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveRuntimeWorkerUrl } from "openclaw/plugin-sdk/process-runtime";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTeamReportsHttpHandler } from "./http.js";
 import { describePeriod } from "./periods.js";
 import { renderMarkdown } from "./render/markdown.js";
 import { githubCounts } from "./reports.fixtures.js";
+import { teamReportsSqliteBackendEntrypoint } from "./sqlite-backend-entrypoint.test-support.js";
 import { createTeamReportsStore, type TeamReportsStore } from "./store.js";
 import type { Period, Person, ReportDocument, SummaryDocument } from "./types.js";
 
@@ -119,7 +121,7 @@ beforeAll(async () => {
   directory = fs.mkdtempSync(path.join(os.tmpdir(), "team-reports-http-"));
   store = await createTeamReportsStore({
     stateDir: directory,
-    workerModuleUrl: new URL("./store.worker.ts", import.meta.url),
+    workerModuleUrl: resolveRuntimeWorkerUrl(teamReportsSqliteBackendEntrypoint),
   });
   const avatarReport = report("day", "2026-08-19");
   avatarReport.members = avatarPeople.map((person) => ({
@@ -469,7 +471,7 @@ describe("Team Reports HTTP responses", () => {
   it("reads current overview organizations and prefers the displayed report's organizations", async () => {
     const emptyStore = await createTeamReportsStore({
       stateDir: path.join(directory, "empty"),
-      workerModuleUrl: new URL("./store.worker.ts", import.meta.url),
+      workerModuleUrl: resolveRuntimeWorkerUrl(teamReportsSqliteBackendEntrypoint),
     });
     try {
       for (const name of ["first-organization", "new <organization>"]) {

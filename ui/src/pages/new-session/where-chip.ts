@@ -5,6 +5,7 @@ import { deviceIcons } from "../../components/icons-devices.ts";
 import { strokeIcon } from "../../components/icons-tools.ts";
 import { icons } from "../../components/icons.ts";
 import { t } from "../../i18n/index.ts";
+import { registerNewSessionSetupEnglish } from "../../i18n/locales/en-new-session-setup.ts";
 import { resolveMacFormFactorFromName } from "../../lib/mac-form-factor.ts";
 import { prettifyPlatform } from "../../lib/platform-label.ts";
 import { renderCloudProfileMenuItems, renderSessionMenuItem } from "./cloud-target.ts";
@@ -23,6 +24,8 @@ import {
   type DraftOperatingSystem,
 } from "./discovery.ts";
 import { environmentCapabilityLabels } from "./place-facts.ts";
+
+registerNewSessionSetupEnglish();
 
 const devicePoolIcon = strokeIcon(svg`<rect x="2" y="7" width="14" height="11" />
   <path d="M6 7V3h16v12h-6M6 22h6M9 18v4" />`);
@@ -155,7 +158,6 @@ export function renderWhereChip(params: {
   os?: string;
   deviceId: string;
   autoDevice?: boolean;
-  worktreeAvailable: boolean;
   cloudDisabledReason?: string;
   cloudProfileDisabledReason?: (profile: DraftCloudProfile) => string | undefined;
   submitting: boolean;
@@ -484,10 +486,8 @@ export function renderWhereChip(params: {
               submitting: destinationDisabled,
               icon: icons.cloud,
               compact: true,
-              disabled: !params.worktreeAvailable || Boolean(params.cloudDisabledReason),
-              disabledReason:
-                params.cloudDisabledReason ??
-                (!params.worktreeAvailable ? t("newSession.cloudRequiresWorktree") : undefined),
+              disabled: Boolean(params.cloudDisabledReason),
+              disabledReason: params.cloudDisabledReason,
               profileDisabledReason: params.cloudProfileDisabledReason,
               onSelect: params.onSelectCloudProfile,
             })}

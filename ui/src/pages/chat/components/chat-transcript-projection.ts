@@ -212,7 +212,7 @@ export function projectChatTranscript(
         key,
         markdown === null
           ? { status: "error", revision: revision + 1 }
-          : { status: "loaded", markdown, revision: revision + 1 },
+          : { status: "loaded", markdown, message: result?.message, revision: revision + 1 },
       );
       requestUpdate();
     };

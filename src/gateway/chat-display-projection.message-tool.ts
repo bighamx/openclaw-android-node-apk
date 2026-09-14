@@ -346,14 +346,7 @@ function readMessageToolDeliveryMirrorCallId(message: Record<string, unknown>): 
   return normalizeOptionalString(readRecord(message.openclawDeliveryMirror)?.toolCallId);
 }
 
-export function mirrorMessageToolVisibleReplies(messages: unknown[]): unknown[] {
-  if (messages.length === 0) {
-    return messages;
-  }
-  if (!messages.some((message) => readRecord(message))) {
-    return messages;
-  }
-  let changed = false;
+export function createMessageToolVisibleReplyProjection() {
   const next: unknown[] = [];
   const pending: PendingMessageToolVisibleReply[] = [];
 
@@ -369,7 +362,6 @@ export function mirrorMessageToolVisibleReplies(messages: unknown[]): unknown[] 
         continue;
       }
       next.push(buildMessageToolVisibleReplyMirror(item));
-      changed = true;
     }
     clearPending();
   };
@@ -383,7 +375,6 @@ export function mirrorMessageToolVisibleReplies(messages: unknown[]): unknown[] 
     for (const item of pending) {
       if (selected.has(item) && item.succeeded) {
         next.push(buildMessageToolVisibleReplyMirror(item));
-        changed = true;
         continue;
       }
       remaining.push(item);
@@ -392,104 +383,114 @@ export function mirrorMessageToolVisibleReplies(messages: unknown[]): unknown[] 
     pending.push(...remaining);
   };
 
-  for (const message of messages) {
-    const record = readRecord(message);
-    if (!record) {
-      next.push(message);
-      continue;
-    }
+  return {
+    append(messages: unknown[]) {
+      let replacedFrom: number | undefined;
+      for (const message of messages) {
+        const record = readRecord(message);
+        if (!record) {
+          next.push(message);
+          continue;
+        }
 
-    if (
-      (record.role === "user" && isSessionsSendInterSessionUserMessage(record)) ||
-      isProjectedSessionsSendForwardedMessage(record)
-    ) {
-      next.push(message);
-      continue;
-    }
-
-    if (record.role === "user") {
-      clearPending();
-      next.push(message);
-      continue;
-    }
-
-    const flushAfterCurrentMessage: PendingMessageToolVisibleReply[] = [];
-    const deliveryMirrorText = readMessageToolDeliveryMirrorText(record);
-    const deliveryMirrorCallId = readMessageToolDeliveryMirrorCallId(record);
-    const exactDeliveryMirrorPending = deliveryMirrorCallId
-      ? pending.filter((item) => item.toolCallId === deliveryMirrorCallId)
-      : [];
-    const textMatchingDeliveryMirrorPending = deliveryMirrorText
-      ? pending.filter((item) => item.text.trim() === deliveryMirrorText)
-      : [];
-    const matchingDeliveryMirrorPending = deliveryMirrorCallId
-      ? exactDeliveryMirrorPending.length === 1
-        ? exactDeliveryMirrorPending
-        : []
-      : textMatchingDeliveryMirrorPending.length === 1
-        ? textMatchingDeliveryMirrorPending
-        : [];
-    const duplicateDeliveryMirror = matchingDeliveryMirrorPending.some((item) => item.succeeded);
-    const visibleReplies = extractMessageToolVisibleReplies(record);
-    if (visibleReplies.length > 0) {
-      for (const reply of visibleReplies) {
-        pending.push({
-          ...reply,
-          anchor: record,
-          succeeded: false,
-        });
-      }
-    } else if (
-      pending.length > 0 &&
-      deliveryMirrorText === undefined &&
-      isRenderableAssistantDisplayMessage(record)
-    ) {
-      clearPending();
-    }
-
-    if (pending.length > 0) {
-      let resultSucceeded: boolean | undefined;
-      for (const item of pending) {
         if (
-          !item.succeeded &&
-          matchesMessageToolResult(record, item) &&
-          (resultSucceeded ??= isSuccessfulMessageToolResultPayload(record))
+          (record.role === "user" && isSessionsSendInterSessionUserMessage(record)) ||
+          isProjectedSessionsSendForwardedMessage(record)
         ) {
-          item.succeeded = true;
-          const sourceReplySink = readMessageToolSourceReplySink(record);
-          if (sourceReplySink) {
-            item.sourceReplySink = sourceReplySink;
+          next.push(message);
+          continue;
+        }
+
+        if (record.role === "user") {
+          clearPending();
+          next.push(message);
+          continue;
+        }
+
+        const flushAfterCurrentMessage: PendingMessageToolVisibleReply[] = [];
+        const deliveryMirrorText = readMessageToolDeliveryMirrorText(record);
+        const deliveryMirrorCallId = readMessageToolDeliveryMirrorCallId(record);
+        const exactDeliveryMirrorPending = deliveryMirrorCallId
+          ? pending.filter((item) => item.toolCallId === deliveryMirrorCallId)
+          : [];
+        const textMatchingDeliveryMirrorPending = deliveryMirrorText
+          ? pending.filter((item) => item.text.trim() === deliveryMirrorText)
+          : [];
+        const matchingDeliveryMirrorPending = deliveryMirrorCallId
+          ? exactDeliveryMirrorPending.length === 1
+            ? exactDeliveryMirrorPending
+            : []
+          : textMatchingDeliveryMirrorPending.length === 1
+            ? textMatchingDeliveryMirrorPending
+            : [];
+        const duplicateDeliveryMirror = matchingDeliveryMirrorPending.some(
+          (item) => item.succeeded,
+        );
+        const visibleReplies = extractMessageToolVisibleReplies(record);
+        if (visibleReplies.length > 0) {
+          for (const reply of visibleReplies) {
+            pending.push({
+              ...reply,
+              anchor: record,
+              succeeded: false,
+            });
           }
-          item.completionAnchor = item.deliveryMirrorAnchor ?? record;
-          if (item.deliveryMirrorAnchor) {
-            if (typeof item.deliveryMirrorIndex === "number") {
-              next[item.deliveryMirrorIndex] = { ...item.deliveryMirrorAnchor, display: false };
+        } else if (
+          pending.length > 0 &&
+          deliveryMirrorText === undefined &&
+          isRenderableAssistantDisplayMessage(record)
+        ) {
+          clearPending();
+        }
+
+        if (pending.length > 0) {
+          let resultSucceeded: boolean | undefined;
+          for (const item of pending) {
+            if (
+              !item.succeeded &&
+              matchesMessageToolResult(record, item) &&
+              (resultSucceeded ??= isSuccessfulMessageToolResultPayload(record))
+            ) {
+              item.succeeded = true;
+              const sourceReplySink = readMessageToolSourceReplySink(record);
+              if (sourceReplySink) {
+                item.sourceReplySink = sourceReplySink;
+              }
+              item.completionAnchor = item.deliveryMirrorAnchor ?? record;
+              if (item.deliveryMirrorAnchor) {
+                if (typeof item.deliveryMirrorIndex === "number") {
+                  next[item.deliveryMirrorIndex] = { ...item.deliveryMirrorAnchor, display: false };
+                  replacedFrom = Math.min(
+                    replacedFrom ?? item.deliveryMirrorIndex,
+                    item.deliveryMirrorIndex,
+                  );
+                }
+                flushAfterCurrentMessage.push(item);
+              }
             }
-            flushAfterCurrentMessage.push(item);
+          }
+          if (isAssistantSilentControlReplyOnly(record)) {
+            flushSucceededMirrors();
           }
         }
-      }
-      if (isAssistantSilentControlReplyOnly(record)) {
-        flushSucceededMirrors();
-      }
-    }
 
-    if (duplicateDeliveryMirror) {
-      for (const item of matchingDeliveryMirrorPending) {
-        item.completionAnchor = record;
+        if (duplicateDeliveryMirror) {
+          for (const item of matchingDeliveryMirrorPending) {
+            item.completionAnchor = record;
+          }
+          flushSelectedMirrors(matchingDeliveryMirrorPending);
+          continue;
+        }
+
+        for (const item of matchingDeliveryMirrorPending) {
+          item.deliveryMirrorAnchor = record;
+          item.deliveryMirrorIndex = next.length;
+        }
+        next.push(message);
+        flushSelectedMirrors(flushAfterCurrentMessage);
       }
-      flushSelectedMirrors(matchingDeliveryMirrorPending);
-      changed = true;
-      continue;
-    }
 
-    for (const item of matchingDeliveryMirrorPending) {
-      item.deliveryMirrorAnchor = record;
-      item.deliveryMirrorIndex = next.length;
-    }
-    next.push(message);
-    flushSelectedMirrors(flushAfterCurrentMessage);
-  }
-
-  return changed ? next : messages;
+      return { messages: next, replacedFrom };
+    },
+  };
 }

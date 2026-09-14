@@ -176,6 +176,8 @@ export type OpenClawToolsOptions = {
   questionPrompt?: QuestionPromptDelivery;
   onYield?: (message: string, acknowledgment?: string) => Promise<void> | void;
   claimYieldCompletion?: () => boolean | Promise<boolean>;
+  /** Prepared exec/process isolation key for this run. */
+  processScopeKey?: string;
   /** Allow plugin tools for this tool set to late-bind the gateway subagent. */
   allowGatewaySubagentBinding?: boolean;
 } & SpawnedToolContext &

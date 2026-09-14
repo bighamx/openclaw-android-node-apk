@@ -205,8 +205,20 @@ function renderSidebarSessionIndicators(
   // only for live presence; pinned and archive-attribution rows have no matching header.
   const ownerRepeatedBySection =
     host.sessionsGrouping === "person" && !session.pinned && ownerAttribution !== "archived";
+  // A self filter already identifies solo ownership. Keep shared rows and
+  // archive attribution visible; the participant count includes unshown faces.
+  const selfUser = host.sessionDataContext?.gateway.snapshot.selfUser;
+  const selfProfileId = selfUser?.identity?.id ?? selfUser?.id;
+  const ownerRepeatedByFilter =
+    ownerAttribution !== "archived" &&
+    ownerActor?.identity?.type === "profile" &&
+    ownerActor.identity.id === selfProfileId &&
+    (host.sessionInvolvingMeFilterActive || host.sessionOwnerFilterId === ownerActor.id) &&
+    (session.participantCount ?? session.participants?.length ?? 0) === 0;
   const leadingOwner =
-    !team && ownerRepeatedBySection && ownerViewing !== true ? undefined : ownerActor;
+    ownerRepeatedByFilter || (!team && ownerRepeatedBySection && ownerViewing !== true)
+      ? undefined
+      : ownerActor;
   const gateway = host.sessionDataContext?.gateway;
   const channelAvatarAuth = {
     authTokens: gateway

@@ -35,6 +35,8 @@ import {
   resolveChatHistoryPagination,
   type ChatHistoryResult,
 } from "./chat-history-snapshot.ts";
+import { chatHistoryRequests, getChatHistoryLoadState } from "./chat-history-state.ts";
+import { syncSelectedSessionMessageSubscription } from "./chat-history-subscription.ts";
 import { loadChatHistory } from "./chat-history.ts";
 import { ChatPaneReplyNavigation } from "./chat-pane-reply-navigation.ts";
 import {
@@ -47,6 +49,7 @@ import {
 } from "./chat-pane-shared.ts";
 import { isTranscriptScrollKey } from "./chat-scroll-input.ts";
 import type { ChatState } from "./chat-state-contract.ts";
+import { refreshPageChat } from "./chat-state-refresh.ts";
 import { resolveChatAgentId } from "./chat-state-route.ts";
 import { persistChatComposerState } from "./composer-persistence.ts";
 import {
@@ -59,6 +62,7 @@ import {
   saveChatSessionScrollPosition,
   scheduleChatScroll,
 } from "./scroll.ts";
+import { maybeResetToolStream } from "./stream-reconciliation.ts";
 
 export abstract class ChatPaneHistory extends ChatPaneReplyNavigation {
   private activeCatalogContinuation: symbol | null = null;
@@ -73,6 +77,26 @@ export abstract class ChatPaneHistory extends ChatPaneReplyNavigation {
   // Bumped only by viewport resets: ordinary loads must not invalidate an
   // in-flight prefetch or the join path could never consume it.
   private stagedOlderGeneration = 0;
+
+  protected readonly refreshHistory = () => {
+    const state = this.state;
+    if (!state) {
+      return;
+    }
+    const catalogKey = parseCatalogSessionKey(state.sessionKey);
+    if (catalogKey) {
+      void this.loadCatalogSession(catalogKey, false);
+      return;
+    }
+    maybeResetToolStream(state, { preserveStreamSegments: state.chatRunId !== null });
+    this.reconcileWaitingApprovalSnapshot();
+    if (chatHistoryRequests(state).subscriptionError) {
+      void syncSelectedSessionMessageSubscription(state);
+    }
+    const historyLoad = getChatHistoryLoadState(state);
+    const startup = historyLoad.phase === "failed" && historyLoad.startup;
+    void refreshPageChat(state, { awaitHistory: true, scheduleScroll: false, startup });
+  };
 
   protected hasOlderMessages(): boolean {
     const state = this.state;

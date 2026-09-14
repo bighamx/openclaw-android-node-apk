@@ -3,6 +3,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
 import path from "node:path";
+import { resolveVitestNodeArgs } from "../../scripts/lib/vitest-process-env.mts";
 import { DEFAULT_VITEST_TEST_TIMEOUT_MS } from "../../test/vitest/vitest.timeouts.js";
 
 const OUTPUT_TAIL_CHARS = 8_000;
@@ -98,7 +99,11 @@ export async function runCliProcessChild(params: {
   timeoutMs?: number;
 }): Promise<CliProcessChildResult> {
   const timeoutMs = params.timeoutMs ?? CLI_PROCESS_DEADLOCK_GUARD_MS;
-  const child = spawn(process.execPath, params.nodeArgs, {
+  // CLI children use the test runner's V8 policy without inheriting its preloads.
+  const nodeArgs = process.versions.bun
+    ? params.nodeArgs
+    : [...resolveVitestNodeArgs(params.env), ...params.nodeArgs];
+  const child = spawn(process.execPath, nodeArgs, {
     cwd: params.cwd ?? path.resolve("."),
     env: params.env,
     stdio: ["pipe", "pipe", "pipe"],

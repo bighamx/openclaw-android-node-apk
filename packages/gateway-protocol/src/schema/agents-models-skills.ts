@@ -346,6 +346,23 @@ export const ModelsAuthRefreshParamsSchema = closedObject({
   agentId: Type.Optional(Type.String()),
 });
 
+/** Saves a model-provider API key without changing model selection. */
+export const ModelsAuthSetApiKeyParamsSchema = Type.Object(
+  {
+    provider: Type.String({ pattern: "\\S" }),
+    apiKey: Type.String({ pattern: "\\S" }),
+    agentId: Type.Optional(Type.String()),
+  },
+  // Existing wire clients may send extra fields; the handler ignores them.
+  { additionalProperties: true },
+);
+
+export const ModelsAuthSetApiKeyResultSchema = closedObject({
+  provider: NonEmptyString,
+  profileId: NonEmptyString,
+  warning: Type.Optional(Type.String()),
+});
+
 /** Removes saved model-provider credentials from one configured agent. */
 export const ModelsAuthLogoutParamsSchema = closedObject({
   provider: NonEmptyString,
@@ -1499,6 +1516,8 @@ export type ModelChoice = Static<typeof ModelChoiceSchema>;
 export type ModelsListParams = Static<typeof ModelsListParamsSchema>;
 export type ModelCatalogProviderOutcome = Static<typeof ModelCatalogProviderOutcomeSchema>;
 export type ModelsListResult = Static<typeof ModelsListResultSchema>;
+export type ModelsAuthSetApiKeyParams = Static<typeof ModelsAuthSetApiKeyParamsSchema>;
+export type ModelsAuthSetApiKeyResult = Static<typeof ModelsAuthSetApiKeyResultSchema>;
 export type ModelsAuthStatusParams = Static<typeof ModelsAuthStatusParamsSchema>;
 export type ModelsAuthLogoutParams = Static<typeof ModelsAuthLogoutParamsSchema>;
 export type ModelsAuthOrderSetParams = Static<typeof ModelsAuthOrderSetParamsSchema>;

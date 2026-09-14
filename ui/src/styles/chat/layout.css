@@ -654,6 +654,12 @@ openclaw-chat-page {
   content-visibility: auto;
 }
 
+/* Message jumps need real mounted-row sizes before their target settles.
+   Native reader takeover restores ordinary overscan layout skipping. */
+.chat-thread-inner[data-measuring-rows] .chat-virtual-row {
+  content-visibility: visible;
+}
+
 .chat-virtual-row--first > :first-child {
   margin-top: 0 !important;
 }

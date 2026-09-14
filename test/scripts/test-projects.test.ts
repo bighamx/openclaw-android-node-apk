@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { assert, beforeAll, describe, expect, it, vi } from "vitest";
 import { listExtensionTestFilesForRoots } from "../../scripts/lib/extension-test-plan.mts";
 import { readTestSelectorSourceFacts } from "../../scripts/lib/test-selector-source-facts.mts";
 import { resolveVitestPretestBuildMode } from "../../scripts/lib/vitest-build-prerequisites.mts";
@@ -44,6 +44,7 @@ import {
   channelSurfaceContractPatterns,
 } from "../vitest/vitest.contracts-shared.ts";
 import { databaseWorkerCoreTestFiles } from "../vitest/vitest.database-worker-core-paths.mjs";
+import { gatewayDatabaseWorkerTestFiles } from "../vitest/vitest.gateway-server-paths.mjs";
 
 const normalizeRepoPath = toRepoPath;
 const CODEX_TEST_PROCESS_FILE_LIMIT = 12;
@@ -2173,6 +2174,62 @@ describe("scripts/test-projects changed-target routing", () => {
       includePatterns: [testFile],
     });
   });
+
+  it.each(gatewayDatabaseWorkerTestFiles)(
+    "routes Gateway database consumer %s to its fork owner",
+    (testFile) => {
+      expectSingleVitestRunPlan(buildVitestRunPlans([testFile]), {
+        config: "test/vitest/vitest.gateway-database-workers.config.ts",
+        includePatterns: [testFile],
+      });
+    },
+  );
+
+  it.each(
+    ["src/gateway", "src/gateway/**/*.test.ts"].flatMap((target) =>
+      ["alone", "worker-first", "aggregate-first"].map((order) => ({ target, order })),
+    ),
+  )(
+    "keeps Gateway database consumers in the aggregate for $target ($order)",
+    ({ target, order }) => {
+      const [workerFile] = gatewayDatabaseWorkerTestFiles;
+      assert(workerFile);
+      const targets =
+        order === "alone"
+          ? [target]
+          : order === "worker-first"
+            ? [workerFile, target]
+            : [target, workerFile];
+      const forwardedArgs = ["--reporter=dot", "--coverage"];
+      expectSingleVitestRunPlan(buildVitestRunPlans([...targets, ...forwardedArgs]), {
+        config: "test/vitest/vitest.gateway.config.ts",
+        forwardedArgs,
+        includePatterns: targets.map((file) =>
+          file === "src/gateway" ? "src/gateway/**/*.test.ts" : file,
+        ),
+      });
+    },
+  );
+
+  it.each(
+    ["test/vitest/vitest.gateway.config.ts", "src/gateway/config-reload.test.ts"].flatMap(
+      (target) => [true, false].map((workerFirst) => ({ target, workerFirst })),
+    ),
+  )(
+    "coalesces Gateway worker config with $target (worker first: $workerFirst)",
+    ({ target, workerFirst }) => {
+      const workerConfig = "test/vitest/vitest.gateway-database-workers.config.ts";
+      const targets = workerFirst ? [workerConfig, target] : [target, workerConfig];
+      expectSingleVitestRunPlan(buildVitestRunPlans(targets), {
+        config: "test/vitest/vitest.gateway.config.ts",
+        includePatterns: target.endsWith(".config.ts")
+          ? null
+          : workerFirst
+            ? [...gatewayDatabaseWorkerTestFiles, target]
+            : [target, ...gatewayDatabaseWorkerTestFiles],
+      });
+    },
+  );
 
   it.each(databaseWorkerCoreTestFiles)(
     "routes host-owned database consumer %s to the infra fork shard",

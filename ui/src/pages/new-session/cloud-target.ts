@@ -4,6 +4,7 @@ import type { EnvironmentsListResult } from "../../../../packages/gateway-protoc
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { icons } from "../../components/icons.ts";
 import { t } from "../../i18n/index.ts";
+import { registerNewSessionSetupEnglish } from "../../i18n/locales/en-new-session-setup.ts";
 import type {
   DraftCloudProfile,
   DraftEnvironment,
@@ -16,6 +17,8 @@ import {
   readDraftCloudProfiles,
   readDraftEnvironments,
 } from "./discovery.ts";
+
+registerNewSessionSetupEnglish();
 
 export async function requestPlaceCatalog(
   client: Pick<GatewayBrowserClient, "request">,

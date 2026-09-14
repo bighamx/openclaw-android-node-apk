@@ -103,7 +103,7 @@ describe("subagent activity rows", () => {
       progressSummary: "All runs bind `abc123`, **not final** qualification",
       expected: "All runs bind abc123, not final qualification",
     },
-    { lastToolName: "read_file", expected: "read_file" },
+    { lastToolName: "read_file", expected: "Last tool: read_file" },
     { lastActivity: "Inspecting items[0", expected: "Inspecting items[0" },
     {
       status: "completed" as const,
@@ -138,88 +138,155 @@ describe("subagent activity rows", () => {
       title: "  Layout review  ",
       label: "Layout review",
       status: "running" as const,
-      description: "Running — working on this task.",
+      description: "Running",
+      moving: true,
     },
     {
       title: "Layout review",
       label: "Layout review",
       status: "completed" as const,
-      description: "Completed — finished successfully.",
+      description: "Completed",
     },
     {
       title: "",
       label: "Subagent",
       status: "running" as const,
-      description: "Running — working on this task.",
+      description: "Running",
+      moving: true,
     },
     {
       title: undefined,
       label: "Subagent",
       status: "running" as const,
-      description: "Running — working on this task.",
+      description: "Running",
+      moving: true,
     },
     {
       title: " \n ",
       label: "Subagent",
       status: "failed" as const,
-      description: "Failed — the task ended with an error.",
+      description: "Failed",
     },
     {
       title: "Layout review",
       label: "Layout review",
       status: "queued" as const,
-      description: "Queued — waiting to start.",
+      description: "Queued",
     },
     {
       title: "Layout review",
       label: "Layout review",
       status: "cancelled" as const,
-      description: "Cancelled — stopped before completion.",
+      description: "Cancelled",
     },
     {
       title: "Layout review",
       label: "Layout review",
       status: "timed_out" as const,
-      description: "Timed out — reached its time limit.",
+      description: "Timed out",
     },
-  ])("opens $label activity with $status status", ({ title, label, status, description }) => {
-    const task = makeTask({
-      id: "clickable-subagent",
-      title,
-      status,
-      lastActivity: "Checking spacing",
-    });
-    const onOpenTaskDetail = vi.fn();
-    const container = renderStatusRow({
-      tasks: [task],
-      subagentActivity: deriveSubagentActivity({
+    {
+      title: "Layout review",
+      label: "Layout review",
+      status: "running" as const,
+      execution: { state: "waiting" as const },
+      description: "Waiting",
+    },
+    {
+      title: "Layout review",
+      label: "Layout review",
+      status: "running" as const,
+      execution: { state: "unknown" as const },
+      description: "Activity unknown",
+    },
+    {
+      title: "Layout review",
+      label: "Layout review",
+      status: "running" as const,
+      execution: { state: "finished" as const },
+      description: "Execution finished",
+    },
+    {
+      title: "Layout review",
+      label: "Layout review",
+      status: "running" as const,
+      execution: { state: "queued" as const },
+      description: "Queued",
+    },
+    {
+      title: "Layout review",
+      label: "Layout review",
+      status: "completed" as const,
+      deliveryStatus: "session_queued" as const,
+      description: "Result ready — Queued for parent",
+    },
+    {
+      title: "Layout review",
+      label: "Layout review",
+      status: "completed" as const,
+      deliveryStatus: "pending" as const,
+      description: "Result ready — Waiting to send to parent",
+    },
+    {
+      title: "Layout review",
+      label: "Layout review",
+      status: "completed" as const,
+      deliveryStatus: "delivered" as const,
+      description: "Completed — Delivered to parent",
+    },
+    {
+      title: "Layout review",
+      label: "Layout review",
+      status: "completed" as const,
+      deliveryStatus: "failed" as const,
+      description: "Completed — Delivery failed · result retained",
+      warning: true,
+    },
+  ])(
+    "opens $label activity with $description",
+    ({ label, description, moving = false, warning, ...taskProps }) => {
+      const task = makeTask({
+        id: "clickable-subagent",
+        ...taskProps,
+        lastActivity: "Checking spacing",
+        terminalSummary: "Checking spacing",
+      });
+      const onOpenTaskDetail = vi.fn();
+      const container = renderStatusRow({
         tasks: [task],
-        sessionKey: "agent:main:current",
-        terminalObservedAtByTask: new Map(),
-        canonicalizeSessionKey: (sessionKey) => sessionKey ?? "",
-        now: 3_000,
-      }),
-      onOpenTaskDetail,
-    });
+        subagentActivity: deriveSubagentActivity({
+          tasks: [task],
+          sessionKey: "agent:main:current",
+          terminalObservedAtByTask: new Map(),
+          canonicalizeSessionKey: (sessionKey) => sessionKey ?? "",
+          now: 3_000,
+        }),
+        onOpenTaskDetail,
+      });
 
-    const row = container.querySelector<HTMLButtonElement>(
-      '[data-subagent-task-id="clickable-subagent"]',
-    );
-    expect(row?.tagName).toBe("BUTTON");
-    expect(row?.querySelector(".chat-subagent-activity__label")?.textContent).toBe(label);
-    expect(row?.textContent?.replace(/\s+/g, " ").trim()).toBe(`${label} Checking spacing`);
-    expect(container.querySelector("openclaw-tooltip")?.content).toBe(
-      `${label}\n${description}\nChecking spacing`,
-    );
-    expect(row?.querySelector(".chat-subagent-activity__snippet")?.textContent).toBe(
-      "Checking spacing",
-    );
-    expect(row?.getAttribute("aria-label")).toBe(
-      `Open subagent details for ${label}. ${description}`,
-    );
-    row?.click();
-    expect(onOpenTaskDetail).toHaveBeenCalledWith(task);
-  });
+      const row = container.querySelector<HTMLButtonElement>(
+        '[data-subagent-task-id="clickable-subagent"]',
+      );
+      expect(row?.tagName).toBe("BUTTON");
+      expect(row?.querySelector(".chat-subagent-activity__label")?.textContent).toBe(label);
+      expect(row?.textContent?.replace(/\s+/g, " ").trim()).toBe(`${label} Checking spacing`);
+      expect(row?.querySelector(".chat-reading-indicator") !== null).toBe(moving);
+      if (warning) {
+        expect(row?.querySelector(".chat-subagent-activity__badge")).not.toBeNull();
+      }
+      expect(container.querySelector("openclaw-tooltip")?.content).toBe(
+        `${label}\n${description}\nChecking spacing`,
+      );
+      expect(row?.querySelector(".chat-subagent-activity__snippet")?.textContent).toBe(
+        "Checking spacing",
+      );
+      expect(row?.getAttribute("aria-label")).toBe(
+        `Open subagent details for ${label}. ${description}`,
+      );
+      row?.click();
+      expect(onOpenTaskDetail).toHaveBeenCalledWith(task);
+    },
+  );
 
   it("keeps activity rows non-interactive when no open callback is provided", () => {
     const task = makeTask({ id: "status-only-subagent" });
@@ -299,7 +366,7 @@ describe("subagent activity rows", () => {
       container
         .querySelector('[data-subagent-task-id="recent-subagent"]')
         ?.getAttribute("aria-label"),
-    ).toContain("Completed — finished successfully.");
+    ).toContain("Completed");
     expect(container.textContent).not.toContain("Wrong requester");
     expect(container.textContent).not.toContain("Too old");
     expect(container.querySelector(".chat-tasks-status__link")?.textContent?.trim()).toBe(
@@ -307,12 +374,13 @@ describe("subagent activity rows", () => {
     );
   });
 
-  it("caps visible rows at five and counts only hidden running work", () => {
+  it("caps visible rows at five and includes waiting and queued children in the overflow", () => {
     const running = Array.from({ length: 7 }, (_, index) =>
       makeTask({
         id: `running-${index}`,
         lastActivity: `Running child ${index}`,
         updatedAt: 10_000 - index,
+        ...(index >= 5 ? { execution: { state: "waiting" as const } } : {}),
       }),
     );
     const queued = Array.from({ length: 2 }, (_, index) =>
@@ -332,7 +400,7 @@ describe("subagent activity rows", () => {
 
     expect(container.querySelectorAll(".chat-subagent-activity__row")).toHaveLength(5);
     expect(container.querySelector(".chat-subagent-activity__overflow")?.textContent?.trim()).toBe(
-      "+2 more working",
+      "+4 more subagents",
     );
     expect(container.querySelector(".chat-tasks-status")).toBeNull();
   });
@@ -356,6 +424,8 @@ describe("subagent activity rows", () => {
         status: "cancelled",
         updatedAt: 100_000,
         endedAt: 100_000,
+        lastToolName: "read_file",
+        progressSummary: "Outdated progress",
       }),
     });
     const props = createBackgroundTasksProps(host);
@@ -372,8 +442,10 @@ describe("subagent activity rows", () => {
     renderCurrent();
     expect(
       container.querySelector(".chat-subagent-activity__row")?.getAttribute("aria-label"),
-    ).toContain("Cancelled — stopped before completion.");
+    ).toContain("Cancelled");
     expect(container.textContent).not.toContain("Editing the final report");
+    expect(container.textContent).not.toContain("Outdated progress");
+    expect(container.textContent).not.toContain("read_file");
     expect(container.querySelector(".chat-diffstat")).toBeNull();
 
     requestUpdate.mockClear();

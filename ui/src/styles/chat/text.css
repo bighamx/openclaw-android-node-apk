@@ -557,13 +557,27 @@
   padding: 0.08em 0.45em 0.08em 0.4em;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--accent-subtle) 72%, var(--bg-muted));
-  color: var(--link);
+  /* Unknown state must not imply an open pull request. */
+  color: var(--muted);
   font-weight: 600;
   line-height: 1.25;
   text-decoration: none;
   vertical-align: baseline;
   white-space: nowrap;
   line-break: auto;
+}
+
+.chat-text a.markdown-github-item[data-github-state="open"] {
+  color: var(--ok);
+}
+
+.chat-text a.markdown-github-item[data-github-kind="issue"][data-github-state="closed"],
+.chat-text a.markdown-github-item[data-github-state="merged"] {
+  color: var(--pr-merged);
+}
+
+.chat-text a.markdown-github-item[data-github-kind="pull"][data-github-state="closed"] {
+  color: var(--danger);
 }
 
 .chat-text a.markdown-github-item:hover,

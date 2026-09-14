@@ -249,6 +249,8 @@ export async function startGatewayCoreRuntime(input: {
       chatAbortControllers,
       restartRecoveryCandidates,
       terminalSessions,
+      refreshConnectedUserProfiles: () =>
+        runtime.resolvePluginGatewayContext()?.refreshConnectedUserProfile?.(),
     }),
   );
   Object.assign(runtimeState, runtimeSubscriptionUnsubs);
@@ -263,7 +265,10 @@ export async function startGatewayCoreRuntime(input: {
   // expiry back through the owning manager to release its parked waiter once.
   const approvalManagersForReplay = new Map<
     string,
-    Pick<ExecApprovalManager, "reconcileDurableTerminal">
+    Pick<
+      ExecApprovalManager<unknown>,
+      "reconcileDurableTerminal" | "getLiveSnapshot" | "runtimeEpoch"
+    >
   >();
   const approvalSessionEvents = createOperatorApprovalSessionEventRuntime({
     clients,
@@ -274,6 +279,8 @@ export async function startGatewayCoreRuntime(input: {
       const manager = approvalManagersForReplay.get(record.kind);
       return manager?.reconcileDurableTerminal(record) ?? false;
     },
+    getLiveManager: (kind) => approvalManagersForReplay.get(kind),
+    isCurrent: () => !runtime.connectionWork.signal.aborted,
   });
   // One validator owns both request-time and manager-time checks. Worker claims
   // are always read from the authoritative operational placement store.

@@ -211,6 +211,66 @@ describe("followup queue collect routing", () => {
     expect(cancelA).toEqual(cancelB);
   });
 
+  it.each(["admission", "abandonment", "abort", "callback failure"] as const)(
+    "renews a deeper queued lifecycle until %s",
+    async (transition) => {
+      vi.useFakeTimers();
+      const key = `test-deferred-heartbeat-${transition}`;
+      const abort = new AbortController();
+      let lastHeartbeat = -Infinity;
+      let failHeartbeat = false;
+      const heartbeat = vi.fn(() => {
+        if (failHeartbeat) {
+          throw new Error("heartbeat unavailable");
+        }
+        lastHeartbeat = Date.now();
+      });
+      const pending = createRun({ prompt: "deeper queued turn" });
+      pending.turnAdoptionLifecycle = {
+        admission: "exclusive",
+        abortSignal: abort.signal,
+        onAdopted: async () => {},
+        onDeferredHeartbeat: heartbeat,
+        deferredHeartbeatIntervalMs: 1_000,
+      };
+      try {
+        const settings = createQueueSettings({ mode: "followup" });
+        enqueueFollowupRun(key, createRun({ prompt: "earlier turn" }), settings);
+        enqueueFollowupRun(key, pending, settings);
+        await vi.advanceTimersByTimeAsync(3_000);
+        expect(Date.now() - lastHeartbeat).toBeLessThan(1_000);
+
+        if (transition === "admission") {
+          await admitFollowupRunLifecycle(pending);
+        } else if (transition === "abandonment") {
+          clearFollowupQueue(key);
+        } else if (transition === "abort") {
+          abort.abort();
+        } else {
+          failHeartbeat = true;
+          await vi.advanceTimersByTimeAsync(1_000);
+        }
+        const callsAtTransition = heartbeat.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(3_000);
+        expect(heartbeat).toHaveBeenCalledTimes(callsAtTransition);
+
+        if (transition === "admission" || transition === "callback failure") {
+          const delivered: string[] = [];
+          scheduleFollowupDrain(key, async (run) => {
+            await admitFollowupRunLifecycle(run);
+            delivered.push(run.prompt);
+            completeFollowupRunLifecycle(run);
+          });
+          await vi.runAllTimersAsync();
+          expect(delivered).toEqual(["earlier turn", "deeper queued turn"]);
+        }
+      } finally {
+        clearFollowupQueue(key);
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("retries lifecycle admission after a callback rejection", async () => {
     const onAdmitted = vi
       .fn<() => Promise<void>>()

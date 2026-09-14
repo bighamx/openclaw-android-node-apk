@@ -9,6 +9,7 @@ import type {
 import type {
   ControlUiSessionBranch,
   ControlUiSessionPullRequest,
+  ControlUiSessionPullRequestSnapshot,
 } from "../../../../src/gateway/control-ui-contract.js";
 import type { ExecApprovalDecision, ExecApprovalRequest } from "../../app/exec-approval.ts";
 import { renderExecApprovalCard } from "../../components/exec-approval-card.ts";
@@ -125,7 +126,7 @@ export type ChatProps = Omit<
     ) => void;
     pullRequests?: ControlUiSessionPullRequest[];
     pullRequestsBranch?: ControlUiSessionBranch;
-    pullRequestsRateLimited?: boolean;
+    pullRequestsStatus?: ControlUiSessionPullRequestSnapshot["status"];
     pullRequestsExpanded?: boolean;
     onOpenSessionDiff?: () => void;
     onExpandPullRequests?: () => void;
@@ -435,7 +436,7 @@ export function renderChat(props: ChatProps) {
                   ${renderChatPullRequests({
                     pullRequests: props.pullRequests ?? [],
                     branch: props.pullRequestsBranch,
-                    rateLimited: props.pullRequestsRateLimited === true,
+                    status: props.pullRequestsStatus ?? "ready",
                     expanded: props.pullRequestsExpanded === true,
                     onExpand: () => props.onExpandPullRequests?.(),
                     onDismiss: (pullRequest) => props.onDismissPullRequest?.(pullRequest),

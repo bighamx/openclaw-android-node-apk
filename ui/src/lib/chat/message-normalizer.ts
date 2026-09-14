@@ -14,6 +14,7 @@ import {
   extractCanvasShortcodes,
   isCanvasBoardWidgetName,
 } from "../../../../src/chat/canvas-render.js";
+import { readMessageClientSources } from "../../../../src/chat/message-client-source.js";
 import { readTranscriptSenderIdentity } from "../../../../src/chat/sender-identity.js";
 import {
   isToolCallContentType,
@@ -26,6 +27,7 @@ import { getMediaFileExtension } from "../media-file-extension.ts";
 import type { NormalizedMessage, MessageContentItem } from "./chat-types.ts";
 import { projectImportedMessageForDisplay } from "./imported-message-display.ts";
 import { normalizeAttachmentContentBlock } from "./message-normalizer-attachments.ts";
+import { normalizeImageContentBlock } from "./message-normalizer-images.ts";
 import { formatSenderLabel, normalizeSenderIdentity, type SenderIdentity } from "./sender-label.ts";
 
 // Keep legacy labels readable without treating their UUID suffix as profile evidence.
@@ -494,6 +496,10 @@ export function normalizeMessage(message: unknown): NormalizedMessage {
       if (omittedMedia) {
         return [omittedMedia];
       }
+      const image = normalizeImageContentBlock(item);
+      if (image) {
+        return [image];
+      }
       const type = item.type;
       if (type === "clawhub") {
         const recommendation = isAssistantMessage ? readClawHubRecommendation(item) : null;
@@ -594,6 +600,7 @@ export function normalizeMessage(message: unknown): NormalizedMessage {
   const metaSender = resolveMessageSender(openClawMeta);
   const senderLabel = resolveMessageSenderLabel(m, metaSender);
   const sender = metaSender ?? (senderLabel ? { name: senderLabel } : null);
+  const sourceClients = role === "user" ? readMessageClientSources(m) : [];
 
   content = stripMessageDisplayMetadata(content);
   const senderSession = readMessageSenderSession(m.senderSession);
@@ -606,6 +613,7 @@ export function normalizeMessage(message: unknown): NormalizedMessage {
     senderLabel,
     ...(senderSession ? { senderSession } : {}),
     ...(sender ? { sender } : {}),
+    ...(sourceClients.length ? { sourceClients } : {}),
     ...(audioAsVoice ? { audioAsVoice: true } : {}),
     ...(replyPreviewText
       ? {

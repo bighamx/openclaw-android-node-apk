@@ -147,6 +147,14 @@ restart/stop and detached restart or Windows Startup-folder fallbacks that canno
 retain this ownership. Ordinary user-invoked `openclaw gateway` commands keep their
 existing behavior.
 
+On Windows, capability probes stay alive until the updater finishes binding their
+process identity. If Windows cannot supply a process creation timestamp, the
+updater retains the identity established by the live parent or uses the child's
+recorded launcher identity, with a warning in the run history and diagnostic logs.
+A different observed identity still refuses the
+handoff. Scheduled Tasks using `InteractiveToken` remain supported; this does not
+require storing a task password.
+
 This target-CLI protection does not cover every Doctor or plugin child, the
 in-process service preparation before package mutation, or the separate
 deferred-install activation checks.
@@ -206,6 +214,11 @@ For a profile without a runtime database, an older npm target initializes its
 compatible state before the updater records history. The selected release's
 Doctor runs before activation, including when npm's install hooks already created
 the database. Existing databases retain their downgrade protections.
+
+If database schema preflight cannot inspect the configured paths because the
+config is invalid, its refusal lists the config file and invalid fields. Run
+`openclaw doctor --fix` to repair retired or unrecognized fields, correct any
+remaining errors, and retry the update. Preflight leaves the config unchanged.
 
 Explicit package specs on a fresh profile first stage with a temporary OpenClaw
 profile. The updater inspects the staged runtime's declared schema and Node

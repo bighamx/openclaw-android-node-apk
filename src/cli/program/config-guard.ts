@@ -286,15 +286,9 @@ export async function ensureConfigReady(
           : {}),
       });
     try {
-      const runPreflight = () =>
-        !params.suppressDoctorStdout
-          ? runDoctorConfigPreflight()
-          : withSuppressedNotes(runDoctorConfigPreflight);
-      return shouldRequireStartupMigrationCheckpoint(commandPath)
-        ? await (
-            await import("../../infra/sqlite-readonly-worker.js")
-          ).withSqliteReadOnlyWorkerScope(runPreflight)
-        : await runPreflight();
+      return !params.suppressDoctorStdout
+        ? await runDoctorConfigPreflight()
+        : await withSuppressedNotes(runDoctorConfigPreflight);
     } catch (error) {
       if (shouldRequireStartupMigrationCheckpoint(commandPath)) {
         await (

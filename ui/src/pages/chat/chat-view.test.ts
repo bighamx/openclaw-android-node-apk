@@ -882,7 +882,7 @@ function createBackgroundTasks(
     activeCount: 0,
     subagentActivity: {
       rows: [],
-      overflowWorking: 0,
+      overflowCount: 0,
       taskIds: new Set<string>(),
       nextExpiryAt: null,
     },

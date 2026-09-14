@@ -68,6 +68,7 @@ export const taskIdsByParentFlowId = taskRegistryProcessState.taskIdsByParentFlo
 export const taskIdsByRelatedSessionKey = taskRegistryProcessState.taskIdsByRelatedSessionKey;
 export const tasksWithPendingDelivery = taskRegistryProcessState.tasksWithPendingDelivery;
 export const taskActivityByTaskId = taskRegistryProcessState.taskActivityByTaskId;
+export const taskProgressBatches = taskRegistryProcessState.taskProgressBatches;
 type TaskRegistryRestoreState =
   | { status: "uninitialized" }
   | { status: "restoring" }
@@ -96,6 +97,14 @@ export function setTaskRegistryListenerStop(stop: (() => void) | null): void {
 export function resetTaskRegistryListenerState(): void {
   taskRegistryProcessState.listenerStop?.();
   taskRegistryProcessState.listenerStop = undefined;
+  clearTaskProgressBatches();
+}
+
+function clearTaskProgressBatches(): void {
+  for (const batch of taskProgressBatches.values()) {
+    clearTimeout(batch.timer);
+  }
+  taskProgressBatches.clear();
 }
 
 function clearTaskFlowSyncRetries(): void {
@@ -111,7 +120,11 @@ export function snapshotTaskRecords(source: ReadonlyMap<string, TaskRecord>): Ta
 
 export function emitTaskRegistryObserverEvent(createEvent: () => TaskRegistryObserverEvent): void {
   const observers = getTaskRegistryObservers();
-  if (!observers?.onEvent && taskRegistryProcessState.projection.pending.size === 0) {
+  if (
+    !observers?.onEvent &&
+    taskRegistryProcessState.projection.pending.size === 0 &&
+    taskRegistryProcessState.changeListeners.size === 0
+  ) {
     return;
   }
   try {
@@ -123,11 +136,26 @@ export function emitTaskRegistryObserverEvent(createEvent: () => TaskRegistryObs
       event: "task-registry",
       error,
     });
+  } finally {
+    for (const listener of taskRegistryProcessState.changeListeners) {
+      try {
+        listener();
+      } catch (error) {
+        taskRegistryLog.warn("Task registry change listener failed", { error });
+      }
+    }
   }
+}
+
+/** Subscribe to the existing publication owner; readers recheck current task authority. */
+export function onTaskRegistryChange(listener: () => void): () => void {
+  taskRegistryProcessState.changeListeners.add(listener);
+  return () => taskRegistryProcessState.changeListeners.delete(listener);
 }
 
 export function clearTaskRegistryMemory(): void {
   clearTaskFlowSyncRetries();
+  clearTaskProgressBatches();
   for (const activity of taskActivityByTaskId.values()) {
     if (activity.flushTimer) {
       clearTimeout(activity.flushTimer);
@@ -233,27 +261,6 @@ export function rebuildRunIdIndex() {
   taskIdsByRunId.clear();
   for (const [taskId, task] of tasks.entries()) {
     addRunIdIndex(taskId, task.runId);
-  }
-}
-
-function rebuildOwnerKeyIndex() {
-  taskIdsByOwnerKey.clear();
-  for (const [taskId, task] of tasks.entries()) {
-    addOwnerKeyIndex(taskId, task);
-  }
-}
-
-function rebuildParentFlowIdIndex() {
-  taskIdsByParentFlowId.clear();
-  for (const [taskId, task] of tasks.entries()) {
-    addParentFlowIdIndex(taskId, task);
-  }
-}
-
-function rebuildRelatedSessionKeyIndex() {
-  taskIdsByRelatedSessionKey.clear();
-  for (const [taskId, task] of tasks.entries()) {
-    addRelatedSessionKeyIndex(taskId, task);
   }
 }
 
@@ -392,14 +399,11 @@ export function restoreTaskRegistryOnce() {
     clearTaskRegistryMemory();
     for (const [taskId, task] of restored.tasks) {
       tasks.set(taskId, task);
+      addIndexes(task);
     }
     for (const [taskId, state] of restored.deliveryStates) {
       taskDeliveryStates.set(taskId, state);
     }
-    rebuildRunIdIndex();
-    rebuildOwnerKeyIndex();
-    rebuildParentFlowIdIndex();
-    rebuildRelatedSessionKeyIndex();
     taskRegistryRestoreState = { status: "ready" };
     markTaskRegistryProjectionRestored();
     for (const task of settledTasks) {

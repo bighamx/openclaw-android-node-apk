@@ -2,14 +2,16 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { resolveRuntimeWorkerUrl } from "openclaw/plugin-sdk/process-runtime";
 import { openNodeSqliteDatabase } from "openclaw/plugin-sdk/sqlite-runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import { githubCounts as counts } from "./reports.fixtures.js";
+import { teamReportsSqliteBackendEntrypoint } from "./sqlite-backend-entrypoint.test-support.js";
 import { createTeamReportsStore, type TeamReportsStore } from "./store.js";
 import type { PeriodDescriptor, ReportDocument, SummaryDocument } from "./types.js";
 
 const DAY_MS = 86_400_000;
-const workerModuleUrl = new URL("./store.worker.ts", import.meta.url);
+const workerModuleUrl = resolveRuntimeWorkerUrl(teamReportsSqliteBackendEntrypoint);
 const resources: Array<{ store: TeamReportsStore; directory: string }> = [];
 
 async function openStore() {

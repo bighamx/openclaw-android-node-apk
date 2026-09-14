@@ -13,6 +13,7 @@ import { icon } from "../../components/icons.ts";
 import "../../components/web-awesome.ts";
 import { toSanitizedMarkdownHtml } from "../../components/markdown.ts";
 import { i18n, t } from "../../i18n/index.ts";
+import { registerCronEnglish } from "../../i18n/locales/en-cron.ts";
 import { formatDurationCompact, formatDurationHuman } from "../../lib/format-duration.ts";
 import { formatUiExternalText } from "../../lib/format-error.ts";
 import {
@@ -23,6 +24,8 @@ import {
 import { shouldHandleNavigationClick } from "../../lib/navigation-click.ts";
 import { sessionNavigationTarget } from "../../lib/sessions/route-navigation.ts";
 import { cronRunEntryMatchesLink } from "./route-model.ts";
+
+registerCronEnglish();
 
 // Leaf contract: the slice of the cron view props this module needs. Keeping
 // it local (instead of importing CronProps from view.ts) avoids a module

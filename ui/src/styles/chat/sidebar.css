@@ -940,10 +940,48 @@ openclaw-chat-sidebar-region,
   font-size: var(--control-ui-text-xs);
 }
 
-.chat-task-detail__tool {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.chat-task-detail__observation {
+  display: grid;
+  flex-shrink: 0;
+  max-height: 35%;
+  gap: 6px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--control-ui-text-xs);
+  overflow-wrap: anywhere;
+}
+
+.chat-task-detail__fact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.chat-task-detail__fact-label {
+  color: var(--muted);
+}
+
+.chat-task-detail__dependencies {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-inline-start: 18px;
+}
+
+.chat-task-detail__dependency {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  text-decoration: underline;
+}
+
+.chat-task-detail__delivery--error {
+  color: var(--danger);
 }
 
 .chat-task-detail__content {

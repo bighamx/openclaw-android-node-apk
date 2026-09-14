@@ -727,10 +727,8 @@ suite.define(() => {
           },
         });
 
-        await expect
-          .poll(() => firstRow.getAttribute("aria-label"))
-          .toContain("Cancelled — stopped before completion.");
-        await detailPanel.getByText("Failed").waitFor();
+        await expect.poll(() => firstRow.getAttribute("aria-label")).toContain("Cancelled");
+        await detailPanel.getByText("Cancelled").waitFor();
         expect(await firstRow.textContent()).not.toContain("Cross-checking requester ownership");
         expect(await activity.locator(".chat-diffstat").count()).toBe(0);
         expect(await detailPanel.locator(".chat-diffstat__add").textContent()).toBe("+14");
@@ -750,12 +748,12 @@ suite.define(() => {
         await detailPanel.waitFor({ state: "detached" });
 
         const states = [
-          ["queued", "Queued — waiting to start."],
-          ["running", "Running — working on this task."],
-          ["completed", "Completed — finished successfully."],
-          ["failed", "Failed — the task ended with an error."],
-          ["cancelled", "Cancelled — stopped before completion."],
-          ["timed_out", "Timed out — reached its time limit."],
+          ["queued", "Queued"],
+          ["running", "Running"],
+          ["completed", "Completed"],
+          ["failed", "Failed"],
+          ["cancelled", "Cancelled"],
+          ["timed_out", "Timed out"],
         ] as const;
         const claw = firstRow.locator(".chat-subagent-activity__claw > svg");
         const jaw = claw.locator(".claw-icon__jaw");
@@ -832,7 +830,7 @@ suite.define(() => {
         await page.keyboard.press("Tab");
         await firstRow.focus();
         await tooltip.waitFor({ state: "visible" });
-        expect(await tooltip.textContent()).toContain("Timed out — reached its time limit.");
+        expect(await tooltip.textContent()).toContain("Timed out");
         await page.keyboard.press("Escape");
       },
     );

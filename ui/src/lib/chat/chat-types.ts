@@ -7,6 +7,7 @@ import type {
   ChatSendIntent,
   QueueMode,
 } from "../../../../packages/gateway-protocol/src/schema/logs-chat.js";
+import type { MessageClientSource } from "../../../../src/chat/message-client-source.js";
 import type { ClawHubRecommendation } from "../../../../src/shared/clawhub-recommendations.js";
 import type { BrowserTabTarget } from "../../components/browser/browser-target.ts";
 import type { toolIcons } from "../../components/icons-tools.ts";
@@ -253,6 +254,7 @@ export type MessageGroup = {
   senderLabel?: string | null;
   senderSession?: { sessionKey?: string; agentId?: string } | null;
   sender?: SenderIdentity;
+  sourceClients?: MessageClientSource[];
   replyToSender?: SenderIdentity;
   messages: Array<{
     message: unknown;
@@ -267,9 +269,30 @@ export type MessageGroup = {
   runId?: string;
 };
 
+export type MessageImageSource = {
+  url?: string;
+  dataUrl?: string;
+  preferData?: true;
+  mimeType?: string;
+  artifactId?: string;
+  fileName?: string;
+  openUrl?: string;
+  alt?: string;
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+};
+
 /** Content item types in a normalized message */
 export type MessageContentItem =
   | ClawHubRecommendation
+  | {
+      type: "image";
+      sources: MessageImageSource[];
+      /** Canonical image blocks consume a persisted inline-layout slot, even if empty. */
+      inlineSlot?: true;
+      expiresAtMs?: number;
+    }
   | {
       type: "text" | "tool_call" | "tool_result";
       text?: string;
@@ -327,6 +350,7 @@ export type NormalizedMessage = {
   senderLabel?: string | null;
   senderSession?: { sessionKey?: string; agentId?: string } | null;
   sender?: SenderIdentity;
+  sourceClients?: MessageClientSource[];
   audioAsVoice?: boolean;
   replyPreview?: { text: string; senderLabel?: string | null };
   replyTarget?:

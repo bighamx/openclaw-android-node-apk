@@ -1092,11 +1092,10 @@
   overflow-y: auto;
 }
 
-/* Completed-turn work rollup: slim "Worked for X" disclosure standing in for
-   the turn's intermediate tool/commentary groups. Keep it equally separated
-   from the prompt and final reply. */
+/* Standalone work uses the same summary-to-reply gap as an inline run frame.
+   The preceding turn already owns the separation above the summary. */
 .chat-group--work {
-  padding-block: 9px;
+  padding-block: 0 var(--chat-run-block-gap);
 }
 
 @keyframes chat-work-settle-in {

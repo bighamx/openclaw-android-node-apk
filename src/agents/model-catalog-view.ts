@@ -38,6 +38,7 @@ import {
   RUNTIME_MODEL_VISIBILITY_NORMALIZATION,
 } from "./model-visibility-policy.js";
 import {
+  createModelCatalogIdentityKeyResolver,
   openAIModelCatalogRoutePolicy,
   resolveModelCatalogIdentityKey,
 } from "./openai-model-routes.js";
@@ -48,13 +49,15 @@ export function createModelCatalogView(params: {
   catalog: ModelCatalogEntry[];
   routeVariants?: readonly ModelCatalogEntry[];
 }) {
+  const keyOf = createModelCatalogIdentityKeyResolver();
   const variantsByKey = new Map<string, ModelCatalogEntry[]>();
   for (const entry of params.routeVariants ?? params.catalog) {
-    const key = resolveModelCatalogIdentityKey(entry);
+    const key = keyOf(entry);
     const variants = variantsByKey.get(key) ?? [];
     variants.push(entry);
     variantsByKey.set(key, variants);
   }
+  // Deferred lookups can follow an await or owner reload; only the initial index shares policy.
   const variantsOf = (entry: Pick<ModelCatalogEntry, "provider" | "id">) =>
     variantsByKey.get(resolveModelCatalogIdentityKey(entry));
   const resolveOverrides = createConfiguredModelCatalogOverridesResolver({
@@ -62,7 +65,7 @@ export function createModelCatalogView(params: {
     policy: openAIModelCatalogRoutePolicy,
   });
   return {
-    logicalEntries: dedupeByKey(params.catalog, resolveModelCatalogIdentityKey),
+    logicalEntries: dedupeByKey(params.catalog, keyOf),
     variantsOf,
     project(entry: ModelCatalogEntry, evaluation: ModelAuthAvailabilityEvaluation) {
       const projection: ModelCatalogRouteProjection =
@@ -118,9 +121,10 @@ export function prepareModelCatalogView(params: ModelCatalogViewFacts) {
       ...RUNTIME_MODEL_VISIBILITY_NORMALIZATION,
       manifestPlugins: params.metadataSnapshot,
     });
-    const seen = new Set(catalog.map(resolveModelCatalogIdentityKey));
+    const keyOf = createModelCatalogIdentityKeyResolver();
+    const seen = new Set(catalog.map(keyOf));
     for (const entry of params.snapshot.staticEntries) {
-      const key = resolveModelCatalogIdentityKey(entry);
+      const key = keyOf(entry);
       if (!seen.has(key) && configuredKeys.has(key)) {
         seen.add(key);
         catalog.push(entry);
@@ -258,6 +262,7 @@ export function prepareModelCatalogView(params: ModelCatalogViewFacts) {
       sourceConfig: OpenClawConfig,
       canonicalEntries: readonly ModelCatalogEntry[],
     ) {
+      const keyOf = createModelCatalogIdentityKeyResolver();
       const dynamicProviders = new Set(
         params.metadataSnapshot.plugins.flatMap((plugin) =>
           Object.entries(plugin.modelCatalog?.discovery ?? {}).flatMap(([provider, mode]) =>
@@ -273,7 +278,7 @@ export function prepareModelCatalogView(params: ModelCatalogViewFacts) {
       );
       const canonicalByKey = new Map<string, ModelCatalogEntry>();
       for (const entry of canonicalEntries) {
-        const key = resolveModelCatalogIdentityKey(entry);
+        const key = keyOf(entry);
         if (!canonicalByKey.has(key)) {
           canonicalByKey.set(key, entry);
         }
@@ -282,7 +287,7 @@ export function prepareModelCatalogView(params: ModelCatalogViewFacts) {
       const authored = buildProviderConfigModelCatalogForBrowse({
         cfg: sourceConfig,
         workspaceDir: params.workspaceDir,
-      }).map((entry) => canonicalByKey.get(resolveModelCatalogIdentityKey(entry)) ?? entry);
+      }).map((entry) => canonicalByKey.get(keyOf(entry)) ?? entry);
       return dedupeByKey(
         [
           ...authored,
@@ -290,7 +295,7 @@ export function prepareModelCatalogView(params: ModelCatalogViewFacts) {
             discoveryOnlyProviders.has(normalizeProviderId(entry.provider)),
           ),
         ],
-        resolveModelCatalogIdentityKey,
+        keyOf,
       );
     },
   };

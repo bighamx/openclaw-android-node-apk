@@ -14,7 +14,10 @@ import {
   buildConfiguredModelCatalog,
   resolveModelRefFromString,
 } from "../model-selection-shared.js";
-import { resolveModelCatalogIdentityKey } from "../openai-model-routes.js";
+import {
+  createModelCatalogIdentityKeyResolver,
+  resolveModelCatalogIdentityKey,
+} from "../openai-model-routes.js";
 import { collectPreparedModelRuntimeConfiguredRefs } from "../prepared-model-runtime.configured.js";
 import type { PreparedModelRuntimeInput } from "../prepared-model-runtime.types.js";
 import { resolveDefaultAgentWorkspaceDir } from "../workspace.js";
@@ -34,10 +37,7 @@ function normalizeRouteBaseUrl(value: string | undefined): string {
   }
 }
 
-function routeVariantKey(
-  entry: ModelCatalogEntry,
-  identityKey = resolveModelCatalogIdentityKey(entry),
-): string {
+function routeVariantKey(entry: ModelCatalogEntry, identityKey: string): string {
   return [identityKey, entry.api ?? "", normalizeRouteBaseUrl(entry.baseUrl)].join("\0");
 }
 
@@ -67,6 +67,7 @@ function enrichHarnessRows(
   rows: readonly ModelCatalogEntry[],
   snapshot: ModelCatalogSnapshot,
 ): ModelCatalogEntry[] {
+  const keyOf = createModelCatalogIdentityKeyResolver();
   const routeDonors = new Map<string, ModelCatalogEntry>();
   const identityDonors = new Map<string, ModelCatalogEntry>();
   let donorsPrepared = false;
@@ -78,7 +79,7 @@ function enrichHarnessRows(
     if (!donorsPrepared) {
       // First donor wins: live snapshot entries take precedence over static rows.
       for (const donor of [...snapshot.entries, ...(snapshot.staticEntries ?? [])]) {
-        const identityKey = resolveModelCatalogIdentityKey(donor);
+        const identityKey = keyOf(donor);
         const routeKey = routeVariantKey(donor, identityKey);
         if (!routeDonors.has(routeKey)) {
           routeDonors.set(routeKey, donor);
@@ -89,7 +90,7 @@ function enrichHarnessRows(
       }
       donorsPrepared = true;
     }
-    const identityKey = resolveModelCatalogIdentityKey(entry);
+    const identityKey = keyOf(entry);
     const donor =
       routeDonors.get(routeVariantKey(entry, identityKey)) ??
       (entry.api === undefined && entry.baseUrl === undefined
@@ -145,10 +146,11 @@ export async function augmentModelCatalogWithAgentHarness(params: {
   if (params.includesProvider && !params.includesProvider(ref.provider)) {
     return params.snapshot;
   }
-  const refKey = resolveModelCatalogIdentityKey({ provider: ref.provider, id: ref.model });
+  const routeKeyOf = createModelCatalogIdentityKeyResolver();
+  const refKey = routeKeyOf({ provider: ref.provider, id: ref.model });
   const prepared = params.preparedSnapshot ?? params.snapshot;
   const routeEntry = [...prepared.entries, ...(prepared.staticEntries ?? [])].find(
-    (entry) => resolveModelCatalogIdentityKey(entry) === refKey,
+    (entry) => routeKeyOf(entry) === refKey,
   );
   const runtime = resolveAgentHarnessPolicy({
     provider: ref.provider,
@@ -209,29 +211,31 @@ export async function augmentModelCatalogWithAgentHarness(params: {
       : listedRows;
     params.onDiscoveryCompleted?.(scopedRows);
     const rows = enrichHarnessRows(scopedRows, prepared);
+    // Discovery and its completion callback can replace the policy owner.
+    const keyOf = createModelCatalogIdentityKeyResolver();
     const configuredKeys = new Set([
-      ...configuredModelRefs.map(({ provider, model }) =>
-        resolveModelCatalogIdentityKey({ provider, id: model }),
-      ),
+      ...configuredModelRefs.map(({ provider, model }) => keyOf({ provider, id: model })),
       ...buildConfiguredModelCatalog({
         cfg: params.cfg,
         workspaceDir: params.workspaceDir,
-      }).map(resolveModelCatalogIdentityKey),
+      }).map(keyOf),
     ]);
     // Successful discovery replaces its native scope; authored membership survives an empty list.
+    // The scope predicate can change owners between rows, so retention keeps identity live.
     const retain = (entry: ModelCatalogEntry) =>
       entry.nativeRuntime !== runtime ||
       configuredKeys.has(resolveModelCatalogIdentityKey(entry)) ||
       (includesProvider !== undefined && !includesProvider(entry.provider));
+    const variantKeyOf = createModelCatalogIdentityKeyResolver();
     return {
       ...params.snapshot,
       entries: dedupeByKey(
         [...rows, ...params.snapshot.entries.filter(retain)],
-        resolveModelCatalogIdentityKey,
+        createModelCatalogIdentityKeyResolver(),
       ),
       routeVariants: dedupeByKey(
         [...rows, ...params.snapshot.routeVariants.filter(retain)],
-        routeVariantKey,
+        (entry) => routeVariantKey(entry, variantKeyOf(entry)),
       ),
     };
   } catch (error) {

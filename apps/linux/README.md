@@ -31,6 +31,9 @@ Debian 12 meet that ABI floor. RHEL 9 and Rocky Linux 9 ship glibc 2.34, so
 they cannot run the published AppImage. Extraction does not bypass this
 requirement.
 
+See [Desktop compatibility](https://docs.openclaw.ai/platforms/linux#desktop-compatibility)
+for package updates, desktop limitations, and native-app distinctions.
+
 ## Omarchy
 
 The optional Omarchy 4 bar plugin provides agents, sessions, and quick prompts.
@@ -246,6 +249,8 @@ manifest without letting an older build replace a newer available update.
 ## Quick Chat widgets
 
 Quick Chat advertises the Gateway `inline-widgets` capability and renders hosted `show_widget` results in isolated child WebViews. The parent Quick Chat WebView is the only one granted Tauri commands; widget WebViews match no capability and therefore have no IPC access. Quick Chat accepts only assistant-message widget previews under the capability-scoped `/__openclaw__/canvas/documents/` route, blocks navigation away from the original document, uses nonpersistent WebViews, and keeps stable widget instances while switching among multiple previews. Connections that require a custom Gateway TLS leaf pin remain text-only because the platform WebView cannot bind that pin. Like the other native clients, Quick Chat does not expose the Control UI `sendPrompt` bridge.
+
+Retrying an unchanged Quick Chat draft after a connection error reuses its original idempotency key while the Gateway and agent remain unchanged. If the Gateway confirms the turn already completed, Quick Chat attempts to recover the matching reply from bounded session history instead of resending it. Unavailable or incomplete history produces an error; further retries of that unchanged draft on the same configured Gateway only retry recovery. Widget previews can refresh access after reconnecting to the same configured Gateway, but switching Gateways prevents old previews from using the new connection's access, even after switching back to the original URL.
 
 ## Installer resource
 
