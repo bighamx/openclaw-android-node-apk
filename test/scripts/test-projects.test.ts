@@ -57,6 +57,11 @@ describe("test runtime prerequisites", () => {
     ["tooling config", ["test/vitest/vitest.tooling.config.ts"], "private-qa"],
     ["QA config", ["test/vitest/vitest.extension-qa.config.ts"], "private-qa"],
     [
+      "Codex history Worker",
+      ["extensions/codex/src/app-server/session-history.test.ts"],
+      "runtime",
+    ],
+    [
       "sticker provider runtime",
       ["extensions/telegram/src/sticker-cache.selection.test.ts"],
       "runtime",
@@ -110,6 +115,8 @@ describe("test runtime prerequisites", () => {
     ["models.list native catalog", ["test/plugins/codex-model-catalog.gateway.test.ts"], "runtime"],
     ["native package setup SDK", ["test/plugin-npm-runtime-build.test.ts"], "runtime"],
     ["native Linux node SDK", ["src/node-host/linux-node-plugin.integration.test.ts"], "runtime"],
+    ["native memory CLI SDK", ["src/entry.memory-json.test.ts"], "runtime"],
+    ["ordinary entry unit", ["src/entry.run-main.test.ts"], undefined],
     [
       "native catalog worker SDK",
       ["src/agents/prepared-model-catalog-worker.integration.test.ts"],
@@ -245,8 +252,10 @@ describe("test runtime prerequisites", () => {
     ["contracts-channel-config", ["src/channels/plugins/contracts/**"], undefined],
     ["contracts-channel-session", ["src/channels/plugins/contracts/**"], undefined],
     ["contracts-channel-registry", ["src/channels/plugins/contracts/**"], undefined],
-    ["unit", ["src/node-host/**"], undefined],
-    ["unit-src", ["src/node-host/**"], undefined],
+    ["unit", ["src/node-host/**"], "runtime"],
+    ["unit-src", ["src/node-host/**"], "runtime"],
+    ["unit", ["src/node-host/**", "src/entry.memory-json.test.ts"], undefined],
+    ["unit-src", ["src/node-host/**", "src/entry.memory-json.test.ts"], undefined],
     ["extensions", ["deepinfra/**"], "runtime"],
     ["extensions", ["deepinfra/**", "google-meet/**"], undefined],
     ["tooling", ["test/**"], undefined],
@@ -301,6 +310,16 @@ describe("test runtime prerequisites", () => {
     [
       "extension-telegram",
       ["**/polling-session.test.ts", "**/sticker-cache.selection.test.ts"],
+      undefined,
+    ],
+    [
+      "extension-codex-app-server-support",
+      [
+        "**/event-projector.verbose-hooks.test.ts",
+        "**/session-history.test.ts",
+        "**/settled-turn-finalizer.native.test.ts",
+        "**/transcript-mirror*.test.ts",
+      ],
       undefined,
     ],
   ] as const)("keeps %s selection scoped after excluding %s", (project, exclude, expected) => {
@@ -2003,38 +2022,52 @@ describe("scripts/test-projects changed-target routing", () => {
     );
   });
 
-  it("completes broad-name fallback without synchronous source opens", () => {
-    const files: Record<string, string> = {
-      "src/owner/value.ts": "export const value = 1;\n",
-      "src/owner/barrel.ts": 'export\n { value } from\n "./value.js";\n',
-      "src/owner/directory/index.ts": 'export * from "../barrel.js";\n',
-      "src/owner/consumer.test.ts": 'import(\n "./directory"\n);\n',
-      "src/owner/type.consumer.test.ts": 'import type {\n Value\n } from "./value.js";\n',
-      "src/owner/deleted.test.ts": 'import "./value.js";\n',
-      "src/owner/value.live.test.ts": 'import "./value.js";\n',
-    };
-    // Only the broad basename appears in these files; the 800-candidate cap
-    // must fall back to a complete graph, not silently drop the real consumers.
-    for (let index = 0; index < 801; index += 1) {
-      files[`src/padding/${index}.ts`] = "// value\n";
-    }
-    withTinyGitRepo(files, (cwd) => {
-      fs.unlinkSync(path.join(cwd, "src/owner/deleted.test.ts"));
-      fs.writeFileSync(path.join(cwd, "src/owner/untracked.test.ts"), 'import "./value.js";\n');
-      const reads = vi.spyOn(fs, "readFileSync");
-      try {
-        expect(resolveChangedTestTargetPlan(["src/owner/value.ts"], { cwd }).targets).toEqual([
-          "src/owner/consumer.test.ts",
-          "src/owner/type.consumer.test.ts",
-        ]);
-        expect(
-          reads.mock.calls.filter(([file]) => typeof file === "string" && file.startsWith(cwd)),
-        ).toEqual([]);
-      } finally {
-        reads.mockRestore();
+  it.each([false, true])(
+    "keeps broad-name consumers complete without synchronous source opens (narrow importer: %s)",
+    (includeNarrowImporter) => {
+      const files: Record<string, string> = {
+        "src/owner/value.ts": "export const value = 1;\n",
+        "src/owner/barrel.ts": 'export\n { value } from\n "./value.js";\n',
+        "src/owner/directory/index.ts": 'export * from "../barrel.js";\n',
+        "src/owner/consumer.test.ts": 'import(\n "./directory"\n);\n',
+        "src/owner/type.consumer.test.ts": 'import type {\n Value\n } from "./value.js";\n',
+        "src/owner/deleted.test.ts": 'import "./value.js";\n',
+        "src/owner/value.live.test.ts": 'import "./value.js";\n',
+      };
+      if (includeNarrowImporter) {
+        files["src/outside.consumer.test.ts"] = 'import "./owner/value.js";\n';
       }
-    });
-  });
+      // A narrow path match must not hide consumers of a widely occurring basename.
+      for (let index = 0; index < 801; index += 1) {
+        files[`src/padding/${index}.ts`] = "// value\n";
+      }
+      withTinyGitRepo(files, (cwd) => {
+        fs.unlinkSync(path.join(cwd, "src/owner/deleted.test.ts"));
+        fs.writeFileSync(path.join(cwd, "src/owner/untracked.test.ts"), 'import "./value.js";\n');
+        const reads = vi.spyOn(fs, "readFileSync");
+        try {
+          const expectedTargets = [
+            ...(includeNarrowImporter ? ["src/outside.consumer.test.ts"] : []),
+            "src/owner/consumer.test.ts",
+            "src/owner/type.consumer.test.ts",
+          ];
+          expect(
+            resolveChangedTestTargetPlan(["src/owner/value.ts"], { cwd }).targets,
+            "initial owner selection",
+          ).toEqual(expectedTargets);
+          expect(
+            resolveChangedTestTargetPlan(["src/owner/value.ts"], { cwd }).targets,
+            "cached owner selection",
+          ).toEqual(expectedTargets);
+          expect(
+            reads.mock.calls.filter(([file]) => typeof file === "string" && file.startsWith(cwd)),
+          ).toEqual([]);
+        } finally {
+          reads.mockRestore();
+        }
+      });
+    },
+  );
 
   it.each([
     { name: "Git inventory", withRepo: withTinyGitRepo },
@@ -2042,27 +2075,26 @@ describe("scripts/test-projects changed-target routing", () => {
   ])(
     "keeps tooling imports direct while preserving literal file references ($name)",
     ({ withRepo }) => {
-      withRepo(
-        {
-          "scripts/fixture-source.mts": "export const value = 1;\n",
-          "scripts/fixture-bridge.mts": 'export * from "./fixture-source.mjs";\n',
-          "test/scripts/direct.consumer.test.ts": 'import "../../scripts/fixture-source.mjs";\n',
-          "test/scripts/transitive.consumer.test.ts":
-            'import "../../scripts/fixture-bridge.mjs";\n',
-          "test/scripts/literal.consumer.test.ts":
-            'const fixture = "scripts/fixture-source.mts";\n',
-          "test/scripts/substring.consumer.test.ts":
-            'const fixture = "scripts/fixture-source.mts.bak";\n',
-        },
-        (cwd) => {
-          expect(
-            resolveChangedTestTargetPlan(["scripts/fixture-source.mts"], { cwd }).targets,
-          ).toEqual([
-            "test/scripts/direct.consumer.test.ts",
-            "test/scripts/literal.consumer.test.ts",
-          ]);
-        },
-      );
+      const files: Record<string, string> = {
+        "scripts/fixture-source.mts": "export const value = 1;\n",
+        "scripts/fixture-bridge.mts": 'export * from "./fixture-source.mjs";\n',
+        "test/scripts/direct.consumer.test.ts": 'import "../../scripts/fixture-source.mjs";\n',
+        "test/scripts/transitive.consumer.test.ts": 'import "../../scripts/fixture-bridge.mjs";\n',
+        "test/scripts/literal.consumer.test.ts": 'const fixture = "scripts/fixture-source.mts";\n',
+        "test/scripts/substring.consumer.test.ts":
+          'const fixture = "scripts/fixture-source.mts.bak";\n',
+      };
+      for (let index = 0; index < 801; index += 1) {
+        files[`src/padding/${index}.ts`] = "// scripts/fixture-source\n";
+      }
+      withRepo(files, (cwd) => {
+        expect(
+          resolveChangedTestTargetPlan(["scripts/fixture-source.mts"], { cwd }).targets,
+        ).toEqual([
+          "test/scripts/direct.consumer.test.ts",
+          "test/scripts/literal.consumer.test.ts",
+        ]);
+      });
     },
   );
 
@@ -2223,7 +2255,7 @@ describe("scripts/test-projects changed-target routing", () => {
     );
   });
 
-  it.each(["src/plugin-state", "src/plugin-sdk", "src/agents", "test/plugins"])(
+  it.each(["src/plugin-state", "src/plugin-sdk", "src/agents", "src/commands", "test/plugins"])(
     "retains database worker ownership for directory and glob target %s",
     (directory) => {
       const expected = databaseWorkerCoreTestFiles.filter((file) =>
@@ -2819,6 +2851,14 @@ describe("scripts/test-projects changed-target routing", () => {
       "test/vitest/vitest.utils.config.ts",
     ]);
     expect(buildVitestRunPlans(["src/commands"], process.cwd())).toEqual([
+      {
+        config: "test/vitest/vitest.infra.config.ts",
+        forwardedArgs: [],
+        includePatterns: databaseWorkerCoreTestFiles.filter((file) =>
+          file.startsWith("src/commands/"),
+        ),
+        watchMode: false,
+      },
       {
         config: "test/vitest/vitest.commands-light.config.ts",
         forwardedArgs: [],
@@ -4299,9 +4339,17 @@ describe("scripts/test-projects changed-target routing", () => {
     ]);
   });
 
-  it("routes the full commands test root to both command shards", () => {
+  it("routes the full commands test root to its command and database owners", () => {
     expect(findUnmatchedExplicitTestTargets(["src/commands"])).toEqual([]);
     expect(buildVitestRunPlans(["src/commands"], process.cwd())).toEqual([
+      {
+        config: "test/vitest/vitest.infra.config.ts",
+        forwardedArgs: [],
+        includePatterns: databaseWorkerCoreTestFiles.filter((file) =>
+          file.startsWith("src/commands/"),
+        ),
+        watchMode: false,
+      },
       {
         config: "test/vitest/vitest.commands-light.config.ts",
         forwardedArgs: [],

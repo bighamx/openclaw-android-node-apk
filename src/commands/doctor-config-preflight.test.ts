@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyCliProfileEnv } from "../cli/profile.js";
 import { promoteConfigSnapshotToLastKnownGood, readConfigFileSnapshot } from "../config/config.js";
-import { writeConfigHealthStateToStore } from "../config/io.health-state.js";
+import { patchConfigHealthEntryToStore } from "../config/io.health-state.js";
 import { createConfigHealthFingerprint } from "../config/io.observe-state.js";
 import { writeOpenClawConfig } from "../config/test-helpers.js";
 import { executeSqliteQueryTakeFirstSync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
@@ -21,10 +21,8 @@ import {
 import { ABANDONED_UPDATE_RUN_MS } from "../infra/update-run-timeouts.js";
 import { resetLogger, setLoggerOverride } from "../logging/logger.js";
 import { loggingState } from "../logging/state.js";
-import {
-  readPersistedInstalledPluginIndexInstallRecords,
-  writePersistedInstalledPluginIndexInstallRecords,
-} from "../plugins/installed-plugin-index-records.js";
+import { readPersistedInstalledPluginIndexInstallRecords } from "../plugins/installed-plugin-index-records.js";
+import { seedInstalledPluginIndex } from "../plugins/test-helpers/installed-plugin-index.js";
 import { readConfigMachineState } from "../state/config-machine-state.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
 import {
@@ -107,20 +105,14 @@ async function seedLastKnownGood(
     parsed: config,
     stat: await fs.stat(lastGoodPath),
   });
-  writeConfigHealthStateToStore(
+  patchConfigHealthEntryToStore(
     {
       env: { ...process.env, HOME: home },
       homedir: () => home,
       logger: { warn: () => {} },
     },
-    {
-      entries: {
-        [configPath]: {
-          lastKnownGood: fingerprint,
-          lastPromotedGood: fingerprint,
-        },
-      },
-    },
+    configPath,
+    { lastKnownGood: fingerprint, lastPromotedGood: fingerprint },
   );
 }
 
@@ -277,7 +269,7 @@ describe("runDoctorConfigPreflight", () => {
         const configPath = await writeOpenClawConfig(home, config);
         const canonical = { source: "path" as const, installPath: path.join(home, "canonical") };
         const legacy = { source: "path" as const, installPath: path.join(home, "legacy") };
-        await writePersistedInstalledPluginIndexInstallRecords({ existing: canonical }, { config });
+        await seedInstalledPluginIndex({ existing: canonical }, { config });
         const options = { ...startupCheckpointOptions, skipPristineStartupStateMigrations: true };
         const checkpointStatus = (
           preflight: Awaited<ReturnType<typeof runDoctorConfigPreflight>>,

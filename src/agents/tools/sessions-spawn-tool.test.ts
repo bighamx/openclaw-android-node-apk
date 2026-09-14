@@ -181,6 +181,51 @@ describe("sessions_spawn tool", () => {
     return requireRecord(call[argIndex], `${label} call ${callIndex + 1} arg ${argIndex + 1}`);
   }
 
+  it("advertises the private completion contract and passes it to native spawn", async () => {
+    const tool = createSessionsSpawnTool();
+    const schema = tool.parameters as {
+      required?: string[];
+      properties: Record<string, { description?: string; enum?: string[] }>;
+    };
+    const target = requireSchemaProperty(schema.properties, "completionTarget");
+    expect(target.enum).toEqual(["parent"]);
+    expect(schema.required ?? []).not.toContain("completionTarget");
+    expect(target).not.toHaveProperty("default");
+    for (const restriction of [
+      "ACP",
+      "collect",
+      "visible",
+      "thread",
+      "session mode",
+      "expectsCompletionMessage=false",
+    ]) {
+      expect(target.description).toContain(restriction);
+    }
+    await tool.execute("private-spawn", { task: "review privately", completionTarget: "parent" });
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({ completionTarget: "parent" }),
+      expect.anything(),
+    );
+  });
+
+  it.each([{ runtime: "acp" }, { visible: true }, { completionTarget: "channel" }])(
+    "rejects unsupported private tool routes before dispatch: %j",
+    async (options) => {
+      registerAcpBackendForTest();
+      const tool = createSessionsSpawnTool();
+      await expect(
+        tool.execute("private-spawn", {
+          task: "review privately",
+          completionTarget: "parent",
+          ...options,
+        }),
+      ).rejects.toThrow(/completionTarget/);
+      expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
+      expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
+      expect(hoisted.inProcessCreationMock).not.toHaveBeenCalled();
+    },
+  );
+
   it("hides ACP runtime affordances when no ACP backend is loaded", () => {
     // The tool schema is generated from live runtime availability; stale ACP
     // fields should not be advertised when no backend can handle them.
@@ -462,6 +507,10 @@ describe("sessions_spawn tool", () => {
           mockCallArg(hoisted.spawnSubagentDirectMock, 0, 0, "spawnSubagentDirect")
             .expectsCompletionMessage,
         ).toBe(expected);
+        expect(
+          mockCallArg(hoisted.spawnSubagentDirectMock, 0, 0, "spawnSubagentDirect")
+            .completionTarget,
+        ).toBeUndefined();
 
         await tool.execute("acp", {
           task: "ACP child",
@@ -471,6 +520,9 @@ describe("sessions_spawn tool", () => {
         expect(
           mockCallArg(hoisted.spawnAcpDirectMock, 0, 0, "spawnAcpDirect").expectsCompletionMessage,
         ).toBe(expected);
+        expect(
+          mockCallArg(hoisted.spawnAcpDirectMock, 0, 0, "spawnAcpDirect").completionTarget,
+        ).toBeUndefined();
 
         await tool.execute("visible", {
           task: "visible child",
@@ -480,6 +532,7 @@ describe("sessions_spawn tool", () => {
         expect(registerRun).toHaveBeenCalledWith(
           expect.objectContaining({ expectsCompletionMessage: expected }),
         );
+        expect(mockCallArg(registerRun, 0, 0, "registerRun").completionTarget).toBeUndefined();
       });
     },
   );
@@ -510,6 +563,7 @@ describe("sessions_spawn tool", () => {
     });
 
     const spawnArgs = mockCallArg(hoisted.spawnSubagentDirectMock, 0, 0, "spawnSubagentDirect");
+    expect(spawnArgs.completionTarget).toBeUndefined();
     expect(spawnArgs).toMatchObject({
       collect: true,
       outputSchema: { type: "object", required: ["answer"] },
@@ -583,6 +637,8 @@ describe("sessions_spawn tool", () => {
     expect(schema.properties?.visible?.description).toBe(
       "Persistent sidebar session only when the user requests a separate session or needs to revisit and steer it independently. Internal QA/coding/review/test workers: omit or false. Subagent runtime only; default run mode and empty attachments accepted; no thread/thinking/lightContext or attachment staging.",
     );
+    expect(schema.properties?.projectId?.description).toContain("Registered project");
+    expect(schema.properties?.projectGitUrl?.description).toContain("managed clone");
     expect(schema.properties?.cwd?.description).toContain(
       "outside configured agent workspaces require operator.admin",
     );
@@ -828,7 +884,7 @@ describe("sessions_spawn tool", () => {
 
       expect(result.details).toMatchObject({
         status: "forbidden",
-        error: `Visible session cwd "${outside}" is outside configured agent workspaces and requires operator.admin. Omit cwd to use the target agent workspace, or ask the operator to start the session from a registered project. Do not substitute the synchronous \`openclaw agent\` CLI for a persistent visible session.`,
+        error: `Visible session cwd "${outside}" is outside configured agent workspaces and requires operator.admin. Omit cwd to use the target agent workspace, or select a registered project with projectId or a GitHub repository with projectGitUrl. Do not substitute the synchronous \`openclaw agent\` CLI for a persistent visible session.`,
       });
       expect(callGateway).toHaveBeenCalledOnce();
     });
@@ -978,6 +1034,8 @@ describe("sessions_spawn tool", () => {
 
     it.each([
       { group: "Projects" },
+      { projectId: "registered-project" },
+      { projectGitUrl: "https://github.com/openclaw/openclaw.git" },
       { worktree: true },
       { worktreeName: "repair" },
       { worktreeBaseRef: "main" },
@@ -1765,6 +1823,7 @@ describe("sessions_spawn tool", () => {
     expect(spawnArgs.cwd).toBe("/workspace/requester");
     expect(spawnArgs).not.toHaveProperty("runTimeoutSeconds");
     expect(spawnArgs.thread).toBe(true);
+    expect(spawnArgs.completionTarget).toBeUndefined();
     expect(spawnArgs.mode).toBe("session");
     expect(spawnArgs.cleanup).toBe("keep");
     const spawnContext = mockCallArg(hoisted.spawnSubagentDirectMock, 0, 1, "spawnSubagentDirect");

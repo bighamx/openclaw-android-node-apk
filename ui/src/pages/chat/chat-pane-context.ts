@@ -34,7 +34,7 @@ import {
   dismissChatError,
   resolveAssistantAttachmentAuthToken,
 } from "./chat-pane-state.ts";
-import { markQueuedChatSendsWaitingForReconnect } from "./chat-queue.ts";
+import { markQueuedChatSendsWaitingForReconnect } from "./chat-queue-reconnect.ts";
 import { stopChatRealtimeTalk } from "./chat-realtime.ts";
 import { flushChatQueueForEvent, retryReconnectableQueuedChatSends } from "./chat-send-actions.ts";
 import { retireChatModelSelectionOwnership } from "./chat-session.ts";
@@ -62,8 +62,13 @@ import { reconcileWaitingApprovalsFromSnapshot } from "./tool-stream-status.ts";
 export abstract class ChatPaneContext extends ChatPaneLifecycle {
   private gatewayConnectionLifecycle?: ReturnType<typeof createGatewayConnectionLifecycle>;
   private outboxRecoveryReady = false;
+  private sidebarLayoutSource?: { client: ApplicationGatewaySnapshot["client"]; ready: boolean };
   // Capability identity matters because a replacement restarts its canonical revision at zero.
-  private canonicalSessionList?: { sessions: ApplicationContext["sessions"]; revision: number };
+  private canonicalSessionList?: {
+    sessions: ApplicationContext["sessions"];
+    revision: number;
+    outboxState?: string;
+  };
 
   protected placementComposerPresentation(
     row: GatewaySessionRow | undefined,
@@ -183,13 +188,10 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       return;
     }
     const canonicalListRevision = this.context.sessions.canonicalListRevision;
+    const previousCanonical = this.canonicalSessionList;
     const canonicalListPublished =
-      this.canonicalSessionList?.sessions === this.context.sessions &&
-      canonicalListRevision > this.canonicalSessionList.revision;
-    this.canonicalSessionList = {
-      sessions: this.context.sessions,
-      revision: canonicalListRevision,
-    };
+      previousCanonical?.sessions === this.context.sessions &&
+      canonicalListRevision > previousCanonical.revision;
     const selectedSessionDeleted = this.context.sessions.deletionState(
       state.sessionKey,
       resolveChatAgentId(state),
@@ -209,6 +211,26 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
     state.sessionsError = stateValue.error;
     this.refreshSwarmRoster();
     const selectedSession = selectedChatSessionRow(state);
+    const outboxState = selectedSession
+      ? JSON.stringify([
+          state.sessionKey,
+          resolveChatAgentId(state),
+          selectedSession.sessionId,
+          selectedSession.status,
+          isSessionRunActive(selectedSession),
+          selectedSession.lastRunId,
+          selectedSession.activeLeafEntryId,
+        ])
+      : undefined;
+    this.canonicalSessionList = {
+      sessions: this.context.sessions,
+      revision: canonicalListRevision,
+      outboxState: canonicalListPublished
+        ? outboxState
+        : previousCanonical?.sessions === this.context.sessions
+          ? previousCanonical.outboxState
+          : undefined,
+    };
     if (applySelectedSessionProjection(state, selectedSession)) {
       // Hidden retained panes keep this subscription alive; only the pane the
       // user is actually looking at may clear unread/attention state.
@@ -247,10 +269,11 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       // not force a transcript redraw for every incoming session update.
       requestChatPageUpdate(state, "animation-frame");
     }
-    // The canonical list is the only authoritative idle signal without a local run
-    // identity; the drain's never-attempted fast path trusts the row it publishes.
+    // First canonical idle and changed run/branch identity can release a queue.
+    // Re-decoding an unchanged row after foreign activity is not new delivery intent.
     if (
       canonicalListPublished &&
+      previousCanonical?.outboxState !== outboxState &&
       selectedSession &&
       !isSessionRunActive(selectedSession) &&
       state.chatQueue.length > 0
@@ -317,6 +340,13 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       }));
     const sourceChanged = connectionLifecycle.transition(snapshot);
     const clientChanged = this.connectedClient !== snapshot.client;
+    const layoutClientChanged = this.sidebarLayoutSource
+      ? snapshot.client !== null && this.sidebarLayoutSource.client !== snapshot.client
+      : state.client !== snapshot.client;
+    const layoutSourceChanged =
+      !this.sidebarLayoutSource ||
+      layoutClientChanged ||
+      (snapshot.phase === "connected" && !this.sidebarLayoutSource.ready);
     if (clientChanged) {
       this.replaceStagedAttachmentGatewayOwner(snapshot.client);
     }
@@ -424,7 +454,11 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       isGatewayMethodAdvertised(snapshot, "desktop.observe") === true;
     const sidebarSessionKey = canonicalUiSessionKeyForPersistence(state, state.sessionKey);
     const sidebarKeyChanged = sidebarSessionKey !== previousSidebarSessionKey;
-    if (sidebarSessionKey && (clientChanged || sidebarKeyChanged)) {
+    // Restore offline/compact preferences immediately, then migrate ready-only
+    // panels once. A transport reconnect must not reload the active layout.
+    if (sidebarSessionKey && (layoutSourceChanged || sidebarKeyChanged)) {
+      this.sidebarLayoutSource = { client: snapshot.client, ready: state.connected };
+      this.dashboardPresentationActivation = undefined;
       const sidebarSettings = migrateLegacyDockVisibility({
         settings: loadSettings(),
         sessionKey: sidebarSessionKey,
@@ -436,9 +470,9 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
         state.sidebarLayout = this.restorePaneSidebarLayout(
           normalizeSidebarLayout(persistedLayout),
         );
-      } else if (clientChanged) {
+      } else if (layoutClientChanged) {
         state.sidebarLayout = { columns: [] };
-      } else if (state.sidebarLayout.columns.length > 0) {
+      } else if (sidebarKeyChanged && state.sidebarLayout.columns.length > 0) {
         state.updateSidebarLayout(state.sidebarLayout);
       }
       state.sidebarFocusPanelId =

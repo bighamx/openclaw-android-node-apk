@@ -54,7 +54,7 @@ type NativeSubagentMonitorRuntime = {
 
 type NativeSubagentMonitorClient = Pick<
   CodexAppServerClient,
-  "request" | "addNotificationHandler" | "addCloseHandler"
+  "request" | "addNotificationHandler" | "addCloseHandler" | "getTransportPid"
 >;
 
 type ParentOwner = {
@@ -511,6 +511,7 @@ class Monitor {
       taskKind: CODEX_NATIVE_SUBAGENT_TASK_KIND,
       scope: state.taskRuntimeScope,
       runIdPrefix: CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX,
+      executionPid: this.client.getTransportPid(),
     });
     state.mirror ??= new CodexNativeSubagentTaskMirror(
       {

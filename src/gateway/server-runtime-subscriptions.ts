@@ -46,6 +46,7 @@ import type {
 } from "./server-chat-state.js";
 import { resolveVisibleActiveSessionRunState } from "./server-methods/session-active-runs.js";
 import { startGatewayTaskSubscriptions } from "./server-task-subscriptions.js";
+import { createSessionActivitySummaries } from "./session-activity-summaries.js";
 import { defaultSessionCompanionContextReader } from "./session-companion-context.js";
 import { createSessionCompanion } from "./session-companion.js";
 import { createSessionLifecyclePersistenceOwner } from "./session-lifecycle-persistence-owner.js";
@@ -74,6 +75,7 @@ function dispatchEventHandler<TEvent>(params: {
 
 /** Register gateway runtime event subscriptions and return unsubscribe handles. */
 export function startGatewayEventSubscriptions(params: {
+  signal: AbortSignal;
   log: SubsystemLogger;
   broadcast: GatewayBroadcastFn;
   broadcastToConnIds: (
@@ -82,6 +84,7 @@ export function startGatewayEventSubscriptions(params: {
     connIds: ReadonlySet<string>,
     opts?: { dropIfSlow?: boolean },
   ) => void;
+  nodeHasSessionSubscribers: (sessionKey: string) => boolean;
   nodeSendToSession: (sessionKey: string, event: string, payload: unknown) => void;
   agentRunSeq: Map<string, number>;
   chatRunState: ChatRunState;
@@ -118,6 +121,19 @@ export function startGatewayEventSubscriptions(params: {
   const clearRuntimeActionDecisionSink = configureRuntimeActionDecisionSink(
     auditRecorder.recordExecutionDecision,
   );
+  const sessionActivitySummaries = createSessionActivitySummaries({
+    getConfig: getRuntimeConfig,
+    onChanged: (target) =>
+      params.broadcast(
+        "sessions.changed",
+        {
+          sessionKey: target.key,
+          agentId: target.agentId,
+          reason: "activity-summary",
+        },
+        { sessionKeys: [target.key], agentId: target.agentId, dropIfSlow: true },
+      ),
+  });
   const sessionObserver = createSessionObserver({
     getConfig: getRuntimeConfig,
     subscribers: params.sessionMessageSubscribers,
@@ -129,6 +145,22 @@ export function startGatewayEventSubscriptions(params: {
     getConfig: getRuntimeConfig,
     sessionObserver,
   });
+  let sessionBackgroundStop: Promise<void> | undefined;
+  // Auxiliary model calls can inherit request work; cancel before that work drains.
+  const stopSessionBackgroundWork = (): void => {
+    if (!sessionBackgroundStop) {
+      sessionCompanion.dispose();
+      sessionObserver.dispose();
+      sessionBackgroundStop = sessionActivitySummaries.dispose();
+      void sessionBackgroundStop.catch((error: unknown) => {
+        params.log.warn(`session background cleanup failed: ${String(error)}`);
+      });
+    }
+  };
+  params.signal.addEventListener("abort", stopSessionBackgroundWork, { once: true });
+  if (params.signal.aborted) {
+    stopSessionBackgroundWork();
+  }
   const unsubscribePrivateAuditEvents = auditEnabled
     ? onAgentAuditEvent(auditRecorder.record)
     : undefined;
@@ -234,6 +266,7 @@ export function startGatewayEventSubscriptions(params: {
           createAgentEventHandler({
             broadcast: params.broadcast,
             broadcastToConnIds: params.broadcastToConnIds,
+            nodeHasSessionSubscribers: params.nodeHasSessionSubscribers,
             nodeSendToSession: params.nodeSendToSession,
             agentRunSeq: params.agentRunSeq,
             chatRunState: params.chatRunState,
@@ -315,6 +348,7 @@ export function startGatewayEventSubscriptions(params: {
     let failedDispatchCleanup: (() => void) | undefined;
     let terminalPreparation: Promise<void> | undefined;
     sessionObserver.handleEvent(evt);
+    sessionActivitySummaries.handleEvent(evt);
     if (auditEnabled) {
       auditRecorder.record(evt);
     }
@@ -475,8 +509,9 @@ export function startGatewayEventSubscriptions(params: {
   });
   const agentUnsub = async () => {
     unsubscribeAgentEvents();
-    sessionCompanion.dispose();
-    sessionObserver.dispose();
+    params.signal.removeEventListener("abort", stopSessionBackgroundWork);
+    stopSessionBackgroundWork();
+    await sessionBackgroundStop;
     unsubscribePrivateAuditEvents?.();
     unsubscribeToolAuditEvents?.();
     unsubscribeMessageAuditEvents?.();
@@ -502,6 +537,7 @@ export function startGatewayEventSubscriptions(params: {
   });
 
   const transcriptUnsub = onInternalSessionTranscriptUpdate((evt) => {
+    sessionActivitySummaries.handleTranscript(evt);
     void dispatchEventHandler({
       loadHandler: getTranscriptUpdateHandler,
       event: evt,
@@ -519,6 +555,7 @@ export function startGatewayEventSubscriptions(params: {
     );
   });
   const unsubscribeLifecycle = onSessionLifecycleEvent((evt) => {
+    sessionActivitySummaries.handleLifecycle(evt);
     if (evt.reason === "progress-card-reset" && evt.agentId) {
       // Card readers need not subscribe to session lists. Preserve the canonical
       // owner tuple even when distinct global rows share a display key.
@@ -549,6 +586,7 @@ export function startGatewayEventSubscriptions(params: {
   const taskUnsub = startGatewayTaskSubscriptions(params);
 
   return {
+    sessionActivitySummaries,
     sessionCompanion,
     sessionObserver,
     agentUnsub,

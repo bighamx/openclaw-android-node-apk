@@ -6,10 +6,11 @@ import {
   replaceTranscriptEvents,
 } from "../../config/sessions/session-accessor.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
+import * as historySanitize from "../chat-display-projection.sanitize.js";
 import { readChatHistoryMessageId } from "../session-history-tail.js";
 import * as anchorReader from "../session-transcript-anchor-reader.js";
 import { readSessionMessagesAsync } from "../session-transcript-readers.js";
-import { readChatHistoryPage } from "./chat-history-pages.js";
+import { readChatHistoryPageLocal } from "./chat-history-pages.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -28,7 +29,7 @@ const answer = {
   __openclaw: { runId: "recovered-run" },
 };
 
-type PageOptions = Pick<Parameters<typeof readChatHistoryPage>[0], "offset" | "messageId"> & {
+type PageOptions = Pick<Parameters<typeof readChatHistoryPageLocal>[0], "offset" | "messageId"> & {
   maxHistoryBytes?: number;
 };
 
@@ -36,7 +37,7 @@ async function withTranscript(
   messages: Array<[id: string, message: Record<string, unknown>]>,
   use: (fixture: {
     append: (id: string, message: Record<string, unknown>) => Promise<unknown>;
-    read: (options: PageOptions) => ReturnType<typeof readChatHistoryPage>;
+    read: (options: PageOptions) => ReturnType<typeof readChatHistoryPageLocal>;
     raw: () => ReturnType<typeof readSessionMessagesAsync>;
   }) => Promise<void>,
 ) {
@@ -61,7 +62,7 @@ async function withTranscript(
     await use({
       append: (id, message) => appendTranscriptMessage(scope, { eventId: id, message }),
       read: (options) =>
-        readChatHistoryPage({
+        readChatHistoryPageLocal({
           entry,
           provider: "openai",
           sessionId: scope.sessionId,
@@ -151,30 +152,50 @@ describe("historical page recovery context", () => {
     );
   });
 
-  it("finds recovery across multiple newer pages without returning their messages", async () => {
-    const progress: Array<[string, Record<string, unknown>]> = Array.from(
-      { length: 250 },
-      (_, index) => [
-        `progress-${index}`,
-        { role: "toolResult", content: "Still working", toolCallId: `tool-${index}` },
-      ],
-    );
-    await withTranscript(
-      [["user", user], ["failed", failed], ...progress, ["answer", answer]],
-      async ({ read, raw }) => {
-        const original = await raw();
-        const page = await read({ offset: progress.length + 1, messageId: undefined });
+  it.each(["offset", "anchor"] as const)(
+    "finds recovery across multiple newer pages without repeatedly rendering them (%s)",
+    async (mode) => {
+      const progress: Array<[string, Record<string, unknown>]> = Array.from(
+        { length: 250 },
+        (_, index) => [
+          `progress-${index}`,
+          { role: "toolResult", content: "Still working", toolCallId: `tool-${index}` },
+        ],
+      );
+      await withTranscript(
+        [["user", user], ["failed", failed], ...progress, ["answer", answer]],
+        async ({ read, raw }) => {
+          const original = await raw();
+          const sanitize = historySanitize.sanitizeChatHistoryMessages;
+          let renderedMessages = 0;
+          vi.spyOn(historySanitize, "sanitizeChatHistoryMessages").mockImplementation((...args) => {
+            renderedMessages += args[0].length;
+            return sanitize(...args);
+          });
+          const page = await read(
+            mode === "offset"
+              ? { offset: progress.length + 1, messageId: undefined }
+              : { offset: undefined, messageId: "failed" },
+          );
 
-        expect(page.messages.map(readChatHistoryMessageId)).toEqual(["user"]);
-        expect(page.pagination).toEqual({
-          offset: progress.length + 1,
-          totalMessages: progress.length + 3,
-          rawPageMessages: 2,
-        });
-        expect(await raw()).toEqual(original);
-      },
-    );
-  });
+          expect(page.messages.map(readChatHistoryMessageId)).toEqual(
+            mode === "offset" ? ["user"] : [],
+          );
+          if (mode === "offset") {
+            expect(page.pagination).toEqual({
+              offset: progress.length + 1,
+              totalMessages: progress.length + 3,
+              rawPageMessages: 2,
+            });
+          } else {
+            expect(Object.keys(page)).toEqual(["messages"]);
+          }
+          expect(await raw()).toEqual(original);
+          expect(renderedMessages).toBeLessThanOrEqual(original.length * 5);
+        },
+      );
+    },
+  );
 
   it("keeps the failure when newer recovery evidence exceeds the read byte budget", async () => {
     await withTranscript(

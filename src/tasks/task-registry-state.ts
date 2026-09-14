@@ -3,6 +3,7 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { formatErrorMessage } from "../infra/errors.js";
 import { stageSqliteTransactionState } from "../infra/sqlite-post-commit.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { runWithGatewayIndependentRootWorkAdmission } from "../process/gateway-work-admission.js";
 import type { OpenClawStateDatabaseReadAdmission } from "../state/openclaw-state-db-async-lifecycle.js";
 import {
   captureOpenClawStateDatabaseReadAdmission,
@@ -10,8 +11,11 @@ import {
   registerOpenClawStateDatabaseLifecycleListener,
 } from "../state/openclaw-state-db-cache.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
+import { restoreTaskExecutionSnapshot } from "./task-execution-owner.js";
+import { syncFlowFromTaskResult } from "./task-flow-runtime-internal.js";
 import {
   cloneTaskRecord,
+  listTasksFromIndex,
   cloneTaskRecordForObserver,
   getTaskRelatedSessionIndexKeys,
   normalizeTaskTimestamps,
@@ -32,7 +36,7 @@ import type {
 import type { TaskRecord, TaskRuntime } from "./task-registry.types.js";
 
 export const taskRegistryLog = createSubsystemLogger("tasks/registry");
-export const TASK_FLOW_SYNC_RETRY_DELAYS_MS = [1_000, 5_000, 25_000, 120_000, 600_000] as const;
+const TASK_FLOW_SYNC_RETRY_DELAYS_MS = [1_000, 5_000, 25_000, 120_000, 600_000] as const;
 
 const taskRegistryProcessState = getTaskRegistryProcessState();
 const TASK_REGISTRY_REVISION_KEY = Symbol.for("openclaw.taskRegistry.revision");
@@ -70,7 +74,7 @@ type TaskRegistryRestoreState =
   | { status: "ready" }
   | { status: "failed"; error: Error };
 let taskRegistryRestoreState: TaskRegistryRestoreState = { status: "uninitialized" };
-export const taskFlowSyncRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const taskFlowSyncRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let listenerStarter: () => void = () => {};
 
 export function setTaskRegistryListenerStarter(starter: () => void): void {
@@ -300,6 +304,75 @@ export function getTasksByRunScope(params: {
   return scopeKeys.size <= 1 ? matches : [];
 }
 
+function scheduleTaskFlowSyncRetry(task: TaskRecord, operation: string, attempt = 0): void {
+  const taskId = task.taskId.trim();
+  if (!taskId || taskFlowSyncRetryTimers.has(taskId)) {
+    return;
+  }
+  const delayMs = TASK_FLOW_SYNC_RETRY_DELAYS_MS[attempt];
+  if (delayMs == null) {
+    taskRegistryLog.warn("Exhausted parent flow sync retries from task", {
+      operation,
+      taskId,
+      flowId: task.parentFlowId,
+    });
+    return;
+  }
+  const retryTimer = setTimeout(() => {
+    taskFlowSyncRetryTimers.delete(taskId);
+    // A terminal task no longer blocks suspension, but its durable parent-flow
+    // projection still mutates state. Keep every delayed attempt visible and
+    // prevent it from crossing a prepared host snapshot boundary.
+    void runWithGatewayIndependentRootWorkAdmission(async () => {
+      const current = tasks.get(taskId);
+      if (!current) {
+        return;
+      }
+      ensureTaskRegistryReady();
+      const flowId = current.parentFlowId?.trim();
+      if (
+        !flowId ||
+        listTasksFromIndex(tasks, taskIdsByParentFlowId, flowId)[0]?.taskId !== taskId
+      ) {
+        return;
+      }
+      const result = syncFlowFromTaskResult(current);
+      if (!result.ok) {
+        taskRegistryLog.warn("Failed to retry parent flow sync from task", {
+          operation,
+          taskId,
+          flowId: current.parentFlowId,
+          reason: result.reason,
+        });
+        scheduleTaskFlowSyncRetry(current, operation, attempt + 1);
+      }
+    }, "tasks:mutation").catch((error: unknown) => {
+      taskRegistryLog.warn("Failed to admit parent flow sync retry from task", {
+        operation,
+        taskId,
+        flowId: task.parentFlowId,
+        error,
+      });
+    });
+  }, delayMs);
+  retryTimer.unref?.();
+  taskFlowSyncRetryTimers.set(taskId, retryTimer);
+}
+
+export function syncFlowFromTaskAfterTaskMutation(task: TaskRecord, operation: string): void {
+  const result = syncFlowFromTaskResult(task);
+  if (result.ok) {
+    return;
+  }
+  taskRegistryLog.warn("Failed to sync parent flow from task mutation", {
+    operation,
+    taskId: task.taskId,
+    flowId: task.parentFlowId,
+    reason: result.reason,
+  });
+  scheduleTaskFlowSyncRetry(task, operation);
+}
+
 export function restoreTaskRegistryOnce() {
   switch (taskRegistryRestoreState.status) {
     case "ready":
@@ -313,18 +386,14 @@ export function restoreTaskRegistryOnce() {
   }
   taskRegistryRestoreState = { status: "restoring" };
   try {
-    const restored = getTaskRegistryStore().loadSnapshot();
-    const restoredTasks = new Map<string, TaskRecord>();
-    for (const [taskId, task] of restored.tasks.entries()) {
-      restoredTasks.set(taskId, normalizeTaskTimestamps(task));
-    }
-    const restoredDeliveryStates = new Map(restored.deliveryStates);
+    const { snapshot: restored, settledTasks } =
+      restoreTaskExecutionSnapshot(getTaskRegistryStore());
 
     clearTaskRegistryMemory();
-    for (const [taskId, task] of restoredTasks.entries()) {
+    for (const [taskId, task] of restored.tasks) {
       tasks.set(taskId, task);
     }
-    for (const [taskId, state] of restoredDeliveryStates.entries()) {
+    for (const [taskId, state] of restored.deliveryStates) {
       taskDeliveryStates.set(taskId, state);
     }
     rebuildRunIdIndex();
@@ -333,7 +402,16 @@ export function restoreTaskRegistryOnce() {
     rebuildRelatedSessionKeyIndex();
     taskRegistryRestoreState = { status: "ready" };
     markTaskRegistryProjectionRestored();
-    if (restoredTasks.size > 0 || restoredDeliveryStates.size > 0) {
+    for (const task of settledTasks) {
+      const flowId = task.parentFlowId?.trim();
+      if (
+        flowId &&
+        listTasksFromIndex(tasks, taskIdsByParentFlowId, flowId)[0]?.taskId === task.taskId
+      ) {
+        syncFlowFromTaskAfterTaskMutation(task, "restore");
+      }
+    }
+    if (restored.tasks.size || restored.deliveryStates.size) {
       emitTaskRegistryObserverEvent(() => ({ kind: "restored" }));
     }
   } catch (error) {

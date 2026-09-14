@@ -566,6 +566,279 @@ describe("plugin subagent sessions_yield follow-up", () => {
     600_000,
   );
 
+  it.skipIf(process.platform === "win32").each(["graceful", "process-loss"] as const)(
+    "retains explicit task cancellation after %s replacement with heartbeat disabled",
+    async (replacement) => {
+      const heartbeatProbe = "QA-CANCEL-HEARTBEAT-MUST-NOT-RUN";
+      const { state, transport, mock, gateway } = await startFixtureGateway({
+        forcedRuntime: "openclaw",
+        useRepoCli: false,
+        mutateConfig: (config) => ({
+          ...withFixturePlugin(config),
+          agents: {
+            ...config.agents,
+            defaults: {
+              ...config.agents?.defaults,
+              heartbeat: {
+                ...config.agents?.defaults?.heartbeat,
+                every: "0m",
+                prompt: heartbeatProbe,
+              },
+            },
+            entries: Object.fromEntries(
+              Object.entries(config.agents?.entries ?? {}).map(([id, agent]) => [
+                id,
+                {
+                  ...agent,
+                  heartbeat: { ...agent.heartbeat, every: "0m", prompt: heartbeatProbe },
+                },
+              ]),
+            ),
+          },
+          tools: {
+            ...config.tools,
+            alsoAllow: [
+              ...(config.tools?.alsoAllow ?? []),
+              "qa_restart_wait",
+              "qa_restart_unsafe_probe",
+            ],
+            codeMode: { enabled: true, timeoutMs: 10_000 },
+          },
+        }),
+      });
+      const sessionKey = buildAgentSessionKey({
+        agentId: "qa",
+        channel: "qa-channel",
+        accountId: transport.accountId,
+        peer: { kind: "direct", id: `dm:${REQUESTER_CONVERSATION.id}` },
+        dmScope: gateway.cfg.session?.dmScope,
+        identityLinks: gateway.cfg.session?.identityLinks,
+      });
+      const observe = async (): Promise<RestartObservation> => {
+        const response = await fetch(
+          `${gateway.baseUrl}/qa/self-yield/restart?sessionKey=${encodeURIComponent(sessionKey)}`,
+          { headers: { Authorization: `Bearer ${gateway.token}` } },
+        );
+        expect(response.status).toBe(200);
+        return (await response.json()) as RestartObservation;
+      };
+      const requests = async () =>
+        (await fetch(`${mock.baseUrl}/debug/requests`).then((response) =>
+          response.json(),
+        )) as Array<{
+          prompt?: string;
+        }>;
+      const assertHeartbeatOff = async () => {
+        const snapshot = (await gateway.call("config.get", {})) as {
+          valid: boolean;
+          config: OpenClawConfig;
+          configRevisionHash: string;
+          appliedConfigHash: string;
+        };
+        expect(snapshot.valid).toBe(true);
+        expect(snapshot.appliedConfigHash).toBeTruthy();
+        expect(snapshot.appliedConfigHash).toBe(snapshot.configRevisionHash);
+        expect(snapshot.config.agents?.defaults?.heartbeat?.every).toBe("0m");
+        for (const agent of Object.values(snapshot.config.agents?.entries ?? {})) {
+          expect(agent.heartbeat?.every).toBe("0m");
+        }
+        const { jobs } = (await gateway.call("cron.list", {
+          includeDisabled: true,
+          includeDeliveryPreviews: false,
+        })) as { jobs: Array<{ enabled: boolean; payload: { kind: string } }> };
+        expect(jobs.filter((job) => job.enabled && job.payload.kind === "heartbeat")).toEqual([]);
+      };
+      const outbound = () =>
+        state.getSnapshot().messages.filter((message) => message.direction === "outbound");
+      try {
+        await transport.waitReady({ gateway });
+        await assertHeartbeatOff();
+        await transport.sendInbound({
+          accountId: transport.accountId,
+          conversation: REQUESTER_CONVERSATION,
+          senderId: REQUESTER_CONVERSATION.id,
+          text: "Reply with only this exact marker: QA-CANCEL-REQUESTER-READY",
+        });
+        await transport.waitForOutbound({
+          conversation: REQUESTER_CONVERSATION,
+          textIncludes: "QA-CANCEL-REQUESTER-READY",
+          timeoutMs: 90_000,
+        });
+        await transport.sendInbound({
+          accountId: transport.accountId,
+          conversation: REQUESTER_CONVERSATION,
+          senderId: REQUESTER_CONVERSATION.id,
+          text: "qa interrupted task restart",
+        });
+        await transport.waitForOutbound({
+          conversation: REQUESTER_CONVERSATION,
+          textIncludes: "QA-RESTART-TASK-SPAWNED",
+          timeoutMs: 90_000,
+        });
+        const original = await transport.waitForCondition(
+          async () => {
+            const observation = await observe();
+            if (!observation.task || observation.task.status !== "running") {
+              return undefined;
+            }
+            const transcript = await readSessionTranscriptSummary(
+              { gateway },
+              observation.task.childSessionKey,
+              { allowEmpty: true },
+            );
+            return (transcript.assistantToolCallCounts.wait ?? 0) >
+              (transcript.completedToolCallCounts.wait ?? 0)
+              ? observation.task
+              : undefined;
+          },
+          90_000,
+          25,
+        );
+        const databasePath = path.join(gateway.tempRoot, "state", "state", "openclaw.sqlite");
+        const before = readRestartBacking(databasePath, original.id, original.childSessionKey);
+        const sessionsBefore = await readRawQaSessionStore({ gateway });
+        const custody = {
+          id: original.id,
+          runId: original.runId,
+          flowId: original.flowId,
+          sessionKey: original.sessionKey,
+          childSessionKey: original.childSessionKey,
+          ownerKey: original.ownerKey,
+        };
+        for (const value of Object.values(custody)) {
+          expect(value).toEqual(expect.any(String));
+          expect(value.length).toBeGreaterThan(0);
+        }
+        expect(original.sessionKey).toBe(sessionKey);
+        expect(original.ownerKey).toBe(sessionKey);
+        expect(before.run).toMatchObject({
+          runId: original.runId,
+          taskRunId: original.runId,
+          childSessionKey: original.childSessionKey,
+          requesterSessionKey: sessionKey,
+          requesterOrigin: { channel: "qa-channel", accountId: transport.accountId },
+        });
+        for (const generation of [before.detail.generation, before.run.generation]) {
+          expect(Number.isSafeInteger(generation)).toBe(true);
+          expect(generation).toBeGreaterThan(0);
+        }
+        expect(before.run.execution.lifecycleGeneration).toEqual(expect.any(String));
+        expect(before.run.execution.lifecycleGeneration.length).toBeGreaterThan(0);
+        for (const key of [sessionKey, original.childSessionKey]) {
+          expect(sessionsBefore[key]?.sessionId).toEqual(expect.any(String));
+          expect(sessionsBefore[key]?.sessionId?.length ?? 0).toBeGreaterThan(0);
+        }
+        const requestsBeforeCancellation = await requests();
+        const outboundBeforeCancellation = outbound().length;
+        const cancellation = await gateway.call("tasks.cancel", {
+          taskId: original.id,
+          reason: "QA explicit cancellation before process replacement",
+        });
+        expect(cancellation).toMatchObject({ found: true, cancelled: true });
+        await transport.waitForCondition(
+          async () => {
+            const current = await observe();
+            return current.task?.status === "cancelled" ? current : undefined;
+          },
+          30_000,
+          25,
+        );
+        const cancellationNotice = `Background task cancellation requested: plugin:${PLUGIN_ID} (run ${original.runId.slice(0, 8)}).`;
+        await transport.waitForOutbound({
+          conversation: REQUESTER_CONVERSATION,
+          textIncludes: cancellationNotice,
+          timeoutMs: 30_000,
+        });
+        expect(
+          outbound()
+            .slice(outboundBeforeCancellation)
+            .map((message) => message.text),
+        ).toEqual([cancellationNotice]);
+        const initialPid = gateway.pid;
+        expect(initialPid).not.toBeNull();
+        if (replacement === "process-loss") {
+          signalQaPosixProcessGroup(initialPid!, "SIGKILL");
+          await waitForQaTransportCondition(
+            () => (!isQaPosixProcessGroupAlive(initialPid!) ? true : undefined),
+            30_000,
+            25,
+          );
+        }
+        await gateway.restartAfterStateMutation(async () => {});
+        await transport.waitReady({ gateway });
+        await assertHeartbeatOff();
+        expect(gateway.pid).not.toBe(initialPid);
+        expect(gateway.pid).not.toBeNull();
+        expect((await observe()).task).toMatchObject({ ...custody, status: "cancelled" });
+        // Observe a complete registry sweep, not just the startup idle interval.
+        await transport.waitForNoOutbound({
+          sinceIndex: outboundBeforeCancellation + 1,
+          quietMs: 65_000,
+        });
+        const after = readRestartBacking(databasePath, original.id, original.childSessionKey);
+        expect(after.detail.generation).toBe(before.detail.generation);
+        expect(after.run.generation).toBe(before.run.generation);
+        expect(after.run.runId).toBe(before.run.runId);
+        expect(after.run.taskRunId).toBe(before.run.taskRunId);
+        expect(after.run.childSessionKey).toBe(before.run.childSessionKey);
+        expect(after.run.requesterSessionKey).toBe(before.run.requesterSessionKey);
+        expect(after.run.requesterOrigin).toEqual(before.run.requesterOrigin);
+        expect(after.run.execution.lifecycleGeneration).toBe(
+          before.run.execution.lifecycleGeneration,
+        );
+        expect(after.run.execution.status).toBe("terminal");
+        const sessionsAfter = await readRawQaSessionStore({ gateway });
+        for (const key of [sessionKey, original.childSessionKey]) {
+          expect(sessionsAfter[key]?.sessionId).toEqual(expect.any(String));
+          expect(sessionsAfter[key]?.sessionId).toBe(sessionsBefore[key]?.sessionId);
+        }
+        expect(
+          outbound()
+            .slice(outboundBeforeCancellation)
+            .map((message) => message.text),
+        ).toEqual([cancellationNotice]);
+        const finalRequests = await requests();
+        expect(finalRequests).toHaveLength(requestsBeforeCancellation.length);
+        expect(finalRequests.filter((request) => request.prompt?.includes(heartbeatProbe))).toEqual(
+          [],
+        );
+        expect((await observe()).task).toMatchObject({ ...custody, status: "cancelled" });
+        await mkdir(path.dirname(VERDICT_PATH), { recursive: true });
+        await writeFile(
+          path.join(path.dirname(VERDICT_PATH), `cancel-${replacement}-verdict.json`),
+          `${JSON.stringify(
+            {
+              scenario: "cancelled-child-process-replacement",
+              status: "pass",
+              replacement,
+              taskId: original.id,
+              runId: after.run.runId,
+              taskGeneration: after.detail.generation,
+              subagentGeneration: after.run.generation,
+              pids: [initialPid, gateway.pid],
+              heartbeatRequests: 0,
+              providerRequestsBeforeCancellation: requestsBeforeCancellation.length,
+              providerRequestsAfterRestartSweep: finalRequests.length,
+              cancellationNotices: 1,
+              unexpectedOutboundAfterCancellation:
+                outbound().length - outboundBeforeCancellation - 1,
+              quietMs: 65_000,
+            },
+            null,
+            2,
+          )}\n`,
+          "utf8",
+        );
+      } catch (error) {
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}\nbus=${JSON.stringify(state.getSnapshot())}\ngateway=${gateway.logs()}`,
+          { cause: error },
+        );
+      }
+    },
+    300_000,
+  );
+
   it("announces to the original requester only after the follow-up run ends", async () => {
     const { state, transport, mock, gateway } = await startFixtureGateway();
     await transport.waitReady({ gateway });

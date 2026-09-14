@@ -8,6 +8,7 @@ import {
   dropPreSessionStartAnnouncePairs,
   isHeartbeatHistoryTurnBoundaryMessage,
   projectChatDisplayMessagesWithState,
+  projectChatHistoryRecovery,
 } from "./chat-display-projection.js";
 import { resolveCurrentUserProfileDisplay } from "./current-user-profile-display.js";
 import { readSessionMessagesAroundIdWithStatsAsync } from "./session-transcript-anchor-reader.js";
@@ -76,6 +77,7 @@ async function readAdjacentChatHistoryMessages(params: {
   readScope: SessionTranscriptReadScope;
   displaySource: string | undefined;
   expectedReadWindow?: TranscriptReadWindow;
+  readOnly?: boolean;
 }): Promise<unknown[]> {
   // Anchor lookup and positioning share one snapshot; numeric offsets drift on appends.
   const page = await readSessionMessagesAroundIdWithStatsAsync(params.readScope, {
@@ -84,6 +86,7 @@ async function readAdjacentChatHistoryMessages(params: {
     direction: params.direction,
     expectedReadWindow: params.expectedReadWindow,
     allowResetArchiveFallback: true,
+    readOnly: params.readOnly,
   });
   if (!page.found || page.displaySource !== params.displaySource) {
     throw new SessionTranscriptProjectionUnavailableError(params.readScope.sessionId);
@@ -102,11 +105,12 @@ async function readAdjacentChatHistoryMessages(params: {
 /** Resolve only the newer turn context a historical page needs to classify its pending error. */
 export async function readChatHistoryRecoveryContext(params: {
   messages: unknown[];
-  project: (messages: unknown[]) => ReturnType<typeof projectChatDisplayMessagesWithState>;
+  projectRecovery: (messages: unknown[]) => ReturnType<typeof projectChatHistoryRecovery>;
   readScope: SessionTranscriptReadScope;
   displaySource: string | undefined;
   expectedReadWindow?: TranscriptReadWindow;
   maxBytes: number;
+  readOnly?: boolean;
 }): Promise<unknown[]> {
   const context: unknown[] = [];
   let anchorId = readChatHistoryMessageId(params.messages.at(-1));
@@ -123,6 +127,7 @@ export async function readChatHistoryRecoveryContext(params: {
       readScope: params.readScope,
       displaySource: params.displaySource,
       expectedReadWindow: params.expectedReadWindow,
+      readOnly: params.readOnly,
     });
     if (newer.length === 0) {
       break;
@@ -139,10 +144,7 @@ export async function readChatHistoryRecoveryContext(params: {
         break;
       }
     }
-    if (
-      boundaryReached ||
-      !params.project([...params.messages, ...context]).assistantErrorPending
-    ) {
+    if (boundaryReached || !params.projectRecovery([...params.messages, ...context]).pending) {
       break;
     }
     anchorId = readChatHistoryMessageId(context.at(-1));
@@ -160,6 +162,8 @@ export async function readIncrementalChatHistoryTail(params: {
   offset?: number;
   beforeSeq?: number;
   preserveProjectionContext?: boolean;
+  readOnly?: boolean;
+  deferProfileDisplay?: boolean;
 }): Promise<IncrementalChatHistoryTail> {
   let offset = params.offset ?? 0;
   const requestedBeforeSeq = params.beforeSeq;
@@ -183,6 +187,7 @@ export async function readIncrementalChatHistoryTail(params: {
           maxBytes: Math.max(params.maxBytes * 2, 1024 * 1024),
           allowResetArchiveFallback: true,
           captureReadWindow: true,
+          readOnly: params.readOnly,
         })
       : await readSessionMessagesPageWithStatsAsync(params.readScope, {
           offset,
@@ -199,6 +204,7 @@ export async function readIncrementalChatHistoryTail(params: {
             : {}),
           allowResetArchiveFallback: true,
           captureReadWindow: true,
+          readOnly: params.readOnly,
         });
   const readWindow = readPage.readWindow;
   const availableMessages = resolveTranscriptPageEnd(readPage.totalMessages, {
@@ -227,28 +233,31 @@ export async function readIncrementalChatHistoryTail(params: {
   );
   let recoveryContext: unknown[] | undefined = offset === 0 ? [] : undefined;
   const newestPageSeq = readChatHistoryMessageSeq(rawMessages.at(-1));
+  const filterWindowMessages = (messages: unknown[], contextMessage: unknown) =>
+    sessionStartedAt === undefined
+      ? messages
+      : dropChatHistoryOverreadContextMessage(
+          dropPreSessionStartAnnouncePairs(
+            contextMessage === undefined ? messages : [contextMessage, ...messages],
+            sessionStartedAt,
+          ),
+          contextMessage,
+        );
   const project = (
     messages = rawMessages,
     contextMessage = overreadContextMessage,
     resolveProfileDisplay = true,
     newerContext = recoveryContext ?? [],
   ) => {
-    const filteredRawMessages =
-      sessionStartedAt === undefined
-        ? messages
-        : dropChatHistoryOverreadContextMessage(
-            dropPreSessionStartAnnouncePairs(
-              contextMessage === undefined ? messages : [contextMessage, ...messages],
-              sessionStartedAt,
-            ),
-            contextMessage,
-          );
+    const filteredRawMessages = filterWindowMessages(messages, contextMessage);
     const projection = projectChatDisplayMessagesWithState(
       newerContext.length > 0 ? [...filteredRawMessages, ...newerContext] : filteredRawMessages,
       {
         includeCommentaryFallbacks: true,
         maxChars: params.effectiveMaxChars,
-        ...(resolveProfileDisplay ? { resolveCurrentUserProfileDisplay } : {}),
+        ...(resolveProfileDisplay && !params.deferProfileDisplay
+          ? { resolveCurrentUserProfileDisplay }
+          : {}),
         turnBoundaryPending: isHeartbeatHistoryTurnBoundaryMessage(contextMessage),
       },
     );
@@ -276,11 +285,15 @@ export async function readIncrementalChatHistoryTail(params: {
     }
     recoveryContext = await readChatHistoryRecoveryContext({
       messages: result.filteredRawMessages,
-      project: (messages) => project(messages, overreadContextMessage, true, []).projection,
+      projectRecovery: (messages) =>
+        projectChatHistoryRecovery(filterWindowMessages(messages, overreadContextMessage), {
+          maxChars: params.effectiveMaxChars,
+        }),
       readScope: params.readScope,
       displaySource: readPage.displaySource,
       expectedReadWindow: readWindow,
       maxBytes: params.maxBytes,
+      readOnly: params.readOnly,
     });
     return project();
   };
@@ -319,6 +332,7 @@ export async function readIncrementalChatHistoryTail(params: {
               readScope: params.readScope,
               displaySource: readPage.displaySource,
               expectedReadWindow: readWindow,
+              readOnly: params.readOnly,
             }),
           }
         : await readSessionMessagesPageWithStatsAsync(params.readScope, {
@@ -327,6 +341,7 @@ export async function readIncrementalChatHistoryTail(params: {
             expectedReadWindow: readWindow,
             maxMessages: chunkMessages + 1,
             allowResetArchiveFallback: true,
+            readOnly: params.readOnly,
           });
     // Separate awaits may cross a destructive rewrite, even when a page is empty.
     // Let the existing retryable history response request one coherent snapshot.

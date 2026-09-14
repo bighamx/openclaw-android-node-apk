@@ -442,7 +442,7 @@ describe("AppSidebar session ownership", () => {
     },
   );
 
-  it("renders no ownership chrome when the listed sessions have fewer than two owners", async () => {
+  it("renders no ownership chrome when owners and participants resolve to one identity", async () => {
     const gateway = createGatewayHarness({} as GatewayBrowserClient);
     gateway.publish({
       selfUser: {
@@ -462,6 +462,8 @@ describe("AppSidebar session ownership", () => {
     }
     for (const row of result.sessions) {
       setEffectiveOwner(row, { type: "human", id: "profile-ada", label: "Ada" });
+      row.participants = [{ identity: { type: "profile", id: "profile-ada" }, label: "Ada" }];
+      row.participantCount = 1;
     }
     const { sidebar } = await mountSidebar(gateway.gateway, harness.sessions);
     harness.publishList({ result, agentId: "main" });

@@ -287,21 +287,24 @@ function isRequesterParentOfNativeSubagentSession(params: {
   requesterSessionKey: string | null | undefined;
   targetSessionKey: string;
 }): boolean {
-  if (
-    !params.entry ||
-    params.acpMeta ||
-    params.entry.acp ||
-    !isSubagentSessionKey(params.targetSessionKey)
-  ) {
+  if (!params.entry || params.acpMeta || params.entry.acp) {
     return false;
   }
   const requester = normalizeOptionalString(params.requesterSessionKey);
   if (!requester) {
     return false;
   }
-  const spawnedBy = normalizeOptionalString(params.entry.spawnedBy);
-  const parentSessionKey = normalizeOptionalString(params.entry.parentSessionKey);
-  return requester === spawnedBy || requester === parentSessionKey;
+  // spawnedBy is written only by the spawn policy, so it identifies a native
+  // child regardless of key shape: visible children live under persistent
+  // dashboard keys, not subagent keys. parentSessionKey also records ordinary
+  // UI threading and forks, so it only counts for subagent-keyed targets.
+  if (requester === normalizeOptionalString(params.entry.spawnedBy)) {
+    return true;
+  }
+  return (
+    isSubagentSessionKey(params.targetSessionKey) &&
+    requester === normalizeOptionalString(params.entry.parentSessionKey)
+  );
 }
 
 function isTerminalAgentWaitTimeout(result: AgentWaitResult): boolean {
@@ -792,99 +795,106 @@ export function createSessionsSendTool(opts?: {
         isLiteralUnscopedMainTarget && normalizeAgentId(targetAgentId) === requesterAgentId;
       const rawRequesterSessionKey = opts?.agentSessionKey ? effectiveRequesterKey : undefined;
       const parsedRequesterSessionKey = parseAgentSessionKey(rawRequesterSessionKey);
-      const requesterRouteBindings = cfg.bindings?.filter(
-        (binding): binding is AgentRouteBinding => binding.type !== "acp",
-      );
-      const requesterDeliveryRoute = requesterRouteBindings?.length
-        ? parseSessionDeliveryRoute(rawRequesterSessionKey)
-        : null;
-      const bareRequesterPeerId = parsedRequesterSessionKey?.rest.startsWith("direct:")
-        ? parsedRequesterSessionKey.rest.slice("direct:".length)
-        : parsedRequesterSessionKey?.rest.startsWith("dm:")
-          ? parsedRequesterSessionKey.rest.slice("dm:".length)
-          : undefined;
-      const requesterRouteChannel = requesterDeliveryRoute?.channel ?? opts?.agentChannel;
-      const requesterRoutePeerId = requesterDeliveryRoute?.peerId ?? bareRequesterPeerId;
-      const requesterRoute =
-        requesterRouteBindings?.length && requesterRouteChannel && requesterRoutePeerId
-          ? resolveAgentRoute({
-              cfg,
-              channel: requesterRouteChannel,
-              accountId: requesterDeliveryRoute?.accountId,
-              peer: { kind: "direct", id: requesterRoutePeerId },
-            })
-          : undefined;
-      // Any configured route can transfer this peer to another agent. A key
-      // without enough route facts must never be reassigned to guessed ownership.
-      const hasUnresolvedRequesterRoute = Boolean(
-        requesterRouteBindings?.length &&
-        (!requesterRoute || requesterRoute.agentId !== parsedRequesterSessionKey?.agentId),
-      );
-      // Session keys can discard account, peer casing, team, guild, and roles.
-      // Preserve the authenticated caller whenever any possible binding would
-      // choose another agent or an isolated DM scope using those missing facts.
-      const hasUnsafeRequesterDmBinding = Boolean(
-        requesterRouteBindings?.some((binding) => {
-          const effectiveDmScope = binding.session?.dmScope ?? cfg.session?.dmScope ?? "main";
-          const isForeignAgent =
-            normalizeAgentId(binding.agentId) !== parsedRequesterSessionKey?.agentId;
-          if (!isForeignAgent && effectiveDmScope === "main") {
-            return false;
-          }
-          if (
-            requesterRouteChannel &&
-            normalizeRouteBindingChannelId(binding.match.channel) !==
-              normalizeRouteBindingChannelId(requesterRouteChannel)
-          ) {
-            return false;
-          }
-          const bindingAccountId = binding.match.accountId?.trim();
-          if (
-            requesterDeliveryRoute?.accountId &&
-            bindingAccountId !== "*" &&
-            normalizeAccountId(bindingAccountId) !==
-              normalizeAccountId(requesterDeliveryRoute.accountId)
-          ) {
-            return false;
-          }
-          const peer = binding.match.peer;
-          if (peer) {
-            const peerId = peer.id.trim();
-            if (
-              peer.kind !== "direct" ||
-              (peerId !== "*" &&
-                peerId.toLowerCase() !== requesterRoutePeerId?.trim().toLowerCase())
-            ) {
-              return false;
-            }
-          }
-          return true;
-        }),
-      );
-      const requesterDmScope =
-        requesterRoute && requesterRoute.agentId === parsedRequesterSessionKey?.agentId
-          ? (requesterRoute.dmScope ?? cfg.session?.dmScope ?? "main")
-          : (cfg.session?.dmScope ?? "main");
-      // Normalize legacy DM reply addresses only after exact-key visibility
-      // checks; global/binding-isolated DMs and non-DM owners stay private.
       const requesterSessionKey = rawRequesterSessionKey;
-      const replyRequesterSessionKey =
+      let replyRequesterSessionKey = rawRequesterSessionKey;
+      // Only unthreaded DMs need reply-address normalization. Resolving other
+      // requesters as direct peers can reject valid channel-only bindings.
+      if (
         rawRequesterSessionKey &&
         parsedRequesterSessionKey &&
         rawRequesterSessionKey !== resolvedKey &&
-        requesterDmScope === "main" &&
-        !hasUnresolvedRequesterRoute &&
-        !hasUnsafeRequesterDmBinding &&
         !parsedRequesterSessionKey.rest.startsWith("cron:") &&
         !parsedRequesterSessionKey.rest.startsWith("hook:") &&
         !isSubagentSessionKey(rawRequesterSessionKey) &&
-        !parseSessionThreadInfo(rawRequesterSessionKey).threadId &&
-        deriveSessionChatTypeFromKey(rawRequesterSessionKey) === "direct"
-          ? buildAgentMainSessionKey({
-              agentId: parsedRequesterSessionKey.agentId,
-              mainKey,
-            })
-          : rawRequesterSessionKey;
+        deriveSessionChatTypeFromKey(rawRequesterSessionKey) === "direct" &&
+        !parseSessionThreadInfo(rawRequesterSessionKey).threadId
+      ) {
+        const requesterRouteBindings = cfg.bindings?.filter(
+          (binding): binding is AgentRouteBinding => binding.type !== "acp",
+        );
+        const requesterDeliveryRoute = requesterRouteBindings?.length
+          ? parseSessionDeliveryRoute(rawRequesterSessionKey)
+          : null;
+        const bareRequesterPeerId = parsedRequesterSessionKey?.rest.startsWith("direct:")
+          ? parsedRequesterSessionKey.rest.slice("direct:".length)
+          : parsedRequesterSessionKey?.rest.startsWith("dm:")
+            ? parsedRequesterSessionKey.rest.slice("dm:".length)
+            : undefined;
+        const requesterRouteChannel = requesterDeliveryRoute?.channel ?? opts?.agentChannel;
+        const requesterRoutePeerId = requesterDeliveryRoute?.peerId ?? bareRequesterPeerId;
+        const requesterRoute =
+          requesterRouteBindings?.length && requesterRouteChannel && requesterRoutePeerId
+            ? resolveAgentRoute({
+                cfg,
+                channel: requesterRouteChannel,
+                accountId: requesterDeliveryRoute?.accountId,
+                peer: { kind: "direct", id: requesterRoutePeerId },
+              })
+            : undefined;
+        // Any configured route can transfer this peer to another agent. A key
+        // without enough route facts must never be reassigned to guessed ownership.
+        const hasUnresolvedRequesterRoute = Boolean(
+          requesterRouteBindings?.length &&
+          (!requesterRoute || requesterRoute.agentId !== parsedRequesterSessionKey?.agentId),
+        );
+        // Session keys can discard account, peer casing, team, guild, and roles.
+        // Preserve the authenticated caller whenever any possible binding would
+        // choose another agent or an isolated DM scope using those missing facts.
+        const hasUnsafeRequesterDmBinding = Boolean(
+          requesterRouteBindings?.some((binding) => {
+            const effectiveDmScope = binding.session?.dmScope ?? cfg.session?.dmScope ?? "main";
+            const isForeignAgent =
+              normalizeAgentId(binding.agentId) !== parsedRequesterSessionKey?.agentId;
+            if (!isForeignAgent && effectiveDmScope === "main") {
+              return false;
+            }
+            if (
+              requesterRouteChannel &&
+              normalizeRouteBindingChannelId(binding.match.channel) !==
+                normalizeRouteBindingChannelId(requesterRouteChannel)
+            ) {
+              return false;
+            }
+            const bindingAccountId = binding.match.accountId?.trim();
+            if (
+              requesterDeliveryRoute?.accountId &&
+              bindingAccountId !== "*" &&
+              normalizeAccountId(bindingAccountId) !==
+                normalizeAccountId(requesterDeliveryRoute.accountId)
+            ) {
+              return false;
+            }
+            const peer = binding.match.peer;
+            if (peer) {
+              const peerId = peer.id.trim();
+              if (
+                peer.kind !== "direct" ||
+                (peerId !== "*" &&
+                  peerId.toLowerCase() !== requesterRoutePeerId?.trim().toLowerCase())
+              ) {
+                return false;
+              }
+            }
+            return true;
+          }),
+        );
+        const requesterDmScope =
+          requesterRoute && requesterRoute.agentId === parsedRequesterSessionKey?.agentId
+            ? (requesterRoute.dmScope ?? cfg.session?.dmScope ?? "main")
+            : (cfg.session?.dmScope ?? "main");
+        // Normalize only the reply address after exact-key visibility checks;
+        // global/binding-isolated DMs keep their authenticated identity.
+        if (
+          requesterDmScope === "main" &&
+          !hasUnresolvedRequesterRoute &&
+          !hasUnsafeRequesterDmBinding
+        ) {
+          replyRequesterSessionKey = buildAgentMainSessionKey({
+            agentId: parsedRequesterSessionKey.agentId,
+            mainKey,
+          });
+        }
+      }
       const timeoutMs =
         finiteSecondsToTimerSafeMilliseconds(timeoutSeconds, {
           floorSeconds: true,
@@ -1057,8 +1067,11 @@ export function createSessionsSendTool(opts?: {
             });
           // A scoped grant belongs to one exact session incarnation. Do not create
           // post-return work or durable watches that could follow a reused key.
-          const skipA2AFlow =
-            skipAcpA2AFlow || skipNativeParentA2AFlow || Boolean(expectedSessionId);
+          const skipDelayedA2AFlow = skipAcpA2AFlow || Boolean(expectedSessionId);
+          // Native-parent suppression only covers a reply that already returned inline.
+          // A send is not a registered spawn run, so when the wait expires before the
+          // child finishes, nothing else delivers the late reply: keep that continuation.
+          const skipA2AFlow = skipDelayedA2AFlow || skipNativeParentA2AFlow;
           const startA2AFlow = (
             reply?: Awaited<ReturnType<typeof waitForAgentRunReply>>,
             waitRunId?: string,
@@ -1066,7 +1079,7 @@ export function createSessionsSendTool(opts?: {
             flowDisplayKey = displayKey,
             notifyRequesterOnWaitFailure = false,
           ) => {
-            if (skipA2AFlow) {
+            if (reply === undefined ? skipDelayedA2AFlow : skipA2AFlow) {
               return;
             }
             // This detached flow can outlive the tool request that launched it.
@@ -1136,6 +1149,10 @@ export function createSessionsSendTool(opts?: {
             skipA2AFlow || start.targetDisposition === "steered"
               ? ({ status: "skipped", mode: "announce" } as const)
               : ({ status: "pending", mode: "announce" } as const);
+          const delayedDelivery =
+            skipDelayedA2AFlow || start.targetDisposition === "steered"
+              ? ({ status: "skipped", mode: "announce" } as const)
+              : ({ status: "pending", mode: "announce" } as const);
           recordSessionToolActionFact({
             operation: "send",
             fact: "committed",
@@ -1181,7 +1198,7 @@ export function createSessionsSendTool(opts?: {
                 error: result.error,
                 sentBeforeError: true,
                 sessionKey: displayKey,
-                delivery,
+                delivery: delayedDelivery,
                 ...watchField,
               });
             }
@@ -1192,7 +1209,7 @@ export function createSessionsSendTool(opts?: {
                 status: "accepted",
                 sessionKey: displayKey,
                 targetDisposition: start.targetDisposition,
-                delivery,
+                delivery: delayedDelivery,
                 ...watchField,
               });
             }

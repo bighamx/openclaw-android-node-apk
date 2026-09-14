@@ -605,7 +605,7 @@ export function projectChatTranscript(
       content: backgroundTasks,
     });
   }
-  const typingIndicator = renderChatTypingIndicator(props.typingActors);
+  const typingIndicator = renderChatTypingIndicator(props.typingActors, avatarPlacement);
   if (typingIndicator) {
     transcriptRows.push({ kind: "content", key: "presence:typing", content: typingIndicator });
   }

@@ -19,17 +19,19 @@ type ReadSessionMessagesAroundIdResult = ReadRecentSessionMessagesResult & {
 /** Reads one message-id-anchored page from a single transcript snapshot. */
 export async function readSessionMessagesAroundIdWithStatsAsync(
   scope: SessionTranscriptReadScope,
-  opts: TranscriptAnchorPageOptions & { allowResetArchiveFallback?: boolean },
+  opts: TranscriptAnchorPageOptions & { allowResetArchiveFallback?: boolean; readOnly?: boolean },
 ): Promise<ReadSessionMessagesAroundIdResult> {
-  const target = resolveTranscriptReadTarget(scope);
+  const target = await resolveTranscriptReadTarget(scope);
   const sessionFile =
     !scope.sessionFile &&
     scope.sessionEntry?.sessionId &&
     scope.sessionEntry.sessionId !== scope.sessionId
       ? undefined
       : target.sessionFile;
-  const page = await readRestoredSessionTranscript(toTranscriptReadScope(target), () =>
-    readSessionTranscriptHistoryAnchorPage(toTranscriptReadScope(target), opts),
+  const page = await readRestoredSessionTranscript(
+    toTranscriptReadScope(target),
+    () => readSessionTranscriptHistoryAnchorPage(toTranscriptReadScope(target), opts),
+    opts,
   );
   if (!page.found) {
     if (opts.allowResetArchiveFallback === true) {

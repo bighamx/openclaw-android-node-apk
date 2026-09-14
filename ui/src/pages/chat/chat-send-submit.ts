@@ -23,6 +23,7 @@ import { isInitialChatHistoryUnavailable } from "./chat-history-state.ts";
 import { loadChatHistory } from "./chat-history.ts";
 import {
   admitQueuedMessageForSession,
+  admitQueuedMessageForSessionResult,
   enqueueChatMessage,
   excludeComposerAttachments,
   removeQueuedMessageWithoutReleasing,
@@ -57,6 +58,8 @@ import { resolveDisplayedLeafEntryId } from "./chat-send-request.ts";
 import {
   chatSendHoldReason,
   formatTerminalChatSendAckError,
+  formatChatQueueAdmissionError,
+  isChatResetCommand,
   OFFLINE_QUEUE_STORAGE_ERROR,
   prependReplyQuote,
 } from "./chat-send-support.ts";
@@ -98,14 +101,6 @@ export type ChatSendSubmitOptions = {
   /** Lets request-scoped UI actions recover from rejected local commands. */
   onLocalCommandSendRejected?: () => void;
 };
-
-function isChatResetCommand(text: string) {
-  const parsed = parseSlashCommand(text);
-  return (
-    parsed?.command.key === "new" ||
-    (parsed?.command.key === "reset" && !/^soft(?:\s|$)/i.test(parsed.args))
-  );
-}
 
 async function waitForSubmittedRoute(host: ChatHost, sessionKey: string): Promise<boolean> {
   const pending = getPendingChatPickerPatch(host, sessionKey);
@@ -367,9 +362,8 @@ export async function handleSendChat(
       parsed?.command.key === "model" && shouldForwardModelCommandToServer(parsed.args);
     if (parsed?.command.executeLocal && !forwardModel) {
       if (shouldQueueLocalSlashCommand(parsed.command.key)) {
-        const holdReason = chatSendHoldReason(host, submittedSessionKey);
-        if (holdReason) {
-          setChatError(host, holdReason);
+        if (chatSendHoldReason(host, submittedSessionKey)) {
+          host.requestUpdate?.();
           return undefined;
         }
         const submitKey = chatSubmitKey(host, "local", message, attachmentsToSend);
@@ -576,9 +570,9 @@ export async function handleSendChat(
     ) {
       return;
     }
-    const holdReason = chatSendHoldReason(host, submittedSessionKey);
-    if (holdReason) {
-      setChatError(host, holdReason);
+    if (chatSendHoldReason(host, submittedSessionKey)) {
+      // The composer owns transient recovery notices, including their removal.
+      host.requestUpdate?.();
       return;
     }
     let pendingSettings = getPendingChatPickerPatch(host, submittedSessionKey);
@@ -633,7 +627,11 @@ export async function handleSendChat(
       const hold = chatSendHoldReason(host, submittedSessionKey);
       if (hold || (intent && (isChatBusy(host) || hasDirectSessionRun(host)))) {
         retireOutboxPayload(queued);
-        setChatError(host, hold ?? t("chat.goals.busy"));
+        if (hold) {
+          host.requestUpdate?.();
+        } else {
+          setChatError(host, t("chat.goals.busy"));
+        }
         return;
       }
       // Retain a picker captured before storage, including its rejected result;
@@ -656,7 +654,7 @@ export async function handleSendChat(
     }
 
     publishPendingSendMessage(host, queued);
-    const admittedDurably = admitQueuedMessageForSession(
+    const admissionResult = admitQueuedMessageForSessionResult(
       host,
       submission.admission,
       queued,
@@ -667,6 +665,7 @@ export async function handleSendChat(
           }
         : undefined,
     );
+    const admittedDurably = admissionResult === "admitted";
     if (resumedEdit) {
       retireEditedQueuedMessageSource(host, admittedDurably, queued.attachments, resumedEdit);
     }
@@ -686,9 +685,10 @@ export async function handleSendChat(
         previousAttachments: cleared.previousAttachments,
         previousMentions: cleared.previousMentions,
       });
-      setChatError(host, OFFLINE_QUEUE_STORAGE_ERROR);
+      setChatError(host, formatChatQueueAdmissionError(admissionResult, Boolean(resumedEdit)));
       return;
     }
+    setChatError(host, null);
     opts?.onOutboxAdmitted?.();
     let deliveryItem: typeof queued | null = queued;
     if (admittedDurably && submissionAction && typeof MessageChannel !== "undefined") {

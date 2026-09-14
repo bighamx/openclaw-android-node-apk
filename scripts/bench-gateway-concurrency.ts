@@ -35,10 +35,13 @@ import {
 } from "./lib/gateway-bench-probes.ts";
 import {
   controlGatewayProfile,
+  measureGatewayCpuUsage,
   readGatewayCpuProfile,
+  readGatewayCpuUsage,
   readGatewayHeapProfile,
   type GatewayHeapProfile,
   type GatewayCpuProfile,
+  type GatewayCpuUsage,
 } from "./lib/gateway-bench-profile.ts";
 import {
   BASE_GATEWAY_BENCH_CONFIG,
@@ -111,6 +114,11 @@ type GatewayChildExit = {
   signal: string | null;
 };
 
+type MainProfileArtifacts = {
+  scope: "main-isolate";
+  workersManifestPath: string;
+};
+
 type BenchmarkRun = {
   browser?: {
     newPageReadyMs: number;
@@ -124,10 +132,11 @@ type BenchmarkRun = {
     };
     clicks: BrowserSessionClick[];
   };
-  heapProfile?: GatewayHeapProfile;
-  loadCpuProfile?: GatewayCpuProfile;
+  heapProfile?: GatewayHeapProfile & MainProfileArtifacts;
+  loadCpuProfile?: GatewayCpuProfile & MainProfileArtifacts;
   controlPlane: Array<TimedProbe & { method: string }>;
   controlUi: ControlUiProbe[];
+  cpuUsage: GatewayCpuUsage;
   durationMs: number;
   freshConnection: FreshConnectionProbe;
   gatewayExit?: Awaited<ReturnType<typeof stopChild>>;
@@ -465,8 +474,8 @@ Options:
   --history-messages <n> Inject up to 500 synthetic messages per seeded session
   --history-message-chars <n> Synthetic message size (default: 1024, max: 65536)
   --cpu-prof-dir <p> Write Gateway V8 CPU profiles to this directory
-  --load-cpu-prof-dir <p> Capture load-phase Gateway CPU over private IPC, including on Windows
-  --heap-prof-dir <p> Sample load-phase allocations, including GC-collected objects
+  --load-cpu-prof-dir <p> Capture load-phase main/Worker CPU over private IPC, including on Windows
+  --heap-prof-dir <p> Sample load-phase main/Worker allocations, including GC-collected objects
   --runs <n>         Measured gateway runs (default: ${DEFAULT_RUNS})
   --warmup <n>       Warmup gateway runs (default: ${DEFAULT_WARMUP})
   --cadence-ms <ms>  Probe cadence (default: ${DEFAULT_CADENCE_MS})
@@ -1244,16 +1253,16 @@ async function runGatewaySample(options: {
         mkdirSync(options.cpuProfDir, { recursive: true });
       }
       const gatewayArgs = buildGatewayBenchChildArgs(options.entry, port);
+      gatewayArgs.unshift(
+        "--import",
+        new URL("./lib/gateway-bench-profile-preload.ts", import.meta.url).href,
+      );
       if (heapProfilePath || loadCpuProfilePath) {
         for (const profilePath of [heapProfilePath, loadCpuProfilePath]) {
           if (profilePath) {
             mkdirSync(path.dirname(profilePath), { recursive: true });
           }
         }
-        gatewayArgs.unshift(
-          "--import",
-          new URL("./lib/gateway-bench-profile-preload.ts", import.meta.url).href,
-        );
       }
       gateway = spawn(
         process.execPath,
@@ -1263,10 +1272,7 @@ async function runGatewaySample(options: {
         {
           cwd: process.cwd(),
           detached: process.platform !== "win32",
-          stdio:
-            heapProfilePath || loadCpuProfilePath
-              ? ["pipe", "pipe", "pipe", "ipc"]
-              : ["pipe", "pipe", "pipe"],
+          stdio: ["pipe", "pipe", "pipe", "ipc"],
           env: {
             ...createGatewayBenchEnv(root, configPath, {
               caseEnv: {
@@ -1482,10 +1488,14 @@ async function runGatewaySample(options: {
       }
       const memoryBefore = await readGatewayMemory(rpc, runStartedAt);
       if (loadCpuProfilePath) {
-        await controlGatewayProfile(gateway, "cpu", "start", loadCpuProfilePath);
+        await controlGatewayProfile(gateway, "cpu", "start", loadCpuProfilePath, {
+          includeWorkers: true,
+        });
       }
       if (heapProfilePath) {
-        await controlGatewayProfile(gateway, "heap", "start", heapProfilePath);
+        await controlGatewayProfile(gateway, "heap", "start", heapProfilePath, {
+          includeWorkers: true,
+        });
       }
       const setupDurationMs = performance.now() - setupStartedAt;
       // Large session fixtures are setup, not benchmarked load. Every measured
@@ -1513,6 +1523,7 @@ async function runGatewaySample(options: {
       const allTurnsStarted = new Promise<void>((resolve) => {
         resolveAllTurnsStarted = resolve;
       });
+      const cpuBefore = await readGatewayCpuUsage(gateway);
       const turnsStartedAt = performance.now();
       // Keep the live artifact intact: buffered setup writes can arrive after this boundary.
       // Inclusive millisecond timestamps conservatively include events on the boundary.
@@ -1688,19 +1699,28 @@ async function runGatewaySample(options: {
         historyLoad,
         sessionUpdateLoad,
       ]);
+      const cpuAfter = await readGatewayCpuUsage(gateway);
       const loadEndMonotonicMicros = Number(process.hrtime.bigint() / 1_000n);
       const turnsDurationMs = performance.now() - turnsStartedAt;
       const memoryAfter = await readGatewayMemory(rpc, runStartedAt);
       timelineWindow = { from: timelineFrom, through: Date.now() };
-      let loadCpuProfile: GatewayCpuProfile | undefined;
+      let loadCpuProfile: BenchmarkRun["loadCpuProfile"];
       if (loadCpuProfilePath) {
         await controlGatewayProfile(gateway, "cpu", "stop", loadCpuProfilePath);
-        loadCpuProfile = readGatewayCpuProfile(loadCpuProfilePath);
+        loadCpuProfile = {
+          ...readGatewayCpuProfile(loadCpuProfilePath),
+          scope: "main-isolate",
+          workersManifestPath: `${loadCpuProfilePath}.workers.json`,
+        };
       }
-      let heapProfile: GatewayHeapProfile | undefined;
+      let heapProfile: BenchmarkRun["heapProfile"];
       if (heapProfilePath) {
         await controlGatewayProfile(gateway, "heap", "stop", heapProfilePath);
-        heapProfile = readGatewayHeapProfile(heapProfilePath);
+        heapProfile = {
+          ...readGatewayHeapProfile(heapProfilePath),
+          scope: "main-isolate",
+          workersManifestPath: `${heapProfilePath}.workers.json`,
+        };
       }
       if (options.historyClients > 0 && !history.some((sample) => sample.ok)) {
         const failure = history[0]?.error ?? "no requests completed before turns finished";
@@ -1727,6 +1747,7 @@ async function runGatewaySample(options: {
         ...(loadCpuProfile ? { loadCpuProfile } : {}),
         controlPlane,
         controlUi,
+        cpuUsage: measureGatewayCpuUsage(cpuBefore, cpuAfter),
         durationMs: performance.now() - runStartedAt,
         freshConnection: freshConnectionResult,
         history,
@@ -1896,6 +1917,14 @@ function summarizeRuns(
         }
       : {}),
     budgetViolations,
+    gatewayProcessCpuMs: summarizeNumbers(runs.map((run) => run.cpuUsage.process.totalMs)),
+    gatewayProcessCpuMsPerTurn: summarizeNumbers(
+      runs.map((run) => run.cpuUsage.process.totalMs / run.turnCount),
+    ),
+    gatewayMainThreadCpuMs: summarizeNumbers(runs.map((run) => run.cpuUsage.mainThread.totalMs)),
+    gatewayProcessCpuCoreRatio: summarizeNumbers(
+      runs.map((run) => run.cpuUsage.process.totalMs / run.cpuUsage.wallMs),
+    ),
     gatewaySampledAllocatedBytes: summarizeNumbers(
       runs.flatMap((run) => (run.heapProfile ? [run.heapProfile.sampledAllocatedBytes] : [])),
     ),

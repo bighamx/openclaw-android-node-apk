@@ -403,8 +403,7 @@ export const sessionCreateHandlers: GatewayRequestHandlers = {
       });
     }
     if (p.worktree === true) {
-      // Workspace-contained cwd and registry-authorized projects stay at operator.write;
-      // arbitrary host paths still require operator.admin before reaching this block.
+      // Raw cwd authorization and project-registry selection have already been checked.
       const agentId = explicitlyRequestedAgent.agentId;
       let targetKey = sessionKey;
       let preservesUnspecifiedKey = false;
@@ -521,6 +520,7 @@ export const sessionCreateHandlers: GatewayRequestHandlers = {
                 })
               : undefined;
           const prepared = await prepareSessionWorktree({
+            cfg,
             target: lifecycleTarget,
             workspace,
             name: requestedWorktreeName,

@@ -212,95 +212,7 @@ function readMessageToolResultCallId(message: Record<string, unknown>): string |
   );
 }
 
-function readToolResultOkValue(value: unknown): boolean | undefined {
-  if (typeof value === "boolean") {
-    return value;
-  }
-  const record = readMaybeJsonRecord(value);
-  if (record && typeof record.ok === "boolean") {
-    return record.ok;
-  }
-  if (Array.isArray(value)) {
-    for (const block of value) {
-      const blockOk = readToolResultOkValue(block);
-      if (blockOk !== undefined) {
-        return blockOk;
-      }
-      const recordBlock = readRecord(block);
-      if (typeof recordBlock?.text === "string") {
-        const textOk = readToolResultOkValue(recordBlock.text);
-        if (textOk !== undefined) {
-          return textOk;
-        }
-      }
-      if (typeof recordBlock?.content === "string") {
-        const contentOk = readToolResultOkValue(recordBlock.content);
-        if (contentOk !== undefined) {
-          return contentOk;
-        }
-      }
-    }
-  }
-  return undefined;
-}
-
-function hasDryRunToolResultValue(value: unknown): boolean {
-  const record = readMaybeJsonRecord(value);
-  if (record && isDryRunMessageToolRecord(record)) {
-    return true;
-  }
-  if (!Array.isArray(value)) {
-    return false;
-  }
-  return value.some((block) => {
-    if (hasDryRunToolResultValue(block)) {
-      return true;
-    }
-    const recordBlock = readRecord(block);
-    if (typeof recordBlock?.text === "string" && hasDryRunToolResultValue(recordBlock.text)) {
-      return true;
-    }
-    return (
-      typeof recordBlock?.content === "string" && hasDryRunToolResultValue(recordBlock.content)
-    );
-  });
-}
-
-function hasSuppressedToolResultValue(value: unknown): boolean {
-  const record = readMaybeJsonRecord(value);
-  if (record) {
-    const messageId = normalizeOptionalString(record.messageId)?.toLowerCase();
-    const status = (
-      normalizeOptionalString(record.deliveryStatus) ??
-      normalizeOptionalString(record.delivery_status) ??
-      normalizeOptionalString(record.status)
-    )?.toLowerCase();
-    if (
-      record.delivered === false ||
-      messageId === "skipped" ||
-      messageId === "suppressed" ||
-      status === "skipped" ||
-      status === "suppressed"
-    ) {
-      return true;
-    }
-  }
-  if (!Array.isArray(value)) {
-    return false;
-  }
-  return value.some((block) => {
-    if (hasSuppressedToolResultValue(block)) {
-      return true;
-    }
-    const blockRecord = readRecord(block);
-    return (
-      hasSuppressedToolResultValue(blockRecord?.text) ||
-      hasSuppressedToolResultValue(blockRecord?.content)
-    );
-  });
-}
-
-function isSuccessfulMessageToolResult(
+function matchesMessageToolResult(
   message: Record<string, unknown>,
   pending: PendingMessageToolVisibleReply,
 ): boolean {
@@ -316,43 +228,66 @@ function isSuccessfulMessageToolResult(
   const hasConfirmedSourceRoute =
     !pending.requiresSourceRouteConfirmation ||
     readRecord(message.details)?.sourceReplyRoute === "current-source";
-  if (pending.toolCallId) {
-    return (
-      resultCallId === pending.toolCallId &&
-      isSuccessfulMessageToolResultPayload(message) &&
-      hasConfirmedSourceRoute
-    );
-  }
-  return isSuccessfulMessageToolResultPayload(message) && hasConfirmedSourceRoute;
+  return (!pending.toolCallId || resultCallId === pending.toolCallId) && hasConfirmedSourceRoute;
 }
 
 function isSuccessfulMessageToolResultPayload(message: Record<string, unknown>): boolean {
   if (message.isError === true || (message.error != null && message.error !== false)) {
     return false;
   }
-  if (
-    hasDryRunToolResultValue(message.result) ||
-    hasDryRunToolResultValue(message.output) ||
-    hasDryRunToolResultValue(message.content) ||
-    hasDryRunToolResultValue(message.text)
-  ) {
-    return false;
+  let ok: boolean | undefined;
+  const isRejectedValue = (value: unknown, includeOutcome = true): boolean => {
+    if (includeOutcome && typeof value === "boolean") {
+      ok ??= value;
+    }
+    const record = readMaybeJsonRecord(value);
+    if (record) {
+      if (includeOutcome) {
+        if (isDryRunMessageToolRecord(record)) {
+          return true;
+        }
+        if (typeof record.ok === "boolean") {
+          ok ??= record.ok;
+        }
+      }
+      const messageId = normalizeOptionalString(record.messageId)?.toLowerCase();
+      const status = (
+        normalizeOptionalString(record.deliveryStatus) ??
+        normalizeOptionalString(record.delivery_status) ??
+        normalizeOptionalString(record.status)
+      )?.toLowerCase();
+      if (
+        record.delivered === false ||
+        messageId === "skipped" ||
+        messageId === "suppressed" ||
+        status === "skipped" ||
+        status === "suppressed"
+      ) {
+        return true;
+      }
+    }
+    if (!Array.isArray(value)) {
+      return false;
+    }
+    return value.some((block) => {
+      if (isRejectedValue(block, includeOutcome)) {
+        return true;
+      }
+      const entry = readRecord(block);
+      // Only suppression historically inspects non-string wrapper values.
+      return (
+        isRejectedValue(entry?.text, includeOutcome && typeof entry?.text === "string") ||
+        isRejectedValue(entry?.content, includeOutcome && typeof entry?.content === "string")
+      );
+    });
+  };
+  for (const value of [message.result, message.output, message.content, message.text]) {
+    if (isRejectedValue(value)) {
+      return false;
+    }
   }
-  if (
-    hasSuppressedToolResultValue(message.details) ||
-    hasSuppressedToolResultValue(message.result) ||
-    hasSuppressedToolResultValue(message.output) ||
-    hasSuppressedToolResultValue(message.content) ||
-    hasSuppressedToolResultValue(message.text)
-  ) {
-    return false;
-  }
-  const ok =
-    readToolResultOkValue(message.result) ??
-    readToolResultOkValue(message.output) ??
-    readToolResultOkValue(message.content) ??
-    readToolResultOkValue(message.text);
-  return ok !== false;
+  // Details can veto a delivery, but do not supply ok or dry-run outcome fields.
+  return !isRejectedValue(message.details, false) && ok !== false;
 }
 
 function readMessageToolSourceReplySink(
@@ -513,8 +448,13 @@ export function mirrorMessageToolVisibleReplies(messages: unknown[]): unknown[] 
     }
 
     if (pending.length > 0) {
+      let resultSucceeded: boolean | undefined;
       for (const item of pending) {
-        if (!item.succeeded && isSuccessfulMessageToolResult(record, item)) {
+        if (
+          !item.succeeded &&
+          matchesMessageToolResult(record, item) &&
+          (resultSucceeded ??= isSuccessfulMessageToolResultPayload(record))
+        ) {
           item.succeeded = true;
           const sourceReplySink = readMessageToolSourceReplySink(record);
           if (sourceReplySink) {

@@ -102,6 +102,7 @@ function toolAuthorityOverlay(
     traceAuthorized: run.run.traceAuthorized === true,
     approvalReviewerDeviceId: run.run.approvalReviewerDeviceId,
     clientCaps: run.run.clientCaps,
+    gatewayUiCommandTarget: run.run.gatewayUiCommandTarget,
     toolBindings: run.run.toolBindings,
   };
 }
@@ -2182,6 +2183,9 @@ describe("reply run registry", () => {
     async (approvalReviewerDeviceId) => {
       const run = createQueueTestRun({ prompt: "projected inbound" });
       run.run.approvalReviewerDeviceId = "device-a";
+      run.run.gatewayUiCommandTarget = { connId: "browser-a", profileId: "profile-a" };
+      run.run.clientCaps = ["ui-commands"];
+      run.run.senderIsOwner = true;
       run.run.permissionMode = "full";
       const route = { provider: "openai", model: "gpt-primary" };
       const overlay = { ...toolAuthorityOverlay(run), approvalReviewerDeviceId };
@@ -2217,6 +2221,9 @@ describe("reply run registry", () => {
 
       for (const restricted of [
         { clientCaps: ["changed-capability"] },
+        { gatewayUiCommandTarget: { connId: "browser-b", profileId: "profile-a" } },
+        { gatewayUiCommandTarget: { connId: "browser-a", profileId: "profile-b" } },
+        { gatewayUiCommandTarget: undefined },
         { toolBindings: { browser: { clientId: "different-browser" } } },
         { permissionMode: "guarded" },
       ] satisfies Partial<ReplyToolAuthorityOverlay>[]) {
@@ -2230,6 +2237,64 @@ describe("reply run registry", () => {
       }
     },
   );
+
+  it.each([
+    "disabled",
+    "no-capability",
+    "runtime-cap",
+    "runtime-intersection",
+    "policy-deny",
+    "profile",
+    "non-owner",
+  ])("preserves cross-browser steering when screen is unavailable: %s", async (restriction) => {
+    const run = createQueueTestRun({ prompt: "cross-browser steering" });
+    run.run.gatewayUiCommandTarget = { connId: "browser-a", profileId: "profile-a" };
+    run.run.clientCaps = ["ui-commands"];
+    run.run.senderIsOwner = restriction !== "non-owner";
+    if (restriction === "disabled") {
+      run.disableTools = true;
+    }
+    if (restriction === "no-capability") {
+      run.run.clientCaps = [];
+    }
+    if (restriction === "runtime-cap") {
+      run.toolsAllow = ["read"];
+    }
+    if (restriction === "runtime-intersection") {
+      run.toolsAllow = attachToolAllowlistIntersection(
+        ["read", "screen"],
+        [["read", "screen"], ["read"]],
+      );
+    }
+    if (restriction === "policy-deny") {
+      run.run.config = { tools: { deny: ["screen"] } };
+    }
+    if (restriction === "profile") {
+      run.run.config = { tools: { profile: "minimal" } };
+    }
+    const queueMessage = vi.fn(async () => {});
+    const operation = createTestReplyOperation({ sessionId: "screen-unavailable" });
+    operation.bindToolAuthoritySnapshot(prepareReplyToolAuthority(run));
+    operation.bindToolAuthorityRoute({ provider: run.run.provider, model: run.run.model });
+    operation.attachBackend({
+      kind: "embedded",
+      cancel: vi.fn(),
+      isStreaming: () => true,
+      queueMessage,
+    });
+    operation.setPhase("running");
+
+    await expect(
+      queueCurrentReplyRunMessage("screen-unavailable", "steer from another browser", {
+        isInboundUserMessage: true,
+        toolAuthorityOverlay: {
+          ...toolAuthorityOverlay(run),
+          gatewayUiCommandTarget: { connId: "browser-b", profileId: "profile-a" },
+        },
+      }),
+    ).resolves.toEqual({ status: "accepted" });
+    expect(queueMessage).toHaveBeenCalledOnce();
+  });
 
   it("refuses stale injectable owners for admission and delivery until activity resumes", async () => {
     vi.useFakeTimers();

@@ -762,7 +762,17 @@ function createModelReferenceCheck(): HealthCheck {
             },
           ];
         }
-        if (inspection.status === "unknown-model" && inspection.active) {
+        // A provider that ships no catalog rows cannot confirm or deny a model
+        // id offline; the generic advisory would be unactionable there, so only
+        // a legacy-reference migration is still worth reporting.
+        if (inspection.status === "uncatalogued-provider" && !migrationFinding) {
+          return [];
+        }
+        if (
+          (inspection.status === "unknown-model" ||
+            inspection.status === "uncatalogued-provider") &&
+          inspection.active
+        ) {
           return [
             {
               checkId: "core/doctor/model-references",
@@ -977,6 +987,18 @@ const legacyCronStoreCheck: DoctorHealthCheck = {
     const { collectLegacyCronStoreHealthFindings } =
       await import("../commands/doctor/cron/index.js");
     return collectLegacyCronStoreHealthFindings({ cfg: ctx.cfg });
+  },
+};
+
+const staleRuntimeBuildCheck: DoctorHealthCheck = {
+  id: "core/doctor/stale-runtime-build",
+  kind: "core",
+  description: "The loaded runtime was built from the checkout's current commit.",
+  source: "doctor",
+  async detect() {
+    const { collectStaleRuntimeBuildFindings } =
+      await import("../commands/doctor-stale-runtime-build.js");
+    return collectStaleRuntimeBuildFindings();
   },
 };
 
@@ -1464,6 +1486,7 @@ function createConvertedWorkflowChecks(deps: CoreHealthCheckDeps): readonly Doct
     removedWorkspacesStateCheck,
     legacyWhatsAppCrontabCheck,
     legacyCronStoreCheck,
+    staleRuntimeBuildCheck,
     codexSessionRoutesCheck,
     telegramGeneralTopicConversationsCheck,
     shellCompletionCheck,

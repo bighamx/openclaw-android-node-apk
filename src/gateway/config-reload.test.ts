@@ -47,10 +47,7 @@ import {
   setCurrentPluginMetadataSnapshotState,
 } from "../plugins/current-plugin-metadata-state.js";
 import { hashStableJson } from "../plugins/installed-plugin-index-hash.js";
-import {
-  loadInstalledPluginIndexInstallRecordsSync,
-  writePersistedInstalledPluginIndexInstallRecords,
-} from "../plugins/installed-plugin-index-records.js";
+import { loadInstalledPluginIndexInstallRecordsSync } from "../plugins/installed-plugin-index-records.js";
 import { PluginRuntimeApplicationError, getPluginRuntimeGeneration } from "../plugins/lifecycle.js";
 import { createPluginRecord } from "../plugins/loader-records.js";
 import {
@@ -63,8 +60,8 @@ import { capturePluginGenerationArtifact } from "../plugins/plugin-generation-ar
 import { PluginInstance } from "../plugins/plugin-instance.js";
 import { withPluginLifecycleLease } from "../plugins/plugin-lifecycle-lease.js";
 import { createPluginMetadataSnapshotFixture } from "../plugins/plugin-metadata.test-support.js";
-import { loadPluginPublicArtifactModuleSync } from "../plugins/public-surface-loader.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
+import { seedInstalledPluginIndex } from "../plugins/test-helpers/installed-plugin-index.js";
 import {
   captureGatewayRootWorkAdmissionContinuationScope,
   getActiveGatewayRootWorkCount,
@@ -320,13 +317,12 @@ describe("diffConfigPaths", () => {
 
 describe("buildGatewayReloadPlan", () => {
   const emptyRegistry = createTestRegistry([]);
-  it("reloads the registered Browser service for control policy without restarting the Gateway", () => {
-    const { default: browser } = loadPluginPublicArtifactModuleSync<{
+  it("reloads the registered Browser service for control policy without restarting the Gateway", async () => {
+    const { default: browser } = await loadBundledPluginFacade<{
       default: OpenClawPluginDefinition;
     }>({
-      pluginRoot: nodePath.resolve("extensions/browser"),
+      pluginId: "browser",
       artifactBasename: "index.ts",
-      origin: "bundled",
     });
     if (!browser.register) {
       throw new Error("Browser plugin must expose its registration entry point");
@@ -6973,7 +6969,7 @@ describe("startGatewayConfigReloader", () => {
       await withEnvAsync(
         { OPENCLAW_STATE_DIR: root, OPENCLAW_CONFIG_PATH: configPath },
         async () => {
-          await writePersistedInstalledPluginIndexInstallRecords(before, { config });
+          await seedInstalledPluginIndex(before, { config });
           await withPluginCache(createPluginCache(), async () => {
             expect(loadInstalledPluginIndexInstallRecordsSync()).toEqual(before);
             const accepted = vi.fn();
@@ -7013,7 +7009,7 @@ describe("startGatewayConfigReloader", () => {
               await started.promise;
               const write = () =>
                 withPluginCache(createPluginCache(), () =>
-                  writePersistedInstalledPluginIndexInstallRecords(after, { config }),
+                  seedInstalledPluginIndex(after, { config }),
                 );
               await (independentWriter ? runOutsidePluginCache(write) : write());
               expect(loadInstalledPluginIndexInstallRecordsSync()).toEqual(

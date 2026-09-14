@@ -419,7 +419,6 @@
     "!dist/plugin-sdk/session-catalog-paging.d.ts",
     "!dist/plugin-sdk/provider-auth-aliases.d.ts",
     "!dist/plugin-sdk/provider-model-metadata.d.ts",
-    "!dist/plugin-sdk/websocket-runtime.d.ts",
     "!dist/plugin-sdk/memory-core-host-engine-knn.d.ts",
     "!dist/plugin-sdk/memory-core-host-engine-indexing.d.ts"
   ],
@@ -837,6 +836,7 @@
       "default": "./dist/plugin-sdk/gateway-runtime.js"
     },
     "./plugin-sdk/websocket-runtime": {
+      "types": "./dist/plugin-sdk/websocket-runtime.d.ts",
       "default": "./dist/plugin-sdk/websocket-runtime.js"
     },
     "./plugin-sdk/cli-argv": {

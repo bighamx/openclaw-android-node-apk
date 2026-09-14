@@ -277,7 +277,9 @@ export function createSessionMutations(host: SessionMutationsHost) {
     const normalizedKey = key.trim();
     const patchSnapshot = host.snapshot();
     const pendingConversation =
-      patchParams.pinned !== undefined || patchParams.unread === false
+      patchParams.pinned !== undefined ||
+      patchParams.unread === false ||
+      patchParams.boardPresentation !== undefined
         ? resolvePendingConversation(patchSnapshot, normalizedKey, options.agentId)
         : null;
     const pendingSessionId = pendingConversation
@@ -449,18 +451,29 @@ export function createSessionMutations(host: SessionMutationsHost) {
           lastReadAt: entry.lastReadAt,
           markedUnreadAt: entry.markedUnreadAt,
         };
-        confirmFields({
-          key: pendingTarget.key,
-          agentId: pendingTarget.agentId,
-          sessionId: pendingTarget.sessionId,
-          updatedAt: entry.updatedAt ?? null,
-          fields:
-            patchParams.pinned === undefined
-              ? read
-              : patchParams.unread === false
-                ? { ...pin, ...read }
-                : pin,
-        });
+        if (patchParams.boardPresentation !== undefined) {
+          confirmFields({
+            key: pendingTarget.key,
+            agentId: pendingTarget.agentId,
+            sessionId: pendingTarget.sessionId,
+            updatedAt: entry.updatedAt ?? null,
+            fields: { boardPresentation: entry.boardPresentation },
+          });
+        }
+        if (patchParams.pinned !== undefined || patchParams.unread === false) {
+          confirmFields({
+            key: pendingTarget.key,
+            agentId: pendingTarget.agentId,
+            sessionId: pendingTarget.sessionId,
+            updatedAt: entry.updatedAt ?? null,
+            fields:
+              patchParams.pinned === undefined
+                ? read
+                : patchParams.unread === false
+                  ? { ...pin, ...read }
+                  : pin,
+          });
+        }
       }
       if (Object.hasOwn(patchParams, "thinkingLevel")) {
         host.clearThink(normalizedKey, options.agentId);
@@ -654,7 +667,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
     reset,
     retireModelOverride,
     archiveVisibility: archiveState.visibility,
-    setArchivePending: archiveState.setPending,
+    beginArchive: archiveState.beginPending,
     isPreparedWorkSession: (key: string) => preparedWorkSessionKeys.has(key.trim()),
     settlePrepared(result: SessionsListResult | null) {
       for (const row of result?.sessions ?? []) {

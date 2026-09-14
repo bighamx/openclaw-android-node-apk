@@ -397,6 +397,39 @@ describe("waitForDescendantSubagentSummary", () => {
     expect(waitCall?.params?.runId).toBe("run-abc");
   });
 
+  it("waits for a queued descendant's successor to produce the synthesis", async () => {
+    let descendants = [createDescendantRun({ runId: "queued-run", active: true })];
+    let parentReply = "on it";
+    vi.mocked(listDescendantRunsForRequester).mockImplementation(() => descendants);
+    vi.mocked(readLatestAssistantReply).mockImplementation(async () => parentReply);
+    callGateway.mockImplementation(async (request) => {
+      if ((request.params as { runId: string }).runId === "queued-run") {
+        return { status: "pending", timeoutPhase: "queue", providerStarted: false };
+      }
+      descendants = [];
+      parentReply = "The successor completed the report.";
+      return { status: "ok" };
+    });
+    const completion = setTimeout(() => {
+      descendants = [createDescendantRun({ runId: "successor-run", active: true })];
+    }, 0);
+
+    try {
+      const result = await waitForDescendantSubagentSummary({
+        sessionKey: "test-session",
+        initialReply: parentReply,
+        timeoutMs: 300,
+      });
+
+      expect(result).toBe("The successor completed the report.");
+      expect(
+        callGateway.mock.calls.map(([request]) => (request.params as { runId: string }).runId),
+      ).toEqual(["queued-run", "successor-run"]);
+    } finally {
+      clearTimeout(completion);
+    }
+  });
+
   it.each(["on it", "on it\n\nMEDIA:/workspace/report.png"])(
     "does not mistake unchanged parent history for synthesis: %s",
     async (parentReply) => {

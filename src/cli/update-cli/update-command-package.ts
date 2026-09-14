@@ -85,7 +85,7 @@ type PackageDoctorOptions = {
         requester?: Readonly<UpdateRequester>;
         inputHash: string;
         changes: UpdateDoctorConfigChange[];
-        assertCurrent: () => void;
+        assertRequesterCurrent: () => void;
       }
     | undefined;
 };
@@ -98,6 +98,7 @@ export function preparePackageDoctorContext(params: {
   inputHash?: string | null;
   changes: UpdateDoctorConfigChange[];
   assertCurrent: () => void;
+  assertRequesterCurrent: () => void;
 }) {
   params.assertCurrent();
   if (!params.capable) {
@@ -112,13 +113,15 @@ export function preparePackageDoctorContext(params: {
     requester: params.requester,
     inputHash: params.inputHash ?? hashConfigRaw(null),
     changes: params.changes,
-    assertCurrent: params.assertCurrent,
+    // Delegation suspends the parent's mutation fence. Requester checks must
+    // remain usable until the child owner hands input to its bound process.
+    assertRequesterCurrent: params.assertRequesterCurrent,
   };
 }
 
 export async function runPackageUpdateDoctor(params: PackageDoctorOptions) {
   const context = params.getDoctorContext?.();
-  context?.assertCurrent();
+  context?.assertRequesterCurrent();
   const entryPath = await resolveGatewayInstallEntrypoint(params.root);
   if (!entryPath) {
     return null;
@@ -161,7 +164,7 @@ export async function runPackageUpdateDoctor(params: PackageDoctorOptions) {
     ? await readUpdateConfigSnapshot(resolveConfigPath(doctorEnv))
     : undefined;
   const runDoctor = (executor?: UpdateCommandChildGrant, beforeInput?: (pid: number) => void) => {
-    context?.assertCurrent();
+    context?.assertRequesterCurrent();
     const input: UpdateDoctorInput | undefined =
       context && executor
         ? {
@@ -211,7 +214,7 @@ export async function runPackageUpdateDoctor(params: PackageDoctorOptions) {
   const doctorStep = context
     ? await withUpdateCommandExecutorChild(context.executorFence, params.root, (grant, bindChild) =>
         runDoctor(grant, (pid) => {
-          context.assertCurrent();
+          context.assertRequesterCurrent();
           bindChild(pid);
         }),
       )

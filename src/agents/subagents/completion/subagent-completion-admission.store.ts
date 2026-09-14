@@ -19,7 +19,7 @@ import {
 import { publishTaskRecordAfterAtomicStore } from "../../../tasks/runtime-internal.js";
 import { resolveRequiredCompletionDeliveryFailureTerminalResult } from "../../../tasks/task-completion-contract.js";
 import { formatTaskBlockedFollowupMessage } from "../../../tasks/task-executor-policy.js";
-import { syncFlowFromTaskAfterTaskMutation } from "../../../tasks/task-registry-mutation.js";
+import { syncFlowFromTaskAfterTaskMutation } from "../../../tasks/task-registry-state.js";
 import {
   bindTaskRecord,
   findTaskRecordByRunIdForViewInDatabase,

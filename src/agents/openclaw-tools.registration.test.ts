@@ -24,6 +24,8 @@ import {
   shouldIncludeSecretsToolForOpenClawTools,
 } from "./openclaw-tools.registration.js";
 import { textResult, type AnyAgentTool } from "./tools/common.js";
+import { getGatewayToolCallerIdentity } from "./tools/gateway-caller-context.js";
+import * as inProcessGateway from "./tools/in-process-gateway.js";
 import { createPdfTool } from "./tools/pdf-tool.js";
 
 vi.mock("./openclaw-plugin-tools.js", () => ({
@@ -596,6 +598,41 @@ describe("sessions_yield completion ownership", () => {
     }
   });
 
+  it("rejects a collector yield before any claim source runs", async () => {
+    const registry = await import("./subagents/registry/subagent-registry.js");
+    const markRequesterTurnYielded = vi
+      .spyOn(registry, "markRequesterTurnYielded")
+      .mockReturnValue(1);
+    const claimYieldCompletion = vi.fn(() => true);
+    const onYield = vi.fn(async () => undefined);
+
+    try {
+      const tool = expectToolNamed(
+        createTestOpenClawTools({
+          agentSessionKey: "agent:main:subagent:collector",
+          sessionId: "collector-session",
+          runId: "run-collector",
+          swarmCollector: true,
+          claimYieldCompletion,
+          onYield,
+          disableMessageTool: true,
+          disablePluginTools: true,
+          wrapBeforeToolCallHook: false,
+        }),
+        "sessions_yield",
+      );
+
+      await expect(tool.execute("yield-collector", {})).resolves.toMatchObject({
+        details: { status: "error", error: expect.stringContaining("collected explicitly") },
+      });
+      expect(claimYieldCompletion).not.toHaveBeenCalled();
+      expect(markRequesterTurnYielded).not.toHaveBeenCalled();
+      expect(onYield).not.toHaveBeenCalled();
+    } finally {
+      markRequesterTurnYielded.mockRestore();
+    }
+  });
+
   it("accepts a runtime completion owner while recording the registry claim", async () => {
     const registry = await import("./subagents/registry/subagent-registry.js");
     const markRequesterTurnYielded = vi
@@ -861,7 +898,7 @@ describe("gateway client capability tool filtering", () => {
       );
 
       expect(tool.description).toContain(
-        "Inline hosting is disabled; set pin=true to place it on this session's dashboard",
+        "Inline previews are unavailable this turn; set pin=true to save to the session dashboard",
       );
     } finally {
       resetPluginRuntimeStateForTest();
@@ -879,6 +916,32 @@ describe("gateway client capability tool filtering", () => {
   it("only exposes screen to UI-command clients", () => {
     expect(hasTool(createOpenClawTools(), "screen")).toBe(false);
     expect(hasTool(createOpenClawTools({ clientCaps: ["ui-commands"] }), "screen")).toBe(true);
+  });
+
+  it("retains the requesting browser through coding tool assembly", async () => {
+    const gatewayUiCommandTarget = { connId: "requester-tab", profileId: "requester" };
+    const targets: unknown[] = [];
+    const call = vi
+      .spyOn(inProcessGateway, "callInProcessGatewayTool")
+      .mockImplementation(async () => {
+        targets.push(getGatewayToolCallerIdentity()?.gatewayUiCommandTarget);
+        return { ok: true } as never;
+      });
+    try {
+      const tools = createOpenClawCodingTools({
+        config: withDefaultRoster(undefined),
+        sessionKey: "agent:main:main",
+        clientCaps: ["ui-commands"],
+        gatewayUiCommandTarget,
+      });
+      await expectToolNamed(tools, "screen").execute("select", {
+        action: "navigate",
+        sessionKey: "agent:main:other",
+      });
+      expect(targets).toEqual([gatewayUiCommandTarget]);
+    } finally {
+      call.mockRestore();
+    }
   });
 
   it("exposes GitHub publication only from a prepared session capability", () => {

@@ -1753,7 +1753,7 @@ function listImportGraphGrepMatches(
         ? result.stdout.split("\0").filter((file) => trackedFiles.has(file))
         : [...trackedFiles].filter((file) => !testFilesOnly || isTestFileTarget(file))
     ).toSorted((left, right) => left.localeCompare(right));
-    // Per-term membership protects the broad cap and helper first-success rule.
+    // Per-term membership preserves the helper first-success rule.
     // Cached edges need only term facts; full-graph acquisition reuses their parsing.
     for (const { edges, matches: fileTerms } of readImportGraphEdges(
       cwd,
@@ -1784,17 +1784,11 @@ function findDirectImporters(
     return null;
   }
 
-  let skippedBroadTerm = false;
   const importers: string[] = [];
   for (const term of terms) {
     const candidates = matches.get(term);
     if (!candidates) {
       return null;
-    }
-    // Central test helpers intentionally fan out broadly; incomplete scans silently drop owning tests.
-    if (candidates.length > 800 && !isTestHelper) {
-      skippedBroadTerm = true;
-      continue;
     }
     for (const { file, imports } of candidates) {
       if (file !== importedFile && !importers.includes(file) && imports.has(importedFile)) {
@@ -1805,7 +1799,7 @@ function findDirectImporters(
       break;
     }
   }
-  return skippedBroadTerm && importers.length === 0 && !isTestHelper ? null : importers;
+  return importers;
 }
 
 /** Prove an entry is unshared using the canonical targeted reverse-import scan. */
@@ -3969,7 +3963,10 @@ export function buildVitestRunPlans(
     (!explicitConfigTargets.includes(PACKAGE_CONTRACT_VITEST_CONFIG) &&
       hasPackageFileTarget &&
       collectVitestFileFilters(["run", ...nonTargetArgs]).length > 0);
-  if (explicitConfigTargets.every(isVitestConfigFileTarget)) {
+  if (
+    explicitConfigTargets.every(isVitestConfigFileTarget) &&
+    impliedDatabaseWorkerTargets.length === 0
+  ) {
     if (watchMode && explicitConfigTargets.length > 1) {
       throw new Error(
         "watch mode with mixed test suites is not supported; target one suite at a time or use a dedicated suite command",

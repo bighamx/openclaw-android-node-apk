@@ -388,7 +388,9 @@ export function createSessionCapability(
     }
     for (const key of terminal.sessionKeys) {
       if (key.trim()) {
-        roster.invalidateManagedLists(parseAgentSessionKey(key)?.agentId ?? terminal.agentId);
+        roster.invalidateManagedLists(parseAgentSessionKey(key)?.agentId ?? terminal.agentId, {
+          key,
+        });
       }
     }
     const previous = state.result;
@@ -610,7 +612,7 @@ export function createSessionCapability(
     recover: operations.recover,
     patch: mutations.patch,
     archiveVisibility: mutations.archiveVisibility,
-    setArchivePending: mutations.setArchivePending,
+    beginArchive: mutations.beginArchive,
     assignOwner: mutations.assignOwner,
     retireModelOverride: mutations.retireModelOverride,
     think: thinkingClaims.get,

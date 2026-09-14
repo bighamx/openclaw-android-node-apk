@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as sessionAccessor from "../../../config/sessions/session-accessor.js";
 import { resolveSessionStorePathForScope } from "../../../config/sessions/session-store-path.js";
 import {
   runWithOwnedSessionTranscriptWrite,
@@ -6,6 +7,12 @@ import {
 } from "../../../config/sessions/transcript-write-context.js";
 import type { CallGatewayOptions } from "../../../gateway/call.js";
 import { getAgentEventLifecycleGeneration } from "../../../infra/agent-events.js";
+import {
+  claimAgentRunDelegatedAuthority,
+  clearAgentRunContext,
+  registerAgentRunContext,
+  releaseAgentRunDelegatedAuthority,
+} from "../../../infra/agent-run-registry.js";
 // Subagent registry lifecycle tests cover completion, cleanup, announce retry,
 // detached task status, and resource retirement around child-run endings.
 import { bindGatewayContextResolver } from "../../../plugins/runtime/gateway-request-scope.js";
@@ -20,15 +27,27 @@ import {
 } from "../../../process/gateway-work-admission.js";
 import { createDeferredCore } from "../../../shared/deferred.js";
 import { SUBAGENT_KILL_TASK_ERROR } from "../../../tasks/detached-task-runtime-contract.js";
+import { createTestAdmittedRunContext } from "../../admitted-run-context.test-support.js";
 import {
   buildAnnounceIdFromChildRun,
   buildAnnounceIdempotencyKey,
 } from "../../announce-idempotency.js";
+import {
+  createCronCreatorAuthorityCapability,
+  runWithCronCreatorAuthorityCapability,
+} from "../../cron-creator-authority-context.js";
+import { withGatewayToolCallerIdentity } from "../../tools/gateway-caller-context.js";
 import { createStructuredOutputTool } from "../../tools/structured-output-tool.js";
 import {
   runSubagentAnnounceDispatch,
   type SubagentAnnounceDeliveryResult,
 } from "../announce/subagent-announce-dispatch.js";
+import { maybeWakeRequesterAfterAllChildrenSettled as runRequesterSettleWake } from "../announce/subagent-announce.requester-settle-wake.js";
+import {
+  consumeRequesterCronAuthorityAdmission,
+  revokeRequesterCronAuthority,
+  withRequesterCronAuthority,
+} from "../requester-cron-authority.js";
 import {
   SUBAGENT_ENDED_REASON_COMPLETE,
   SUBAGENT_ENDED_REASON_ERROR,
@@ -40,6 +59,16 @@ import {
   SubagentLifecycleController,
   type SubagentLifecycleOptions,
 } from "./subagent-registry-lifecycle.js";
+import { subagentRuns } from "./subagent-registry-memory.js";
+import { getLatestSubagentRunByChildSessionKeyFromRuns } from "./subagent-registry-queries.js";
+import {
+  countPendingDescendantRuns,
+  getLatestLiveSubagentRunByChildSessionKey,
+} from "./subagent-registry-read.js";
+import {
+  markRequesterTurnYieldedInRuns,
+  settleRequesterTurnAfterSessionSpawns,
+} from "./subagent-registry-requester-yield.js";
 import { markSubagentRunPausedAfterYield } from "./subagent-registry-run-manager.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 
@@ -458,6 +487,8 @@ function createLifecycleController({
     persistOrThrow: vi.fn(),
     clearPendingLifecycleError: vi.fn(),
     countPendingDescendantRuns: () => 0,
+    getLatestRunForChildSession: (key, matches) =>
+      getLatestSubagentRunByChildSessionKeyFromRuns(runs, key, matches) ?? null,
     suppressAnnounceForSteerRestart: () => false,
     resolveSubagentTask: () => ({ lookup: "available" }),
     shouldEmitEndedHookForRun: () => false,
@@ -1278,6 +1309,313 @@ describe("subagent registry lifecycle hardening", () => {
       controller.clearScheduledResumeTimers();
       vi.useRealTimers();
     }
+  });
+
+  it.each([
+    { phase: "backoff", related: false },
+    { phase: "backoff", related: true },
+    { phase: "exhaustion", related: false },
+    { phase: "exhaustion", related: true },
+  ])(
+    "preserves cleanup $phase when another run settles (related=$related)",
+    async ({ phase, related }) => {
+      vi.useFakeTimers();
+      const entry = createRunEntry({
+        endedAt: Date.now() - 1_000,
+        expectsCompletionMessage: false,
+        retainAttachmentsOnKeep: false,
+      });
+      const runs = new Map([[entry.runId, entry]]);
+      helperMocks.safeRemoveAttachmentsDir.mockRejectedValue(new Error("cleanup failed"));
+      const controller = createLifecycleController({
+        entry,
+        runs,
+        resumeSubagentRun: (runId) => {
+          const current = runs.get(runId);
+          if (current) {
+            controller.startSubagentAnnounceCleanupFlow(runId, current);
+          }
+        },
+      });
+
+      try {
+        controller.startSubagentAnnounceCleanupFlow(entry.runId, entry);
+        await waitForLifecycleState(() => expect(entry.cleanupHandled).toBe(false));
+        if (phase === "exhaustion") {
+          for (let retry = 0; retry < 3; retry += 1) {
+            await vi.runOnlyPendingTimersAsync();
+          }
+        }
+        const attempts = phase === "exhaustion" ? 4 : 1;
+        expect(helperMocks.safeRemoveAttachmentsDir).toHaveBeenCalledTimes(attempts);
+
+        for (let index = 0; index < 3; index += 1) {
+          const settled = createRunEntry({
+            runId: `settled-${index}`,
+            childSessionKey: `agent:main:subagent:settled-${index}`,
+            requesterSessionKey: related ? entry.childSessionKey : "agent:other:main",
+            endedAt: Date.now(),
+            expectsCompletionMessage: false,
+            retainAttachmentsOnKeep: true,
+          });
+          runs.set(settled.runId, settled);
+          controller.startSubagentAnnounceCleanupFlow(settled.runId, settled);
+          await waitForLifecycleState(() =>
+            expect(settled.cleanupCompletedAt).toBeTypeOf("number"),
+          );
+          await waitForLifecycleState(() => expect(getActiveGatewayRootWorkCount()).toBe(0));
+        }
+
+        expect(helperMocks.safeRemoveAttachmentsDir).toHaveBeenCalledTimes(attempts);
+        expect(entry.cleanupHandled).toBe(false);
+        expect(entry.cleanupCompletedAt).toBeUndefined();
+        if (phase === "backoff") {
+          await vi.advanceTimersByTimeAsync(1_000);
+          expect(helperMocks.safeRemoveAttachmentsDir).toHaveBeenCalledTimes(2);
+        } else {
+          expect(vi.getTimerCount()).toBe(0);
+        }
+      } finally {
+        helperMocks.safeRemoveAttachmentsDir.mockReset().mockResolvedValue(undefined);
+        controller.clearScheduledResumeTimers();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("hands a failed cleanup retry to descendant settlement after a late empty final", async () => {
+    vi.useFakeTimers();
+    const entry = createRunEntry({
+      endedAt: Date.now() - 1_000,
+      expectsCompletionMessage: true,
+      wakeOnDescendantSettle: true,
+      outcome: { status: "ok" },
+      endedReason: SUBAGENT_ENDED_REASON_COMPLETE,
+      delivery: { status: "pending", deadlineAt: Date.now() - 1 },
+      retainAttachmentsOnKeep: true,
+    });
+    const child = createRunEntry({
+      runId: "pending-descendant",
+      childSessionKey: "agent:main:subagent:pending-descendant",
+      requesterSessionKey: entry.childSessionKey,
+      endedAt: Date.now(),
+      expectsCompletionMessage: false,
+    });
+    const runs = new Map([
+      [entry.runId, entry],
+      [child.runId, child],
+    ]);
+    let pendingDescendants = 1;
+    completionDeliveryMocks.blockSubagentCompletionDelivery.mockImplementationOnce(() => {
+      throw new Error("completion suspension transaction failed");
+    });
+    const controller = createLifecycleController({
+      entry,
+      runs,
+      countPendingDescendantRuns: () => pendingDescendants,
+      runSubagentAnnounceFlow: vi.fn(async () => "retryable" as const),
+      resumeSubagentRun: (runId) => {
+        const current = runs.get(runId);
+        if (current) {
+          controller.startSubagentAnnounceCleanupFlow(runId, current);
+        }
+      },
+    });
+
+    try {
+      controller.startSubagentAnnounceCleanupFlow(entry.runId, entry);
+      await waitForLifecycleState(() => expect(entry.cleanupHandled).toBe(false));
+      expect(completionDeliveryMocks.blockSubagentCompletionDelivery).toHaveBeenCalledOnce();
+      await completeRun(controller, entry, {
+        endedAt: Date.now(),
+        outcome: { status: "ok" },
+        terminalReply: { disposition: "empty" },
+        triggerCleanup: false,
+      });
+      expect(entry.suppressCompletionDelivery).toBe(true);
+      expect(entry.wakeOnDescendantSettle).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(entry.cleanupCompletedAt).toBeUndefined();
+      pendingDescendants = 0;
+      controller.completeCleanupBookkeeping({
+        runId: child.runId,
+        entry: child,
+        cleanup: "keep",
+        completedAt: Date.now(),
+        preserveTranscript: true,
+        skipRequesterSettleWake: true,
+      });
+      await waitForLifecycleState(() => expect(entry.cleanupCompletedAt).toBeTypeOf("number"));
+    } finally {
+      controller.clearScheduledResumeTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([false, true])(
+    "resumes an ancestor after requester-settle retirement (persistence fails: %s)",
+    async (persistenceFails) => {
+      const ancestor = createRunEntry({
+        runId: "retirement-ancestor",
+        childSessionKey: "agent:main:subagent:retirement-ancestor",
+        endedAt: Date.now(),
+        expectsCompletionMessage: true,
+        suppressCompletionDelivery: true,
+        wakeOnDescendantSettle: true,
+        retainAttachmentsOnKeep: true,
+      });
+      const intermediate = createRunEntry({
+        runId: "retirement-intermediate",
+        childSessionKey: "agent:main:subagent:retirement-intermediate",
+        requesterSessionKey: ancestor.childSessionKey,
+        requesterAgentId: "main",
+        endedAt: Date.now(),
+        cleanup: "delete",
+        requesterSettleWake: {
+          status: "pending",
+          attemptCount: 1,
+          batchRunIds: ["retirement-intermediate"],
+        },
+      });
+      const descendant = createRunEntry({
+        runId: "retirement-descendant",
+        childSessionKey: "agent:main:subagent:retirement-descendant",
+        requesterSessionKey: intermediate.childSessionKey,
+        requesterAgentId: "main",
+        expectsCompletionMessage: false,
+        retainAttachmentsOnKeep: true,
+      });
+      for (const entry of [ancestor, intermediate, descendant]) {
+        subagentRuns.set(entry.runId, entry);
+      }
+      let failRetirement = persistenceFails;
+      const controller = createLifecycleController({
+        entry: ancestor,
+        runs: subagentRuns,
+        getLatestRunForChildSession: getLatestLiveSubagentRunByChildSessionKey,
+        countPendingDescendantRuns,
+        maybeWakeRequesterAfterAllChildrenSettled: runRequesterSettleWake,
+        persistOrThrow: () => {
+          if (failRetirement && !subagentRuns.has(intermediate.runId)) {
+            throw new Error("retirement transaction failed");
+          }
+        },
+        resumeSubagentRun: (runId) => {
+          const current = subagentRuns.get(runId);
+          if (current) {
+            controller.startSubagentAnnounceCleanupFlow(runId, current);
+          }
+        },
+      });
+      try {
+        controller.startSubagentAnnounceCleanupFlow(ancestor.runId, ancestor);
+        expect(ancestor.cleanupCompletedAt).toBeUndefined();
+        controller.completeCleanupBookkeeping({
+          runId: intermediate.runId,
+          entry: intermediate,
+          cleanup: "delete",
+          completedAt: Date.now(),
+          preserveTranscript: true,
+        });
+        if (persistenceFails) {
+          await waitForLifecycleState(() => expect(getActiveGatewayRootWorkCount()).toBe(0));
+          expect(subagentRuns.has(intermediate.runId)).toBe(true);
+          expect(ancestor.cleanupCompletedAt).toBeUndefined();
+          failRetirement = false;
+          controller.resumeRequesterSettleWake(intermediate.runId, intermediate);
+        }
+        await waitForLifecycleState(() => expect(subagentRuns.has(intermediate.runId)).toBe(false));
+        await completeRun(controller, descendant, {
+          endedAt: Date.now(),
+          triggerCleanup: true,
+        });
+        await waitForLifecycleState(() => expect(ancestor.cleanupCompletedAt).toBeTypeOf("number"));
+      } finally {
+        controller.clearScheduledResumeTimers();
+        for (const entry of [ancestor, intermediate, descendant]) {
+          subagentRuns.delete(entry.runId);
+        }
+      }
+    },
+  );
+
+  it("keeps a same-run replacement from hiding another session successor", () => {
+    const entry = createRunEntry({
+      runId: "fence-original",
+      childSessionKey: "agent:main:subagent:fence-index",
+      generation: 1,
+    });
+    const replacement = createRunEntry({ ...entry, generation: 3 });
+    const successor = createRunEntry({ ...entry, runId: "fence-successor", generation: 2 });
+    subagentRuns.set(replacement.runId, replacement);
+    subagentRuns.set(successor.runId, successor);
+    const controller = createLifecycleController({
+      entry,
+      runs: subagentRuns,
+      getLatestRunForChildSession: getLatestLiveSubagentRunByChildSessionKey,
+    });
+
+    try {
+      expect(controller.newerGenerationOwnsSession(entry)).toBe(true);
+      subagentRuns.delete(successor.runId);
+      expect(controller.newerGenerationOwnsSession(entry)).toBe(false);
+      subagentRuns.set(successor.runId, { ...successor, generation: 0, createdAt: 0 });
+      expect(controller.newerGenerationOwnsSession(entry)).toBe(false);
+      entry.killReconciliation = { killedAt: 1, supersededAt: 2 };
+      expect(controller.newerGenerationOwnsSession(entry)).toBe(true);
+    } finally {
+      subagentRuns.delete(replacement.runId);
+      subagentRuns.delete(successor.runId);
+    }
+  });
+
+  it.each([false, true])("resumes only current ancestors after retirement (cycle=%s)", (cycle) => {
+    const ancestor = createRunEntry({
+      runId: "ancestor-current",
+      childSessionKey: "agent:main:subagent:ancestor",
+      requesterSessionKey: cycle ? "agent:main:subagent:parent" : "agent:main:main",
+      generation: 2,
+      endedAt: Date.now(),
+      expectsCompletionMessage: true,
+      pauseReason: "sessions_yield",
+      wakeOnDescendantSettle: true,
+    });
+    const previous = createRunEntry({ ...ancestor, runId: "ancestor-previous", generation: 1 });
+    const parent = createRunEntry({
+      runId: "parent",
+      childSessionKey: "agent:main:subagent:parent",
+      requesterSessionKey: ancestor.childSessionKey,
+      endedAt: Date.now(),
+      cleanupCompletedAt: Date.now(),
+    });
+    const settled = createRunEntry({
+      runId: "settled",
+      requesterSessionKey: parent.childSessionKey,
+      endedAt: Date.now(),
+    });
+    const unrelated = createRunEntry({
+      runId: "unrelated",
+      childSessionKey: "agent:main:subagent:unrelated",
+      endedAt: Date.now(),
+    });
+    const runs = new Map(
+      [ancestor, previous, parent, settled, unrelated].map((entry) => [entry.runId, entry]),
+    );
+    const resumeSubagentRun = vi.fn();
+    const controller = createLifecycleController({ entry: settled, runs, resumeSubagentRun });
+
+    controller.completeCleanupBookkeeping({
+      runId: settled.runId,
+      entry: settled,
+      cleanup: "delete",
+      completedAt: Date.now(),
+      preserveTranscript: true,
+      skipRequesterSettleWake: true,
+    });
+
+    expect(runs.has(settled.runId)).toBe(false);
+    expect(resumeSubagentRun).toHaveBeenCalledExactlyOnceWith(ancestor.runId);
   });
 
   it("drops a failed-cleanup retry after a newer cleanup generation starts", async () => {
@@ -5436,6 +5774,138 @@ describe("requester settle wake trigger", () => {
     expect(entry.requesterSettleWake).toBeUndefined();
     expect(hasDeliveredTaskStatusUpdate(entry.runId)).toBe(false);
   });
+
+  it.each(["committed", "failed persistence", "stale generation"] as const)(
+    "retires requester cron authority only after its own wake cleanup is %s",
+    async (mode) => {
+      const requesterTurnRunId = "cron-authority-requester";
+      const requesterSessionId = "cron-authority-session";
+      const entry = createRunEntry({
+        requesterTurnRunId,
+        requesterAgentId: "main",
+        endedAt: 4_000,
+        expectsCompletionMessage: true,
+        delivery: { status: "delivered" },
+      });
+      const requesterSessionKey = entry.requesterSessionKey;
+      const runs = new Map([[entry.runId, entry]]);
+      const sessionRead = vi.spyOn(sessionAccessor, "loadSessionEntryReadOnly").mockReturnValue({
+        sessionId: requesterSessionId,
+        updatedAt: 1,
+      });
+      const { operationalRunInstance } = createTestAdmittedRunContext(requesterTurnRunId);
+      const authority = claimAgentRunDelegatedAuthority(operationalRunInstance);
+      registerAgentRunContext(requesterTurnRunId, {
+        sessionKey: requesterSessionKey,
+        sessionId: requesterSessionId,
+        agentId: "main",
+      });
+      const capability = createCronCreatorAuthorityCapability(
+        requesterTurnRunId,
+        { kind: "unknown" },
+        true,
+      )!;
+      try {
+        await runWithCronCreatorAuthorityCapability(capability, () =>
+          withGatewayToolCallerIdentity(
+            {
+              agentId: "main",
+              sessionKey: requesterSessionKey,
+              operationalRunInstance,
+              approvalAuthority: authority,
+            },
+            async () => {
+              expect(
+                markRequesterTurnYieldedInRuns({
+                  requesterSessionKey,
+                  requesterAgentId: "main",
+                  requesterTurnRunId,
+                  runs,
+                  persistOrThrow: () => undefined,
+                }),
+              ).toBe(1);
+            },
+          ),
+        );
+        expect(
+          settleRequesterTurnAfterSessionSpawns({
+            requesterSessionKey,
+            requesterAgentId: "main",
+            requesterTurnRunId,
+            requesterYielded: true,
+            acceptedSessionSpawns: [
+              {
+                runId: entry.runId,
+                childSessionKey: entry.childSessionKey,
+                expectsCompletionMessage: true,
+              },
+            ],
+            runs,
+            persistOrThrow: () => undefined,
+            schedule: () => undefined,
+          }),
+        ).toBe(true);
+        const wake = structuredClone(entry.requesterSettleWake)!;
+        let settleParams: RequesterSettleWakeParams | undefined;
+        const persistOrThrow = vi.fn();
+        const controller = createLifecycleController({
+          entry,
+          runs,
+          persistOrThrow,
+          maybeWakeRequesterAfterAllChildrenSettled: vi.fn(async (params) => {
+            settleParams = params;
+            return false;
+          }),
+        });
+        controller.resumeRequesterSettleWake(entry.runId, entry);
+        await waitForLifecycleState(() => expect(settleParams).toBeDefined());
+        if (mode === "failed persistence") {
+          persistOrThrow.mockImplementationOnce(() => {
+            throw new Error("write failed");
+          });
+          expect(() => settleParams!.completeBatch([entry], wake.rearmGeneration)).toThrow(
+            "write failed",
+          );
+        } else {
+          settleParams!.completeBatch(
+            [entry],
+            mode === "stale generation" ? 0 : wake.rearmGeneration,
+          );
+        }
+        // A stale in-process reference cannot resurrect authority after committed outbox cleanup.
+        entry.requesterSettleWake = wake;
+        await withRequesterCronAuthority(
+          {
+            requesterSessionKey,
+            requesterSessionId,
+            requesterAgentId: "main",
+            batch: [entry],
+            rearmGeneration: wake.rearmGeneration,
+            runId: "cron-authority-continuation",
+            isCurrent: () => true,
+          },
+          async () => {
+            const admission = consumeRequesterCronAuthorityAdmission({
+              runId: "cron-authority-continuation",
+              sessionKey: requesterSessionKey,
+              sessionId: requesterSessionId,
+              inputProvenance: {
+                kind: "inter_session",
+                sourceTool: "subagent_settle",
+                sourceSessionKey: entry.childSessionKey,
+              },
+            });
+            expect(Boolean(admission)).toBe(mode !== "committed");
+          },
+        );
+      } finally {
+        revokeRequesterCronAuthority(requesterSessionKey);
+        releaseAgentRunDelegatedAuthority(authority);
+        clearAgentRunContext(requesterTurnRunId);
+        sessionRead.mockRestore();
+      }
+    },
+  );
 
   it("keeps committed blocked state when requester-settle bookkeeping persistence fails", async () => {
     const entry = createRunEntry({

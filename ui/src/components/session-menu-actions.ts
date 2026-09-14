@@ -23,6 +23,7 @@ export type SessionMenuData = {
   pinned: boolean;
   unread: boolean;
   archived: boolean;
+  archiving?: boolean;
   category: string | null;
   icon: string | null;
   color: string | null;
@@ -152,7 +153,7 @@ export class SessionMenuActions {
       case "new-group":
         return session.isChild === true;
       case "toggle-archived":
-        return !batch && !session.archived && !state.archiveAllowed;
+        return session.archiving === true || (!batch && !session.archived && !state.archiveAllowed);
       case "delete":
         return !state.deleteAllowed;
       case "toggle-unread":
@@ -249,7 +250,7 @@ export class SessionMenuActions {
     if (event.key === "Tab" && target && appearance && this.host.contains(appearance)) {
       const controls = Array.from(
         appearance.querySelectorAll<HTMLElement>(
-          'button:not(:disabled):not([tabindex="-1"]), input:not(:disabled)',
+          'button:not(:disabled):not([tabindex="-1"]), textarea:not(:disabled)',
         ),
       ).filter((control) => !control.closest('[inert], [hidden], [aria-hidden="true"]'));
       const index = controls.indexOf(target);
@@ -267,24 +268,21 @@ export class SessionMenuActions {
     const input = event
       .composedPath()
       .find(
-        (candidate): candidate is HTMLInputElement =>
-          candidate instanceof HTMLInputElement &&
+        (candidate): candidate is HTMLTextAreaElement =>
+          candidate instanceof HTMLTextAreaElement &&
           candidate.classList.contains("session-menu__icon-custom-input"),
       );
     if (!input) {
       return false;
     }
+    // The shared picker owns Enter, including IME confirmation and disabled input.
+    if (event.key === "Enter") {
+      return true;
+    }
     event.stopPropagation();
     if (event.key === "Escape") {
       event.preventDefault();
       this.showIconGrid();
-    } else if (event.key === "Enter") {
-      const icon = normalizeSessionIconValue(input.value);
-      if (icon) {
-        event.preventDefault();
-        this.customIconValue = input.value;
-        this.applyCustomIcon();
-      }
     }
     return true;
   }
@@ -383,13 +381,15 @@ export class SessionMenuActions {
       ${this.renderItem(
         "toggle-archived",
         t(
-          batch
-            ? session.archived
-              ? "sessionsView.restoreSessionCount"
-              : "sessionsView.archiveSessionCount"
-            : session.archived
-              ? "sessionsView.restoreSession"
-              : "sessionsView.archiveSession",
+          session.archiving
+            ? "sessionsView.archiving"
+            : batch
+              ? session.archived
+                ? "sessionsView.restoreSessionCount"
+                : "sessionsView.archiveSessionCount"
+              : session.archived
+                ? "sessionsView.restoreSession"
+                : "sessionsView.archiveSession",
           { count },
         ),
         session.archived ? icons.archiveRestore : icons.archive,
@@ -597,6 +597,7 @@ export class SessionMenuActions {
     const state = this.readState();
     return renderAppearancePicker({
       inline,
+      allowSvg: true,
       mode: this.iconPickerMode,
       currentIcon: state.session.icon,
       currentColor: state.session.color,
@@ -633,7 +634,7 @@ export class SessionMenuActions {
     this.customIconValue = "";
     this.host.requestUpdate();
     void this.host.updateComplete.then(() => {
-      this.host.querySelector<HTMLInputElement>(".session-menu__icon-custom-input")?.focus();
+      this.host.querySelector<HTMLTextAreaElement>(".session-menu__icon-custom-input")?.focus();
     });
   };
 
@@ -656,7 +657,7 @@ export class SessionMenuActions {
   };
 
   private readonly updateCustomIconValue = (event: InputEvent) => {
-    if (event.currentTarget instanceof HTMLInputElement) {
+    if (event.currentTarget instanceof HTMLTextAreaElement) {
       this.customIconValue = event.currentTarget.value;
       this.host.requestUpdate();
     }

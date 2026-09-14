@@ -2298,6 +2298,55 @@ describe("followup queue collect routing", () => {
     ]);
   });
 
+  it.each(["enabled", "disabled", "policy-deny", "runtime-cap", "non-owner"])(
+    "collects turns using the effective screen capability: %s",
+    async (screenMode) => {
+      const key = `test-collect-ui-requester-${Date.now()}`;
+      const { calls, runFollowup } = createDrainRecorder();
+      const settings = createQueueSettings();
+      const targets = [
+        { connId: "browser-a", profileId: "profile-a" },
+        { connId: "browser-b", profileId: "profile-a" },
+        { connId: "browser-b", profileId: "profile-a" },
+      ];
+      for (const [index, gatewayUiCommandTarget] of targets.entries()) {
+        const run = createRun({ prompt: `selection ${index + 1}`, originatingChannel: "webchat" });
+        run.run.gatewayUiCommandTarget = gatewayUiCommandTarget;
+        run.run.clientCaps = ["ui-commands"];
+        run.run.senderIsOwner = screenMode !== "non-owner";
+        run.run.approvalReviewerDeviceId = "shared-device";
+        run.disableTools = screenMode === "disabled";
+        if (screenMode === "policy-deny") {
+          run.run.config = { tools: { deny: ["screen"] } };
+        }
+        if (screenMode === "runtime-cap") {
+          run.toolsAllow = ["read"];
+        }
+        enqueueFollowupRun(key, run, settings);
+      }
+
+      scheduleFollowupDrain(key, runFollowup);
+      await vi.waitFor(() => expect(getExistingFollowupQueue(key)).toBeUndefined());
+
+      if (screenMode === "enabled") {
+        expect(calls).toHaveLength(2);
+        expect(calls[0]?.prompt).toContain("selection 1");
+        expect(calls[0]?.prompt).not.toContain("selection 2");
+        expect(calls[1]?.prompt).toContain("selection 2");
+        expect(calls[1]?.prompt).toContain("selection 3");
+        expect(calls.map((call) => call.run.gatewayUiCommandTarget)).toEqual([
+          targets[0],
+          targets[1],
+        ]);
+      } else {
+        expect(calls).toHaveLength(1);
+        for (const selection of ["selection 1", "selection 2", "selection 3"]) {
+          expect(calls[0]?.prompt).toContain(selection);
+        }
+      }
+    },
+  );
+
   it("keys collect batches by turn allowlists, intersections, disablement, and roles", () => {
     const createAuthorityRun = () =>
       createRun({

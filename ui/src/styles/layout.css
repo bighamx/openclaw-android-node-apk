@@ -2888,6 +2888,7 @@ wa-dropdown-item.session-menu__item::part(submenu-icon) {
 }
 
 .session-menu__icon,
+.session-menu__avatar,
 .session-menu__check {
   display: inline-flex;
   align-items: center;
@@ -2905,9 +2906,12 @@ wa-dropdown-item.session-menu__item::part(submenu-icon) {
   color: var(--muted);
 }
 
-.session-menu__icon .viewer-avatar {
-  width: 14px;
-  height: 14px;
+/* Identity choices need room for recognizable faces, not action-sized glyphs. */
+.session-menu__avatar,
+.session-menu__avatar .viewer-avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
 }
 
 .session-menu__icon svg,
@@ -3206,7 +3210,8 @@ wa-dropdown-item.session-menu__item::part(submenu-icon) {
 .session-menu__icon-custom-input {
   min-width: 0;
   height: 30px;
-  padding: 0 7px;
+  padding: 5px 7px;
+  resize: none;
   border: 1px solid var(--border);
   border-radius: var(--menu-item-radius);
   background: var(--bg);
@@ -4155,6 +4160,7 @@ wa-dropdown-item.sidebar-agent-menu__agent-switch:focus-visible {
 
 .sidebar-agent-menu__agent-tile .agent-select__option-label {
   display: -webkit-box;
+  width: 100%;
   overflow: hidden;
   line-height: 1.25;
   text-overflow: ellipsis;

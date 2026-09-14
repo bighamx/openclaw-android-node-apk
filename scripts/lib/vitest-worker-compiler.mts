@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createManagedHandoffBuildConfig } from "./managed-handoff-build-config.mts";
 import {
   sharedRuntimeProcessBuildEntries,
+  shouldBundleRuntimeSqliteDependency,
   standaloneRuntimeProcessBuildEntries,
 } from "./runtime-process-core-build-entries.mts";
 import { createStateSchemaInlinePlugin } from "./state-schema-inline-plugin.mts";
@@ -66,6 +67,10 @@ async function compileVitestWorkerArtifacts(directory: string): Promise<void> {
   };
   const schemaPlugin = createStateSchemaInlinePlugin(root);
   const outDir = path.join(directory, "dist");
+  const shouldBundleWorkspaceDependency = (id: string) =>
+    (id.startsWith("@openclaw/") || id.startsWith("openclaw/")) &&
+    id !== "@openclaw/fs-safe" &&
+    !id.startsWith("@openclaw/fs-safe/");
   const config: NonNullable<Parameters<typeof build>[0]> = {
     config: false,
     cwd: root,
@@ -79,11 +84,9 @@ async function compileVitestWorkerArtifacts(directory: string): Promise<void> {
     clean: false,
     outExtensions: () => ({ js: ".js" }),
     deps: {
-      // Root runtime dependencies stay external; bundled workspace code owns its private deps.
+      // Runtime entries share bundled query builders; other root dependencies stay external.
       alwaysBundle: (id) =>
-        (id.startsWith("@openclaw/") || id.startsWith("openclaw/")) &&
-        id !== "@openclaw/fs-safe" &&
-        !id.startsWith("@openclaw/fs-safe/"),
+        shouldBundleWorkspaceDependency(id) || shouldBundleRuntimeSqliteDependency(id),
     },
     logLevel: "warn",
     plugins: [

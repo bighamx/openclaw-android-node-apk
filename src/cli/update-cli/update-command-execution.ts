@@ -38,7 +38,6 @@ import {
   resolveGitInstallDir,
   UpdatePreMutationError,
 } from "./shared.js";
-import { readUpdateCandidateSource } from "./update-command-config-snapshot.js";
 import { inspectUpdateDatabaseContexts } from "./update-command-database-context.js";
 import type { MutableUpdateExecutionParams } from "./update-command-execution.types.js";
 import { createBeforeGitMutation, updateGitInstall } from "./update-command-git.js";
@@ -48,6 +47,7 @@ import {
 } from "./update-command-handoff.js";
 import {
   captureOwnedManagedUpdateContext,
+  readUpdateCandidateSource,
   revalidateUpdateDatabaseContext,
   type OwnedManagedUpdateContext,
 } from "./update-command-managed-context.js";
@@ -86,11 +86,14 @@ export async function executeMutableUpdate(
   const { opts, updateStepTimeoutMs } = params;
   const originalRun = opts.run;
   const requesterAuthority = originalRun?.requesterAuthority;
-  const assertExecutionCurrent = () => {
-    assertUpdateCommandRecovery(opts);
+  const assertRequesterCurrent = () => {
     if (opts.run !== originalRun || requesterAuthority?.isCurrent() === false) {
       throw new UpdateRequesterRevokedError();
     }
+  };
+  const assertExecutionCurrent = () => {
+    assertUpdateCommandRecovery(opts);
+    assertRequesterCurrent();
   };
   const mode: UpdateRunResult["mode"] =
     params.updateInstallKind === "git"
@@ -180,6 +183,7 @@ export async function executeMutableUpdate(
       inputHash: validatedConfigSnapshot?.hash,
       changes: doctorConfigChanges,
       assertCurrent: assertExecutionCurrent,
+      assertRequesterCurrent,
     });
   const originalRecovery = () =>
     params.installKind === "git"

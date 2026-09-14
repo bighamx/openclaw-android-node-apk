@@ -154,6 +154,7 @@ export function createControlUiSessionFixtures(input: {
       "icon",
       "color",
       "boardFace",
+      "boardPresentation",
       "unread",
       "toolOverrides",
     ]) {
@@ -346,6 +347,9 @@ export function createControlUiSessionFixtures(input: {
       ...(typeof row.displayName === "string" ? { displayName: row.displayName } : {}),
       ...(row.boardFace === "chat" || row.boardFace === "dashboard"
         ? { boardFace: row.boardFace }
+        : {}),
+      ...(row.boardPresentation === "split" || row.boardPresentation === "expanded"
+        ? { boardPresentation: row.boardPresentation }
         : {}),
     });
     const requestedKey = params.reference?.key ?? params.key;

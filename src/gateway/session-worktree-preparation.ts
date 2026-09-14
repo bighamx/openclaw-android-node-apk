@@ -11,8 +11,10 @@ import { InvalidWorktreeBaseRefError, resolveWorktreeBase } from "../agents/work
 import { slugifyWorktreeTitle } from "../agents/worktrees/name.js";
 import { managedWorktrees, WorktreeRepositoryError } from "../agents/worktrees/service.js";
 import type { CreateManagedWorktreeParams } from "../agents/worktrees/types.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { resolveProjectRegistry } from "../projects/project-registry.js";
+import { prepareSessionCreateFilesystemRoot } from "./server-methods/session-create-root.js";
 import type { PrepareGatewaySessionLifecycle } from "./session-lifecycle-preparation.js";
 import { loadGatewaySessionEntryReadOnly } from "./session-utils-store.js";
 
@@ -104,6 +106,7 @@ export async function resolveSessionWorktreeBase(
 
 /** One worktree preparation owner for synchronous creation and admitted first turns. */
 export async function prepareSessionWorktree(params: {
+  cfg: OpenClawConfig;
   target: Parameters<PrepareGatewaySessionLifecycle>[0];
   workspace: string;
   name?: string;
@@ -117,6 +120,21 @@ export async function prepareSessionWorktree(params: {
 }): ReturnType<PrepareGatewaySessionLifecycle> {
   const { target, workspace, commitGuard } = params;
   try {
+    commitGuard?.();
+    if (target.sandboxRequired) {
+      const root = prepareSessionCreateFilesystemRoot({
+        cfg: params.cfg,
+        enforceSandboxContainment: true,
+        sandboxRequired: true,
+        requestedProjectId: target.projectId ?? target.entry?.projectId,
+        sessionCwd: workspace,
+        sessionKey: target.key,
+        targetAgentId: target.agentId,
+      });
+      if (!root.ok) {
+        return root;
+      }
+    }
     const repository = await managedWorktrees.resolveRepositoryPaths(workspace);
     commitGuard?.();
     const boundId = normalizeOptionalString(target.entry?.worktree?.id);

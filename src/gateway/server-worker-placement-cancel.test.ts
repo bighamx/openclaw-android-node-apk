@@ -129,9 +129,11 @@ it.each(["success", "failed-write", "setup-failed-write"] as const)(
     try {
       await replaceSessionEntry(target, entry);
       subscriptions = startGatewayEventSubscriptions({
+        signal: new AbortController().signal,
         log,
         broadcast: context.broadcast,
         broadcastToConnIds: vi.fn(),
+        nodeHasSessionSubscribers: () => false,
         nodeSendToSession: context.nodeSendToSession,
         agentRunSeq: context.agentRunSeq,
         chatRunState,

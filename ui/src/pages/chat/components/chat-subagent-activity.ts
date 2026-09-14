@@ -4,8 +4,9 @@ import { keyed } from "lit/directives/keyed.js";
 import { repeat } from "lit/directives/repeat.js";
 import remend from "remend";
 import { icons } from "../../../components/icons.ts";
+import "../../../components/tooltip.ts";
 import { t } from "../../../i18n/index.ts";
-import { isActiveTask, sortTasks, taskTimestampMs, taskTitle } from "../../../lib/tasks/data.ts";
+import { isActiveTask, sortTasks, taskTimestampMs } from "../../../lib/tasks/data.ts";
 import type { TaskSummary } from "../../../lib/tasks/task-summary.ts";
 
 const SUBAGENT_ACTIVITY_LIMIT = 5;
@@ -69,17 +70,16 @@ export function deriveSubagentActivity(params: {
   };
 }
 
-function subagentActivityLabel(task: TaskSummary): string {
-  if (isActiveTask(task)) {
-    return t("chat.backgroundTasks.subagentActivity.running");
-  }
-  if (task.status === "cancelled") {
-    return t("chat.backgroundTasks.subagentActivity.cancelled");
-  }
-  if (task.status === "failed" || task.status === "timed_out") {
-    return t("chat.backgroundTasks.subagentActivity.failed");
-  }
-  return t("chat.backgroundTasks.subagentActivity.finished");
+function subagentStatusDescription(task: TaskSummary): string {
+  const keys = {
+    queued: "chat.backgroundTasks.subagentActivity.queuedDescription",
+    running: "chat.backgroundTasks.subagentActivity.runningDescription",
+    completed: "chat.backgroundTasks.subagentActivity.completedDescription",
+    failed: "chat.backgroundTasks.subagentActivity.failedDescription",
+    cancelled: "chat.backgroundTasks.subagentActivity.cancelledDescription",
+    timed_out: "chat.backgroundTasks.subagentActivity.timedOutDescription",
+  } as const;
+  return t(keys[task.status]);
 }
 
 function subagentActivitySnippet(task: TaskSummary): string | undefined {
@@ -95,21 +95,22 @@ function subagentActivitySnippet(task: TaskSummary): string | undefined {
 }
 
 function renderSubagentActivityIndicator(task: TaskSummary): TemplateResult {
-  if (isActiveTask(task)) {
-    return html`<span
-      class="chat-subagent-activity__indicator chat-reading-indicator"
-      aria-hidden="true"
-      >${icons.claw}</span
-    >`;
-  }
-  const failed = task.status !== "completed";
   return html`<span
-    class="chat-subagent-activity__indicator chat-subagent-activity__indicator--${
-      failed ? "failed" : "finished"
-    }"
+    class="chat-subagent-activity__indicator chat-subagent-activity__indicator--${task.status}"
     aria-hidden="true"
-    >${failed ? icons.x : icons.check}</span
-  >`;
+  >
+    <span
+      class="chat-subagent-activity__claw ${task.status === "running" ? "chat-reading-indicator" : ""}"
+      >${icons.claw}</span
+    >
+    ${
+      task.status === "failed" || task.status === "timed_out"
+        ? html`<span class="chat-subagent-activity__badge"
+            >${task.status === "failed" ? icons.alertTriangle : icons.clock}</span
+          >`
+        : nothing
+    }
+  </span>`;
 }
 
 function renderSubagentActivityRow(
@@ -132,42 +133,44 @@ function renderSubagentActivityRow(
         }),
       )
     : undefined;
-  const title = taskTitle(task);
-  const preview = snippet ? `${title} · ${snippet}` : title;
-  const label = subagentActivityLabel(task);
+  const title = task.title?.trim();
+  const label = title || t("chat.backgroundTasks.subagentActivity.untitled");
+  const statusDescription = subagentStatusDescription(task);
   const content = html`
     ${renderSubagentActivityIndicator(task)}
     <span class="chat-subagent-activity__label">${label}</span>
     ${keyed(
-      `${task.status}:${preview}`,
-      html`<span
-        class="chat-subagent-activity__snippet chat-subagent-activity__snippet--updated"
-        title=${preview}
-        >${preview}</span
+      `${task.status}:${snippet ?? ""}`,
+      html`<span class="chat-subagent-activity__snippet chat-subagent-activity__snippet--updated"
+        >${snippet ?? ""}</span
       >`,
     )}
   `;
-  if (!onOpenTaskDetail) {
-    return html`<div
-      class="chat-subagent-activity__row"
-      data-subagent-task-id=${task.id}
-      role="status"
-      aria-live="off"
-    >
-      ${content}
-    </div> `;
-  }
-  return html`<button
-    class="chat-subagent-activity__row chat-subagent-activity__row--interactive"
-    data-subagent-task-id=${task.id}
-    type="button"
-    aria-label=${t("chat.backgroundTasks.subagentActivity.openDetails", {
-      title: taskTitle(task),
-    })}
-    @click=${() => onOpenTaskDetail(task)}
-  >
-    ${content}
-  </button>`;
+  const row = !onOpenTaskDetail
+    ? html`<div
+        class="chat-subagent-activity__row"
+        data-subagent-task-id=${task.id}
+        role="status"
+        aria-live="off"
+        aria-label=${`${label}. ${statusDescription}`}
+      >
+        ${content}
+      </div>`
+    : html`<button
+        class="chat-subagent-activity__row chat-subagent-activity__row--interactive"
+        data-subagent-task-id=${task.id}
+        type="button"
+        aria-label=${`${t("chat.backgroundTasks.subagentActivity.openDetails", { title: label })}. ${statusDescription}`}
+        @click=${() => onOpenTaskDetail(task)}
+      >
+        ${content}
+      </button>`;
+  return html`<openclaw-tooltip
+    class="chat-subagent-activity__tooltip"
+    .content=${[label, statusDescription, snippet].filter(Boolean).join("\n")}
+    .describe=${false}
+    >${row}</openclaw-tooltip
+  >`;
 }
 
 export function renderSubagentActivity(

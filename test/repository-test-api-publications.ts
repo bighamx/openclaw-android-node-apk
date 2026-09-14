@@ -74,7 +74,6 @@ const publications: Record<string, string | symbol> = {
   "src/commands/doctor-heartbeat-main-session-repair.ts": Symbol.for(
     "openclaw.doctorHeartbeatMainSessionRepairTestApi",
   ),
-  "src/commands/doctor-sandbox.ts": Symbol.for("openclaw.doctorSandboxTestApi"),
   "src/commands/doctor-session-snapshots.ts": Symbol.for("openclaw.doctorSessionSnapshotsTestApi"),
   "src/commands/doctor/shared/codex-native-assets.ts": Symbol.for(
     "openclaw.codexNativeAssetsTestApi",

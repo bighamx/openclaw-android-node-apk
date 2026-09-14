@@ -19,6 +19,7 @@ export const gatewayMethodsIsolatedTestFiles = [
   "src/gateway/server-methods/chat.reset-visible-yield.test.ts",
   // Status uses the host-owned shared SQLite broker.
   "src/gateway/server-methods/health.owner-routing.test.ts",
+  "src/gateway/server-methods/system-agent-nested-inference.integration.test.ts",
   "src/gateway/server-methods/system-agent-setup-control-ui.test.ts",
   "src/gateway/server-methods/users-preferences.test.ts",
   "src/gateway/server-methods/usage.test.ts",
@@ -31,6 +32,7 @@ export const gatewayServerIsolatedTestFiles = [
   "src/gateway/server-plugin-subagent-runtime.overrides.test.ts",
   // Loads the real plugin runtime that neighboring server tests replace with mocks.
   "src/gateway/server.chat-cli-auth.test.ts",
+  "src/gateway/server.placement-abandonment.test.ts",
   "src/gateway/server.sessions.compaction-read-errors.test.ts",
 ];
 

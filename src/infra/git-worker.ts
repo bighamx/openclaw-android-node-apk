@@ -30,7 +30,9 @@ type GitPool = WorkerTaskPool<GitWorkerCommand, GitWorkerReply<GitWorkerResult>>
 type GitWorkerRuntime = {
   reads?: GitPool;
   content?: GitPool;
+  workspace?: GitPool;
   worktrees?: GitPool;
+  worktreeMaintenance?: GitPool;
   pending: Set<Promise<unknown>>;
   closing?: Promise<void>;
 };
@@ -43,12 +45,20 @@ function runtime(): GitWorkerRuntime {
     () => ({ pending: new Set() }),
     (state) => {
       state.closing ??= (async () => {
-        await Promise.all([state.reads?.close(), state.content?.close(), state.worktrees?.close()]);
+        await Promise.all([
+          state.reads?.close(),
+          state.content?.close(),
+          state.workspace?.close(),
+          state.worktrees?.close(),
+          state.worktreeMaintenance?.close(),
+        ]);
         // Worker termination alone does not settle its parent-owned Git processes.
         await Promise.allSettled(state.pending);
         state.reads = undefined;
         state.content = undefined;
+        state.workspace = undefined;
         state.worktrees = undefined;
+        state.worktreeMaintenance = undefined;
       })().finally(() => {
         state.closing = undefined;
       });
@@ -58,22 +68,37 @@ function runtime(): GitWorkerRuntime {
 }
 
 function poolFor(state: GitWorkerRuntime, command: GitWorkerCommand): GitPool {
-  const owner = command.type.startsWith("worktree.")
-    ? "worktrees"
-    : command.type === "repository.branches" || command.type === "checkout.context"
-      ? "reads"
-      : "content";
-  // Metadata must stay responsive while diffs or snapshots await slow Git work.
+  const owner =
+    command.type === "worktree.snapshot" || command.type === "worktree.cleanup-inspection"
+      ? "worktreeMaintenance"
+      : command.type.startsWith("worktree.")
+        ? "worktrees"
+        : command.type.startsWith("workspace.")
+          ? "workspace"
+          : command.type === "repository.branches" || command.type === "checkout.context"
+            ? "reads"
+            : "content";
+  // Preparation can hold the allocation lease; unrelated maintenance must not block it.
+  // Each worktree lane stays serial; host allocation and shared-ref guards still own writes.
+  // Metadata likewise stays responsive while diffs or snapshots await slow Git work.
   return (state[owner] ??= new WorkerTaskPool({
     workerUrl: resolveRuntimeWorkerUrl(runtimeProcessEntrypoints.gitOperations),
-    maxWorkers: owner === "content" ? Math.max(1, Math.min(2, os.availableParallelism() - 1)) : 1,
+    maxWorkers:
+      owner === "content" || owner === "workspace"
+        ? Math.max(1, Math.min(2, os.availableParallelism() - 1))
+        : 1,
+    sharedCompute: owner === "workspace",
     idleTimeoutMs: 30_000,
   }));
 }
 
 export type GitWorkerOperationOptions = {
+  inputBytes?: number;
+  /** Move task-owned inputs at admission and again when the worker receives them. */
+  transferList?: (command: GitWorkerCommand) => readonly Transferable[];
   signal?: AbortSignal;
   assertCurrent?: () => void;
+  onInventoryChunk?: (bytes: Uint8Array, context: { signal: AbortSignal }) => Promise<void>;
   onEffect?: (
     effect: GitWorktreeEffect,
     context: { signal: AbortSignal },
@@ -95,7 +120,10 @@ export async function runGitWorkerOperation<Command extends GitWorkerCommand>(
   options.signal?.throwIfAborted();
   options.assertCurrent?.();
   // Capture inputs and environment at admission; neither queued callers nor reused workers own them.
-  const admitted = structuredClone(command);
+  const transferList = options.transferList?.(command);
+  const admitted = transferList
+    ? structuredClone(command, { transfer: [...new Set(transferList)] })
+    : structuredClone(command);
   const baseEnv = { ...process.env };
   const operation = executeOperation(poolFor(state, admitted), admitted, baseEnv, { ...options });
   state.pending.add(operation);
@@ -155,6 +183,12 @@ async function executeOperation(
         const directory = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-git-operation-"));
         temporaryDirectories.add(directory);
         result = directory;
+      } else if (effect.type === "workspace.inventory.write") {
+        if (!options.onInventoryChunk) {
+          throw new Error("Workspace inventory has no active output owner");
+        }
+        options.assertCurrent?.();
+        await options.onInventoryChunk(effect.input.bytes, { signal });
       } else {
         if (!options.onEffect) {
           throw new Error("Git read operation requested a lifecycle effect");
@@ -178,6 +212,8 @@ async function executeOperation(
   };
   try {
     const reply = await pool.run(command, {
+      inputBytes: options.inputBytes,
+      transferList: options.transferList,
       signal: options.signal,
       timeoutMs: WORKER_PHASE_TIMEOUT_MS,
       // Host exchanges retain the command's own deadline and process-tree cleanup.

@@ -4,6 +4,7 @@ import {
   executeSqliteQuerySync,
   getNodeSqliteKysely,
   openOpenClawAgentDatabase,
+  prepareSqliteQuerySync,
   runSqliteImmediateTransactionSync,
   tableExists,
   withOpenClawAgentDatabaseReadOnly,
@@ -55,6 +56,8 @@ type MemoryOriginDatabase = {
   memory_index_state: { id: number; revision: number };
   memory_index_chunks: { text: string; source: string };
 };
+// Four bindings per row stay below SQLite's historical 999-variable default.
+const TOMBSTONE_INSERT_BATCH_SIZE = 128;
 const ensuredDatabases = new WeakSet<DatabaseSync>();
 
 function openMemoryOriginDatabase(agentId: string): DatabaseSync {
@@ -162,17 +165,19 @@ export function recordMemorySessionTombstones(params: {
   return runSqliteImmediateTransactionSync(db, () => {
     const kysely = getNodeSqliteKysely<MemoryOriginDatabase>(db);
     let recorded = 0;
-    for (const sessionId of sessionIds) {
+    for (let start = 0; start < sessionIds.length; start += TOMBSTONE_INSERT_BATCH_SIZE) {
       const result = executeSqliteQuerySync(
         db,
         kysely
           .insertInto("memory_session_tombstones")
-          .values({
-            session_id: sessionId,
-            agent_id: params.agentId,
-            reason,
-            created_at: createdAt,
-          })
+          .values(
+            sessionIds.slice(start, start + TOMBSTONE_INSERT_BATCH_SIZE).map((sessionId) => ({
+              session_id: sessionId,
+              agent_id: params.agentId,
+              reason,
+              created_at: createdAt,
+            })),
+          )
           .onConflict((conflict) => conflict.column("session_id").doNothing()),
       );
       recorded += Number(result.numAffectedRows ?? 0n);
@@ -203,27 +208,30 @@ export function recordMemoryEntryOrigins(params: {
   const db = openMemoryOriginDatabase(params.agentId);
   return runSqliteImmediateTransactionSync(db, () => {
     const kysely = getNodeSqliteKysely<MemoryOriginDatabase>(db);
+    let insert:
+      | ReturnType<typeof prepareSqliteQuerySync<MemoryEntryOrigin, MemoryEntryOriginRow>>
+      | undefined;
     return params.origins.flatMap((origin) => {
       if (origin.agentId !== params.agentId) {
         throw new Error("memory entry origin belongs to another agent");
       }
-      return executeSqliteQuerySync(
-        db,
+      insert ??= prepareSqliteQuerySync<MemoryEntryOrigin, MemoryEntryOriginRow>(db, (parameter) =>
         kysely
           .insertInto("memory_entry_origins")
           .values({
-            entry_key: params.entryKey ?? origin.entryKey,
-            agent_id: origin.agentId,
-            session_id: origin.sessionId,
-            session_key: origin.sessionKey,
-            origin_class: origin.originClass,
-            observed_at: origin.observedAt,
+            entry_key: parameter((value) => params.entryKey ?? value.entryKey),
+            agent_id: parameter((value) => value.agentId),
+            session_id: parameter((value) => value.sessionId),
+            session_key: parameter((value) => value.sessionKey),
+            origin_class: parameter((value) => value.originClass),
+            observed_at: parameter((value) => value.observedAt),
           })
           .onConflict((conflict) =>
             conflict.columns(["entry_key", "agent_id", "session_id"]).doNothing(),
           )
           .returningAll(),
-      ).rows.map(readOrigin);
+      );
+      return insert(origin).rows.map(readOrigin);
     });
   });
 }

@@ -167,6 +167,13 @@ const browserConfigMocks = vi.hoisted(() => ({
 }));
 vi.mock("./browser/config.js", () => browserConfigMocks);
 
+const browserHostAvailabilityMocks = vi.hoisted(() => ({
+  isBrowserHostAvailable: vi.fn<(_config: OpenClawConfig, _profileName?: string) => boolean>(
+    () => false,
+  ),
+}));
+vi.mock("./browser-host-availability.js", () => browserHostAvailabilityMocks);
+
 const nodesUtilsMocks = vi.hoisted(() => ({
   listNodes: vi.fn(async (..._args: unknown[]): Promise<Array<Record<string, unknown>>> => []),
 }));
@@ -370,6 +377,7 @@ function mockSingleBrowserProxyNode() {
 function resetBrowserToolMocks() {
   vi.clearAllMocks();
   gatewayMocks.hasGatewayToolRoutingContext.mockReturnValue(true);
+  browserHostAvailabilityMocks.isBrowserHostAvailable.mockReset().mockReturnValue(false);
   configMocks.loadConfig.mockReturnValue({ browser: {} });
   browserConfigMocks.resolveBrowserConfig.mockReturnValue({
     enabled: true,
@@ -2330,6 +2338,7 @@ describe("browser tool snapshot maxChars", () => {
   });
 
   it("does not fall back to the host when a configured browser node is disconnected", async () => {
+    browserHostAvailabilityMocks.isBrowserHostAvailable.mockReturnValue(true);
     configMocks.loadConfig.mockReturnValue({
       browser: {},
       gateway: { nodes: { browser: { node: "node-1" } } },
@@ -2345,6 +2354,7 @@ describe("browser tool snapshot maxChars", () => {
 
   it("honors a configured browser node in manual routing mode", async () => {
     mockSingleBrowserProxyNode();
+    browserHostAvailabilityMocks.isBrowserHostAvailable.mockReturnValue(true);
     configMocks.loadConfig.mockReturnValue({
       browser: {},
       gateway: { nodes: { browser: { mode: "manual", node: "node-1" } } },
@@ -2358,6 +2368,7 @@ describe("browser tool snapshot maxChars", () => {
 
   it('allows profile="user" with target="node"', async () => {
     mockSingleBrowserProxyNode();
+    browserHostAvailabilityMocks.isBrowserHostAvailable.mockReturnValue(true);
     setResolvedBrowserProfiles({
       user: { driver: "existing-session", attachOnly: true, color: "#00AA00" },
     });
@@ -2377,6 +2388,7 @@ describe("browser tool snapshot maxChars", () => {
 
   it('allows profile="user" with an explicit node pin', async () => {
     mockSingleBrowserProxyNode();
+    browserHostAvailabilityMocks.isBrowserHostAvailable.mockReturnValue(true);
     setResolvedBrowserProfiles({
       user: { driver: "existing-session", attachOnly: true, color: "#00AA00" },
     });
@@ -2405,6 +2417,65 @@ describe("browser tool snapshot maxChars", () => {
     const opts = lastMockCallArg<{ profile?: string }>(browserClientMocks.browserStatus, 1);
     expect(opts.profile).toBe("user");
     expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
+  });
+});
+
+describe("browser tool local-first routing", () => {
+  registerBrowserToolAfterEachReset();
+
+  it("uses the available host browser without discovering a connected browser node", async () => {
+    mockSingleBrowserProxyNode();
+    browserHostAvailabilityMocks.isBrowserHostAvailable.mockReturnValue(true);
+
+    const result = await createBrowserTool().execute("local-status", { action: "status" });
+
+    expect(result.details).toMatchObject({ ok: true, running: true });
+    expect(browserClientMocks.browserStatus).toHaveBeenCalledOnce();
+    expect(nodesUtilsMocks.listNodes).not.toHaveBeenCalled();
+    expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { profile: "local-work", local: true },
+    { profile: "node-work", local: false },
+  ])("routes the selected $profile profile to its available owner", async ({ profile, local }) => {
+    mockSingleBrowserProxyNode();
+    browserHostAvailabilityMocks.isBrowserHostAvailable.mockImplementation(
+      (_config, profileName) => profileName === "local-work",
+    );
+
+    await createBrowserTool().execute("profile-status", { action: "status", profile });
+
+    if (local) {
+      expect(browserClientMocks.browserStatus).toHaveBeenCalledWith(undefined, { profile });
+      expect(nodesUtilsMocks.listNodes).not.toHaveBeenCalled();
+      expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
+    } else {
+      expect(lastNodeInvokeCall().request.params?.profile).toBe(profile);
+      expect(browserClientMocks.browserStatus).not.toHaveBeenCalled();
+    }
+  });
+
+  it("does not replay a failed local navigation on a connected node", async () => {
+    mockSingleBrowserProxyNode();
+    browserHostAvailabilityMocks.isBrowserHostAvailable.mockReturnValue(true);
+    const error = new Error("navigation timed out after the page received the request");
+    browserActionsMocks.browserNavigate.mockRejectedValue(error);
+
+    try {
+      await expect(
+        createBrowserTool().execute("local-navigation", {
+          action: "navigate",
+          targetId: "local-tab",
+          url: "https://example.com",
+        }),
+      ).rejects.toBe(error);
+      expect(browserActionsMocks.browserNavigate).toHaveBeenCalledOnce();
+      expect(nodesUtilsMocks.listNodes).not.toHaveBeenCalled();
+      expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
+    } finally {
+      browserActionsMocks.browserNavigate.mockResolvedValue({ ok: true });
+    }
   });
 });
 
@@ -3533,7 +3604,7 @@ describe("browser tool act compatibility", () => {
       targetId: "tab-after-nav",
       results: [{ ok: true, navigated: true, url: "https://example.com/next" }],
     });
-    const tool = createBrowserTool();
+    const tool = createBrowserTool({ agentSessionKey: "agent:main:main" });
 
     const result = await tool.execute?.("call-1", {
       action: "act",
@@ -3545,6 +3616,19 @@ describe("browser tool act compatibility", () => {
       1,
     );
     expect(snapshotOpts.targetId).toBe("tab-after-nav");
+    expect(sessionTabRegistryMocks.touchSessionBrowserTab).toHaveBeenCalledWith({
+      sessionKey: "agent:main:main",
+      targetId: "tab-after-nav",
+      route: { kind: "browser-control" },
+      profile: "openclaw",
+    });
+    const ownershipCall =
+      sessionTabRegistryMocks.touchSessionBrowserTab.mock.invocationCallOrder[0];
+    const snapshotCall = browserClientMocks.browserSnapshot.mock.invocationCallOrder[0];
+    if (ownershipCall === undefined || snapshotCall === undefined) {
+      throw new Error("Expected ownership and snapshot callbacks to run");
+    }
+    expect(ownershipCall).toBeLessThan(snapshotCall);
     expect(result?.details).toMatchObject({ pageState: { ok: true, format: "ai" } });
   });
 
@@ -4399,7 +4483,7 @@ describe("browser tool act stale target recovery", () => {
       tabs: [{ targetId: "only-tab" }],
     });
 
-    const tool = createBrowserTool();
+    const tool = createBrowserTool({ agentSessionKey: "agent:main:main" });
     const result = await tool.execute?.("call-1", {
       action: "act",
       profile: "user",
@@ -4435,6 +4519,15 @@ describe("browser tool act stale target recovery", () => {
     const secondOptions = mockCallArg<{ profile?: string }>(browserActionsMocks.browserAct, 1, 2);
     expect(secondOptions.profile).toBe("user");
     expect((result?.details as { ok?: unknown } | undefined)?.ok).toBe(true);
+    expect(sessionTabRegistryMocks.touchSessionBrowserTab).toHaveBeenCalledExactlyOnceWith({
+      sessionKey: "agent:main:main",
+      targetId: "only-tab",
+      route: { kind: "browser-control" },
+      profile: "user",
+    });
+    expect(result?.details).toMatchObject({
+      browserTab: { targetId: "only-tab", target: "host", profile: "user" },
+    });
   });
 
   it("recovers a stale target through the default existing-session profile", async () => {
@@ -4584,6 +4677,38 @@ describe("browser tool act stale target recovery", () => {
     expect(result?.details).toMatchObject({ ok: true, targetId: "only-tab" });
   });
 
+  it("preserves the second node act failure after a successful target refresh", async () => {
+    const retryError = new Error("node retry failed");
+    mockSingleBrowserProxyNode();
+    gatewayMocks.callGatewayTool
+      .mockResolvedValueOnce({
+        payload: {
+          route: { status: "resolved", profile: "user", driver: "existing-session" },
+          error: { status: 404, body: { error: "tab not found" } },
+        },
+      })
+      .mockResolvedValueOnce({
+        payload: {
+          route: { status: "resolved", profile: "user", driver: "existing-session" },
+          result: { running: true, tabs: [{ targetId: "only-tab" }] },
+        },
+      })
+      .mockRejectedValueOnce(retryError);
+
+    await expect(
+      createBrowserTool().execute?.("call-1", {
+        action: "act",
+        target: "node",
+        request: { kind: "wait", targetId: "stale-tab", timeMs: 1 },
+      }),
+    ).rejects.toBe(retryError);
+    expect(gatewayMocks.callGatewayTool).toHaveBeenCalledTimes(3);
+    expect(nodeInvokeCall(2).request.params).toMatchObject({
+      path: "/act",
+      body: { kind: "wait", targetId: "only-tab", timeMs: 1 },
+    });
+  });
+
   it("uses node-owned existing-session metadata for omitted-profile stale recovery", async () => {
     mockSingleBrowserProxyNode();
     gatewayMocks.callGatewayTool
@@ -4689,7 +4814,7 @@ describe("browser tool act stale target recovery", () => {
     ).rejects.toBe(abortError);
   });
 
-  it("does not retry mutating user-browser act requests without targetId", async () => {
+  it("does not retry mutating user-browser act requests after a stale target", async () => {
     browserActionsMocks.browserAct.mockRejectedValueOnce(new Error("404: tab not found"));
     browserClientMocks.browserTabs.mockResolvedValueOnce({
       running: true,

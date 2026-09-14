@@ -23,6 +23,7 @@ import { createRuntimeDependencyOwnershipBuildPlugin } from "./scripts/lib/runti
 import { runtimeProcessBuildEntries } from "./scripts/lib/runtime-process-build-entries.mts";
 import {
   sharedRuntimeProcessBuildEntries,
+  shouldBundleRuntimeSqliteDependency,
   standaloneRuntimeProcessBuildEntries,
 } from "./scripts/lib/runtime-process-core-build-entries.mts";
 import {
@@ -356,7 +357,7 @@ function shouldNeverBundleDeclarationDependency(id: string): boolean {
   // Arrow's relative module augmentations must stay beside their package modules.
   return (
     shouldNeverBundleDependency(id) ||
-    ["zod", "apache-arrow"].some((name) => id === name || id.startsWith(`${name}/`))
+    ["zod", "apache-arrow", "kysely"].some((name) => id === name || id.startsWith(`${name}/`))
   );
 }
 
@@ -475,8 +476,10 @@ function buildDockerE2eHarnessEntries(): Record<string, string> {
       "src/agents/embedded-agent-runner/run/runtime-context-prompt.ts",
     "auto-reply/reply/commands-system-agent": "src/auto-reply/reply/commands-system-agent.ts",
     "cli/run-main": "src/cli/run-main.ts",
+    "commands/onboard-guided": "src/commands/onboard-guided.ts",
     "config/config": "src/config/config.ts",
     "infra/sqlite-audit-record-store": "src/infra/sqlite-audit-record-store.ts",
+    "state/local-onboarding-state": "src/state/local-onboarding-state.ts",
     "system-agent/audit": "src/system-agent/audit.ts",
     "system-agent/system-agent": "src/system-agent/system-agent.ts",
     "system-agent/rescue-message": "src/system-agent/rescue-message.ts",
@@ -856,9 +859,12 @@ const configs: UserConfig[] = [
             ([name]) => !bundledInventoryEntryNames.has(name),
           ),
         ),
-        "native-hook-relay/entry": "src/cli/native-hook-relay-entry.ts",
       },
-      deps: unifiedDeps,
+      deps: {
+        ...unifiedDeps,
+        alwaysBundle: (id) =>
+          shouldAlwaysBundleDependency(id) || shouldBundleRuntimeSqliteDependency(id),
+      },
       // Explicit ESM chunks avoid repeated package-format parsing in Node;
       // named entrypoints retain their public .js paths.
       outputOptions: { chunkFileNames: "[name]-[hash].mjs" },
@@ -867,6 +873,18 @@ const configs: UserConfig[] = [
         createGatewayRunChunkMetadataPlugin(),
         createRuntimeDependencyOwnershipBuildPlugin(),
       ],
+    },
+    false,
+  ),
+  nodeBuildConfig(
+    {
+      name: TSDOWN_UNIFIED_CONFIG_GROUP,
+      // One-shot relays must not load shared Gateway/SDK chunks just to read a locator.
+      // Keep splitting enabled so the existing Gateway fallback stays lazy.
+      entry: { "native-hook-relay/entry": "src/cli/native-hook-relay-entry.ts" },
+      deps: unifiedDeps,
+      outputOptions: { chunkFileNames: "native-hook-relay/[name]-[hash].mjs" },
+      plugins: [createStateSchemaInlinePlugin()],
     },
     false,
   ),
@@ -898,7 +916,11 @@ const configs: UserConfig[] = [
     {
       name: TSDOWN_UNIFIED_CONFIG_GROUP,
       entry: standaloneRuntimeProcessBuildEntries,
-      deps: unifiedDeps,
+      deps: {
+        ...unifiedDeps,
+        alwaysBundle: (id) =>
+          shouldAlwaysBundleDependency(id) || shouldBundleRuntimeSqliteDependency(id),
+      },
       outputOptions: { codeSplitting: false },
       plugins: [createStateSchemaInlinePlugin()],
     },

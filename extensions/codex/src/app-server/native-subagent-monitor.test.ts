@@ -117,6 +117,7 @@ function createClient() {
     addNotificationHandler: fixture.client.addNotificationHandler.bind(fixture.client),
     addRequestHandler: fixture.client.addRequestHandler.bind(fixture.client),
     addCloseHandler: fixture.client.addCloseHandler.bind(fixture.client),
+    getTransportPid: fixture.client.getTransportPid.bind(fixture.client),
     notify: (notification: CodexServerNotification) => fixture.notify(notification),
     close: () => fixture.close(),
   };
@@ -434,6 +435,25 @@ function taskRecord(params: {
 }
 
 describe("CodexNativeSubagentMonitor", () => {
+  it.each([4321, undefined])(
+    "passes the transport process identity (%s) to task ownership",
+    (pid) => {
+      const fixture = createFakeCodexAppServerClient();
+      vi.spyOn(fixture.client, "getTransportPid").mockReturnValue(pid);
+      const runtime = createRuntime();
+      const monitor = new CodexNativeSubagentMonitor(fixture.client, runtime);
+      onTestFinished(() => fixture.close());
+
+      registerParent(monitor);
+
+      expect(runtime.createAgentHarnessTaskRuntime).toHaveBeenCalledWith(
+        pid === undefined
+          ? expect.not.objectContaining({ executionPid: expect.any(Number) })
+          : expect.objectContaining({ executionPid: pid }),
+      );
+    },
+  );
+
   describe("native completion delivery ownership", () => {
     registerCodexEventProjectorTestLifecycle();
 

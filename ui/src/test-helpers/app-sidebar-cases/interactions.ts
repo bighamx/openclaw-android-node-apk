@@ -294,7 +294,7 @@ describe("AppSidebar multi-select", () => {
     expect(harness.refreshReplacement).not.toHaveBeenCalled();
   });
 
-  it("hides an archived current thread immediately without navigating away", async () => {
+  it("hides an archiving current thread immediately without navigating away", async () => {
     const gatewayHarness = createGatewayHarness({} as GatewayBrowserClient);
     const setSessionKeySpy = vi.spyOn(gatewayHarness.gateway, "setSessionKey");
     const harness = createSessionsHarness("main", [

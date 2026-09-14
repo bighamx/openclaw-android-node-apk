@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { withEnv } from "../test-utils/env.js";
 import { replacePatternBounded } from "./redact-bounded.js";
 import {
@@ -94,6 +94,45 @@ describe("default redact pattern ownership", () => {
 });
 
 describe("registered exact secret values", () => {
+  it("shares registrations and matcher invalidation across module instances", async () => {
+    const first = await import("./secret-redaction-registry.js");
+    const firstSecret = "alpha-module-secret";
+    const secondSecret = "zulu-module-secret";
+    const text = `${firstSecret} ${secondSecret}`;
+    const mask = () => "[redacted]";
+    first.registerSecretValueForRedaction(firstSecret);
+    expect(first.redactRegisteredSecretValues(text, mask)).toBe(`[redacted] ${secondSecret}`);
+
+    // Re-evaluation models a second registry copy imported by bundled code.
+    vi.resetModules();
+    const second = await import("./secret-redaction-registry.js");
+    expect(second.redactRegisteredSecretValues(text, mask)).toBe(`[redacted] ${secondSecret}`);
+    expect(second.captureSecretRedactionRegistrySnapshot()).toEqual(
+      first.captureSecretRedactionRegistrySnapshot(),
+    );
+
+    const revision = first.getSecretRedactionRegistryRevision();
+    second.registerSecretValueForRedaction(secondSecret);
+    expect(first.redactRegisteredSecretValues(secondSecret, mask)).toBe("[redacted]");
+    expect(first.redactRegisteredSecretValues(text, mask)).toBe("[redacted] [redacted]");
+    expect(first.getSecretRedactionRegistryRevision()).toBeGreaterThan(revision);
+    expect(second.getSecretRedactionRegistryRevision()).toBe(
+      first.getSecretRedactionRegistryRevision(),
+    );
+    const captured = createSensitiveTextRedactor(captureSensitiveTextRedactionSnapshot());
+    expect(captured(text)).toBe("alpha-…cret zulu-m…cret");
+    const updatedRevision = first.getSecretRedactionRegistryRevision();
+    second.registerSecretValueForRedaction(secondSecret);
+    expect(first.getSecretRedactionRegistryRevision()).toBe(updatedRevision);
+
+    resetSecretRedactionRegistryForTest();
+    expect(first.redactRegisteredSecretValues(text, mask)).toBe(text);
+    expect(second.redactRegisteredSecretValues(text, mask)).toBe(text);
+    expect(first.getSecretRedactionRegistryRevision()).toBeGreaterThan(updatedRevision);
+    expect(captured(text)).toBe("alpha-…cret zulu-m…cret");
+    expect(createSensitiveTextRedactor(captureSensitiveTextRedactionSnapshot())(text)).toBe(text);
+  });
+
   it("masks registered values in text and nested structured data", () => {
     const secret = "registered-exact-secret";
     registerSecretValueForRedaction(secret);

@@ -2,15 +2,19 @@ import { runtimeProcessEntrypoints } from "../../infra/runtime-process-entrypoin
 import { resolveRuntimeWorkerUrl } from "../../infra/runtime-worker-url.js";
 import { WorkerTaskPool } from "../../infra/worker-task-pool.js";
 import type { SensitiveTextRedactionSnapshot } from "../../logging/redact.js";
+import type { SessionBranchSummaryReadRequest } from "./session-accessor.sqlite-branches.js";
 import type { readSessionTranscriptModelContext } from "./session-accessor.sqlite-model-context.js";
 import type { SessionTranscriptRuntimeTarget } from "./session-accessor.types.js";
 import { SessionTranscriptColdError } from "./session-cold-storage-state.js";
+import { SessionTranscriptProjectionUnavailableError } from "./session-transcript-projection-error.js";
 import {
   resolveSessionTranscriptReadFence,
   SessionTranscriptReadFenceError,
 } from "./session-transcript-read-fence.js";
 import type {
   SessionEntryWorkerInput,
+  SessionBranchSummaryWorkerInput,
+  SessionTranscriptHistoryWorkerInput,
   SessionModelContextWorkerInput,
   SessionTranscriptWorkerReply,
 } from "./session-transcript.worker.js";
@@ -31,14 +35,28 @@ const sessionEntries = new WorkerTaskPool<
   SessionTranscriptWorkerReply<"session-entry">
 >({ workerUrl, maxWorkers: 1, sharedCompute: true });
 
-function unwrapReply<Kind extends "model-context" | "session-entry">(
-  reply: SessionTranscriptWorkerReply<Kind>,
-) {
+const historyPages = new WorkerTaskPool<
+  SessionTranscriptHistoryWorkerInput,
+  SessionTranscriptWorkerReply<"history-page">
+>({ workerUrl, maxWorkers: 1 });
+
+// Branch scans share background compute admission without delaying foreground history or context.
+const branchSummaries = new WorkerTaskPool<
+  SessionBranchSummaryWorkerInput,
+  SessionTranscriptWorkerReply<"branch-summaries">
+>({ workerUrl, maxWorkers: 1, sharedCompute: true });
+
+function unwrapReply<
+  Kind extends "model-context" | "session-entry" | "history-page" | "branch-summaries",
+>(reply: SessionTranscriptWorkerReply<Kind>) {
   if (reply.ok) {
     return reply.value;
   }
   if (reply.error.kind === "cold") {
     throw new SessionTranscriptColdError(reply.error.sessionId);
+  }
+  if (reply.error.kind === "projection") {
+    throw new SessionTranscriptProjectionUnavailableError(reply.error.sessionId);
   }
   throw new SessionTranscriptReadFenceError(reply.error.message);
 }
@@ -82,6 +100,38 @@ export async function prepareSessionEntryInWorker(
             options.storePath.length +
             (options.sessionKey?.length ?? 0) +
             redaction.registeredSecretValues.reduce((bytes, value) => bytes + value.length, 0)),
+      },
+    ),
+  );
+}
+
+export async function runSessionHistoryWorkerRequest(
+  prepare: () => SessionTranscriptHistoryWorkerInput,
+  inputBytes: number,
+) {
+  return unwrapReply<"history-page">(
+    await historyPages.run(prepare, { inputBytes, timeoutMs: 60_000 }),
+  );
+}
+
+export async function runSessionBranchSummaryWorkerRequest(
+  request: SessionBranchSummaryReadRequest,
+  signal: AbortSignal,
+) {
+  return unwrapReply<"branch-summaries">(
+    await branchSummaries.run(
+      { kind: "branch-summaries", request },
+      {
+        inputBytes:
+          2 *
+          (request.database.agentId.length +
+            request.database.path.length +
+            request.databaseIdentity.length +
+            request.sessionKey.length +
+            request.sessionId.length +
+            (request.lifecycleRevision?.length ?? 0)),
+        timeoutMs: 60_000,
+        signal,
       },
     ),
   );
