@@ -49,6 +49,7 @@ import {
 import { buildVitestRunPlans } from "../../scripts/test-projects.test-support.mts";
 import { resolveTestNodeExecPath } from "../../src/test-utils/node-process.js";
 import { createTempDirTracker, useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
+import { resolveWorkflowBash } from "../helpers/workflow-bash.js";
 import { sharedVitestConfig } from "../vitest/vitest.shared.config.ts";
 import {
   createUiE2eVitestConfig,
@@ -351,10 +352,13 @@ function runPreflightNodeInvocation(
   return readFileSync(argsPath, "utf8").trim().split("\n");
 }
 
+let linuxWorkflowBash: string | undefined;
+
 function runWorkflowShellScript(
   script: string,
-  options: { cwd?: string; env?: NodeJS.ProcessEnv },
+  options: { cwd?: string; env?: NodeJS.ProcessEnv; linuxWorkflow?: boolean },
 ) {
+  const { linuxWorkflow, ...spawnOptions } = options;
   const root = mkdtempSync(path.join(tmpdir(), "openclaw-workflow-shell-"));
   const modulePaths: string[] = [];
   try {
@@ -384,8 +388,12 @@ function runWorkflowShellScript(
       );
     const scriptPath = path.join(root, "run.sh");
     writeFileSync(scriptPath, rewritten.endsWith("\n") ? rewritten : `${rewritten}\n`, "utf8");
-    return spawnSync("bash", [scriptPath], {
-      ...options,
+    const bash =
+      linuxWorkflow && process.platform === "darwin"
+        ? (linuxWorkflowBash ??= resolveWorkflowBash())
+        : "bash";
+    return spawnSync(bash, [scriptPath], {
+      ...spawnOptions,
       encoding: "utf8",
       // Child caches and temporary artifacts share the fixture's cleanup owner.
       // Inheriting a huge host tsx cache makes startup depend on unrelated runs.
@@ -5409,6 +5417,7 @@ require("node:fs").writeFileSync("scheduler-baseline", process.env.OPENCLAW_UPGR
         "if (process.argv.includes(process.env.FAIL_GRADLE_TASK)) process.exit(23);",
       ]);
       const result = runWorkflowShellScript(expectDefined(step.run, "Android commands"), {
+        linuxWorkflow: true,
         cwd: root,
         env: {
           ...process.env,
@@ -15004,6 +15013,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
         { mode: 0o755 },
       );
       const result = runWorkflowShellScript(expectDefined(step.run, "real-Gateway script"), {
+        linuxWorkflow: true,
         cwd: directory,
         env: {
           ...process.env,

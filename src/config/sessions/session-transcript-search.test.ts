@@ -330,14 +330,19 @@ describe("searchSessionTranscripts", () => {
     expect(search("alpha").hits).toHaveLength(1);
   });
 
-  it("filters hits to the requested session keys", async () => {
+  it.each([1, 33_000])("filters hits to %i requested session keys", async (keyCount) => {
     await appendUserMessage("session-1", "agent:main:main", "shared keyword payload");
     await appendUserMessage("session-2", "agent:main:other", "shared keyword payload");
 
     const all = search("keyword");
     expect(all.hits).toHaveLength(2);
 
-    const filtered = search("keyword", { sessionKeys: ["agent:main:other"] });
+    const sessionKeys = Array.from(
+      { length: keyCount - 1 },
+      (_, index) => `agent:main:missing-${index}`,
+    );
+    sessionKeys.push("agent:main:other");
+    const filtered = search("keyword", { sessionKeys });
     expect(filtered.hits).toHaveLength(1);
     expect(filtered.hits[0]?.sessionKey).toBe("agent:main:other");
     expect(filtered.hits[0]?.sessionId).toBe("session-2");
