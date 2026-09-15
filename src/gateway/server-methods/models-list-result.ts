@@ -70,12 +70,12 @@ import { resolveChatAccountSelection } from "./chat-account-selection.js";
 import type { ChatMetadataReadParams, ChatMetadataSessionEntry } from "./chat-metadata-contract.js";
 import { resolveSessionCatalogProfiles } from "./chat-metadata-session-projection.js";
 import { resolveModelProviderCapabilities } from "./model-provider-capabilities.js";
+import type { GatewayModelCatalogContext } from "./models-list-context.js";
 import {
   buildPublicModelProjection,
   projectProviderCatalogOutcomes,
 } from "./models-list-public-projection.js";
 import { prepareModelPickerRuntimeChoices } from "./models-list-runtime-choices.js";
-import type { GatewayRequestContext } from "./types.js";
 
 type ModelsListEntryWithCapabilities = ModelChoice;
 type ApiKeyProviderCapabilities = {
@@ -271,12 +271,7 @@ function apiKeyProviderCapabilities(params: {
 type ModelsListCatalogSource =
   | {
       kind: "gateway";
-      context: Pick<
-        GatewayRequestContext,
-        "getRuntimeConfig" | "loadGatewayModelCatalogSnapshot"
-      > & {
-        logGateway: Pick<GatewayRequestContext["logGateway"], "debug">;
-      };
+      context: GatewayModelCatalogContext;
     }
   | {
       kind: "published";

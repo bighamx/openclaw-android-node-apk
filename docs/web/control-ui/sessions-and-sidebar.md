@@ -69,10 +69,17 @@ Open **Systems** in the sidebar, or visit `/systems`, to inspect the Gateway,
 worker environments, and paired devices available to your connection. If your
 customized sidebar does not include Systems, add it from **Edit pinned items**.
 
-Systems replaces the lower conversation list with a machine list. The global
-navigation and footer stay in place, and returning to conversations restores
+Systems replaces the conversation list with a machine list below the global
+navigation. Navigation and the active list share one scroll area on every route;
+the sidebar header and footer stay fixed. Returning to conversations restores
 their sidebar scroll position. Navigation changes this context; background
 machine or session activity does not switch your workspace.
+
+The machine list excludes cloud workers whose teardown is complete, including
+retained records from archived sessions and failed starts with no allocated
+machine. Workers awaiting cleanup remain visible. Archiving stops running cloud
+workers through the normal workspace-reconciliation flow; failed placements keep
+their existing cleanup retries and recovery history.
 
 Select a desktop-capable system to open the existing Desktop viewer in the main
 workspace. It uses the same connection, control, sizing, and fullscreen behavior
@@ -130,7 +137,7 @@ An older list response preserves newer session names and run status already load
 
 Loaded child rows stay visible while an expanded or selected parent fetches updated child data after a session-list refresh. Child loads preserve newer names and run status already observed in other session lists. A selected child also adopts its refreshed name and run status as soon as its details arrive, including while its ancestors are still loading. Its ancestor path refreshes when the session is replaced or its parent changes, including in filtered lists. Collapsed, unselected parents drop stale child snapshots on refresh and reload when reopened; the selected session's ancestry stays available. A loading placeholder appears only when the parent has no loaded child rows yet. Child-load errors remain visible until you choose **Retry** or collapse and reopen the parent.
 
-**Archived** hides active sessions even when their conversation remains open. In **Active**, a directly opened archived session can retain its selected row. Archiving a visible session hides its row immediately while keeping its conversation open. Repeated archive actions stay disabled while the Gateway confirms the request. Confirmation offers **Undo**; if the request fails, the row returns with an error explaining what prevented archiving.
+**Archived** hides active sessions even when their conversation remains open. In **Active**, a directly opened archived session can retain its selected row. Archiving a visible session hides its row immediately while keeping its conversation open. Repeated archive actions stay disabled while the Gateway confirms the request. Confirmation offers **Undo**, including after you navigate away from the archived chat while the notification remains visible. If the request fails, the row returns with an error explaining what prevented archiving. Confirmed archive, restore, and pin changes remain applied to loaded rows if the follow-up refresh fails. If archiving already removed a row from every loaded list, Undo needs a successful refresh to show it again. The refresh error is shown separately; it does not undo a successful archive or restore. Refresh the session list to recover missing rows.
 
 Session previews are hidden by default for compact, single-line rows. Enable **Show message preview** in the **Sessions** filter menu to restore routine status text and message previews. The browser remembers your choice. Errors and requests for attention remain visible with previews off. Team mode keeps all session rows on one line. Three fixed slots on the right show the collapsed child count, unread state (a dot for one, a count for more), and activity or attention. Requests for input and errors take priority over activity in the state slot; expand a parent or group to inspect each conversation. Collapsed agent groups use the same slots. Nested expand controls are plain carets in the left gutter.
 

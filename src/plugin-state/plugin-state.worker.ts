@@ -1,10 +1,15 @@
 import { err, ok } from "@openclaw/normalization-core/result";
 import type { SqliteWorkerCommand } from "../infra/sqlite-worker-contract.js";
+import { captureOpenClawStateDatabaseReadAdmission } from "../state/openclaw-state-db-cache.js";
 import type {
   OpenClawStateDatabase,
   OpenClawStateDatabaseOptions,
 } from "../state/openclaw-state-db-contract.js";
 import { runOpenClawStateWriteTransaction } from "../state/openclaw-state-db.js";
+import {
+  compareAndApplyPluginStateEntry,
+  observePluginStateEntry,
+} from "./plugin-state-store.comparison.js";
 import { registerPluginStateSequencedJournalEntryInDatabase } from "./plugin-state-store.journal.js";
 import {
   countLivePluginStateNamespaceEntries,
@@ -134,6 +139,19 @@ export function executePluginStateCommand(
           switch (command.type) {
             case "pluginState.appendJournal":
               return registerPluginStateSequencedJournalEntryInDatabase(store, command.input);
+            case "pluginState.observe":
+              return observePluginStateEntry(
+                store,
+                command.input,
+                captureOpenClawStateDatabaseReadAdmission(store.path).identity.key,
+              );
+            case "pluginState.compareUpdate":
+            case "pluginState.compareDelete":
+              return compareAndApplyPluginStateEntry(
+                store,
+                command.input,
+                captureOpenClawStateDatabaseReadAdmission(store.path).identity.key,
+              );
             case "pluginState.register":
               return registerPluginStateEntry(store, command.input, command.input.maxPluginEntries);
             case "pluginState.registerIfAbsent":

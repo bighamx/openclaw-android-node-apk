@@ -18,6 +18,7 @@ export function createChatSelectionAttachment(
       `Source session: ${annotation.sessionKey}`,
       ...(annotation.messageId ? [`Source message: ${annotation.messageId}`] : []),
       ...(annotation.entryId ? [`Source entry: ${annotation.entryId}`] : []),
+      `Selected text UTF-16 length: ${annotation.text.length}`,
       `DOM text UTF-16 range: [${annotation.start}, ${annotation.end})`,
     ].join("\n"),
   ].join("\n\n");

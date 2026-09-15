@@ -1,4 +1,6 @@
 .chat-selection-annotations__chip {
+  /* Composer controls paint above the transcript's intentional underlap. */
+  position: relative;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;

@@ -648,29 +648,36 @@ function resetSessionAccessorMocks() {
             replacements?: Iterable<{ sessionKey: string; entry: SessionEntry }>;
             result: unknown;
           };
-    }) =>
+    }) => {
+      let updateResult: Promise<unknown> | undefined;
       await mocks.updateSessionStore(
         params.storePath,
-        async (store: Record<string, SessionEntry>) => {
-          const keys = params.sessionKeys ?? Object.keys(store);
-          const snapshots = keys.flatMap((sessionKey) => {
-            const entry = store[sessionKey];
-            return entry ? [{ sessionKey, entry: structuredClone(entry) }] : [];
-          });
-          const planned = await params.update(snapshots);
-          for (const replacement of planned.replacements ?? []) {
-            if (store[replacement.sessionKey]) {
-              store[replacement.sessionKey] = structuredClone(replacement.entry);
+        (store: Record<string, SessionEntry>) => {
+          updateResult = (async () => {
+            const keys = params.sessionKeys ?? Object.keys(store);
+            const snapshots = keys.flatMap((sessionKey) => {
+              const entry = store[sessionKey];
+              return entry ? [{ sessionKey, entry: structuredClone(entry) }] : [];
+            });
+            const planned = await params.update(snapshots);
+            for (const replacement of planned.replacements ?? []) {
+              if (store[replacement.sessionKey]) {
+                store[replacement.sessionKey] = structuredClone(replacement.entry);
+              }
             }
-          }
-          return planned.result;
+            return planned.result;
+          })();
+          return updateResult;
         },
         {
           activeSessionKey: params.activeSessionKey,
           requireWriteSuccess: params.requireWriteSuccess,
           skipMaintenance: params.skipMaintenance,
         },
-      ),
+      );
+      // Empty store stubs must still run the projection; undefined can be its valid result.
+      return updateResult === undefined ? (await params.update([])).result : await updateResult;
+    },
   );
   mocks.persistSessionTranscriptTurn.mockReset().mockImplementation(
     async (
@@ -1177,6 +1184,8 @@ function resetIntegrationState() {
   envSnapshot.restore();
   resetDetachedTaskLifecycleRuntimeForTests();
   resetAgentTaskRegistryForTests();
+  resetSubagentRegistryForTests({ persist: false });
+  applyGatewaySubagentRegistryTestDeps();
   mocks.agentCommand.mockReset();
   mocks.loadConfigReturn = {};
   mocks.loadGatewaySessionRow.mockReset();

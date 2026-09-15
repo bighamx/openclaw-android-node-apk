@@ -699,6 +699,7 @@ describe("scoped vitest configs", () => {
     );
     expect(productionBoundaryConfig.fileParallelism).toBe(false);
     expect(productionBoundaryConfig.isolate).toBe(true);
+    expect(productionBoundaryConfig.pool).toBe("forks");
     expect(productionBoundaryConfig.runner).toBeUndefined();
   });
 

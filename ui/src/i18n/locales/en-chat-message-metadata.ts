@@ -4,6 +4,13 @@ import { en } from "./en.ts";
 const enChatMessageMetadata = {
   chat: {
     messages: {
+      sourcePreviews: {
+        label: "Sources",
+        searchSnippet: "Search snippet",
+        pageExcerpt: "Page excerpt",
+        unavailable: "No excerpt available.",
+        open: "Open source",
+      },
       copySelection: en.chat.messages.copySelection,
       viaSource: "via {source}",
       sourceKinds: { web: "Web", cli: "CLI", terminal: "TUI", app: "App", rpc: "RPC" },

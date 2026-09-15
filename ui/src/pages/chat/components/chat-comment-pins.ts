@@ -1,21 +1,16 @@
-import { html, type PropertyValues } from "lit";
+import { html } from "lit";
 import { property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { icons } from "../../../components/icons.ts";
 import { t } from "../../../i18n/index.ts";
 import { registerChatMessageMetadataEnglish } from "../../../i18n/locales/en-chat-message-metadata.ts";
-import type { ChatAttachment, ChatSelectionAnnotation } from "../../../lib/chat/chat-types.ts";
-import { areUiSessionKeysEquivalent } from "../../../lib/sessions/session-key.ts";
 import { OpenClawLightDomElement } from "../../../lit/openclaw-element.ts";
-import { releaseDisplacedChatAttachmentPayloads } from "../attachment-payload-store.ts";
 import type { ChatAttachmentControlsProps } from "./chat-attachment-controls.types.ts";
 import { chatCommentLineEnd, resolveChatCommentAnchor } from "./chat-comment-anchor.ts";
-import { createChatSelectionAttachment } from "./chat-selection-attachment.ts";
-import { showChatAnnotationEditor } from "./chat-selection-popup.ts";
+import { currentChatComments } from "./chat-comment-controller.ts";
 import "../../../styles/chat/selection-annotations.css";
 
 registerChatMessageMetadataEnglish();
-type CommentAttachment = ChatAttachment & { selectionAnnotation: ChatSelectionAnnotation };
 
 /** Draft attachments own the data; this transcript-local view owns source pins. */
 class ChatCommentPins extends OpenClawLightDomElement {
@@ -25,54 +20,9 @@ class ChatCommentPins extends OpenClawLightDomElement {
   private resizeObserver?: ResizeObserver;
   private mutationObserver?: MutationObserver;
   private frame?: number;
-  private editorOwner?: AbortController;
-  private editingId?: string;
   private observedInner?: Element;
-  private focusCommentId?: string;
-  private positionEditor?: () => void;
-  private actionRoot: Element | null = null;
-
-  private currentAttachments() {
-    return this.props.getAttachments?.() ?? this.props.attachments ?? [];
-  }
-
-  private comments(): CommentAttachment[] {
-    return this.currentAttachments().filter((item): item is CommentAttachment =>
-      Boolean(
-        item.selectionAnnotation &&
-        areUiSessionKeysEquivalent(item.selectionAnnotation.sessionKey, this.sessionKey),
-      ),
-    );
-  }
-
-  private readonly retireEditor = () => {
-    this.editorOwner?.abort();
-    this.editorOwner = undefined;
-    this.editingId = undefined;
-    this.positionEditor = undefined;
-  };
-
-  protected override willUpdate(changed: PropertyValues<this>) {
-    const previous = changed.get("props");
-    if (changed.has("props") && previous?.readSignal !== this.props.readSignal) {
-      previous?.readSignal?.removeEventListener("abort", this.retireEditor);
-      this.props.readSignal?.addEventListener("abort", this.retireEditor, { once: true });
-      this.retireEditor();
-    }
-    if (
-      changed.has("sessionKey") ||
-      this.props.disabled ||
-      (this.editingId && !this.comments().some((item) => item.id === this.editingId))
-    ) {
-      this.retireEditor();
-    }
-  }
 
   protected override updated() {
-    if (!this.actionRoot) {
-      this.actionRoot = this.closest(".card.chat");
-      this.actionRoot?.addEventListener("openclaw-comment-action", this.handleCommentAction);
-    }
     if (!this.root) {
       this.root = this.closest(".chat-thread");
       if (this.root) {
@@ -96,10 +46,6 @@ class ChatCommentPins extends OpenClawLightDomElement {
   }
 
   override disconnectedCallback() {
-    this.actionRoot?.removeEventListener("openclaw-comment-action", this.handleCommentAction);
-    this.actionRoot = null;
-    this.retireEditor();
-    this.props.readSignal?.removeEventListener("abort", this.retireEditor);
     this.resizeObserver?.disconnect();
     this.mutationObserver?.disconnect();
     this.root?.removeEventListener("scroll", this.scheduleLayout);
@@ -137,7 +83,7 @@ class ChatCommentPins extends OpenClawLightDomElement {
     const origin = this.getBoundingClientRect();
     const edge = this.root.getBoundingClientRect().right - 28;
     const occupied: Array<{ left: number; top: number }> = [];
-    for (const attachment of this.comments()) {
+    for (const attachment of currentChatComments(this.props, this.sessionKey)) {
       const pin = Array.from(this.querySelectorAll<HTMLButtonElement>("button")).find(
         (item) => item.dataset.attachmentId === attachment.id,
       );
@@ -148,9 +94,6 @@ class ChatCommentPins extends OpenClawLightDomElement {
       const line = anchor && chatCommentLineEnd(anchor);
       pin.hidden = !line;
       if (!line) {
-        if (this.editingId === attachment.id) {
-          this.retireEditor();
-        }
         continue;
       }
       let left = Math.min(line.right + 4, edge) - origin.left;
@@ -167,113 +110,12 @@ class ChatCommentPins extends OpenClawLightDomElement {
       occupied.push({ left, top });
       pin.style.left = `${left}px`;
       pin.style.top = `${top}px`;
-      if (attachment.id === this.focusCommentId) {
-        pin.focus({ preventScroll: true });
-        this.focusCommentId = undefined;
-      }
     }
-    this.positionEditor?.();
-  }
-
-  private canChange(signal: AbortSignal | undefined) {
-    return (
-      this.isConnected &&
-      !this.props.disabled &&
-      !signal?.aborted &&
-      this.props.readSignal === signal &&
-      Boolean(this.props.onAttachmentsChange)
-    );
-  }
-
-  private changeAttachments(current: ChatAttachment[], next: ChatAttachment[]) {
-    this.props.onAttachmentsChange?.(next);
-    releaseDisplacedChatAttachmentPayloads(current, [next]);
-    this.props.onRequestUpdate?.();
-  }
-
-  private readonly handleCommentAction = (event: Event) => {
-    if (!(event instanceof CustomEvent) || !this.canChange(this.props.readSignal)) {
-      return;
-    }
-    const attachment = this.comments().find((item) => item.id === event.detail?.id);
-    if (!attachment) {
-      return;
-    }
-    event.stopPropagation();
-    if (event.detail.action === "delete") {
-      this.deleteComment(attachment.id);
-    } else if (event.detail.action === "edit" && event.target instanceof HTMLElement) {
-      const pin = Array.from(this.querySelectorAll<HTMLButtonElement>("button")).find(
-        (item) => item.dataset.attachmentId === attachment.id && !item.hidden,
-      );
-      pin?.scrollIntoView({ block: "nearest" });
-      this.editComment(attachment, pin ?? event.target);
-    }
-  };
-
-  private deleteComment(id: string) {
-    const current = this.currentAttachments();
-    this.changeAttachments(
-      current,
-      current.filter((item) => item.id !== id),
-    );
-    this.closest(".card.chat")
-      ?.querySelector<HTMLElement>(".agent-chat__composer-combobox > textarea")
-      ?.focus({ preventScroll: true });
-  }
-
-  private editComment(attachment: CommentAttachment, pin: HTMLElement) {
-    const signal = this.props.readSignal;
-    if (!this.canChange(signal)) {
-      return;
-    }
-    this.retireEditor();
-    this.editorOwner = new AbortController();
-    this.editingId = attachment.id;
-    this.positionEditor = showChatAnnotationEditor({
-      anchorRect: pin.getBoundingClientRect(),
-      anchorElement: pin,
-      sourceRange: this.root
-        ? resolveChatCommentAnchor(this.root, attachment.selectionAnnotation)?.range
-        : undefined,
-      comment: attachment.selectionAnnotation.comment,
-      expanded: true,
-      readSignal: this.editorOwner.signal,
-      onSave: (comment) => {
-        if (!this.canChange(signal)) {
-          return true;
-        }
-        const current = this.currentAttachments();
-        const selected = current.find((item) => item.id === attachment.id);
-        if (!selected?.selectionAnnotation) {
-          return true;
-        }
-        const replacement = createChatSelectionAttachment(
-          { ...selected.selectionAnnotation, comment },
-          this.props.attachmentLimits,
-        );
-        if (!replacement) {
-          return false;
-        }
-        this.focusCommentId = replacement.id;
-        this.changeAttachments(
-          current,
-          current.map((item) => (item.id === attachment.id ? replacement : item)),
-        );
-        return true;
-      },
-      onDelete: () => {
-        if (this.canChange(signal)) {
-          this.deleteComment(attachment.id);
-        }
-      },
-      onCancel: () => pin.focus({ preventScroll: true }),
-    });
   }
 
   protected override render() {
     return repeat(
-      this.comments(),
+      currentChatComments(this.props, this.sessionKey),
       (item) => item.id,
       (attachment, index) => html` <button
         type="button"
@@ -286,7 +128,13 @@ class ChatCommentPins extends OpenClawLightDomElement {
         @click=${(event: MouseEvent) => {
           event.stopPropagation();
           if (event.currentTarget instanceof HTMLElement) {
-            this.editComment(attachment, event.currentTarget);
+            event.currentTarget.dispatchEvent(
+              new CustomEvent("openclaw-comment-action", {
+                bubbles: true,
+                composed: true,
+                detail: { id: attachment.id, action: "edit" },
+              }),
+            );
           }
         }}
       >

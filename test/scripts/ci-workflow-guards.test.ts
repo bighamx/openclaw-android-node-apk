@@ -5209,7 +5209,37 @@ require("node:fs").writeFileSync("scheduler-baseline", process.env.OPENCLAW_UPGR
     expect(nativeResourcesSetup.if).toBe(
       "needs.preflight.outputs.use_compatible_android_ci != 'true'",
     );
-    expect(nativeResourcesSetup.with).toMatchObject({ "install-bun": "false" });
+    expect(nativeResourcesSetup.with).toMatchObject({
+      "install-bun": "false",
+      "install-deps": "false",
+    });
+    const nativeResourcesInstall = expectDefined(
+      androidJob.steps.find(
+        (step: WorkflowStep) => step.name === "Install Mermaid renderer dependencies",
+      ),
+      "Android native resources dependency install",
+    );
+    expect(nativeResourcesInstall.if).toBe(nativeResourcesSetup.if);
+    expect(nativeResourcesInstall.env).toEqual({ CI: "true" });
+    expect(nativeResourcesInstall.run.trim().split(/\s+/u)).toEqual([
+      "pnpm",
+      "install",
+      "--frozen-lockfile",
+      "--prefer-offline",
+      "--optional",
+      "--filter",
+      "'@openclaw/mermaid-renderer...'",
+      "--config.ignore-scripts=false",
+      "--config.engine-strict=false",
+      "--config.enable-pre-post-scripts=true",
+      "--config.side-effects-cache=true",
+    ]);
+    expect(androidJob.steps.indexOf(nativeResourcesSetup)).toBeLessThan(
+      androidJob.steps.indexOf(nativeResourcesInstall),
+    );
+    expect(androidJob.steps.indexOf(nativeResourcesInstall)).toBeLessThan(
+      androidJob.steps.indexOf(runStep),
+    );
   });
 
   describe("Android validation tiers", () => {
@@ -7316,13 +7346,14 @@ process.exit(JSON.parse(process.env.RECIPE_EXITS)[count] ?? 99);
         }
       }
       // Capture the pinned CLI before switching to the fixture-only registry/store.
-      const bootstrap = resolvePnpmRunner();
+      const nodeExecPath = resolveTestNodeExecPath();
+      const bootstrap = resolvePnpmRunner({ nodeExecPath });
       const npmExecPath = execFileSync(
         bootstrap.command,
         [...bootstrap.args, "--silent", "run", "pnpm-path"],
         { cwd: source, encoding: "utf8", env: { ...process.env, CI: "true" } },
       ).trim();
-      const pnpm = resolvePnpmRunner({ npmExecPath });
+      const pnpm = resolvePnpmRunner({ nodeExecPath, npmExecPath });
       const action = parse(readFileSync(".github/actions/setup-node-env/action.yml", "utf8"));
       const configureCache = expectDefined(
         action.runs.steps.find(
@@ -14027,6 +14058,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
             inSuiteServer &&
             (node.expression.text === "createOpenClawTestInstance" ||
               node.expression.text === "startProductionControlUiE2eServer" ||
+              node.expression.text === "startProviderBrowserLoginFixture" ||
               node.expression.text === "createServer")
           ) {
             ownsPrivateServer = true;
@@ -14088,6 +14120,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       "ui/src/e2e/chat-project-media.real-gateway.e2e.test.ts",
       "ui/src/e2e/chat-stop-finished-run.real-gateway.e2e.test.ts",
       "ui/src/e2e/chat-thinking-metadata.real-gateway.e2e.test.ts",
+      "ui/src/e2e/chat-tts-supplement.real-gateway.e2e.test.ts",
       "ui/src/e2e/chat-widget-sandbox.real-gateway.e2e.test.ts",
       "ui/src/e2e/child-session-load-errors.e2e.test.ts",
       "ui/src/e2e/command-palette-catalog.real-gateway.e2e.test.ts",
@@ -14100,6 +14133,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       "ui/src/e2e/model-catalog-partial-refresh.real-gateway.e2e.test.ts",
       "ui/src/e2e/model-picker-search.real-gateway.e2e.test.ts",
       "ui/src/e2e/new-session-page.cloud-startup.runtime-load.e2e.test.ts",
+      "ui/src/e2e/provider-browser-login.real-gateway.e2e.test.ts",
       "ui/src/e2e/quota-reset-status.real-gateway.e2e.test.ts",
       "ui/src/e2e/session-management.delete.e2e.test.ts",
       "ui/src/e2e/sidebar-account-footer.e2e.test.ts",

@@ -209,6 +209,11 @@ describe("test runtime prerequisites", () => {
       "runtime",
     ],
     ["real Gateway config edits", ["src/gateway/server.config-patch.test.ts"], "runtime"],
+    [
+      "first device sign-in verification",
+      ["src/gateway/setup-inference.first-signin.integration.test.ts"],
+      "runtime",
+    ],
     ["Gateway directory", ["src/gateway"], "runtime"],
     ["Gateway core config", ["test/vitest/vitest.gateway-core.config.ts"], "runtime"],
     ["Gateway server config", ["test/vitest/vitest.gateway-server.config.ts"], "runtime"],
@@ -2170,6 +2175,62 @@ describe("scripts/test-projects changed-target routing", () => {
     },
   );
 
+  it.each([false, true])(
+    "retains an unowned changed tooling test alongside its consumers (mixed input: %s)",
+    (mixedInput) => {
+      const changedTest = "test/e2e/qa-lab/runtime/changed-tooling.test.ts";
+      const reader = "test/scripts/tooling-reader.test.ts";
+      const otherTest = "src/independent.test.ts";
+      withTinyGitRepo(
+        {
+          [changedTest]: "export const value = 1;\n",
+          [reader]:
+            'import "../e2e/qa-lab/runtime/changed-tooling.test.js";\n' +
+            `const fixture = "${changedTest}";\n`,
+          [otherTest]: "export const independent = true;\n",
+        },
+        (cwd) => {
+          const inputs = mixedInput ? [changedTest, otherTest, changedTest] : [changedTest];
+          expect(resolveChangedTestTargetPlan(inputs, { cwd })).toEqual({
+            mode: "targets",
+            targets: [changedTest, reader, ...(mixedInput ? [otherTest] : [])],
+          });
+        },
+      );
+    },
+  );
+
+  it.each([
+    {
+      changedPath: "scripts/unowned-source.mts",
+      expectedTargets: ["test/scripts/tooling-reader.test.ts"],
+    },
+    {
+      changedPath: "test/scripts/owned.test.ts",
+      expectedTargets: ["test/scripts/owned.test.ts"],
+    },
+    {
+      changedPath: "test/e2e/qa-lab/runtime/changed-tooling.live.test.ts",
+      expectedTargets: ["test/scripts/tooling-reader.test.ts"],
+    },
+  ])(
+    "preserves non-test, explicit-owner, and live selection for $changedPath",
+    ({ changedPath, expectedTargets }) => {
+      withTinyGitRepo(
+        {
+          [changedPath]: "export const value = 1;\n",
+          "test/scripts/tooling-reader.test.ts": `const fixture = "${changedPath}";\n`,
+        },
+        (cwd) => {
+          expect(resolveChangedTestTargetPlan([changedPath], { cwd })).toEqual({
+            mode: "targets",
+            targets: expectedTargets,
+          });
+        },
+      );
+    },
+  );
+
   it("routes many explicit source files through one import-graph-backed owner set", () => {
     let plans: ReturnType<typeof buildVitestRunPlans> = [];
     const files: Record<string, string> = {};
@@ -2246,6 +2307,17 @@ describe("scripts/test-projects changed-target routing", () => {
     });
   });
 
+  it.each([
+    "src/gateway/health/collector.queue-health.test.ts",
+    "src/gateway/server-methods/server-methods.test.ts",
+  ])("routes health SQLite consumer %s exactly once to its broker owner", (testFile) => {
+    expectSingleVitestRunPlan(buildVitestRunPlans([testFile]), {
+      config: "test/vitest/vitest.gateway-database-workers.config.ts",
+      includePatterns: [testFile],
+    });
+    expect(gatewayDatabaseWorkerTestFiles.filter((file) => file === testFile)).toEqual([testFile]);
+  });
+
   it.each(gatewayDatabaseWorkerTestFiles)(
     "routes Gateway database consumer %s to its fork owner",
     (testFile) => {
@@ -2312,6 +2384,15 @@ describe("scripts/test-projects changed-target routing", () => {
     },
   );
 
+  it("routes the schema-upgrade counter consumer exactly once to its broker owner", () => {
+    const testFile = "src/state/openclaw-state-db.test.ts";
+    expectSingleVitestRunPlan(buildVitestRunPlans([testFile]), {
+      config: "test/vitest/vitest.infra.config.ts",
+      includePatterns: [testFile],
+    });
+    expect(databaseWorkerCoreTestFiles.filter((file) => file === testFile)).toEqual([testFile]);
+  });
+
   it.each(databaseWorkerCoreTestFiles)(
     "routes host-owned database consumer %s to the infra fork shard",
     (testFile) => {
@@ -2322,15 +2403,19 @@ describe("scripts/test-projects changed-target routing", () => {
     },
   );
 
-  it.each(["src/plugin-sdk/memory-host-events.ts", "src/plugin-sdk/persistent-dedupe.ts"])(
-    "preserves database consumer coverage for source target %s",
-    (sourceFile) => {
-      expectSingleVitestRunPlan(buildVitestRunPlans([sourceFile]), {
-        config: "test/vitest/vitest.infra.config.ts",
-        includePatterns: ["src/plugin-sdk/memory-host-events.test.ts"],
-      });
-    },
-  );
+  it.each([
+    ["src/plugin-sdk/memory-host-events.ts", "src/plugin-sdk/memory-host-events.test.ts"],
+    ["src/plugin-sdk/persistent-dedupe.ts", "src/plugin-sdk/memory-host-events.test.ts"],
+    [
+      "src/wizard/setup.inference-recovery.integration.test.ts",
+      "src/wizard/setup.inference-recovery.integration.test.ts",
+    ],
+  ])("preserves database consumer coverage for source target %s", (sourceFile, testFile) => {
+    expectSingleVitestRunPlan(buildVitestRunPlans([sourceFile]), {
+      config: "test/vitest/vitest.infra.config.ts",
+      includePatterns: [testFile],
+    });
+  });
 
   it.each([
     ["src/agents/**/*.test.ts", "test/vitest/vitest.agents.config.ts"],
@@ -3231,6 +3316,7 @@ describe("scripts/test-projects changed-target routing", () => {
         config: "test/vitest/vitest.commands.config.ts",
         includePatterns: [
           "src/commands/onboard-non-interactive.gateway-auth-token.test.ts",
+          "src/commands/onboard-non-interactive.gateway-health-auth.test.ts",
           "src/commands/onboard-non-interactive.gateway.test.ts",
         ],
       },

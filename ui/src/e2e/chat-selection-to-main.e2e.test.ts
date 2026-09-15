@@ -320,69 +320,113 @@ suite.define(() => {
     },
   );
 
-  it("keeps comments editable and removable with a replacement composer", async () => {
-    await suite.withPage({ viewport: viewports[0], locale: "en-US" }, async ({ page }) => {
-      const gateway = await installMockGateway(page, {
-        historyMessages: [{ role: "assistant", content: selectedText }],
-        featureMethods: [
-          ...defaultControlUiFeatureMethods,
-          "plugins.controlUi.list",
-          "plugins.controlUi.report",
-        ],
-        methodResponses: {
-          "plugins.controlUi.list": catalog("one"),
-          "plugins.controlUi.report": { ok: true },
-        },
-      });
-      await page.route("**/__openclaw__/plugins/control-ui/ui-fixture/*/index.js", (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: "text/javascript",
-          body: pluginModule("one").replace(
-            "let unregisterComposer = registerComposer();",
-            'let unregisterComposer = registerComposer(); host.ui.selectReplacement("composer", "composer");',
-          ),
-        }),
-      );
-      await page.goto(`${suite.server.baseUrl}chat`);
-      const composer = page.getByRole("textbox", { name: "Fixture draft", exact: true });
-      await composer.fill(draft);
-      expect(await page.locator(".agent-chat__composer-shell textarea").count()).toBe(0);
-      const editor = page.getByRole("dialog", { name: "Comment", exact: true });
-      const pin = page.getByRole("button", { name: "Edit comment 1", exact: true });
-      const saveComment = async () => {
-        await selectText(
-          page.locator(".chat-bubble .chat-text p").filter({ hasText: selectedText }),
+  it.each([false, true])(
+    "keeps retained comments usable after clearing history (replacement: %s)",
+    async (replacement) => {
+      await suite.withPage({ viewport: viewports[0], locale: "en-US" }, async ({ page }) => {
+        const gateway = await installMockGateway(page, {
+          historyMessages: [{ role: "assistant", content: selectedText }],
+          featureMethods: [
+            ...defaultControlUiFeatureMethods,
+            "plugins.controlUi.list",
+            "plugins.controlUi.report",
+          ],
+          methodResponses: {
+            "plugins.controlUi.list": catalog("one"),
+            "plugins.controlUi.report": { ok: true },
+          },
+        });
+        await page.route("**/__openclaw__/plugins/control-ui/ui-fixture/*/index.js", (route) =>
+          route.fulfill({
+            status: 200,
+            contentType: "text/javascript",
+            body: pluginModule("one").replace(
+              "let unregisterComposer = registerComposer();",
+              replacement
+                ? 'let unregisterComposer = registerComposer(); host.ui.selectReplacement("composer", "composer");'
+                : "let unregisterComposer = registerComposer();",
+            ),
+          }),
         );
+        await page.goto(`${suite.server.baseUrl}chat`);
+        const composer = replacement
+          ? page.getByRole("textbox", { name: "Fixture draft", exact: true })
+          : page.locator(".agent-chat__composer-shell textarea");
+        await composer.fill(draft);
+        expect(await page.locator(".agent-chat__composer-shell textarea").count()).toBe(
+          replacement ? 0 : 1,
+        );
+        const editor = page.getByRole("dialog", { name: "Comment", exact: true });
+        const pin = page.getByRole("button", { name: "Edit comment 1", exact: true });
+        const saveComment = async () => {
+          await selectText(
+            page.locator(".chat-bubble .chat-text p").filter({ hasText: selectedText }),
+          );
+          await page
+            .getByRole("toolbar", { name: "Selection actions" })
+            .getByRole("button", { name: "Add to chat", exact: true })
+            .click();
+          await editor.getByRole("textbox").fill("Review before deployment.");
+          await editor.getByRole("textbox").press("Enter");
+          await pin.waitFor({ state: "visible" });
+        };
+        await saveComment();
+        await pin.click();
+        await editor.getByRole("textbox").fill("Check rollback first.");
+        await editor.getByRole("button", { name: "Save", exact: true }).click();
+        await pin.click();
+        expect(await editor.getByRole("textbox").inputValue()).toBe("Check rollback first.");
+        await editor.getByRole("button", { name: "Delete comment", exact: true }).click();
+        expect(await pin.count()).toBe(0);
+        await saveComment();
+        await saveComment();
+        expect(await composer.inputValue()).toBe(draft);
+        const send = replacement
+          ? page.getByRole("button", { name: "Fixture send", exact: true })
+          : page.getByRole("button", { name: "Send message", exact: true });
+        await gateway.setHistoryMessages([]);
+        await composer.fill("/clear");
+        await send.click();
+        await gateway.waitForRequest("sessions.reset");
         await page
-          .getByRole("toolbar", { name: "Selection actions" })
-          .getByRole("button", { name: "Add to chat", exact: true })
-          .click();
-        await editor.getByRole("textbox").fill("Review before deployment.");
-        await editor.getByRole("textbox").press("Enter");
-        await pin.waitFor({ state: "visible" });
-      };
-      await saveComment();
-      await pin.click();
-      await editor.getByRole("textbox").fill("Check rollback first.");
-      await editor.getByRole("button", { name: "Save", exact: true }).click();
-      await pin.click();
-      expect(await editor.getByRole("textbox").inputValue()).toBe("Check rollback first.");
-      await editor.getByRole("button", { name: "Delete comment", exact: true }).click();
-      expect(await pin.count()).toBe(0);
-      await saveComment();
-      expect(await composer.inputValue()).toBe(draft);
-      await page.getByRole("button", { name: "Fixture send", exact: true }).click();
-      const request = await gateway.waitForRequest("chat.send");
-      const params = request.params as { message: string; attachments: Array<{ content: string }> };
-      expect(params.message).toBe(draft);
-      expect(params.attachments).toHaveLength(1);
-      expect(Buffer.from(params.attachments[0]!.content, "base64").toString("utf8")).toContain(
-        "Review before deployment.",
-      );
-      await expect.poll(() => pin.count()).toBe(0);
-    });
-  });
+          .locator(".chat-bubble .chat-text p")
+          .filter({ hasText: selectedText })
+          .waitFor({ state: "detached" });
+        const chip = page.locator(".chat-selection-annotations__chip");
+        await chip.hover();
+        const preview = page.getByRole("region", { name: "Comments", exact: true });
+        await preview.waitFor({ state: "visible" });
+        expect(await preview.getByText(selectedText, { exact: true }).count()).toBe(2);
+        await preview.getByRole("button", { name: "Edit comment 1", exact: true }).click();
+        await editor.getByRole("textbox").fill("Edited after history was cleared.");
+        await page.setViewportSize({ width: 900, height: 850 });
+        await expect.poll(() => editor.isVisible()).toBe(true);
+        await editor.getByRole("button", { name: "Save", exact: true }).click();
+        await chip.hover();
+        await preview
+          .getByText("Edited after history was cleared.", { exact: true })
+          .waitFor({ state: "visible" });
+        await page.screenshot({
+          path: `${suite.artifactDir}/retained-comments-${replacement ? "replacement" : "default"}.png`,
+        });
+        await preview.getByRole("button", { name: "Delete comment", exact: true }).first().click();
+        await expect.poll(() => chip.textContent()).toContain("1 comment");
+        await composer.fill(draft);
+        await send.click();
+        const request = await gateway.waitForRequest("chat.send");
+        const params = request.params as {
+          message: string;
+          attachments: Array<{ content: string }>;
+        };
+        expect(params.message).toBe(draft);
+        expect(params.attachments).toHaveLength(1);
+        expect(Buffer.from(params.attachments[0]!.content, "base64").toString("utf8")).toContain(
+          "Review before deployment.",
+        );
+        await expect.poll(() => pin.count()).toBe(0);
+      });
+    },
+  );
 
   it("repositions the open editor when its pinned passage wraps", async () => {
     await suite.withPage(
@@ -447,12 +491,35 @@ suite.define(() => {
           .click();
         await page.getByRole("button", { name: "Send message", exact: true }).click();
         const request = await gateway.waitForRequest("chat.send");
-        const params = request.params as { attachments: Array<{ content: string }> };
+        const params = request.params as {
+          idempotencyKey: string;
+          attachments: Array<{ content: string }>;
+        };
         const content = Buffer.from(params.attachments[0]!.content, "base64").toString("utf8");
         expect(content).toContain("Selected text:\nA\nB");
         const offsets = /DOM text UTF-16 range: \[(\d+), (\d+)\)/.exec(content);
         expect(offsets).not.toBeNull();
         expect(sourceText?.slice(Number(offsets![1]), Number(offsets![2]))).toBe(selectedDomText);
+        await gateway.emitChatFinal({
+          runId: params.idempotencyKey,
+          text: "Selected passage received.",
+        });
+        const sentChip = page.locator(
+          "openclaw-chat-sent-comments .chat-selection-annotations__chip",
+        );
+        await sentChip.waitFor({ state: "visible" });
+        await sentChip.hover();
+        const preview = page.getByRole("region", { name: "Comments", exact: true });
+        await expect
+          .poll(() => preview.locator(".chat-comment-preview__text").textContent())
+          .toBe("A\nB");
+        await page.screenshot({ path: `${suite.artifactDir}/formatted-sent-hover.png` });
+        await page.reload();
+        await sentChip.waitFor({ state: "visible" });
+        await sentChip.hover();
+        await expect
+          .poll(() => preview.locator(".chat-comment-preview__text").textContent())
+          .toBe("A\nB");
       },
     );
   });

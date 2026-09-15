@@ -169,51 +169,6 @@ export async function writeDurableComposerSnapshot(snapshot: DurableChatComposer
   return { result, payloadUnavailable };
 }
 
-async function blobsEqual(left: Blob, right: Blob): Promise<boolean> {
-  if (left.size !== right.size || left.type !== right.type) {
-    return false;
-  }
-  const [leftBytes, rightBytes] = await Promise.all([left.arrayBuffer(), right.arrayBuffer()]);
-  const leftView = new Uint8Array(leftBytes);
-  const rightView = new Uint8Array(rightBytes);
-  return leftView.every((byte, index) => byte === rightView[index]);
-}
-
-export async function durableComposerDraftMatches(
-  draft: {
-    text: string;
-    mentions?: readonly HumanMention[];
-    attachments: DurableComposerDraftAttachment[];
-  },
-  text: string,
-  attachments: DurableComposerDraftAttachment[] | null,
-  mentions?: readonly HumanMention[],
-): Promise<boolean> {
-  if (
-    attachments === null ||
-    draft.text !== text ||
-    JSON.stringify(draft.mentions ?? []) !== JSON.stringify(mentions ?? []) ||
-    draft.attachments.length !== attachments.length
-  ) {
-    return false;
-  }
-  for (const [index, stored] of draft.attachments.entries()) {
-    const current = attachments[index];
-    if (
-      !current ||
-      stored.mimeType !== current.mimeType ||
-      stored.fileName !== current.fileName ||
-      stored.sizeBytes !== current.sizeBytes ||
-      JSON.stringify(stored.browserAnnotation) !== JSON.stringify(current.browserAnnotation) ||
-      JSON.stringify(stored.selectionAnnotation) !== JSON.stringify(current.selectionAnnotation) ||
-      !(await blobsEqual(stored.blob, current.blob))
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
 export class DurableChatComposerPersistence {
   private restoreGeneration = 0;
   private restoredScopeKey = "";

@@ -5,6 +5,12 @@ import {
   areDiagnosticsEnabledForProcess,
   createSubsystemLogger,
 } from "openclaw/plugin-sdk/diagnostic-runtime";
+import type {
+  CodexControlRequestFailure,
+  CodexControlRequestFailureCategory,
+  CodexControlRequestObservation,
+  CodexControlRequestPhase,
+} from "./app-server/request-observation.js";
 
 const log = createSubsystemLogger("gateway/session-catalog");
 const listScope = new AsyncLocalStorage<CodexCatalogListDiagnostics | undefined>();
@@ -48,6 +54,8 @@ type PageFields = {
   origin: "cold" | "refresh" | "uncached";
   listOperationId?: string;
   controlRequestCalls: number;
+  controlFailurePhase?: CodexControlRequestPhase;
+  controlFailureCategory?: CodexControlRequestFailureCategory;
   inclusiveControlRequestWaitMs?: number;
   inclusiveControlRequestWaitMaxMs?: number;
   postResponseMs?: number;
@@ -205,4 +213,35 @@ export function waitForCodexCatalogPage<T>(
       observation.finish(outcome);
     }
   })();
+}
+
+export function startCodexCatalogControlRequestDiagnostics(
+  page: CodexCatalogPageDiagnostics | null | undefined,
+) {
+  if (!page) {
+    return undefined;
+  }
+  let state: "active" | "failed" | "closed" = "active";
+  let phase: CodexControlRequestPhase = "load-control";
+  const observation = {
+    phase(next: CodexControlRequestPhase) {
+      if (state === "active" && !page.closed) {
+        phase = next;
+      }
+    },
+    failed(failure: CodexControlRequestFailure) {
+      if (state === "active" && !page.closed) {
+        state = "failed";
+        page.fields.controlFailurePhase = failure.phase;
+        page.fields.controlFailureCategory = failure.category;
+      }
+    },
+    rejected() {
+      observation.failed({ phase, category: "other" });
+    },
+    close() {
+      state = "closed";
+    },
+  } satisfies CodexControlRequestObservation & { rejected(): void; close(): void };
+  return observation;
 }

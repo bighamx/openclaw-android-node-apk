@@ -1,5 +1,6 @@
 /** Recursive spawn authority must survive the real Gateway and agent-command admission path. */
 import { expectDefined } from "@openclaw/normalization-core";
+import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import {
@@ -446,7 +447,57 @@ describe("recursive spawn production boundary", () => {
       });
       const details = result.details as { childSessionKey: string; runId: string };
       childRunId = details.runId;
-      await vi.waitFor(() => expect(runEmbeddedAgent).toHaveBeenCalledOnce(), { timeout: 15_000 });
+      try {
+        await vi.waitFor(() => expect(runEmbeddedAgent).toHaveBeenCalledOnce(), {
+          timeout: 15_000,
+        });
+      } catch (error) {
+        const receipt = context.dedupe.get(`agent:${details.runId}`);
+        const payload = asOptionalRecord(receipt?.payload);
+        const cause = asOptionalRecord(asOptionalRecord(receipt?.error)?.cause);
+        const controller = context.chatAbortControllers.get(details.runId);
+        const execution = subagentRuns.get(details.runId)?.execution;
+        const label = (value: unknown, allowed: readonly string[]) =>
+          typeof value === "string" && allowed.includes(value) ? value : "unknown";
+        // Read recorded lifecycle facts before finally settles the synthetic model run.
+        console.error("Spawn admission did not reach the embedded runner", {
+          receiptPresent: receipt !== undefined,
+          receiptOk: receipt?.ok,
+          receiptStatus: label(payload?.status, [
+            "accepted",
+            "in_flight",
+            "ok",
+            "error",
+            "timeout",
+          ]),
+          receiptErrorCode: label(receipt?.error?.code, [
+            "UNAVAILABLE",
+            "INVALID_REQUEST",
+            "FORBIDDEN",
+          ]),
+          causeName: label(cause?.name, [
+            "Error",
+            "TypeError",
+            "AbortError",
+            "TimeoutError",
+            "SqliteWorkerError",
+            "FailoverError",
+          ]),
+          controllerPresent: controller !== undefined,
+          controllerAborted: controller?.controller.signal.aborted,
+          executionStarted: controller?.executionStarted,
+          executionStatus: label(execution?.status, [
+            "queued",
+            "running",
+            "interrupted",
+            "terminal",
+          ]),
+          outcomeStatus: label(execution?.outcome?.status, ["ok", "error", "timeout"]),
+          gatewayWarningCount: vi.mocked(context.logGateway.warn).mock.calls.length,
+          runtimeWarningCount: getPreparedModelRuntimeMocks().warn.mock.calls.length,
+        });
+        throw error;
+      }
       const embeddedRun = runEmbeddedAgent.mock.calls[0]?.[0];
       expect(embeddedRun).toMatchObject({
         runId: details.runId,

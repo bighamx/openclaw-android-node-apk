@@ -38,11 +38,13 @@ import {
 } from "./chat-view-notices.ts";
 import { createChatAttachmentDropHandlers } from "./components/chat-attachments.ts";
 import { resolveChatCommentAnchor } from "./components/chat-comment-anchor.ts";
+import "./components/chat-comment-controller.ts";
 import { getChatComposerState } from "./components/chat-composer-state.ts";
 import type { ChatComposerProps } from "./components/chat-composer-types.ts";
 import { isChatRunWorking, renderChatComposer } from "./components/chat-composer.ts";
 import { isImageLightboxEvent, openInlineChatImage } from "./components/chat-image-lightbox.ts";
 import { renderChatPullRequests } from "./components/chat-pull-requests.ts";
+import { renderChatSelectionAnnotations } from "./components/chat-selection-annotations.ts";
 import { createChatSelectionAttachment } from "./components/chat-selection-attachment.ts";
 import { showChatAnnotationEditor } from "./components/chat-selection-popup.ts";
 import { renderChatSessionSuggestions } from "./components/chat-session-suggestions.ts";
@@ -294,6 +296,9 @@ export function renderChat(props: ChatProps) {
     },
     defaultComposer,
     props.presented ?? true,
+    props.suggestionComposer
+      ? nothing
+      : renderChatSelectionAnnotations({ ...props, disabled: !canCompose }),
   );
   const taskSuggestionTray = renderChatTaskSuggestionTray(props);
   const gutterStack =
@@ -401,6 +406,15 @@ export function renderChat(props: ChatProps) {
         }
       }}
     >
+      ${
+        props.suggestionComposer
+          ? nothing
+          : html`<openclaw-chat-comment-controller
+              .props=${{ ...props, disabled: !canCompose }}
+              .sessionKey=${props.sessionKey}
+              .presented=${props.presented ?? true}
+            ></openclaw-chat-comment-controller>`
+      }
       <div class="chat-workbench">
         <div class="chat-workbench__main">
           <div class="chat-split-container">

@@ -1,6 +1,7 @@
 // Plugin state store exposes persisted per-plugin state operations.
 import type { Result } from "@openclaw/normalization-core/result";
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
+import { validatePluginStateComparison } from "./plugin-state-store.comparison.js";
 import { preparePluginStateJournalValue } from "./plugin-state-store.journal.js";
 import {
   validatePluginStateKeyRange,
@@ -27,14 +28,19 @@ import {
 } from "./plugin-state-store.sqlite.js";
 import type {
   OpenKeyedStoreOptions,
+  PluginStateCompareResult,
   PluginStateEntry,
   PluginStateKeyedStore,
+  PluginStateObservation,
   PluginStateSyncKeyedStore,
   PluginStateOverflowPolicy,
   PluginStateStoreOperation,
 } from "./plugin-state-store.types.js";
 import { PluginStateStoreError } from "./plugin-state-store.types.js";
 import {
+  comparePluginStateDeleteInWorker,
+  comparePluginStateUpdateInWorker,
+  observePluginStateInWorker,
   clearPluginStateInWorker,
   consumePluginStateInWorker,
   countPluginStateInWorker,
@@ -60,8 +66,11 @@ import {
 // ids, namespaces, JSON values, TTLs, and per-plugin limits before persistence.
 export type {
   OpenKeyedStoreOptions,
+  PluginStateCompareIntent,
+  PluginStateCompareResult,
   PluginStateEntry,
   PluginStateKeyedStore,
+  PluginStateObservation,
   PluginStateSyncKeyedStore,
 } from "./plugin-state-store.types.js";
 
@@ -199,6 +208,65 @@ function createKeyedStoreForPluginId<T>(
   const scope = { pluginId, namespace: prepared.namespace, env: prepared.env };
 
   return {
+    observe: async (key) => {
+      const observation = await observePluginStateInWorker({
+        pluginId,
+        namespace: prepared.namespace,
+        key: validateKey(key, "lookup"),
+        env: prepared.env,
+      });
+      // SAFETY: The namespace's JSON value type is caller-owned, as with lookup.
+      return observation as PluginStateObservation<T>;
+    },
+    compareAndApply: async (key, comparison, intent) => {
+      if (intent?.operation !== "update" && intent?.operation !== "delete") {
+        throw invalidInput("Plugin state comparison requires an update or delete intent.");
+      }
+      const operation = intent.operation === "update" ? "register" : "delete";
+      const normalizedKey = validateKey(key, operation);
+      validatePluginStateComparison(comparison, operation);
+      const common = {
+        pluginId,
+        namespace: prepared.namespace,
+        key: normalizedKey,
+        comparison,
+        maxEntries: prepared.maxEntries,
+        overflowPolicy: prepared.overflowPolicy,
+        maxPluginEntries: resolveMaxPluginStateEntriesPerPlugin(),
+        env: prepared.env,
+      };
+      let result: PluginStateCompareResult<unknown>;
+      if (intent.operation === "update" && intent.action === "set") {
+        const next = prepareRegisterParams(normalizedKey, intent.value, prepared.defaultTtlMs, {
+          ttlMs: intent.ttlMs,
+        });
+        result = await comparePluginStateUpdateInWorker({
+          ...common,
+          ...next,
+          operation: "update",
+          action: "set",
+        });
+      } else if (intent.operation === "update" && intent.action === "keep") {
+        result = await comparePluginStateUpdateInWorker({
+          ...common,
+          operation: "update",
+          action: "keep",
+        });
+      } else if (
+        intent.operation === "delete" &&
+        (intent.action === "delete" || intent.action === "keep")
+      ) {
+        result = await comparePluginStateDeleteInWorker({
+          ...common,
+          operation: "delete",
+          action: intent.action,
+        });
+      } else {
+        throw invalidInput("Plugin state comparison has an invalid mutation action.", operation);
+      }
+      // SAFETY: Conflicts return the same namespace JSON type exposed by observe and lookup.
+      return result as PluginStateCompareResult<T>;
+    },
     register: async (key, value, opts) => {
       const entry = prepareRegisterParams(key, value, prepared.defaultTtlMs, opts);
       await registerPluginStateInWorker({

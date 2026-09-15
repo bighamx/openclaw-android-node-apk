@@ -135,6 +135,7 @@ export type ChatThreadProps = ChatSendStatusActions & {
   userName?: string | null;
   userAvatar?: string | null;
   basePath?: string;
+  sessionPublicOrigin?: string;
   resourceBasePath?: string;
   fullMessageAgentId?: string;
   loadFullAssistantMessage?: SidebarFullMessageLoader | null;

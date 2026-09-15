@@ -893,6 +893,7 @@ export function createImageTool(options?: {
           accountId: options?.agentAccountId,
         });
         const imageWebMedia = await imageToolProviderDeps.loadImageWebMediaRuntime();
+        signal?.throwIfAborted();
 
         const media = isDataUrl
           ? await (async () => {
@@ -922,6 +923,7 @@ export function createImageTool(options?: {
                 ...(signal ? { requestInit: { signal } } : {}),
                 imageCompression,
               });
+        signal?.throwIfAborted();
         if (media.kind !== "image") {
           throw new Error(`Unsupported media type: ${media.kind}`);
         }
@@ -936,7 +938,9 @@ export function createImageTool(options?: {
       }
 
       if (imageRoute.kind === "native") {
-        return await buildNativeImageToolResult(loadedImages, options?.config);
+        const result = await buildNativeImageToolResult(loadedImages, options?.config);
+        signal?.throwIfAborted();
+        return result;
       }
 
       // Do not issue a paid vision-provider call for an already-aborted run.

@@ -42,7 +42,7 @@ import {
   lookupPluginStateEntry,
   type PluginStateDatabase,
   type PluginStateRegisterEntryParams,
-  type PluginStateRow,
+  type PluginStateReadRow,
 } from "./plugin-state-store.kernel.js";
 import {
   clearPluginStateNamespace,
@@ -677,7 +677,7 @@ export function pluginStateEntries(params: {
 
 function readPluginStateRowsInKeyRange<T>(
   params: PluginStateKeyRangeParams & { env?: NodeJS.ProcessEnv },
-  mapRow: (row: PluginStateRow, databasePath: string) => T,
+  mapRow: (row: PluginStateReadRow, databasePath: string) => T,
 ): T[] {
   validatePluginStateKeyRange(params);
   const pathname = resolveOpenClawStateSqlitePath(params.env ?? process.env);

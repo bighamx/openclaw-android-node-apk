@@ -6,6 +6,7 @@ import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { runWithDiagnosticTraceContext } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { resetLogger, setLoggerOverride } from "openclaw/plugin-sdk/runtime-env";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { CodexControlRequestObservation } from "./app-server/request-observation.js";
 import {
   CODEX_APP_SERVER_THREADS_LIST_COMMAND,
   CODEX_LOCAL_SESSION_HOST_ID,
@@ -190,6 +191,8 @@ describe("registered Codex catalog diagnostics", () => {
       expect(lists).toHaveLength(4);
       expect(waits).toHaveLength(3);
       const producer = fields(pages[0]);
+      expect(producer).not.toHaveProperty("controlFailurePhase");
+      expect(producer).not.toHaveProperty("controlFailureCategory");
       expect(producer).toMatchObject({
         outcome: "resolved",
         origin: "cold",
@@ -387,6 +390,11 @@ describe("registered Codex catalog diagnostics", () => {
       expect(records).toEqual([]);
       expect(sink.attempts).toBe(0);
       expect(commandRpcMocks.codexControlRequest).toHaveBeenCalledOnce();
+      if (mode === "disabled") {
+        expect(commandRpcMocks.codexControlRequest.mock.calls[0]?.[3]).not.toHaveProperty(
+          "controlObservation",
+        );
+      }
     },
   );
 
@@ -478,6 +486,54 @@ describe("registered Codex catalog diagnostics", () => {
       response.resolve({ data: [] });
       await Promise.allSettled(calls);
     }
+  });
+
+  it("retires successful pagination observations and freezes the terminal failure without changing the error host", async () => {
+    const f = await fixture();
+    let previous: CodexControlRequestObservation | undefined;
+    commandRpcMocks.codexControlRequest.mockImplementation(
+      async (
+        _pluginConfig: unknown,
+        _method: unknown,
+        _params: unknown,
+        options: { controlObservation?: CodexControlRequestObservation },
+      ) => {
+        const observation = options.controlObservation;
+        if (!observation) {
+          throw new Error("expected the active control observation");
+        }
+        clock += 1_100;
+        if (!previous) {
+          previous = observation;
+          return { data: [], nextCursor: "next" };
+        }
+        expect(observation).not.toBe(previous);
+        previous.failed({ phase: "release-client", category: "other" });
+        observation.phase("client-request");
+        observation.failed({ phase: "client-request", category: "rpc-method-unavailable" });
+        observation.phase("release-client");
+        observation.failed({ phase: "release-client", category: "deadline-observed" });
+        throw new Error(privateText);
+      },
+    );
+    const hosts = await f.list("unmatched");
+    expect(hosts[0]).toMatchObject({
+      connected: false,
+      sessions: [],
+      error: {
+        code: "APP_SERVER_UNAVAILABLE",
+        message: "Codex app-server is unavailable on this host",
+      },
+    });
+    const pages = await emitted(PAGE);
+    expect(pages).toHaveLength(1);
+    expect(fields(pages[0])).toMatchObject({
+      outcome: "rejected",
+      controlRequestCalls: 2,
+      controlFailurePhase: "client-request",
+      controlFailureCategory: "rpc-method-unavailable",
+    });
+    expect(JSON.stringify({ hosts, records })).not.toContain(privateText);
   });
 
   it("preserves the provider's error host when the diagnostic sink throws", async () => {

@@ -3,12 +3,18 @@ import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import {
+  readDeferredPluginMigrations,
+  recordDeferredPluginMigrations,
+} from "../infra/deferred-plugin-migrations.js";
+import {
   clearBundledDiscoveryModeMemo,
   prepareBundledDiscoveryMode,
 } from "../plugins/bundled-discovery-state.js";
 import { createPluginCache, withPluginCache } from "../plugins/plugin-cache.js";
 import { createDeferredCore } from "../shared/deferred.js";
+import { withArtifactPreservingStateReads } from "../state/openclaw-state-db-readonly.js";
 import { closeOpenClawStateDatabaseAsync } from "../state/openclaw-state-db.js";
+import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 import { observeMainThreadSql } from "../test-utils/main-thread-sql-spies.js";
 import * as configContext from "./io.context.js";
 import { createConfigIO } from "./io.factory.js";
@@ -79,6 +85,44 @@ it("strictly loads cold plugin metadata and records health without main-thread S
       ?.lastKnownGood?.hash,
   ).toBe(hashConfigRaw(raw));
   expect(fs.readFileSync(configPath, "utf8")).toBe(raw);
+});
+
+it("loads retained migration inputs in an artifact-preserving async scope without parent SQL", async () => {
+  const raw = JSON.stringify({
+    gateway: { mode: "local" },
+    session: { store: "/srv/synthetic-session-state/sessions.json" },
+  });
+  const options = fixture(raw);
+  const pending = {
+    pluginId: "fixture-plugin",
+    reason: "The configured plugin is not installed.",
+    command: "openclaw plugins install @example/fixture-plugin",
+    configPaths: [["session", "store"]],
+    validationExcludedPaths: [["session", "store"]],
+  };
+  recordDeferredPluginMigrations({ env: options.env, pending: [pending] });
+  await closeOpenClawStateDatabaseAsync();
+  const databasePath = resolveOpenClawStateSqlitePath(options.env);
+  const family = [databasePath, `${databasePath}-wal`, `${databasePath}-shm`];
+  const familyBefore = family.map((file) => (fs.existsSync(file) ? fs.readFileSync(file) : null));
+  const mainSql = observeMainThreadSql();
+  try {
+    const config = await withArtifactPreservingStateReads(() =>
+      withPluginCache(createPluginCache(), () =>
+        createConfigIO({ ...options, observe: false }).loadConfigAsync(),
+      ),
+    );
+    expect(config.gateway?.mode).toBe("local");
+    expect(config).not.toHaveProperty("session.store");
+    mainSql.expectIdle();
+  } finally {
+    mainSql.restore();
+  }
+  expect(fs.readFileSync(options.configPath, "utf8")).toBe(raw);
+  expect(family.map((file) => (fs.existsSync(file) ? fs.readFileSync(file) : null))).toEqual(
+    familyBefore,
+  );
+  expect(readDeferredPluginMigrations({ env: options.env })).toEqual([pending]);
 });
 
 it("rejects an invalid async load and rolls back its injected config environment", async () => {
