@@ -2350,7 +2350,6 @@ src/commands/doctor-session-sqlite-compact.ts	1
 src/commands/doctor-session-sqlite-migration-run.ts	6
 src/commands/doctor-session-sqlite-readers.ts	5
 src/commands/doctor-session-sqlite-recover-report.ts	1
-src/commands/doctor-session-sqlite.ts	2
 src/commands/doctor-session-state-providers.ts	3
 src/commands/doctor-session-transcript-headers.ts	5
 src/commands/doctor-session-transcript-labels.ts	4
@@ -2839,7 +2838,6 @@ src/gateway/worker-environments/node-worker-workspace-fallback.ts	2
 src/gateway/worker-environments/placement-state.ts	3
 src/gateway/worker-environments/placement-store.ts	1
 src/gateway/worker-environments/service-validation.ts	3
-src/gateway/worker-environments/service.ts	1
 src/gateway/worker-environments/state.ts	1
 src/gateway/worker-environments/store.ts	9
 src/gateway/worker-environments/worker-session-tool-executor.ts	1

@@ -1092,6 +1092,16 @@
   overflow-y: auto;
 }
 
+/* The activity group owns vertical scrolling; inner output keeps horizontal overflow. */
+.chat-activity-group__body .chat-tool-msg-body,
+.chat-activity-group__body .chat-tool-term__out,
+.chat-activity-group__body .chat-tool-card__block-content,
+.chat-activity-group__body .chat-diff,
+.chat-activity-group__body .chat-tool-msg-body > .chat-text,
+.chat-activity-group__body .chat-json-content {
+  max-height: none;
+}
+
 /* Standalone work uses the same summary-to-reply gap as an inline run frame.
    The preceding turn already owns the separation above the summary. */
 .chat-group--work {

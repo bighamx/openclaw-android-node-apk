@@ -366,7 +366,7 @@ export function redactJsonRecord(
   origins: RedactionOrigins,
   patternPhases: readonly [ResolvedRedactPattern[], ResolvedRedactPattern[]],
   getEdit: RedactionEditSelector,
-  legacyFieldEdits: (field: RedactionField, original: string) => RedactionEdit[],
+  legacyFieldEdits: (field: RedactionField, currentValue: string) => RedactionEdit[],
   fieldEdits: (field: RedactionField) => RedactionEdit[],
   prepEdits: (field: RedactionField) => RedactionEdit[],
   skipDecodedPatterns: (field: RedactionField, currentValue: string) => boolean,
@@ -565,7 +565,7 @@ export function redactJsonRecord(
     }
     for (const token of tokens) {
       if (phase === 0) {
-        token.pending = legacyFieldEdits({ ...token, value: token.currentValue }, token.value);
+        token.pending = legacyFieldEdits(token, token.currentValue);
         if (commitPatternEdits(token)) {
           changed.add(token);
         }
