@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { buildUpdateRehearsalPathEnv } from "../infra/update-rehearsal-paths.js";
 import { readPersistedInstalledPluginIndexInstallRecords } from "../plugins/installed-plugin-index-records.js";
 import { listOfficialExternalPluginCatalogEntries } from "../plugins/official-external-plugin-catalog.js";
 import { createPluginCache, withPluginCache } from "../plugins/plugin-cache.js";
@@ -43,6 +44,32 @@ describe("formatStartupPluginVerificationFailure", () => {
         "Resolve the plugin verification errors above, then restart the Gateway.",
       ].join("\n"),
     );
+  });
+});
+
+describe("update canary plugin verification", () => {
+  const tempDirs = useAutoCleanupTempDirTracker(afterEach);
+
+  it("keeps an unavailable copied plugin nonblocking without fetching a replacement", async () => {
+    const root = tempDirs.make("openclaw-canary-plugin-");
+    const env = {
+      ...buildUpdateRehearsalPathEnv(root),
+      OPENCLAW_UPDATE_IN_PROGRESS: "0",
+      OPENCLAW_SERVICE_REPAIR_POLICY: "external",
+      OPENCLAW_UPDATE_PARENT_ALLOWS_GATEWAY_SERVICE_REPAIR: "0",
+      OPENCLAW_UPDATE_PARENT_ALLOWS_GATEWAY_ACTIVATION: "0",
+    };
+    const cfg = { plugins: { entries: { "canary-fixture": { enabled: true } } } };
+    await seedInstalledPluginIndex(
+      { "canary-fixture": { source: "npm", spec: "@example/canary-fixture" } },
+      { config: cfg, env },
+    );
+    await withPluginCache(createPluginCache(), async () => {
+      expect(await runStartupUpgradeConvergence({ cfg, env })).toEqual({
+        blockingDiagnostic: null,
+        quarantinedPlugins: [],
+      });
+    });
   });
 });
 

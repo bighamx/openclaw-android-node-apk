@@ -5,6 +5,7 @@ import type {
   HumanMention,
 } from "../../lib/chat/chat-types.ts";
 import type { DurableComposerDraftScope } from "../../lib/chat/composer-draft-store.runtime.ts";
+import { readChatSelectionAnnotation } from "../../lib/chat/selection-annotation.ts";
 import { generateAttachmentId, getChatAttachmentBlob } from "./attachment-payload-store.ts";
 
 export type DurableChatComposerSnapshot = {
@@ -76,6 +77,7 @@ export function chatAttachmentDraftSignature(
       attachment.fileName ?? "",
       attachment.sizeBytes ?? -1,
       attachment.browserAnnotation ?? null,
+      attachment.selectionAnnotation ?? null,
     ]),
   ]);
 }
@@ -115,6 +117,9 @@ export function captureDurableChatAttachments(
       ...(attachment.browserAnnotation
         ? { browserAnnotation: { ...attachment.browserAnnotation } }
         : {}),
+      ...(attachment.selectionAnnotation
+        ? { selectionAnnotation: { ...attachment.selectionAnnotation } }
+        : {}),
     });
   }
   return stored;
@@ -125,7 +130,8 @@ export async function hydrateDurableComposerAttachments(
 ): Promise<ChatAttachment[]> {
   // No registry or URL ownership until the complete batch reaches a live owner.
   return Promise.all(
-    stored.map(async ({ blob, ...metadata }) => {
+    stored.map(async ({ blob, selectionAnnotation, ...metadata }) => {
+      const annotation = readChatSelectionAnnotation(selectionAnnotation);
       const source =
         blob.type === metadata.mimeType ? blob : blob.slice(0, blob.size, metadata.mimeType);
       return {
@@ -134,6 +140,7 @@ export async function hydrateDurableComposerAttachments(
         ...(metadata.browserAnnotation
           ? { browserAnnotation: { ...metadata.browserAnnotation } }
           : {}),
+        ...(annotation ? { selectionAnnotation: annotation } : {}),
         dataUrl: await readBlobAsDataUrl(source),
       };
     }),
@@ -198,6 +205,7 @@ export async function durableComposerDraftMatches(
       stored.fileName !== current.fileName ||
       stored.sizeBytes !== current.sizeBytes ||
       JSON.stringify(stored.browserAnnotation) !== JSON.stringify(current.browserAnnotation) ||
+      JSON.stringify(stored.selectionAnnotation) !== JSON.stringify(current.selectionAnnotation) ||
       !(await blobsEqual(stored.blob, current.blob))
     ) {
       return false;

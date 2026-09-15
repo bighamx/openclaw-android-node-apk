@@ -1,6 +1,8 @@
 import { note } from "../../packages/terminal-core/src/note.js";
 import type { ConfigSnapshotReadMeasure } from "../config/io.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { PluginInstallRecord } from "../config/types.plugins.js";
+import { resolveUpdateRehearsalRoot } from "../infra/update-rehearsal-paths.js";
 import { normalizePluginsConfig, resolveEffectiveEnableState } from "../plugins/config-state.js";
 import type { PluginPayloadSmokeFailure } from "../plugins/payload-verification.js";
 import {
@@ -85,6 +87,14 @@ export async function runStartupUpgradeConvergence(params: {
   if (!plan.required) {
     return { blockingDiagnostic: null, quarantinedPlugins: [] };
   }
+  if (resolveUpdateRehearsalRoot(params.env)) {
+    // Shipped drivers run this preflight inside their fixed canary deadline.
+    note(
+      "Plugin refresh deferred to live update finalization; the canary verifies copied plugin payloads without downloading replacements.",
+      "Doctor warnings",
+    );
+    return verifyStartupPluginPayloads(params, plan.installRecords);
+  }
   const { runPostCorePluginConvergence } = await measureDoctorConfigPreflightStep(
     "plugin-convergence-import",
     () => import("./doctor/shared/post-core-plugin-convergence.js"),
@@ -163,6 +173,17 @@ export async function refreshStartupPluginQuarantine(params: {
   if (!plan.required) {
     return { blockingDiagnostic: null, quarantinedPlugins: [] };
   }
+  return verifyStartupPluginPayloads(params, plan.installRecords);
+}
+
+async function verifyStartupPluginPayloads(
+  params: {
+    cfg: OpenClawConfig;
+    env: NodeJS.ProcessEnv;
+    measure?: ConfigSnapshotReadMeasure;
+  },
+  records: Record<string, PluginInstallRecord>,
+): Promise<StartupPluginConvergenceResult> {
   const { runActivePluginPayloadSmokeCheck } = await measureDoctorConfigPreflightStep(
     "plugin-payload-verification-import",
     () => import("../plugins/active-payload-verification.js"),
@@ -173,7 +194,7 @@ export async function refreshStartupPluginQuarantine(params: {
     () =>
       runActivePluginPayloadSmokeCheck({
         cfg: params.cfg,
-        records: plan.installRecords,
+        records,
         env: params.env,
       }),
     params.measure,
@@ -182,6 +203,10 @@ export async function refreshStartupPluginQuarantine(params: {
     cfg: params.cfg,
     failures: smoke.failures,
   });
+  if (resolveUpdateRehearsalRoot(params.env) && result.blockingDiagnostic) {
+    note(result.blockingDiagnostic.messages.join("\n"), "Doctor warnings");
+    result.blockingDiagnostic = null;
+  }
   if (result.quarantinedPlugins.length > 0) {
     note(
       result.quarantinedPlugins

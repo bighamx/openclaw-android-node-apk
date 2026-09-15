@@ -15,6 +15,7 @@ import type { OpenClawConfig } from "./types.js";
 
 export type RuntimeConfigSnapshotRefreshOptions = {
   includeAuthStoreRefs?: boolean;
+  requireImmediateApplication?: boolean;
 };
 
 export type RuntimeConfigSnapshotRefreshParams = RuntimeConfigSnapshotRefreshOptions & {
@@ -24,6 +25,8 @@ export type RuntimeConfigSnapshotRefreshParams = RuntimeConfigSnapshotRefreshOpt
   assertCurrent?: () => void;
 };
 type MaybePromise<T> = T | Promise<T>;
+
+export type RuntimeConfigSnapshotPreparationContext = { env?: NodeJS.ProcessEnv };
 
 export type ConfigWriteAfterWrite =
   | { mode: "auto" }
@@ -117,6 +120,8 @@ let runtimeConfigSourceSnapshot: OpenClawConfig | null = null;
 let runtimeConfigSnapshotMetadata: RuntimeConfigSnapshotMetadata | null = null;
 let runtimeConfigAppliedHash: string | null = null;
 let runtimeConfigSnapshotRevision = 0;
+let runtimeConfigSnapshotGeneration = 0;
+let runtimeConfigPreparerGeneration = 0;
 let runtimeConfigSnapshotRefreshHandler: RuntimeConfigSnapshotRefreshHandler | null = null;
 type ManagedRuntimeConfigWritePreflight = (
   sourceConfig: OpenClawConfig,
@@ -127,7 +132,16 @@ const managedRuntimeConfigWriteOwners = new Map<
   Set<{ id: symbol; preflight?: ManagedRuntimeConfigWritePreflight }>
 >();
 const runtimeConfigWriteListeners = new Set<(event: RuntimeConfigWriteNotification) => void>();
-const runtimeConfigSnapshotPreparers = new Set<(config: OpenClawConfig) => void>();
+const runtimeConfigSnapshotPreparers = new Map<
+  (config: OpenClawConfig) => void,
+  | {
+      prepareAsync: (
+        config: OpenClawConfig,
+        context: RuntimeConfigSnapshotPreparationContext,
+      ) => Promise<() => void>;
+    }
+  | undefined
+>();
 
 function stableConfigStringify(value: unknown): string {
   if (value === null || typeof value !== "object") {
@@ -185,9 +199,14 @@ export function setRuntimeConfigSnapshot(
 ): void {
   const factSource = getConfigResolutionFacts(config) !== null ? config : (sourceConfig ?? config);
   copyConfigResolutionFacts(factSource, config);
-  for (const prepare of runtimeConfigSnapshotPreparers) {
+  for (const prepare of runtimeConfigSnapshotPreparers.keys()) {
     prepare(config);
   }
+  publishRuntimeConfigSnapshot(config, sourceConfig);
+}
+
+function publishRuntimeConfigSnapshot(config: OpenClawConfig, sourceConfig?: OpenClawConfig): void {
+  runtimeConfigSnapshotGeneration += 1;
   clearExecutablePathCache();
   runtimeConfigSnapshot = config;
   runtimeConfigSourceSnapshot = sourceConfig ?? null;
@@ -196,12 +215,77 @@ export function setRuntimeConfigSnapshot(
 
 export function registerRuntimeConfigSnapshotPreparer(
   prepare: (config: OpenClawConfig) => void,
+  options?: {
+    prepareAsync: (
+      config: OpenClawConfig,
+      context: RuntimeConfigSnapshotPreparationContext,
+    ) => Promise<() => void>;
+  },
 ): () => void {
-  runtimeConfigSnapshotPreparers.add(prepare);
+  runtimeConfigPreparerGeneration += 1;
+  runtimeConfigSnapshotPreparers.set(prepare, options);
   if (runtimeConfigSnapshot) {
     prepare(runtimeConfigSnapshot);
   }
-  return () => runtimeConfigSnapshotPreparers.delete(prepare);
+  return () => {
+    runtimeConfigPreparerGeneration += 1;
+    runtimeConfigSnapshotPreparers.delete(prepare);
+  };
+}
+
+function preparationFingerprint(config: OpenClawConfig): string {
+  return sha256Base64Url(
+    stableConfigStringify({ config, facts: serializeConfigResolutionFacts(config) }),
+  );
+}
+
+/** Prepare off the publication path; a superseded candidate must be discarded by its owner. */
+async function prepareRuntimeConfigSnapshot(
+  config: OpenClawConfig,
+  context: RuntimeConfigSnapshotPreparationContext = {},
+  assertCurrent?: () => void,
+): Promise<() => boolean> {
+  const generation = runtimeConfigSnapshotGeneration;
+  const preparerGeneration = runtimeConfigPreparerGeneration;
+  const fingerprint = preparationFingerprint(config);
+  const envFingerprint = context.env ? sha256Base64Url(stableConfigStringify(context.env)) : null;
+  const prepared = await Promise.allSettled(
+    [...runtimeConfigSnapshotPreparers].map(async ([prepare, options]) =>
+      options ? options.prepareAsync(config, context) : () => prepare(config),
+    ),
+  );
+  const contributions: Array<() => void> = [];
+  for (const result of prepared) {
+    if (result.status === "rejected") {
+      throw result.reason;
+    }
+    contributions.push(result.value);
+  }
+  const isCurrent = () => {
+    assertCurrent?.();
+    return (
+      runtimeConfigSnapshotGeneration === generation &&
+      runtimeConfigPreparerGeneration === preparerGeneration &&
+      preparationFingerprint(config) === fingerprint &&
+      (context.env ? sha256Base64Url(stableConfigStringify(context.env)) : null) === envFingerprint
+    );
+  };
+  let consumed = false;
+  return () => {
+    if (consumed || !isCurrent()) {
+      return false;
+    }
+    consumed = true;
+    for (const contribute of contributions) {
+      contribute();
+      // Contributions may reenter config publication or revoke the admitting owner.
+      if (!isCurrent()) {
+        return false;
+      }
+    }
+    publishRuntimeConfigSnapshot(config);
+    return true;
+  };
 }
 
 export function setAppliedRuntimeConfigSnapshot(
@@ -230,6 +314,7 @@ export function setRuntimeConfigSourceSnapshotIfCurrent(params: {
 }
 
 export function resetConfigRuntimeState(options: { preserveConfigEnv?: boolean } = {}): void {
+  runtimeConfigSnapshotGeneration += 1;
   clearExecutablePathCache();
   runtimeConfigSnapshot = null;
   runtimeConfigSourceSnapshot = null;
@@ -397,6 +482,11 @@ export async function preflightManagedRuntimeConfigWrite(
 ): Promise<Map<symbol, RuntimeConfigWritePreparedCandidate>> {
   const owners = managedRuntimeConfigWriteOwners.get(configPath);
   if (!owners) {
+    if (refreshOptions?.requireImmediateApplication) {
+      throw new Error(
+        "The Gateway cannot apply this activation. Start the Gateway, then retry the saved sign-in.",
+      );
+    }
     return new Map();
   }
   const preparedCandidates = new Map<symbol, RuntimeConfigWritePreparedCandidate>();
@@ -431,12 +521,74 @@ export function loadPinnedRuntimeConfig(loadFresh: () => OpenClawConfig): OpenCl
   return getRuntimeConfigSnapshot() ?? config;
 }
 
+/** Pin a strict cold load only while its original publication owner is still current. */
+export async function loadPinnedRuntimeConfigAsync(
+  loadFresh: (assertCurrent: () => void) => Promise<{
+    config: OpenClawConfig;
+    runtimeEnv?: PreparedConfigRuntimeEnv;
+  }>,
+  options: { assertCurrent?: () => void } = {},
+): Promise<OpenClawConfig> {
+  options.assertCurrent?.();
+  if (runtimeConfigSnapshot) {
+    return runtimeConfigSnapshot;
+  }
+  const generation = runtimeConfigSnapshotGeneration;
+  const assertCurrent = () => {
+    options.assertCurrent?.();
+    if (runtimeConfigSnapshotGeneration !== generation) {
+      throw new Error("Runtime config load was superseded before publication");
+    }
+  };
+  try {
+    const { config, runtimeEnv } = await loadFresh(assertCurrent);
+    options.assertCurrent?.();
+    if (runtimeConfigSnapshot) {
+      return runtimeConfigSnapshot;
+    }
+    assertCurrent();
+    const commit = await prepareRuntimeConfigSnapshot(
+      config,
+      { env: runtimeEnv?.env },
+      options.assertCurrent,
+    );
+    options.assertCurrent?.();
+    if (runtimeConfigSnapshot) {
+      return runtimeConfigSnapshot;
+    }
+    assertCurrent();
+    const publication = runtimeEnv?.publish();
+    try {
+      assertCurrent();
+      if (!commit()) {
+        throw new Error("Runtime config preparation was superseded before publication");
+      }
+      publication?.commit();
+    } catch (error) {
+      publication?.();
+      throw error;
+    }
+    return getRuntimeConfigSnapshot() ?? config;
+  } catch (error) {
+    options.assertCurrent?.();
+    if (runtimeConfigSnapshot) {
+      return runtimeConfigSnapshot;
+    }
+    throw error;
+  }
+}
+
 export async function preflightRuntimeSnapshotWrite(params: {
   nextSourceConfig: OpenClawConfig;
   refreshOptions?: RuntimeConfigSnapshotRefreshOptions;
   createRefreshError: (detail: string, cause: unknown) => Error;
   formatRefreshError: (error: unknown) => string;
 }): Promise<unknown> {
+  if (params.refreshOptions?.requireImmediateApplication) {
+    throw new Error(
+      "The Gateway cannot apply this activation. Start the Gateway, then retry the saved sign-in.",
+    );
+  }
   const refreshHandler = getRuntimeConfigSnapshotRefreshHandler();
   if (!refreshHandler?.preflight) {
     return undefined;

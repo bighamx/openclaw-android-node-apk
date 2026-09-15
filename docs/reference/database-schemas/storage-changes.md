@@ -36,6 +36,22 @@ cross the same closed-field error graph, without changing ordinary broker errors
 Cron saves, their transaction hooks, synchronous diagnostic reads, and read-only
 inspection retain their current owners and execution paths.
 
+iMessage outbound receipt recovery reads the external Messages SQLite database
+through the shared worker broker. Its plugin owns the read-only GUID queries;
+each recovery operation retains its read-only connection through polling and
+joins worker cleanup before the send publishes its receipt. Numeric message IDs and the latest matching sent message keep their existing recovery
+rules, including the five-second polling deadline. This does not migrate
+iMessage's startup watermark or conversation-binding queries.
+
+Memory-host event appends and bounded journal reads execute on the shared state
+worker. The plugin-state owner allocates the sequence, rereads the cursor and
+retained tail, writes both rows, and applies retention in one synchronous write
+transaction on that worker. Caller event fields are serialized before admission;
+the owner adds the sequence while preserving the existing stored JSON and keys.
+Reads use the existing-only worker path and do not create a missing database.
+Public event helpers and exports await durable completion. Cursor eviction,
+namespace-wide append ordering, sibling row budgets, and rollback remain unchanged.
+
 Use Kysely for ordinary queries and mutations. The current
 `getNodeSqliteKysely` facade compiles queries; `executeSqliteQuerySync` runs them
 on the supplied `node:sqlite` connection. Calling Kysely's asynchronous
@@ -85,6 +101,10 @@ Reset-recall metadata crosses the worker boundary with the prepared content.
 If secret registration invalidates both preparation attempts, the export rejects
 for retry instead of reading SQLite on the Gateway thread. Failed index rebuilds
 preserve the published index and retained retry state.
+Chunk preparation from captured session text uses the existing local workspace
+queue without a durable write lease. File and multimodal preparation retain that
+lease, as do all cache, index, and publication mutations. Those mutations recheck
+current ownership and session tombstones after awaited preparation.
 Incognito databases, archive materialization, and caller-owned transcript
 observers retain their existing local execution. Index publication and
 restoration remain with their existing database and lifecycle owners.
@@ -209,9 +229,10 @@ Backup outcome recording and freshness reads expose asynchronous operations from
 the shared-state owner. Archive, SQLite snapshot, and Git backup commands await
 recording before reporting completion; a recording failure remains a warning and
 does not change the backup result. Status and Doctor await freshness before
-formatting it. These operations still execute synchronous SQLite internally;
-they retain the existing insertion-and-pruning transaction, 200-row limit, and
-non-creating freshness reads.
+formatting it. Outcome recording executes its insertion-and-pruning transaction
+in the shared-state worker, preserving the 200-row limit and leaving absent
+databases absent. Freshness reads still execute synchronous SQLite internally
+and remain non-creating.
 
 Explicit session deletion, lifecycle-artifact cleanup, and history disk-budget
 eviction prepare their plans inside the session writer queue. When the parent database handle is cold, its

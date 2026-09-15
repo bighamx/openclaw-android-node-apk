@@ -35,8 +35,13 @@ import {
   createContractsVitestConfig,
   pluginContractPatterns,
 } from "./vitest/vitest.contracts-shared.ts";
+import {
+  databaseWorkerExtensionTestFiles,
+  databaseWorkerExtensionTestRoots,
+} from "./vitest/vitest.extension-database-workers-paths.mjs";
 import { createExtensionDatabaseWorkersVitestConfig } from "./vitest/vitest.extension-database-workers.config.ts";
 import { createExtensionImessageVitestConfig } from "./vitest/vitest.extension-imessage.config.ts";
+import { createExtensionSlackVitestConfig } from "./vitest/vitest.extension-slack.config.ts";
 import { createExtensionsVitestConfig } from "./vitest/vitest.extensions.config.ts";
 import { createGatewayMethodsIsolatedVitestConfig } from "./vitest/vitest.gateway-methods-isolated.config.ts";
 import { createGatewayMethodsVitestConfig } from "./vitest/vitest.gateway-methods.config.ts";
@@ -52,6 +57,7 @@ import {
   createGatewayVitestConfig,
 } from "./vitest/vitest.gateway.config.ts";
 import { createPluginSdkLightVitestConfig } from "./vitest/vitest.plugin-sdk-light.config.ts";
+import { createProjectShardVitestConfig } from "./vitest/vitest.project-shard-config.ts";
 import {
   repoRoot,
   resolveSharedVitestWorkerConfig,
@@ -102,6 +108,28 @@ afterEach(() => {
 });
 
 describe("projects vitest config", () => {
+  it("pins an explicit full-suite project worker limit", () => {
+    const previous = process.env.OPENCLAW_VITEST_MAX_WORKERS;
+    try {
+      process.env.OPENCLAW_VITEST_MAX_WORKERS = "8";
+      const testConfig = requireTestConfig(
+        createProjectShardVitestConfig(["test/vitest/vitest.tooling.config.ts"], {
+          maxWorkers: 1,
+        }),
+      );
+
+      expect(testConfig.maxWorkers).toBe(1);
+      expect(testConfig.fileParallelism).toBe(false);
+      expect(process.env.OPENCLAW_VITEST_MAX_WORKERS).toBe("1");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.OPENCLAW_VITEST_MAX_WORKERS;
+      } else {
+        process.env.OPENCLAW_VITEST_MAX_WORKERS = previous;
+      }
+    }
+  });
+
   it("resolves the complete root watch project graph", () => {
     const result = spawnNodeEvalSync(
       `
@@ -116,9 +144,10 @@ describe("projects vitest config", () => {
         timeout: DEFAULT_VITEST_TEST_TIMEOUT_MS,
       },
     );
-    expect(result.error, result.stderr).toBeUndefined();
-    expect(result.signal, result.stderr).toBeNull();
-    expect(result.status, result.stderr).toBe(0);
+    const output = JSON.stringify({ stdout: result.stdout, stderr: result.stderr });
+    expect(result.error, output).toBeUndefined();
+    expect(result.signal, output).toBeNull();
+    expect(result.status, output).toBe(0);
     const report = result.stdout
       .split("\n")
       .find((line) => line.startsWith("ROOT_PROJECT_RESOLUTION "));
@@ -212,6 +241,7 @@ describe("projects vitest config", () => {
     expect(serverConfig.isolate).toBe(false);
     expect(serverConfig.fileParallelism).toBe(false);
     expect(serverIsolatedConfig.isolate).toBe(true);
+    expect(serverIsolatedConfig.pool).toBe("forks");
     expect(serverIsolatedConfig.runner).toBeUndefined();
     expect(serverIsolatedConfig.include).toEqual(gatewayServerIsolatedTestFiles);
     const overrideFixture = "src/gateway/server-plugin-subagent-runtime.overrides.test.ts";
@@ -651,7 +681,19 @@ describe("projects vitest config", () => {
     expect(testConfig.sequence).toMatchObject({ groupOrder: 1 });
   });
 
-  it.each(["logbook", "team-reports", "workboard"])(
+  it("keeps Slack's real cooldown store in its forked project", () => {
+    const project = "test/vitest/vitest.extension-slack.config.ts";
+    expect(requireTestConfig(createExtensionSlackVitestConfig({})).pool).toBe("forks");
+    expect(
+      buildVitestRunPlans(["extensions/slack/src/monitor/presence-cooldown-store.test.ts"]).map(
+        (plan) => plan.config,
+      ),
+    ).toEqual([project]);
+    expect(resolveExtensionTestConfig("extensions/slack")).toBe(project);
+    expect(rootVitestProjects).toContain(project);
+  });
+
+  it.each(["logbook", "memory-core", "team-reports", "workboard"])(
     "runs %s database owners in main-thread hosts across focused and full suites",
     (pluginId) => {
       const project = "test/vitest/vitest.extension-database-workers.config.ts";
@@ -669,10 +711,10 @@ describe("projects vitest config", () => {
       expect(testConfig.pool).toBe("forks");
       expect(testConfig.isolate).toBe(true);
       expect(testConfig.include).toEqual([
-        "logbook/**/*.test.ts",
-        "team-reports/**/*.test.ts",
-        "workboard/**/*.test.ts",
-        "imessage/src/approval-reactions.persistence.test.ts",
+        ...databaseWorkerExtensionTestRoots.map(
+          (root) => `${root.replace(/^extensions\//u, "")}/**/*.test.ts`,
+        ),
+        ...databaseWorkerExtensionTestFiles.map((file) => file.replace(/^extensions\//u, "")),
       ]);
       expect(requireTestConfig(createExtensionsVitestConfig({})).exclude).toContain(
         `${pluginId}/**`,
@@ -680,36 +722,58 @@ describe("projects vitest config", () => {
     },
   );
 
-  it("routes iMessage persistence through its worker owner without moving sibling tests", () => {
-    const file = "extensions/imessage/src/approval-reactions.persistence.test.ts";
-    const project = "test/vitest/vitest.extension-database-workers.config.ts";
-    const siblingProject = "test/vitest/vitest.extension-imessage.config.ts";
-    for (const target of [
-      file,
-      "extensions/imessage",
-      "extensions/imessage/src/*.test.ts",
-      "extensions/imessage/src/approval-reactions.ts",
-    ]) {
-      const plans = buildVitestRunPlans([target]);
-      expect(plans.find((plan) => plan.config === project)?.includePatterns).toContain(file);
-    }
-    expect(buildVitestRunPlans([file]).map((plan) => plan.config)).toEqual([project]);
-    for (const sibling of ["approval-reactions.test.ts", "approval-reaction-poller.test.ts"]) {
-      expect(
-        buildVitestRunPlans([`extensions/imessage/src/${sibling}`]).map((plan) => plan.config),
-      ).toEqual([siblingProject]);
-    }
-    const workerConfig = requireTestConfig(createExtensionDatabaseWorkersVitestConfig({}));
-    expect(workerConfig.include).toContain("imessage/src/approval-reactions.persistence.test.ts");
-    expect(workerConfig.pool).toBe("forks");
-    expect(workerConfig.isolate).toBe(true);
-    expect(requireTestConfig(createExtensionImessageVitestConfig({})).exclude).toContain(
-      "imessage/src/approval-reactions.persistence.test.ts",
-    );
-    expect(requireTestConfig(createExtensionsVitestConfig({})).exclude).toContain(
-      "imessage/src/approval-reactions.persistence.test.ts",
-    );
-  });
+  it.each(databaseWorkerExtensionTestFiles)(
+    "routes real extension database consumer %s to its fork owner",
+    (file) => {
+      const project = "test/vitest/vitest.extension-database-workers.config.ts";
+      const config = requireTestConfig(createExtensionDatabaseWorkersVitestConfig({}));
+      expect(buildVitestRunPlans([file]).map((plan) => plan.config)).toEqual([project]);
+      expect(config.include).toContain(file.replace(/^extensions\//u, ""));
+      expect(config.pool).toBe("forks");
+      expect(config.isolate).toBe(true);
+    },
+  );
+
+  it.each([
+    {
+      file: "approval-reactions.persistence.test.ts",
+      source: "approval-reactions.ts",
+      siblings: ["approval-reactions.test.ts", "approval-reaction-poller.test.ts"],
+    },
+    { file: "send.sqlite.test.ts", source: "send.ts", siblings: ["send.test.ts"] },
+  ])(
+    "routes iMessage $file through its worker owner without moving sibling tests",
+    ({ file: basename, source, siblings }) => {
+      const file = `extensions/imessage/src/${basename}`;
+      const project = "test/vitest/vitest.extension-database-workers.config.ts";
+      const siblingProject = "test/vitest/vitest.extension-imessage.config.ts";
+      for (const target of [
+        file,
+        "extensions/imessage",
+        "extensions/imessage/src/*.test.ts",
+        `extensions/imessage/src/${source}`,
+      ]) {
+        const plans = buildVitestRunPlans([target]);
+        expect(plans.find((plan) => plan.config === project)?.includePatterns).toContain(file);
+      }
+      expect(buildVitestRunPlans([file]).map((plan) => plan.config)).toEqual([project]);
+      for (const sibling of siblings) {
+        expect(
+          buildVitestRunPlans([`extensions/imessage/src/${sibling}`]).map((plan) => plan.config),
+        ).toEqual([siblingProject]);
+      }
+      const workerConfig = requireTestConfig(createExtensionDatabaseWorkersVitestConfig({}));
+      expect(workerConfig.include).toContain(`imessage/src/${basename}`);
+      expect(workerConfig.pool).toBe("forks");
+      expect(workerConfig.isolate).toBe(true);
+      expect(requireTestConfig(createExtensionImessageVitestConfig({})).exclude).toContain(
+        `imessage/src/${basename}`,
+      );
+      expect(requireTestConfig(createExtensionsVitestConfig({})).exclude).toContain(
+        `imessage/src/${basename}`,
+      );
+    },
+  );
 
   it("keeps the bundled lane on thread workers with the non-isolated runner", () => {
     const testConfig = requireTestConfig(bundledConfig);

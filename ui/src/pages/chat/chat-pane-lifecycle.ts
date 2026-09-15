@@ -337,14 +337,18 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionCreation {
     );
     pageState.chatMetadataIsPresented = () =>
       this.presented && document.visibilityState !== "hidden";
-    const refreshPresentedMetadata = () => {
+    pageState.chatSecondaryReadsReady = (explicit) => this.secondarySessionReadsReady(explicit);
+    const refreshPresentedReads = () => {
+      this.requestUpdate();
       if (pageState.chatMetadataIsPresented?.()) {
         void refreshChatMetadata(pageState, { automatic: true });
+        this.resumeDeferredSessionHydration();
+        void this.refreshTaskSuggestions({ automatic: true });
       }
     };
-    document.addEventListener("visibilitychange", refreshPresentedMetadata);
+    document.addEventListener("visibilitychange", refreshPresentedReads);
     chatState.addCleanup(() =>
-      document.removeEventListener("visibilitychange", refreshPresentedMetadata),
+      document.removeEventListener("visibilitychange", refreshPresentedReads),
     );
     const paneAgentId = parseAgentSessionKey(this.sessionKey)?.agentId ?? this.agentId;
     if (paneAgentId) {

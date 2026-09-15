@@ -423,6 +423,8 @@ function buildCoreDistEntries(): Record<string, string> {
     "agents/code-mode.worker": "src/agents/code-mode.worker.ts",
     "agents/compaction-planning.worker": "src/agents/compaction-planning.worker.ts",
     "config/sessions/disk-budget.worker": "src/config/sessions/disk-budget.worker.ts",
+    "config/sessions/session-transcript-reconcile":
+      "src/config/sessions/session-transcript-reconcile.ts",
     ...runtimeProcessBuildEntries,
     ...runtimeProcessDeclarationEntries,
     "acp/control-plane/manager": "src/acp/control-plane/manager.ts",
@@ -912,19 +914,21 @@ const configs: UserConfig[] = [
       false,
     );
   }),
-  nodeBuildConfig(
-    {
-      name: TSDOWN_UNIFIED_CONFIG_GROUP,
-      entry: standaloneRuntimeProcessBuildEntries,
-      deps: {
-        ...unifiedDeps,
-        alwaysBundle: (id) =>
-          shouldAlwaysBundleDependency(id) || shouldBundleRuntimeSqliteDependency(id),
+  ...Object.entries(standaloneRuntimeProcessBuildEntries).map(([name, source]) =>
+    nodeBuildConfig(
+      {
+        name: TSDOWN_UNIFIED_CONFIG_GROUP,
+        entry: { [name]: source },
+        deps: {
+          ...unifiedDeps,
+          alwaysBundle: (id) =>
+            shouldAlwaysBundleDependency(id) || shouldBundleRuntimeSqliteDependency(id),
+        },
+        outputOptions: { codeSplitting: false },
+        plugins: [createStateSchemaInlinePlugin()],
       },
-      outputOptions: { codeSplitting: false },
-      plugins: [createStateSchemaInlinePlugin()],
-    },
-    false,
+      false,
+    ),
   ),
   workerDeployBuildConfig(),
   { ...createManagedHandoffBuildConfig(), name: TSDOWN_UNIFIED_CONFIG_GROUP, env },

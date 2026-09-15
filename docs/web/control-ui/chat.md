@@ -19,6 +19,18 @@ Side chat answers questions about the selected session and its project without e
 
 The question box wraps and grows like the main composer; Enter (or your configured send shortcut) asks the question, and Shift+Enter adds a line. Highlighting text in a chat message offers **Ask in side chat**, which opens the rail with a quoted draft ready to edit.
 
+Highlight text and choose **Add to chat** to attach a comment to the main
+composer. The optional comment field stays compact while you type; confirm or
+press Enter to save it. Saving keeps your existing draft and does not send a message.
+
+Saving leaves a small, filled comment marker beside the selected passage. Click
+that marker to reopen its comment in the larger editor beside it. **Save**, Command-Enter, or
+Ctrl-Enter saves changes; **Cancel** or Escape discards the edit; and the trash
+button deletes the comment. The composer's comment count is a passive indicator.
+Saved comments and their source markers follow the composer's existing draft and
+queue recovery behavior. When you send, each comment is attached as a text file
+containing the selection, comment, and source message reference; its draft marker is removed.
+
 The headline owns that run's sidebar subtitle instead of heuristic live activity. It is shared with the official iOS and Android session lists. A final done or failed digest remains visible while the session is unread, then the row returns to its normal work subtitle.
 
 Session observation is enabled by default. Safe preamble headlines do not require a utility model; the utility model only owns richer assessments and terminal summaries. In **Settings > Appearance > Sidebar**, you can turn observation off gateway-wide, inspect the resolved small model and its provenance, or choose automatic routing, disable utility tasks, or select an explicit `agents.defaults.utilityModel`. The equivalent config controls are `gateway.controlUi.sessionObserver: false` and `agents.defaults.utilityModel: ""`.
@@ -96,8 +108,10 @@ original conversation. If history fails to load, the queued message stays
 available while you resolve the history error. Goals and other slash commands
 wait for history; `/stop` and `/approve` remain available.
 
-Background refreshes for saved sidebar filters and automation status wait until
-the conversation appears. A filter change you make refreshes immediately.
+Background refreshes for saved sidebar filters, groups, automation status, and the
+Inbox wait until the conversation appears. Task lists, task suggestions, and the
+progress card then refresh after the transcript paints. Opening a task panel,
+changing a filter, or opening a group-targeted New Session remains immediate.
 
 Panes share outbox recovery for the same conversation. Activity in another
 conversation does not restart that recovery; reconnecting checks every saved outbox.
@@ -382,6 +396,11 @@ The core [`show_widget`](/tools/show-widget) tool renders self-contained SVG or 
 
 ## Chat transcript layout
 
+Scrolling up to read earlier messages collapses the task progress card above the
+composer. Streaming output and layout adjustments keep that reading mode intact.
+Scroll back to the end or select **Latest** to resume following the conversation;
+an explicit choice to expand or collapse the card stays in effect for that task.
+
 In completed dashboard turns, commentary, reasoning-only messages, and tool activity
 share one **Worked for…** disclosure above the answers. Expanding it shows the
 activity in its original order; explicit answer segments and visual results stay
@@ -403,6 +422,8 @@ The chat transcript uses a centered readable frame aligned with the composer. As
 Images and video previews in your own messages appear above any accompanying text, without a surrounding bubble background. Videos use a still frame with a play icon; select the preview to open the video in the Files panel. If a preview cannot load, the attachment card remains available. Hovering media leaves that layout unchanged, and the text keeps its normal bubble color, including any per-identity tint. Assistant videos retain their inline player.
 
 Messages forwarded by `sessions_send` render as left-aligned speech bubbles with a source-session chip above the message. When avatars are shown, messages from a different known agent use that agent's avatar, or initials in a stable identity color if no avatar is available. Same-agent forwards and unknown senders keep the forward icon. Select the chip to open the source session; hover it to see session progress. Each source session has a stable bubble tint. Forwarded messages without a known source session show the source agent when available, or a generic forwarded-message label. The receiving agent's own replies remain flat text.
+
+Your name is hidden beneath your own messages when no other human participant is known in the session. Shared conversations keep sender names, including while searching the transcript. Web messages do not show a "via Web" label; other recorded client sources remain visible.
 
 ## Subagent transcripts
 

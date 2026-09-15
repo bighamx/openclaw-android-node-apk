@@ -586,6 +586,9 @@ export async function validateUpdateCandidateCanary(params: {
         },
         capture,
       });
+      if (probeFailure) {
+        capture("Candidate stopped by the validation deadline; readiness remains unverified.");
+      }
       const step: UpdateStepResult = {
         name: "candidate gateway canary",
         command: "gateway run",

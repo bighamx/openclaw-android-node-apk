@@ -306,6 +306,28 @@ class OpenClawShell
           };
         },
       )
+      .effect(
+        () => this.context,
+        (context) => {
+          const startedAt = Date.now();
+          let active = true;
+          let disconnect: (() => void) | undefined;
+          const runtime = createIdleImport(
+            () => import("./control-ui-favicon-status.runtime.ts"),
+            ({ connectControlUiFavicon }) => {
+              if (active) {
+                disconnect = connectControlUiFavicon(this, context, startedAt);
+              }
+            },
+          );
+          runtime.schedule();
+          return () => {
+            active = false;
+            runtime.dispose();
+            disconnect?.();
+          };
+        },
+      )
       .watch(
         () => this.context?.nativeDeviceSettings,
         (settings, notify) => settings.subscribe(notify),
@@ -321,6 +343,14 @@ class OpenClawShell
       .watch(
         () => this.context?.agentSelection,
         (selection, notify) => selection.subscribe(notify),
+      )
+      .watch(
+        () => this.context?.settingsAgentSelection,
+        (selection, notify) => selection.subscribe(notify),
+      )
+      .watch(
+        () => this.context?.agentIdentity,
+        (identity, notify) => identity.subscribe(notify),
       )
       .watch(
         () => this.context?.gateway,
@@ -656,6 +686,9 @@ class OpenClawShell
     const context = this.context;
     if (!context) {
       return;
+    }
+    if (this.querySelector(".settings-sidebar__agent")) {
+      void context.agentIdentity.ensure([context.settingsAgentSelection.state.selectedId]);
     }
     if (this.workspaceChromeVisible) {
       this.shellChrome.panels.restore();

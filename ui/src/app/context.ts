@@ -104,6 +104,8 @@ export type ApplicationContext<TRouteId extends string = string> = {
   readonly agents: AgentCapability;
   readonly agentIdentity: AgentIdentityCapability;
   readonly agentSelection: AgentSelectionCapability;
+  /** Configured agent targeted by Settings, independent of chat/session selection. */
+  readonly settingsAgentSelection: AgentSelectionCapability;
   readonly channels: ChannelCapability;
   readonly config: ApplicationConfigCapability;
   readonly scopeUpgrade: ScopeUpgradeCapability;

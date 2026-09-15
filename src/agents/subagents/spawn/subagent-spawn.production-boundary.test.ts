@@ -1,4 +1,5 @@
 /** Recursive spawn authority must survive the real Gateway and agent-command admission path. */
+import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import {
@@ -391,6 +392,45 @@ async function createBoundGateway(bound: Awaited<ReturnType<typeof createBoundPa
 
 describe("recursive spawn production boundary", () => {
   it("authorizes and admits an upgraded descendant before model execution", async () => {
+    const customProvider = expectDefined(
+      runtimeConfig.models?.providers?.custom,
+      "custom provider fixture",
+    );
+    const primaryModel = expectDefined(customProvider.models[0], "primary model fixture");
+    const childModel = { ...primaryModel, id: "child-model", name: "Child model" };
+    runtimeConfig = {
+      ...runtimeConfig,
+      agents: {
+        ...runtimeConfig.agents,
+        defaults: {
+          ...runtimeConfig.agents?.defaults,
+          subagents: { model: "custom/child-model" },
+          modelPolicy: { allow: ["custom/manual-only"] },
+        },
+      },
+      models: {
+        ...runtimeConfig.models,
+        providers: {
+          ...runtimeConfig.models?.providers,
+          custom: { ...customProvider, models: [primaryModel, childModel] },
+        },
+      },
+    };
+    const catalog = [primaryModel, childModel].map((model) =>
+      Object.assign({}, model, {
+        provider: "custom",
+        api: "openai-completions" as const,
+        baseUrl: customProvider.baseUrl,
+        contextWindow: 4_096,
+      }),
+    );
+    getPreparedModelRuntimeMocks().buildPreparedModelCatalogSnapshot.mockResolvedValue({
+      entries: catalog,
+      routeVariants: catalog,
+    });
+    await state.writeConfig(runtimeConfig);
+    clearConfigCache();
+    clearRuntimeConfigSnapshot();
     const bound = await createBoundParent();
     const { context, runtime, identities, readAgentRuntimeExecutionLineage } =
       await createBoundGateway(bound);
@@ -411,6 +451,8 @@ describe("recursive spawn production boundary", () => {
       expect(embeddedRun).toMatchObject({
         runId: details.runId,
         sessionKey: details.childSessionKey,
+        provider: "custom",
+        model: "child-model",
       });
       expect(context.chatAbortControllers.get(details.runId)).toMatchObject({
         agentId: "main",
@@ -438,6 +480,11 @@ describe("recursive spawn production boundary", () => {
       ).toMatchObject({
         spawnedBy: parentSessionKey,
         spawnDepth: 2,
+        providerOverride: "custom",
+        modelOverride: "child-model",
+        modelOverrideSource: "auto",
+        modelOverrideFallbackOriginProvider: "custom",
+        modelOverrideFallbackOriginModel: "child-model",
       });
       expect(subagentRuns.get(details.runId)).toMatchObject({
         childSessionKey: details.childSessionKey,

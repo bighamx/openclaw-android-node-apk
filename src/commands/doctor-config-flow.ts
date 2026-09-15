@@ -426,6 +426,12 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
   }
 
   const pluginActivationSourceConfig = state.candidate;
+  const { collectCodexPluginActivationWarnings } =
+    await import("./doctor/shared/codex-plugin-activation-warning.js");
+  emitDoctorNotes({
+    note,
+    warningNotes: collectCodexPluginActivationWarnings(pluginActivationSourceConfig),
+  });
   const { applyPluginAutoEnable } = await import("../config/plugin-auto-enable.js");
   applyConfigMutation(
     runWithCurrentPluginMetadata(state.candidate, () =>

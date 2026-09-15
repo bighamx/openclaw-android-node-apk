@@ -208,7 +208,9 @@ function listScriptShimEntries(dir = "scripts"): string[] {
       return [];
     }
     const implementationPath = entryPath.replace(/\.(?:mjs|js)$/u, ".mts");
-    return fs.existsSync(implementationPath) ? [`${entryPath}!`, `${implementationPath}!`] : [];
+    return fs.existsSync(implementationPath)
+      ? [entryPath, implementationPath].map((filePath) => `${filePath.replaceAll("\\", "/")}!`)
+      : [];
   });
 }
 

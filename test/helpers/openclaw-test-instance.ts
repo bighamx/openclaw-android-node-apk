@@ -695,7 +695,7 @@ export async function createOpenClawTestInstance(
     );
     if (!closed) {
       throw new Error(
-        `gateway process did not close before stop deadline\n${formatLogs(stdout, stderr)}`,
+        `gateway process cleanup could not verify termination and output closure\n${formatLogs(stdout, stderr)}`,
       );
     }
     await reserveIdlePort();

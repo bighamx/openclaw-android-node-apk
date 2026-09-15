@@ -444,7 +444,8 @@ export function validateExplicitPluginConfig(params: {
       }
     }
     const suppressDisabledConfigWarning =
-      ensureCompatPluginIds().has(pluginId) && !ensureOverriddenPluginIds().has(pluginId);
+      isNativeSessionCatalogOptOutOnly(pluginId, entries?.[pluginId]) ||
+      (ensureCompatPluginIds().has(pluginId) && !ensureOverriddenPluginIds().has(pluginId));
     if (!enabled && entryHasConfig && !suppressDisabledConfigWarning) {
       warnings.push({
         path: `plugins.entries.${pluginId}`,

@@ -1036,7 +1036,10 @@ function runHotRollbackJournalRecoveryProbe(params: { moduleUrl: string; rootDir
         "UPDATE hot_journal_probe SET value = 'uncommitted';",
       );
       fs.writeFileSync(process.env.OPENCLAW_HOT_JOURNAL_READY_PATH, "ready");
-      setInterval(() => {}, 1_000);
+      // Keep the transaction-owning connection live until the parent kills this process.
+      setInterval(() => {
+        void database.isOpen;
+      }, 1_000);
     \`;
     const writer = spawn(
       process.execPath,

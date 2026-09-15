@@ -1,5 +1,4 @@
 // Memory Core tests cover short term promotion plugin behavior.
-import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +7,7 @@ import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { listMemoryArtifactProvenance } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import type { OpenKeyedStoreOptions } from "openclaw/plugin-sdk/plugin-state-runtime";
 import { createPluginStateKeyedStoreForTests } from "openclaw/plugin-sdk/plugin-state-test-runtime";
+import * as processRuntime from "openclaw/plugin-sdk/process-runtime";
 import { afterAll, afterEach, beforeAll, describe, expect, it as baseIt, vi } from "vitest";
 import { deriveConceptTags } from "./concept-vocabulary.js";
 import { isPromotionOriginBlocked } from "./dreaming-consolidation-candidates.js";
@@ -1346,7 +1346,7 @@ describe("short-term promotion", () => {
     }
   });
 
-  it("keeps recent valid recall stats ahead of malformed timestamps at the entry cap", async (workspaceDir) => {
+  it("keeps valid recall and promotion stats with malformed timestamps at the entry cap", async (workspaceDir) => {
     const nowMs = Date.parse("2026-04-05T10:00:00.000Z");
     const malformedEntries = Object.fromEntries(
       Array.from({ length: 8 }, (_, index) => {
@@ -1379,6 +1379,26 @@ describe("short-term promotion", () => {
       updatedAt: "2026-04-05T10:00:00.000Z",
       entries: {
         ...malformedEntries,
+        malformedPromotion: recallStoreEntryFixture({
+          key: "malformedPromotion",
+          path: "memory/2026-04-01-malformed-promotion.md",
+          promotedAt: "not-a-timestamp",
+        }),
+        previousDay: recallStoreEntryFixture({
+          key: "previousDay",
+          path: "memory/2026-04-04-previous-day.md",
+          promotedAt: "2026-04-04T18:00:00.000Z",
+        }),
+        utcDay: recallStoreEntryFixture({
+          key: "utcDay",
+          path: "memory/2026-04-05-utc-day.md",
+          promotedAt: "2026-04-05T06:00:00.000Z",
+        }),
+        today: recallStoreEntryFixture({
+          key: "today",
+          path: "memory/2026-04-05-today.md",
+          promotedAt: "2026-04-05T09:00:00.000Z",
+        }),
         recent: {
           key: "recent",
           path: "memory/2026-04-05-recent.md",
@@ -1408,6 +1428,26 @@ describe("short-term promotion", () => {
     expect(stats.shortTermEntries.map((entry) => entry.path)).not.toContain(
       "memory/2026-04-01-malformed-7.md",
     );
+    expect(stats.promotedEntries).toHaveLength(4);
+    expect(stats.promotedEntries).toContainEqual(
+      expect.objectContaining({ key: "malformedPromotion", promotedAt: "not-a-timestamp" }),
+    );
+    for (const [timezone, promotedToday] of [
+      ["America/Los_Angeles", 1],
+      ["UTC", 2],
+      ["America/Los_Angeles", 1],
+    ] as const) {
+      const zonedStats = await loadShortTermPromotionDreamingStats({
+        workspaceDir,
+        nowMs,
+        timezone,
+      });
+      expect(zonedStats).toMatchObject({
+        promotedTotal: 4,
+        promotedToday,
+        lastPromotedAt: "2026-04-05T09:00:00.000Z",
+      });
+    }
   });
 
   it("reconciles existing promotion markers instead of appending duplicates", async (workspaceDir) => {
@@ -2800,26 +2840,46 @@ describe("short-term promotion", () => {
       acquiredAt: Date.now(),
     });
 
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const blocked = createDeferred<void>();
+    const lockKey = memoryCoreWorkspaceStateKey(workspaceDir);
+    configureMemoryCoreDreamingState(<T>(options: OpenKeyedStoreOptions) => {
+      const store = createPluginStateKeyedStoreForTests<T>("memory-core", options);
+      return {
+        ...store,
+        async registerIfAbsent(...args: Parameters<typeof store.registerIfAbsent>) {
+          const acquired = await store.registerIfAbsent(...args);
+          if (options.namespace === SHORT_TERM_LOCK_NAMESPACE && args[0] === lockKey && !acquired) {
+            blocked.resolve();
+          }
+          return acquired;
+        },
+      };
+    });
+    let settled = false;
+    const repairPromise = repairShortTermPromotionArtifacts({ workspaceDir }).then((result) => {
+      settled = true;
+      return result;
+    });
     try {
-      let settled = false;
-      const repairPromise = repairShortTermPromotionArtifacts({ workspaceDir }).then((result) => {
-        settled = true;
-        return result;
-      });
-
-      await vi.advanceTimersByTimeAsync(41);
+      // Real worker replies establish contention before the fixture releases its row.
+      await Promise.race([
+        blocked.promise,
+        repairPromise.then(() => {
+          throw new Error("Repair completed before observing the active lock");
+        }),
+      ]);
       expect(settled).toBe(false);
 
       await testing.deleteShortTermLock(workspaceDir);
-      await vi.advanceTimersByTimeAsync(40);
       const repair = await repairPromise;
 
       expect(repair.changed).toBe(true);
       expect(repair.rewroteStore).toBe(true);
       expect(repair.removedInvalidEntries).toBe(1);
     } finally {
-      vi.useRealTimers();
+      await testing.deleteShortTermLock(workspaceDir);
+      await Promise.allSettled([repairPromise]);
+      await configureMemoryCoreDreamingStateForTests();
     }
   });
 
@@ -2903,20 +2963,17 @@ describe("short-term promotion", () => {
     });
   });
 
-  it("reclaims a stale sqlite lock owned by a Linux zombie", async (workspaceDir) => {
+  it("reclaims a stale sqlite lock when its owner is definitely dead", async (workspaceDir) => {
     const ownerPid = 4242;
     await testing.writeShortTermLock(workspaceDir, {
       owner: `${ownerPid}:0`,
       acquiredAt: Date.now() - 120_000,
     });
-    vi.spyOn(process, "platform", "get").mockReturnValue("linux");
-    vi.spyOn(process, "kill").mockImplementation(() => true);
-    vi.spyOn(fsSync, "readFileSync").mockImplementation((filePath) => {
-      if (String(filePath) === `/proc/${ownerPid}/status`) {
-        return `Name:\tmemory worker\nState:\tZ (zombie)\nPid:\t${ownerPid}\nThreads:\t1\n`;
-      }
-      throw new Error(`unexpected read: ${String(filePath)}`);
-    });
+    const originalIsPidDefinitelyDead = processRuntime.isPidDefinitelyDead;
+    // Keep SQLite's platform and coordinator identity native while probing the synthetic owner.
+    vi.spyOn(processRuntime, "isPidDefinitelyDead").mockImplementation(
+      (pid) => pid === ownerPid || originalIsPidDefinitelyDead(pid),
+    );
 
     const audit = await auditShortTermPromotionArtifacts({ workspaceDir });
     expect(audit.issues.map((issue) => issue.code)).toContain("recall-lock-stale");

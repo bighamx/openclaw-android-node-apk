@@ -62,8 +62,8 @@ describe("captured delivery queue state", () => {
             id,
             run: async (owner) => {
               await Promise.resolve();
-              owner.beforeFirstModifier();
-              owner.markPrepared();
+              await owner.beforeFirstModifier();
+              await owner.markPrepared();
               const queued = await enqueuePreparedDeliveryOnce(
                 {
                   channel: "matrix",
@@ -73,7 +73,7 @@ describe("captured delivery queue state", () => {
                   completionRetention: "permanent",
                 },
                 id,
-                owner.current(),
+                await owner.current(),
                 undefined,
                 undefined,
                 context,

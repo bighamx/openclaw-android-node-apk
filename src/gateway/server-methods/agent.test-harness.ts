@@ -10,7 +10,8 @@ import type { SubagentRegistryDeps } from "../../agents/subagents/registry/subag
 import { resetSubagentRegistryForTests } from "../../agents/subagents/registry/subagent-registry.test-helpers.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import type {
-  SessionTranscriptStats,
+  hasSessionTranscriptEventsSync,
+  readTranscriptMutationStateSync,
   recordSessionParticipant,
   listSessionParticipantsReadOnly,
   stageSessionPendingInput,
@@ -50,10 +51,10 @@ const mocks = vi.hoisted(() => ({
   stageSessionPendingInput: vi.fn<typeof stageSessionPendingInput>(),
   recordSessionParticipant: vi.fn<typeof recordSessionParticipant>(() => "inserted"),
   listSessionParticipantsReadOnly: vi.fn<typeof listSessionParticipantsReadOnly>(() => new Map()),
-  readTranscriptStatsSync: vi.fn<() => SessionTranscriptStats>(() => ({
-    eventCount: 0,
-    maxSeq: 0,
-    sizeBytes: 0,
+  hasSessionTranscriptEventsSync: vi.fn<typeof hasSessionTranscriptEventsSync>(() => false),
+  readTranscriptMutationStateSync: vi.fn<typeof readTranscriptMutationStateSync>(() => ({
+    observedAt: null,
+    updatedAt: null,
   })),
   agentCommand: vi.fn(),
   agentCommandListeners: new Set<() => void>(),
@@ -157,7 +158,8 @@ vi.mock("../../config/sessions/session-accessor.js", async () => {
     // These handler fixtures own an in-memory store; participant access must not reach shared /tmp SQLite.
     recordSessionParticipant: mocks.recordSessionParticipant,
     listSessionParticipantsReadOnly: mocks.listSessionParticipantsReadOnly,
-    readTranscriptStatsSync: mocks.readTranscriptStatsSync,
+    hasSessionTranscriptEventsSync: mocks.hasSessionTranscriptEventsSync,
+    readTranscriptMutationStateSync: mocks.readTranscriptMutationStateSync,
   };
 });
 
@@ -625,10 +627,10 @@ function resetSessionAccessorMocks() {
   });
   mocks.recordSessionParticipant.mockReset().mockReturnValue("inserted");
   mocks.listSessionParticipantsReadOnly.mockReset().mockReturnValue(new Map());
-  mocks.readTranscriptStatsSync.mockReset().mockReturnValue({
-    eventCount: 0,
-    maxSeq: 0,
-    sizeBytes: 0,
+  mocks.hasSessionTranscriptEventsSync.mockReset().mockReturnValue(false);
+  mocks.readTranscriptMutationStateSync.mockReset().mockReturnValue({
+    observedAt: null,
+    updatedAt: null,
   });
   mocks.applySessionEntryReplacements.mockReset().mockImplementation(
     async (params: {

@@ -18,6 +18,7 @@ import {
   type PluginStateStoreOperation,
 } from "./plugin-state-store.types.js";
 
+export const MAX_PLUGIN_STATE_VALUE_BYTES = 1_048_576;
 const PLUGIN_STATE_EXPIRY_BATCH_ROWS = 1_024;
 
 type PluginStateEntriesTable = OpenClawStateKyselyDatabase["plugin_state_entries"];

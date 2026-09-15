@@ -373,12 +373,7 @@ export function renderChatModelControls(props: ChatModelControlsProps) {
   // That pin must stay clearable even when the configured default is absent from
   // this catalog. Without it the row has no job (an agent-scoped catalog may
   // legitimately omit the Gateway default), so nothing is synthesized.
-  if (
-    defaultModel &&
-    sessionModelPinned &&
-    modelOptions.length > 0 &&
-    !modelOptions.some((option) => option.isDefault)
-  ) {
+  if (defaultModel && sessionModelPinned && !modelOptions.some((option) => option.isDefault)) {
     modelOptions.unshift({
       commitValue: "",
       isDefault: true,
@@ -390,6 +385,7 @@ export function renderChatModelControls(props: ChatModelControlsProps) {
   const currentCatalogEntry = catalog.entry(currentOverride);
   if (
     currentOverride &&
+    currentCatalogEntry?.manualSelectionAllowed !== false &&
     modelOptions.length > 0 &&
     !modelOptions.some((option) => option.value === currentOverride)
   ) {
