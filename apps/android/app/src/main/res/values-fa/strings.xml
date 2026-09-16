@@ -950,6 +950,7 @@
     <string name="native_838337fd9ab30454" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"گفتگوهای اخیر و گام‌های بعدی را خلاصه کنید."</string>
     <string name="native_83e2faed20a3cda4" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"تا زمانی که OpenClaw قابل مشاهده است، روی دستگاه اجرا می‌شود."</string>
     <string name="native_844e5b02f3ef05ca" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"%1$s در حال کار است"</string>
+    <string name="native_845572939fd74dd5" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"گفت‌وگوی صوتی ناموفق بود: تغییر صدا امکان‌پذیر نشد. گفت‌وگوی صوتی را دوباره شروع کنید."</string>
     <string name="native_846b345b42cfe527" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"%1$s فایل را ویرایش کرد"</string>
     <string name="native_8477f18620f1ef69" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Background Shell"</string>
     <string name="native_848123d14f84faa2" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"خام"</string>
@@ -1695,6 +1696,7 @@
     <string name="native_f0763ccb558be5df" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"انتخاب تصویر دیگر"</string>
     <string name="native_f09247433bef8304" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"پیش‌نمایش تصویر"</string>
     <string name="native_f0ac2eabb5a584e3" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"اشتراک‌گذاری تعداد قدم‌ها و فعالیت"</string>
+    <string name="native_f0bf9ec9c04449ae" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"گفت‌وگو ناموفق بود: تغییر صدا لغو شد. گفت‌وگو را دوباره شروع کنید."</string>
     <string name="native_f0cae79a3657c1db" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"نیازمند راه‌اندازی"</string>
     <string name="native_f0d1fb4ac220db11" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"برای استفاده از دستیار تنظیمات OpenClaw، این Gateway را به‌روزرسانی کنید."</string>
     <string name="native_f113b3bd283e216c" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"این اتصال Gateway برای نصب مهارت‌های ClawHub به operator.admin نیاز دارد."</string>

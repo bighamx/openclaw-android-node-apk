@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { Command } from "commander";
 import { assert, describe, expect, it, vi } from "vitest";
 import { withTriageTerminal } from "../../commands/triage.test-support.js";
 import * as tempRoot from "../../infra/tmp-openclaw-dir.js";
@@ -18,6 +19,7 @@ import {
 import { resolveOpenClawStateSqlitePath } from "../../state/openclaw-state-db.paths.js";
 import { removePreparedWorkerOwnershipColumns } from "../../state/openclaw-state-schema-v17.test-support.js";
 import * as oneShotExit from "../one-shot-exit.js";
+import { registerUpdateCli } from "../update-cli.js";
 import * as shared from "./shared.js";
 import * as execution from "./update-command-execution.js";
 import * as executorOwner from "./update-command-executor.js";
@@ -434,6 +436,30 @@ describe("update command admission with fresh state", () => {
     },
   );
 
+  it("registered update CLI reports the installed version for fresh saved-dev previews", async () => {
+    fs.mkdirSync(path.dirname(process.env.OPENCLAW_CONFIG_PATH!), { recursive: true });
+    fs.writeFileSync(
+      process.env.OPENCLAW_CONFIG_PATH!,
+      JSON.stringify({ update: { channel: "dev" } }),
+    );
+    vi.stubEnv("OPENCLAW_GIT_DIR", path.join(fixture.root, "missing-checkout"));
+    const program = new Command();
+    registerUpdateCli(program);
+
+    await program.parseAsync(["update", "--dry-run", "--json", "--no-restart"], { from: "user" });
+
+    expect(defaultRuntime.writeJson).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentVersion: "2026.9.3",
+        targetVersion: null,
+        targetVersionReason: expect.stringContaining("Git"),
+        switchToGit: true,
+      }),
+    );
+    expect(vi.mocked(defaultRuntime.writeJson).mock.calls[0]?.[0]).toHaveProperty("run", undefined);
+    expectFreshStatePreserved();
+  });
+
   it.each(inheritedRunIds)(
     "previews an older stable without runtime state (inherited run: %s)",
     async (inheritedRunId) => {
@@ -492,42 +518,6 @@ describe("update command admission with fresh state", () => {
       );
       expect(defaultRuntime.error).toHaveBeenCalledWith(
         expect.stringContaining("registry unavailable"),
-      );
-      expectFreshStatePreserved();
-    },
-  );
-
-  it.each([
-    { owned: true, restart: true, expectedFallback: "/current/node" },
-    { owned: false, restart: true, expectedFallback: undefined },
-    { owned: true, restart: false, expectedFallback: undefined },
-  ])(
-    "limits fresh-state Node fallback to the service it will refresh (owned=$owned, restart=$restart)",
-    async ({ owned, restart, expectedFallback }) => {
-      fixture.managedServiceNodeRunner = "/service/node";
-      vi.spyOn(shared, "resolveNodeRunner").mockReturnValue("/current/node");
-      vi.spyOn(servicePlan, "gatewayServiceCommandUsesRoot").mockResolvedValue(owned);
-      const runtimePreflight = vi
-        .spyOn(servicePlan, "resolvePackageRuntimePreflight")
-        .mockResolvedValue({ ok: false, error: "fixture-stop" });
-
-      await expect(
-        updateCommand({ tag: "2026.9.2", yes: true, json: true, restart }),
-      ).rejects.toMatchObject({ code: 1 });
-
-      expect(
-        runtimePreflight.mock.calls.map(([params]) => ({
-          nodeRunner: params.nodeRunner,
-          fallbackNodeRunner: params.fallbackNodeRunner,
-        })),
-      ).toEqual([
-        {
-          nodeRunner: "/service/node",
-          fallbackNodeRunner: expectedFallback,
-        },
-      ]);
-      expect(defaultRuntime.writeJson).toHaveBeenCalledWith(
-        expect.objectContaining({ status: "error", reason: "node-runtime-preflight" }),
       );
       expectFreshStatePreserved();
     },

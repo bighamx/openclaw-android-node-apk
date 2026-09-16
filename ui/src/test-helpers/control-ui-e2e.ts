@@ -21,6 +21,7 @@ import type {
   UpdateAvailable,
   UpdateScheduleState,
 } from "../api/types.ts";
+import { agentRouteFromPath, isRouteId, pathForRoute } from "../app-route-paths.ts";
 import type { AuthenticatedUser } from "../app/user-profile.ts";
 import { normalizeControlUiBuildInfo } from "../build-info-normalizers.ts";
 import type { ControlUiBuildInfo } from "../build-info.ts";
@@ -3562,6 +3563,62 @@ function createMockGatewayControls(
   };
 }
 
+const controlUiRpcDiagnostics = new WeakMap<Page, Array<{ method: string; outcome: string }>>();
+
+/** Observe only method/outcome facts; never retain Gateway payloads or authority. */
+export function installControlUiRpcDiagnostics(page: Page): void {
+  const events: Array<{ method: string; outcome: string }> = [];
+  controlUiRpcDiagnostics.set(page, events);
+  const record = (method: string, outcome: string) => {
+    events.push({ method, outcome });
+    if (events.length > 32) {
+      events.shift();
+    }
+  };
+  page.on("websocket", (socket) => {
+    const pending = new Map<string, string>();
+    socket.on("framesent", ({ payload }) => {
+      try {
+        const frame = asOptionalRecord(JSON.parse(String(payload)));
+        if (
+          frame?.type === "req" &&
+          typeof frame.id === "string" &&
+          typeof frame.method === "string" &&
+          [
+            "agents.list",
+            "agents.files.list",
+            "agents.files.get",
+            "agents.files.set",
+            "canvas.document.view",
+          ].includes(frame.method)
+        ) {
+          if (pending.size >= 32) {
+            pending.delete(pending.keys().next().value!);
+          }
+          pending.set(frame.id, frame.method);
+          record(frame.method, "sent");
+        }
+      } catch {
+        // Non-JSON frames carry no diagnostic facts.
+      }
+    });
+    socket.on("framereceived", ({ payload }) => {
+      try {
+        const frame = asOptionalRecord(JSON.parse(String(payload)));
+        const id = frame?.type === "res" && typeof frame.id === "string" ? frame.id : undefined;
+        const method = id ? pending.get(id) : undefined;
+        if (method && id) {
+          pending.delete(id);
+          record(method, frame?.ok === true ? "ok" : "error");
+        }
+      } catch {
+        // Non-JSON frames carry no diagnostic facts.
+      }
+    });
+    socket.on("close", () => pending.clear());
+  });
+}
+
 type ControlUiE2eFailureDiagnosticsOptions = {
   error: Error;
   label: string;
@@ -3724,14 +3781,64 @@ async function captureControlUiE2eFailureDiagnosticsUnsafe(
       const textarea = document.querySelector<HTMLTextAreaElement>(
         ".agent-chat__composer-combobox textarea",
       );
+      const roster =
+        agentsState?.agentsList && typeof agentsState.agentsList === "object"
+          ? (agentsState.agentsList as { agents?: unknown })
+          : null;
       const send = document.querySelector<HTMLButtonElement>(".chat-send-btn--send");
       const sendLabel = send?.getAttribute("aria-label");
       // Submit-disabled labels can contain server errors. Only known static UI copy
       // may reach CI logs; private reports retain the existing detailed state.
       const safeValue = (value: unknown, allowed: string[]) =>
         allowed.find((entry) => entry === value) ?? "unknown";
+      const agentPage = document.querySelector("openclaw-agents-page");
+      const selectedAgent = agentPage ? Reflect.get(agentPage, "agentsSelectedId") : undefined;
+      const fileList = agentPage ? Reflect.get(agentPage, "agentFilesList") : undefined;
+      const fileEditor = document.querySelector<HTMLTextAreaElement>(".agent-file-textarea");
+      const agentPath = window.location.pathname.match(
+        /^\/settings\/agents\/([^/]+)\/(overview|files|tools|skills|channels|cron)$/u,
+      );
       return {
         failureSummary: {
+          canvasWidgets: [...document.querySelectorAll("openclaw-canvas-widget-view")]
+            .slice(0, 8)
+            .map((widget) => ({
+              loading: Boolean(widget.querySelector(".skeleton")),
+              errorPresent: Boolean(widget.querySelector('[role="alert"]')),
+              framePresent: Boolean(widget.querySelector(".chat-tool-card__preview-frame")),
+            })),
+          agentFiles: {
+            pathname: agentPath ? `/settings/agents/:agent/${agentPath[2]}` : "other",
+            pagePresent: Boolean(agentPage),
+            selectedAgentPresent: typeof selectedAgent === "string" && selectedAgent.length > 0,
+            selectionMatchesPath: agentPath ? selectedAgent === agentPath[1] : null,
+            listMatchesSelection: fileList ? fileList.agentId === selectedAgent : null,
+            panel: safeValue(agentPage ? Reflect.get(agentPage, "agentsPanel") : undefined, [
+              "overview",
+              "files",
+              "tools",
+              "skills",
+              "channels",
+              "cron",
+            ]),
+            activeFile: safeValue(
+              agentPage ? Reflect.get(agentPage, "agentFileActive") : undefined,
+              [
+                "AGENTS.md",
+                "SOUL.md",
+                "USER.md",
+                "BOOTSTRAP.md",
+                "MEMORY.md",
+                "IDENTITY.md",
+                "TOOLS.md",
+                "HEARTBEAT.md",
+              ],
+            ),
+            loading: agentPage ? Reflect.get(agentPage, "agentFilesLoading") === true : null,
+            editorPresent: Boolean(fileEditor),
+            editorLength: fileEditor?.value.length ?? null,
+            editorDisabled: fileEditor?.disabled ?? null,
+          },
           gatewayPhase: safeValue(gatewaySnapshot?.phase, [
             "stopped",
             "connecting",
@@ -3742,6 +3849,12 @@ async function captureControlUiE2eFailureDiagnosticsUnsafe(
             "reload-required",
           ]),
           connected: typeof agentsState?.connected === "boolean" ? agentsState.connected : null,
+          roster: {
+            loading:
+              typeof agentsState?.agentsLoading === "boolean" ? agentsState.agentsLoading : null,
+            count: Array.isArray(roster?.agents) ? roster.agents.length : null,
+            errorPresent: Boolean(agentsState?.agentsError),
+          },
           documentReadyState: safeValue(document.readyState, [
             "loading",
             "interactive",
@@ -3842,21 +3955,70 @@ async function captureControlUiE2eFailureDiagnosticsUnsafe(
   } catch (evaluateError) {
     captureErrors.push(`page.evaluate: ${String(evaluateError)}`);
   }
-  // Normal PR CI may not upload this artifact owner. Emit safe facts before any
-  // capture I/O so a broken screenshot or output directory cannot hide the state.
-  // JSON preserves nested facts that Node's default object rendering collapses.
   const models = modelResponses ? summarizeRecordedModelResponses(modelResponses) : null;
-  console.error("[control-ui-e2e] failure state", JSON.stringify({ browser: summary, models }));
+  const app = asOptionalRecord(asOptionalRecord(browserState)?.app);
+  const router = asOptionalRecord(app?.router);
+  const matches = Array.isArray(router?.matches) ? router.matches : null;
+  const routeId = asOptionalRecord(matches?.[0])?.routeId;
+  const knownRoute = typeof routeId === "string" && isRouteId(routeId) ? routeId : null;
+  const pathname = asOptionalRecord(router?.resolvedLocation)?.pathname;
+  const frameDepthCounts: number[] = [];
+  for (const frame of page.frames()) {
+    let depth = 0;
+    let parent = frame.parentFrame();
+    // Bucket deeper descendants together without retaining frame URLs or content.
+    while (parent && depth < 8) {
+      depth += 1;
+      parent = parent.parentFrame();
+    }
+    frameDepthCounts[depth] = (frameDepthCounts[depth] ?? 0) + 1;
+  }
+  const publicSummary = {
+    schemaVersion: 1,
+    failureKind:
+      error.name === "TimeoutError"
+        ? "timeout"
+        : error.name === "AssertionError"
+          ? "assertion"
+          : error.name === "AbortError"
+            ? "abort"
+            : error.name === "Error"
+              ? "error"
+              : "unknown",
+    browser: summary,
+    models,
+    gatewayRpc: controlUiRpcDiagnostics.get(page) ?? [],
+    frameDepthCounts,
+    route: {
+      pathname: knownRoute ? pathForRoute(knownRoute) : null,
+      agentPanel:
+        knownRoute === "agents" && typeof pathname === "string"
+          ? (agentRouteFromPath(pathname)?.panel ?? null)
+          : null,
+      status:
+        ["idle", "loading", "success", "error", "notFound", "redirected"].find(
+          (status) => status === router?.status,
+        ) ?? "unknown",
+      matches: matches?.length ?? null,
+      pendingMatches: Array.isArray(router?.pendingMatches) ? router.pendingMatches.length : null,
+    },
+  };
+  // Only this allowlist reaches logs and automatic uploads; raw paths and errors stay private.
+  console.error("[control-ui-e2e] failure state", JSON.stringify(publicSummary));
   const configuredDir = process.env.OPENCLAW_UI_E2E_DIAGNOSTIC_DIR?.trim();
   const artifactDir = createControlUiE2eArtifactDir(
     "failure",
     configuredDir || path.join(resolveRepoRoot(), ".artifacts", "control-ui-e2e-timeouts", "local"),
   );
-  const safeMethod = label.replaceAll(/[^a-zA-Z0-9_.-]+/gu, "-");
-  const captureId = `${new Date().toISOString().replaceAll(/[:.]/gu, "-")}-${safeMethod}`;
-  const screenshotName = `${captureId}.png`;
+  writeFileSync(
+    path.join(artifactDir, "failure.public.json"),
+    `${JSON.stringify(publicSummary, null, 2)}\n`,
+    "utf8",
+  );
+  // Exclusive capture directories make label-derived filenames unnecessary and unsafe to log.
+  const screenshotName = "failure.private.png";
   const screenshotPath = path.join(artifactDir, screenshotName);
-  const reportPath = path.join(artifactDir, `${captureId}.json`);
+  const reportPath = path.join(artifactDir, "failure.private.json");
   let screenshotWritten = false;
   try {
     await page.screenshot({ fullPage: true, path: screenshotPath });

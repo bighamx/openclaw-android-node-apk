@@ -1,3 +1,9 @@
+import {
+  readNativeHookRelayBridgeSnapshotFromDatabase,
+  listNativeHookRelayBridgeSnapshotsInDatabase,
+} from "../agents/harness/native-hook-relay-store.kernel.js";
+import { executeNativeHookRelayMutation } from "../agents/harness/native-hook-relay-store.worker.js";
+import { loadSubagentSessionListRunsFromSqlite } from "../agents/subagents/registry/subagent-registry.store.sqlite.js";
 import { readClawInstallSchemaVersionRows } from "../claws/provenance-runtime-read.kernel.js";
 import {
   patchConfigHealthEntryInDatabase,
@@ -24,6 +30,7 @@ import { executePluginStateCommand } from "../plugin-state/plugin-state.worker.j
 import { readPluginMetadataStateRowSync } from "../plugins/installed-plugin-index-row.js";
 import {
   ensureProjectRegistrySchema,
+  removeProjectRegistryInDatabase,
   resolveRecordedProjectRootInDatabase,
 } from "../projects/project-registry.kernel.js";
 import { mapTaskFlowView } from "../tasks/task-domain-views.js";
@@ -60,6 +67,7 @@ import {
 import type { OpenClawStateDatabase } from "./openclaw-state-db-contract.js";
 import { assertOpenClawStateDatabaseOwner } from "./openclaw-state-db-maintenance.js";
 import {
+  withOpenClawStateDatabaseReadOnly,
   withArtifactPreservingStateReads,
   withExistingOpenClawStateDatabaseArtifactPreservingReadOnly,
   withExistingOpenClawStateDatabaseReadOnly,
@@ -69,6 +77,7 @@ import {
   openOpenClawStateDatabase,
   runOpenClawStateWriteTransaction,
 } from "./openclaw-state-db.js";
+import { assertOpenClawStateLeaseWorkerOwnedInTransaction } from "./openclaw-state-lease-worker.js";
 import type {
   OpenClawStateWorkerOperations,
   OpenClawStateWorkerInspectionOperations,
@@ -135,6 +144,22 @@ function createSharedStateWorkerBackend(
     execute(command) {
       if (closed) {
         throw new Error("Shared-state worker is closed");
+      }
+      if (command.type === "subagents.sessionList") {
+        return withExistingOpenClawStateDatabaseReadOnly(
+          (database) => loadSubagentSessionListRunsFromSqlite(undefined, database),
+          { path: context.databasePath, env: getSqliteWorkerStateContext().environment },
+        );
+      }
+      if (command.type === "nativeHookRelay.read") {
+        return withOpenClawStateDatabaseReadOnly(
+          (database) =>
+            readNativeHookRelayBridgeSnapshotFromDatabase({
+              database,
+              relayId: command.input.relayId,
+            })?.record,
+          { path: context.databasePath, env: getSqliteWorkerStateContext().environment },
+        );
       }
       if (command.type === "tasks.statusSummary") {
         const read = () =>
@@ -310,6 +335,21 @@ function createSharedStateWorkerBackend(
         );
       }
       const database = open();
+      if (command.type === "nativeHookRelay.listSnapshots") {
+        return listNativeHookRelayBridgeSnapshotsInDatabase(database);
+      }
+      if (
+        command.type === "nativeHookRelay.write" ||
+        command.type === "nativeHookRelay.renew" ||
+        command.type === "nativeHookRelay.deleteOwned" ||
+        command.type === "nativeHookRelay.prune"
+      ) {
+        return executeNativeHookRelayMutation(command, {
+          database,
+          path: context.databasePath,
+          env: getSqliteWorkerStateContext().environment,
+        });
+      }
       if (command.type === "cron.loadMutable") {
         return loadMutableCronStoreInWorker(database, command.input.storeKey);
       }
@@ -350,6 +390,20 @@ function createSharedStateWorkerBackend(
       if (command.type === "projects.findRoot") {
         ensureProjectRegistrySchema(writeOptions);
         return resolveRecordedProjectRootInDatabase(database.db, command.input.repoRoot);
+      }
+      if (command.type === "projects.remove") {
+        return runOpenClawStateWriteTransaction(
+          ({ db }) => {
+            const { project, lease } = command.input;
+            if (lease.scope !== "projects.checkout" || lease.key !== project.repoRoot) {
+              throw new Error("Project registry mutation requires its checkout lifecycle lease");
+            }
+            assertOpenClawStateLeaseWorkerOwnedInTransaction(db, lease);
+            return removeProjectRegistryInDatabase(db, project);
+          },
+          writeOptions,
+          { operationLabel: "projects.registry.remove" },
+        );
       }
       if (command.type === "config.health.patch") {
         const { configPath, patch, expected, updatedAtMs } = command.input;

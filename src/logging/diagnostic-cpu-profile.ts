@@ -113,13 +113,13 @@ function sanitizeProfile(profile: Profiler.Profile, packageRoot: string | null) 
     assertProfile(Number.isSafeInteger(node.id) && node.id > 0 && !ids.has(node.id));
     ids.add(node.id);
     const frame = node.callFrame;
-    // V8 source coordinates include signed vm.Script origin offsets.
+    // V8 emits signed source offsets and negative script IDs for WebAssembly wrappers.
     assertProfile(
       Boolean(frame) &&
         typeof frame.functionName === "string" &&
         typeof frame.url === "string" &&
         typeof frame.scriptId === "string" &&
-        /^\d{1,32}$/.test(frame.scriptId) &&
+        /^-?\d{1,32}$/.test(frame.scriptId) &&
         Number.isSafeInteger(frame.lineNumber) &&
         Number.isSafeInteger(frame.columnNumber),
     );

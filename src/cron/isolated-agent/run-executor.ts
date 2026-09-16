@@ -230,14 +230,17 @@ function buildCronDeliveryTargetRuntimeContext(params: {
   ].join("\n");
 }
 
-/** Result envelope returned after an isolated cron prompt completes. */
-export type CronExecutionResult = {
+export type CronCompletedPromptRun = {
   runResult: CronPromptRunResult;
   fallbackProvider: string;
   fallbackModel: string;
   runStartedAt: number;
   runEndedAt: number;
-  liveSelection: CronLiveSelection;
+};
+
+/** Result envelope returned after an isolated cron prompt completes. */
+export type CronExecutionResult = CronCompletedPromptRun & {
+  completedPromptRuns: readonly CronCompletedPromptRun[];
 };
 
 type CronRunExecutionParams = {
@@ -291,6 +294,7 @@ type CronRunExecutionParams = {
       Partial<Omit<CronAgentExecutionPhaseUpdate, "jobId" | "phase">>,
   ) => void;
   onLaneWait?: (info?: { waiting?: boolean }) => void;
+  onPromptCompleted?: (runs: readonly CronCompletedPromptRun[]) => void;
   executionIdentity?: import("../service/state.js").CronExecutionIdentityAdmission;
   runStartedAt?: number;
 };
@@ -299,8 +303,11 @@ type CronRunExecutionParams = {
 function createCronPromptExecutor(
   params: Omit<
     CronRunExecutionParams,
-    "commandBody" | "isAborted" | "agentVerboseDefault" | "runStartedAt"
-  > & { resolvedVerboseLevel: VerboseLevel },
+    "commandBody" | "isAborted" | "agentVerboseDefault" | "runStartedAt" | "onPromptCompleted"
+  > & {
+    resolvedVerboseLevel: VerboseLevel;
+    onPromptCompleted: (run: CronCompletedPromptRun) => void;
+  },
 ) {
   const sessionFile = params.runSessionKey;
   const cronFallbacksOverride =
@@ -312,10 +319,6 @@ function createCronPromptExecutor(
       useSubagentFallbacks: params.useSubagentFallbacks,
       inheritDefaultFallbacksForAgentStringModel: params.inheritDefaultFallbacksForAgentStringModel,
     });
-  let runResult: CronPromptRunResult | undefined;
-  let fallbackProvider = params.liveSelection.provider;
-  let fallbackModel = params.liveSelection.model;
-  let runEndedAt = Date.now();
   const fastModeStartedAtMs = Date.now();
   const fastModeAutoProgressState: FastModeAutoProgressState = {
     offAnnounced: false,
@@ -421,7 +424,7 @@ function createCronPromptExecutor(
     };
   };
 
-  const runPrompt = async (promptText: string) => {
+  return async (promptText: string, runStartedAt: number): Promise<CronCompletedPromptRun> => {
     // A retry can fail during preparation, before any backend start callback.
     params.lifecycle.beginAttempt();
     const sessionTarget = {
@@ -721,6 +724,7 @@ function createCronPromptExecutor(
                   prompt: promptText,
                   finalizePromptForResolvedTools,
                   modelProvider: providerOverride,
+                  requesterModel: { provider: providerOverride, model: modelOverride },
                   modelHasVision: modelSupportsInput(
                     findModelInCatalog(thinkingCatalog ?? [], providerOverride, modelOverride),
                     "image",
@@ -938,9 +942,6 @@ function createCronPromptExecutor(
     } else {
       params.lifecycle.capture("end", fallbackResult.result);
     }
-    runResult = fallbackResult.result;
-    fallbackProvider = fallbackResult.provider;
-    fallbackModel = fallbackResult.model;
     params.liveSelection.provider = fallbackResult.provider;
     params.liveSelection.model = fallbackResult.model;
     setCronSessionRuntimeModel({
@@ -948,20 +949,17 @@ function createCronPromptExecutor(
       provider: fallbackResult.provider,
       model: fallbackResult.model,
     });
+    const completed = {
+      runResult: fallbackResult.result,
+      fallbackProvider: fallbackResult.provider,
+      fallbackModel: fallbackResult.model,
+      runStartedAt,
+      runEndedAt: Date.now(),
+    };
+    params.onPromptCompleted(completed);
     await params.persistRunContinuationSession?.();
-    runEndedAt = Date.now();
     pendingUserTurn = undefined;
-  };
-
-  return {
-    runPrompt,
-    getState: () => ({
-      runResult,
-      fallbackProvider,
-      fallbackModel,
-      runEndedAt,
-      liveSelection: params.liveSelection,
-    }),
+    return completed;
   };
 }
 
@@ -976,56 +974,25 @@ export async function executeCronRun(params: CronRunExecutionParams): Promise<Cr
     sessionId: params.cronSession.sessionEntry.sessionId,
     verboseLevel: resolvedVerboseLevel,
   });
-  const executor = createCronPromptExecutor({
-    cfg: params.cfg,
-    cfgWithAgentDefaults: params.cfgWithAgentDefaults,
-    job: params.job,
-    agentId: params.agentId,
-    agentDir: params.agentDir,
-    agentSessionKey: params.agentSessionKey,
-    runSessionKey: params.runSessionKey,
-    usesDetachedRunSession: params.usesDetachedRunSession,
-    workspaceDir: params.workspaceDir,
-    executionRoot: params.executionRoot,
-    lane: params.lane,
+  const runStartedAt = params.runStartedAt ?? Date.now();
+  const completedPromptRuns: CronCompletedPromptRun[] = [];
+  const runPrompt = createCronPromptExecutor({
+    ...params,
     resolvedVerboseLevel,
-    immutableThinkLevel: params.immutableThinkLevel,
-    thinkingCatalog: params.thinkingCatalog,
-    loadThinkingCatalog: params.loadThinkingCatalog,
-    timeoutMs: params.timeoutMs,
-    runTimeoutOverrideMs: params.runTimeoutOverrideMs,
-    suppressExecNotifyOnExit: params.suppressExecNotifyOnExit,
-    resolvedDelivery: params.resolvedDelivery,
-    resolvedDeliveryOk: params.resolvedDeliveryOk,
-    deliveryRequested: params.deliveryRequested,
-    sourceDelivery: params.sourceDelivery,
-    skillsSnapshot: params.skillsSnapshot,
-    agentPayload: params.agentPayload,
-    useSubagentFallbacks: params.useSubagentFallbacks,
-    inheritDefaultFallbacksForAgentStringModel: params.inheritDefaultFallbacksForAgentStringModel,
-    modelFallbacksOverride: params.modelFallbacksOverride,
-    liveSelection: params.liveSelection,
-    cronSession: params.cronSession,
-    persistSessionEntry: params.persistSessionEntry,
-    persistRunContinuationSession: params.persistRunContinuationSession,
-    setRunContinuationCliExecutionProvider: params.setRunContinuationCliExecutionProvider,
-    abortSignal: params.abortSignal,
-    abortReason: params.abortReason,
-    lifecycle: params.lifecycle,
-    onExecutionStarted: params.onExecutionStarted,
-    onExecutionPhase: params.onExecutionPhase,
-    onLaneWait: params.onLaneWait,
-    executionIdentity: params.executionIdentity,
+    onPromptCompleted: (run) => {
+      completedPromptRuns.push(run);
+      params.onPromptCompleted?.(completedPromptRuns);
+    },
   });
 
-  const runStartedAt = params.runStartedAt ?? Date.now();
   const MAX_MODEL_SWITCH_RETRIES = 2;
   let modelSwitchRetries = 0;
   let promptMediaTaskIds: ReadonlySet<string> = new Set();
+  let execution: CronCompletedPromptRun;
   while (true) {
     try {
       promptMediaTaskIds = getGeneratedMediaTaskIdsForSessionKey(params.runSessionKey);
-      await executor.runPrompt(params.commandBody);
+      execution = await runPrompt(params.commandBody, runStartedAt);
       break;
     } catch (err) {
       if (
@@ -1066,11 +1033,7 @@ export async function executeCronRun(params: CronRunExecutionParams): Promise<Cr
     }
   }
 
-  let { runResult, fallbackProvider, fallbackModel, runEndedAt } = executor.getState();
-  if (!runResult) {
-    throw new Error("cron isolated run returned no result");
-  }
-
+  const { runResult } = execution;
   if (!params.isAborted()) {
     const interimPayloads = runResult.payloads ?? [];
     const {
@@ -1122,21 +1085,14 @@ export async function executeCronRun(params: CronRunExecutionParams): Promise<Cr
         "Do not send a status update like 'on it'.",
         "Use tools when needed, including sessions_spawn for parallel subtasks, wait for spawned subagents to finish, then return only the final summary.",
       ].join(" ");
-      await executor.runPrompt(continuationPrompt);
-      ({ runResult, fallbackProvider, fallbackModel, runEndedAt } = executor.getState());
+      execution = await runPrompt(continuationPrompt, Date.now());
     }
   }
 
-  if (!runResult) {
-    throw new Error("cron isolated run returned no result");
-  }
   return {
-    runResult,
-    fallbackProvider,
-    fallbackModel,
+    ...execution,
     runStartedAt,
-    runEndedAt,
-    liveSelection: params.liveSelection,
+    completedPromptRuns,
   };
 }
 

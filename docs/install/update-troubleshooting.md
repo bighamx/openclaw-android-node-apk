@@ -87,6 +87,15 @@ the CLI fallback on the Gateway host.
 ## Reason codes
 
 - `dirty`, `no-upstream`: repair the source checkout before retrying.
+- `update-ledger-busy`: another process held the state database's write lock
+  beyond the update step budget. The command exited successfully without admitting
+  a run and left previous history intact. Retry once the Gateway's writes settle.
+  The update command's JSON output contains the deferred note;
+  `openclaw update status --json` shows the previous recorded run.
+  If required finalization after a core update is deferred, its child exits
+  nonzero so existing parents cannot mistake it for completed plugin convergence.
+  Updated Gateways record the skipped reason and do not restart; retrying the
+  update runs finalization again, including when the core is already current.
 - `plugin-target-unavailable`: an enabled configured npm plugin has no resolvable
   target for the selected core, or its registry metadata could not be read. The
   refusal identifies the plugin, package target, and registry error before the
@@ -141,6 +150,29 @@ changed` when the updater's umask differs from the installed launcher's
   the CLI on the Gateway host to preserve the full diagnostic output.
 
 Unknown reason codes remain visible. Check the Gateway logs before retrying.
+
+## Retained legacy session history
+
+Invalid entries in a legacy `sessions.json` and malformed JSONL transcripts do
+not fail an update when Doctor can verify the imported SQLite state and retain
+the originals. Doctor skips entries without a valid session ID and imports the
+readable transcript prefix. It reports the file and reason as warnings in its
+migration report and in `openclaw update status --json`, including updates started
+by older releases that cannot record Doctor warnings themselves.
+
+While a plugin migration is pending, the original files stay in place with a
+verified import receipt. Repeated Doctor repairs preserve current SQLite edits
+and deletions. After plugin migration finishes, damaged originals remain in the
+protected migration archive for manual recovery; update cleanup cannot discard
+them as fully imported history.
+
+Preserve the named files and your pre-update backup. Inspect them with
+`openclaw doctor --session-sqlite dry-run --session-sqlite-all-agents --json`.
+Do not overwrite receipt-bound originals to repair them. Changed or newly
+appeared transcripts can contain history absent from SQLite and still block
+readiness. Check `openclaw update status --json`, stop the Gateway, and run
+`openclaw doctor --session-sqlite recover --session-sqlite-all-agents` before
+retrying. See [session recovery](/cli/doctor/sqlite-maintenance).
 
 ## CLI fallback
 

@@ -950,6 +950,7 @@
     <string name="native_838337fd9ab30454" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Подведите итоги недавних обсуждений и обозначьте следующие шаги."</string>
     <string name="native_83e2faed20a3cda4" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Работает на устройстве, пока OpenClaw отображается на экране."</string>
     <string name="native_844e5b02f3ef05ca" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"%1$s работает"</string>
+    <string name="native_845572939fd74dd5" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Ошибка голосового режима: не удалось сменить голос. Запустите голосовой режим снова."</string>
     <string name="native_846b345b42cfe527" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"изменено файлов: %1$s"</string>
     <string name="native_8477f18620f1ef69" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Background Shell"</string>
     <string name="native_848123d14f84faa2" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Исходные данные"</string>
@@ -1695,6 +1696,7 @@
     <string name="native_f0763ccb558be5df" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Выбрать другое изображение"</string>
     <string name="native_f09247433bef8304" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Предпросмотр изображения"</string>
     <string name="native_f0ac2eabb5a584e3" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Делиться данными о шагах и активности"</string>
+    <string name="native_f0bf9ec9c04449ae" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Сбой голосового режима: смена голоса отменена. Запустите голосовой режим снова."</string>
     <string name="native_f0cae79a3657c1db" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Требуется настройка"</string>
     <string name="native_f0d1fb4ac220db11" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Обновите этот Gateway, чтобы использовать помощник по настройкам OpenClaw."</string>
     <string name="native_f113b3bd283e216c" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Для установки навыков ClawHub этому подключению к Gateway требуются права operator.admin."</string>

@@ -57,7 +57,6 @@ import {
 import { startUpdateRunWatcher, wakeUpdateRunWatcher } from "./update-run-watcher.js";
 const ACP_BACKEND_READY_TIMEOUT_MS = 5_000;
 const ACP_BACKEND_READY_POLL_MS = 50;
-const SKIP_STARTUP_MODEL_PREWARM_ENV = "OPENCLAW_SKIP_STARTUP_MODEL_PREWARM";
 type Awaitable<T> = T | Promise<T>;
 
 const loadMainSessionRestartRecoveryModule = createLazyRuntimeModule(
@@ -87,15 +86,11 @@ export type GatewayPostReadySidecarHandle = {
     nextRegistry: PluginRegistry;
     changedPluginIds: ReadonlySet<string>;
     nextConfig: OpenClawConfig;
-  }) => { drain: () => Promise<void>; resume: (config: OpenClawConfig) => void };
+  }) => { drain: () => Promise<void>; resume: (config: OpenClawConfig) => Awaitable<void> };
 };
 
 function shouldCheckRestartSentinel(env: NodeJS.ProcessEnv = process.env): boolean {
   return !env.VITEST && env.NODE_ENV !== "test";
-}
-
-function shouldSkipStartupModelPrewarm(env: NodeJS.ProcessEnv = process.env): boolean {
-  return isTruthyEnvValue(env[SKIP_STARTUP_MODEL_PREWARM_ENV]);
 }
 
 function schedulePostReadySidecarTask(params: {
@@ -293,7 +288,26 @@ function scheduleTranscriptsAutoStartSidecar(params: {
         drain: async () => {
           await withPluginRuntimeRegistryScope(previousRegistry, () => service?.stop(affected));
         },
-        resume(resumedConfig) {
+        async resume(resumedConfig) {
+          const registry = params.getPluginRegistry();
+          const newlyAvailable = new Set<string>();
+          // Metadata preflight has no runtime provider aliases for newly enabled
+          // plugins. Retire their unavailable-provider retries once the real
+          // registration is published so capture resumes immediately.
+          for (const { providerId } of resolveTranscriptsConfig(config.transcripts).autoStart) {
+            const normalized = providerId.trim().toLowerCase();
+            const provider = findCapabilityProviderEntry(
+              registry.transcriptSourceProviders,
+              providerId,
+            );
+            if (provider && changedPluginIds.has(provider.pluginId) && !affected.has(normalized)) {
+              affected.add(normalized);
+              newlyAvailable.add(normalized);
+            }
+          }
+          if (newlyAvailable.size) {
+            await withPluginRuntimeRegistryScope(registry, () => service?.stop(newlyAvailable));
+          }
           config = resumedConfig;
           pausedProviders = undefined;
           start();
@@ -346,18 +360,6 @@ async function waitForAcpRuntimeBackendReady(params: {
   } while (performance.now() < deadline);
 
   return false;
-}
-
-async function prewarmConfiguredPrimaryModel(params: {
-  cfg: OpenClawConfig;
-  getConfig?: () => OpenClawConfig | Promise<OpenClawConfig>;
-  isCurrent?: () => boolean;
-  pluginMetadataSnapshot?: PluginMetadataSnapshot;
-  workspaceDir?: string;
-  log: { warn: (msg: string) => void };
-  startupTrace?: GatewayStartupTrace;
-}): Promise<void> {
-  await publishConfiguredModelRuntimeSnapshots(params);
 }
 
 type StartupExternalAuthHydrationDeps = {
@@ -426,7 +428,6 @@ async function publishConfiguredModelRuntimeSnapshots(params: {
   isCurrent?: () => boolean;
   pluginMetadataSnapshot?: PluginMetadataSnapshot;
   workspaceDir?: string;
-  log: { warn: (msg: string) => void };
   startupTrace?: GatewayStartupTrace;
 }): Promise<void> {
   const { refreshPreparedModelRuntimeSnapshots } =
@@ -474,24 +475,6 @@ async function publishConfiguredModelRuntimeSnapshots(params: {
   });
 }
 
-async function publishStartupModelRuntime(
-  params: {
-    cfg: OpenClawConfig;
-    getConfig?: () => OpenClawConfig | Promise<OpenClawConfig>;
-    isCurrent?: () => boolean;
-    pluginMetadataSnapshot?: PluginMetadataSnapshot;
-    workspaceDir?: string;
-    log: { warn: (msg: string) => void };
-    startupTrace?: GatewayStartupTrace;
-  },
-  prewarm: typeof prewarmConfiguredPrimaryModel = prewarmConfiguredPrimaryModel,
-): Promise<void> {
-  const publication = shouldSkipStartupModelPrewarm()
-    ? publishConfiguredModelRuntimeSnapshots
-    : prewarm;
-  await publication(params);
-}
-
 /** Start post-ready sidecars such as channels, hooks, plugin services, and cleanup tasks. */
 export async function startGatewaySidecars(params: {
   cfg: OpenClawConfig;
@@ -505,7 +488,6 @@ export async function startGatewaySidecars(params: {
   shouldStartChannels?: () => boolean;
   refreshChatMetadata?: () => Promise<void>;
   onChannelsStarted?: () => Awaitable<void>;
-  prewarmPrimaryModel?: typeof prewarmConfiguredPrimaryModel;
   onPluginServices?: (pluginServices: PluginServicesHandle | null) => void;
   onPostReadySidecars: (...sidecars: GatewayPostReadySidecarHandle[]) => void;
   shouldCreatePostReadySidecars?: () => boolean;
@@ -602,26 +584,22 @@ export async function startGatewaySidecars(params: {
   if ((await params.pluginRuntimeClaim?.waitForUnblocked()) !== false) {
     await measureStartup(params.startupTrace, "sidecars.model-runtime", () =>
       withPluginRuntimeRegistryScope(params.pluginRegistry, () =>
-        publishStartupModelRuntime(
-          {
-            cfg: params.cfg,
-            getConfig: async () =>
-              await measureStartup(params.startupTrace, "sidecars.model-auth", () =>
-                hydrateConfiguredExternalCliAuth({
-                  getConfig: getModelRuntimeConfig,
-                  log: params.log,
-                }),
-              ),
-            isCurrent: params.pluginRuntimeClaim?.isCurrent,
-            ...(params.pluginMetadataSnapshot
-              ? { pluginMetadataSnapshot: params.pluginMetadataSnapshot }
-              : {}),
-            workspaceDir: params.defaultWorkspaceDir,
-            log: params.log,
-            startupTrace: params.startupTrace,
-          },
-          params.prewarmPrimaryModel,
-        ),
+        publishConfiguredModelRuntimeSnapshots({
+          cfg: params.cfg,
+          getConfig: () =>
+            measureStartup(params.startupTrace, "sidecars.model-auth", () =>
+              hydrateConfiguredExternalCliAuth({
+                getConfig: getModelRuntimeConfig,
+                log: params.log,
+              }),
+            ),
+          isCurrent: params.pluginRuntimeClaim?.isCurrent,
+          ...(params.pluginMetadataSnapshot
+            ? { pluginMetadataSnapshot: params.pluginMetadataSnapshot }
+            : {}),
+          workspaceDir: params.defaultWorkspaceDir,
+          startupTrace: params.startupTrace,
+        }),
       ),
     );
   }
@@ -1642,12 +1620,9 @@ export async function startGatewayPostAttachRuntime(
 }
 
 export const testing = {
-  prewarmConfiguredPrimaryModel,
   hydrateConfiguredExternalCliAuth,
   publishConfiguredModelRuntimeSnapshots,
-  publishStartupModelRuntime,
   refreshLatestUpdateRestartSentinelIfPresent,
   scheduleRestartSentinelWakeAfterReady,
-  shouldSkipStartupModelPrewarm,
 };
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

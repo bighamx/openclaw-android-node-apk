@@ -1,4 +1,5 @@
 import { getEventListeners } from "node:events";
+import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CodexAppServerClient, isCodexAppServerIndeterminateTransportError } from "./client.js";
 import { createClientHarness } from "./test-support.js";
@@ -56,6 +57,57 @@ afterEach(() => {
 });
 
 describe("Codex catalog request lifetime", () => {
+  it("keeps a retained read valid across a wall-clock jump", async () => {
+    const harness = createHarness();
+    const pending = read(harness, { scope: {}, key: "wall-clock-read" });
+    vi.setSystemTime(Date.now() + 300_100);
+    harness.send({ id: requestId(harness), result: page });
+    await expect(pending).resolves.toEqual(page);
+    expect(harness.writes).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps a deferred guard budget across a wall-clock jump", async () => {
+    const entered = createDeferred<void>();
+    const resume = createDeferred<void>();
+    const release = vi.fn();
+    const harness = createHarness({
+      onWrite(line, send) {
+        const frame = JSON.parse(line) as { id: number };
+        send({ id: frame.id, result: { thread: { id: "wall-clock-thread" } } });
+      },
+    });
+    harness.client.setThreadSessionRequestGuard(async () => {
+      entered.resolve();
+      await resume.promise;
+      return release;
+    });
+    const pending = harness.client.request("thread/start", {}, { timeoutMs: 1_000 });
+    void pending.catch(() => undefined);
+    await entered.promise;
+    vi.setSystemTime(Date.now() + 300_100);
+    resume.resolve();
+    await expect(pending).resolves.toEqual({ thread: { id: "wall-clock-thread" } });
+    expect(harness.writes).toHaveLength(1);
+    expect(release).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("retries overload within its budget across a wall-clock jump", async () => {
+    const harness = createHarness();
+    const pending = read(harness, { scope: {}, key: "wall-clock-overload" });
+    vi.setSystemTime(Date.now() + 300_100);
+    harness.send({
+      id: requestId(harness),
+      error: { code: -32001, message: "Server overloaded" },
+    });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(harness.writes).toHaveLength(2);
+    harness.send({ id: requestId(harness, 1), result: page });
+    await expect(pending).resolves.toEqual(page);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("lets a fresh caller join a written request after its first waiter expires", async () => {
     const clock = vi.spyOn(performance, "now").mockReturnValue(10);
     const harness = createHarness();
@@ -246,7 +298,7 @@ describe("Codex catalog request lifetime", () => {
         (error: unknown) => error,
       );
       const valid = read(harness, key, { timeoutMs: 500 }).catch((error: unknown) => error);
-      vi.setSystemTime(1_100);
+      vi.spyOn(performance, "now").mockReturnValue(100);
       harness.send(
         outcome === "response"
           ? { id: requestId(harness), result: page }
@@ -326,7 +378,7 @@ describe("Codex catalog request lifetime", () => {
         assertCurrent: () => {
           if (delivering) {
             if (change === "deadline") {
-              vi.setSystemTime(1_100);
+              vi.spyOn(performance, "now").mockReturnValue(100);
             } else {
               controller.abort(new Error("retired during guard"));
             }

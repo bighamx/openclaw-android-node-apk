@@ -756,7 +756,12 @@ describe("projects vitest config", () => {
       source: "approval-reactions.ts",
       siblings: ["approval-reactions.test.ts", "approval-reaction-poller.test.ts"],
     },
-    { file: "send.sqlite.test.ts", source: "send.ts", siblings: ["send.test.ts"] },
+    {
+      file: "send.sqlite.test.ts",
+      source: "send.ts",
+      siblings: ["outbound-tool-trace-sanitize.test.ts"],
+    },
+    { file: "send.test.ts", source: "send.ts", siblings: ["outbound-tool-trace-sanitize.test.ts"] },
   ])(
     "routes iMessage $file through its worker owner without moving sibling tests",
     ({ file: basename, source, siblings }) => {

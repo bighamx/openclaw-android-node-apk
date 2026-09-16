@@ -15,11 +15,12 @@ import {
   closeOpenClawAgentDatabasesForTest,
   getOpenClawAgentDatabaseIfOpen,
   openOpenClawAgentDatabase,
+  OPENCLAW_AGENT_SCHEMA_VERSION,
   runOpenClawAgentWriteTransaction,
 } from "../../state/openclaw-agent-db.js";
 import { replaceSessionEntry } from "./session-accessor.js";
 import * as archiveWorkers from "./session-accessor.sqlite-archive.js";
-import { readSessionTranscriptHistoryEvents } from "./session-accessor.sqlite-history-events.js";
+import { readSessionTranscriptHistoryEvents } from "./session-accessor.sqlite-history.test-support.js";
 import { planSessionStateDeleteIfUnreferenced } from "./session-accessor.sqlite-lifecycle-state.js";
 import {
   loadTranscriptEvents,
@@ -790,7 +791,10 @@ describe("cold transcript storage workers", () => {
 
   it.each([
     { version: 19, expected: /uses schema version 19/ },
-    { version: 20, expected: /no such table: session_transcript_cold_archives/ },
+    {
+      version: OPENCLAW_AGENT_SCHEMA_VERSION,
+      expected: /no such table: session_transcript_cold_archives/,
+    },
   ])(
     "rejects unmigrated or damaged schema $version instead of reporting zero transcripts",
     async ({ version, expected }) => {

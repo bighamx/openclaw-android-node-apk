@@ -69,6 +69,40 @@ frame or required boundary. Stored transcripts stay unchanged. Omitting `limits`
 keeps the full selected context. Async reads retain admission, anchor, and
 cancellation checks.
 
+## Scoped session visibility
+
+`createSessionVisibilityChecker` from
+`openclaw/plugin-sdk/session-visibility` supports narrow host-owned session
+grants through `registerScopedAccessProvider(syncProvider, { resolveAsync })`.
+Both callbacks receive `{ action, requesterSessionKey, targetSessionKey }` and
+return `{ expectedSessionId }` only for an authorized, exact session incarnation,
+or `undefined` when no scoped grant applies. The optional `resolveAsync`
+callback returns a promise. Providers own matching the action and both session
+keys against current authoritative state.
+
+Session tools await `createSessionVisibilityChecker.resolveScopedAccessAsync(...)`.
+For each registration, it uses `resolveAsync` when supplied, otherwise the
+synchronous provider. Providers run in registration order. An empty, invalid,
+or rejected async result does not retry that registration's synchronous callback;
+other registered providers and then ordinary visibility policy still apply.
+Incognito targets cannot receive scoped grants.
+
+The direct checker's `check(...)`, the guard's `check(...)`, and
+`resolveScopedAccess(...)` remain synchronous and call the synchronous provider
+afresh. Existing external callers keep this contract. Older hosts ignore the
+optional registration argument, so plugins supporting those hosts must retain
+a fresh synchronous implementation; an asynchronously populated startup cache
+is not a replacement.
+
+One registration owns both callbacks. Its returned cleanup function unregisters
+both. Re-registering the same synchronous function replaces that registration
+without changing its position; an old cleanup function cannot remove the
+replacement. Async resolution checks the exact registration after awaiting it
+and discards results from an unregistered or replaced owner. Newly registered
+providers participate only in subsequent resolutions. Wire cleanup into the
+plugin's existing runtime lifecycle and revalidate plugin-owned authority after
+the provider's own awaited work.
+
 ## Agent and session namespaces
 
 <AccordionGroup>
@@ -127,6 +161,8 @@ cancellation checks.
     `runEmbeddedAgent(...)` is the neutral helper for starting a normal OpenClaw agent turn from plugin code. It uses the same provider/model resolution and agent-harness selection as channel-triggered replies.
 
     `resolveCliBackendDispatchEligibility({ provider, model, agentId, authProfileId, config, agentDir, workspaceDir })` shares the embedded runner's CLI-backend dispatch decision (route, the backend's declared `subscriptionAuthDispatch` capability, stored credential mode — honoring an explicitly pinned `authProfileId`) with callers that opt embedded runs into `cliBackendDispatch: "subscription-auth"`. It returns `{ provider }` when the run would execute through the CLI backend and `undefined` when it stays on the direct passthrough, so callers can budget timeouts for the run that will actually execute.
+
+    Raw calls using this CLI opt-in keep the saved session fallback for same-agent child model selection. Explicit and configured child models still take precedence.
 
     `resolveThinkingPolicy(...)` returns the provider/model's supported thinking levels and optional default. Provider plugins own the model-specific profile through their thinking hooks, so tool plugins should call this runtime helper instead of importing or duplicating provider lists.
 

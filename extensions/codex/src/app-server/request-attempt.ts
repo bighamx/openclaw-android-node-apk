@@ -104,7 +104,7 @@ export function createCodexRequestAttempt(params: {
         outcome: "aborted",
       };
     }
-    if (waiter.deadline !== undefined && Date.now() >= waiter.deadline) {
+    if (waiter.deadline !== undefined && performance.now() >= waiter.deadline) {
       return { error: params.cancellationError("timed out", mayHaveWritten), outcome: "timed-out" };
     }
     try {
@@ -118,7 +118,7 @@ export function createCodexRequestAttempt(params: {
         outcome: "aborted",
       };
     }
-    if (waiter.deadline !== undefined && Date.now() >= waiter.deadline) {
+    if (waiter.deadline !== undefined && performance.now() >= waiter.deadline) {
       return { error: params.cancellationError("timed out", mayHaveWritten), outcome: "timed-out" };
     }
     return undefined;
@@ -192,13 +192,15 @@ export function createCodexRequestAttempt(params: {
           ...(params.retainWritten ? { deadline, assertCurrent } : {}),
         };
         waiters.add(waiter);
-        if (params.retainWritten && deadline !== undefined && Date.now() >= deadline) {
+        if (params.retainWritten && deadline !== undefined && performance.now() >= deadline) {
           waiter.reject(params.cancellationError("timed out", mayHaveWritten), "timed-out");
           return;
         }
         if (timeoutMs && Number.isFinite(timeoutMs) && timeoutMs > 0) {
           const remaining =
-            params.retainWritten && deadline !== undefined ? deadline - Date.now() : timeoutMs;
+            params.retainWritten && deadline !== undefined
+              ? deadline - performance.now()
+              : timeoutMs;
           timer = setTimeout(
             () => waiter.reject(params.cancellationError("timed out", mayHaveWritten), "timed-out"),
             Math.max(params.retainWritten ? 1 : 100, remaining),

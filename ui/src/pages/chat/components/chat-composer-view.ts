@@ -293,13 +293,20 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
           props.runActive,
           props.collapseTaskProgress,
           {
+            gatewayScope: props.gatewayScope,
+            sessionIdentity: props.progressCardIdentity,
             activeRunId: props.runId,
             readingHistory: props.readingHistory,
             completedRunId: props.runStatus?.phase === "done" ? props.runStatus.runId : null,
           },
         )}
       </div>`
-    : nothing;
+    : props.progressCardInitialLoading
+      ? html`<div
+          class="agent-chat__progress-float agent-chat__progress-float--loading"
+          aria-hidden="true"
+        ></div>`
+      : nothing;
   const queue = renderChatQueue({
     queue: props.queue,
     displayQueue: props.displayQueue,

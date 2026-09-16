@@ -259,7 +259,8 @@ export function collectDownloadableInstallCandidates(params: {
   configuredChannelOwnerPluginIds?: ReadonlyMap<string, ReadonlySet<string>>;
   blockedPluginIds?: ReadonlySet<string>;
 }): DownloadableInstallCandidate[] {
-  const configuredPluginIds = params.configuredPluginIds ?? collectConfiguredPluginIds(params.cfg);
+  const configuredPluginIds =
+    params.configuredPluginIds ?? collectConfiguredPluginIds(params.cfg, params.env);
   const configuredChannelIds =
     params.configuredChannelIds ?? collectConfiguredChannelIds(params.cfg, params.env);
   const candidates = new Map<string, DownloadableInstallCandidate>();

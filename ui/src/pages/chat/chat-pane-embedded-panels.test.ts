@@ -257,6 +257,8 @@ describe("chat pane embedded panels", () => {
     });
     await file.promise;
     await renderPanels();
+    // Lit update completion does not include the editor's detached module load.
+    await vi.dynamicImportSettled();
     const editorElement = await vi.waitFor(() =>
       expectDefined(mount.querySelector<HTMLElement>(".cm-editor"), "file editor"),
     );

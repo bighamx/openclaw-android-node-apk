@@ -13,6 +13,8 @@ const UPGRADE_SURVIVOR_SCENARIOS = Object.freeze([
   "configured-plugin-installs",
   "missing-configured-plugin-migration",
   "custom-plugin-siblings",
+  "projects-doctor",
+  "taskflow-restoration",
   "stale-source-plugin-shadow",
   "prerelease-plugin-registry",
   "tilde-log-path",
@@ -43,6 +45,8 @@ const scenarioMinimumBaselines = new Map([
 const TRUSTED_HARNESS_OWNED_SCENARIOS = new Set([
   "mobile-pairing-reconnect",
   "abandoned-update",
+  "projects-doctor",
+  "taskflow-restoration",
   "workshop-doctor-recovery",
 ]);
 
@@ -60,6 +64,8 @@ const aggregateScenarios = UPGRADE_SURVIVOR_SCENARIOS.filter(
     scenario !== "msteams-polls" &&
     scenario !== "abandoned-update" &&
     scenario !== "missing-configured-plugin-migration" &&
+    scenario !== "projects-doctor" &&
+    scenario !== "taskflow-restoration" &&
     scenario !== "workshop-doctor-recovery" &&
     scenario !== "mobile-pairing-reconnect" &&
     scenario !== "watchos-direct-node" &&
@@ -156,6 +162,9 @@ function comparePublishedReleaseVersion(a, b) {
 
 export function supportsUpgradeSurvivorScenarioAtBaseline(scenario, baselineSpec) {
   const version = parsePublishedReleaseVersion(baselineSpec);
+  if (scenario === "projects-doctor" || scenario === "taskflow-restoration") {
+    return baselineSpec === "openclaw@2026.9.4";
+  }
   if (scenario === "abandoned-update" || scenario === "missing-configured-plugin-migration") {
     return baselineSpec === "openclaw@2026.9.2";
   }

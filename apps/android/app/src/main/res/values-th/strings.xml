@@ -950,6 +950,7 @@
     <string name="native_838337fd9ab30454" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"สรุปเธรดล่าสุดและขั้นตอนถัดไป"</string>
     <string name="native_83e2faed20a3cda4" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"ทำงานบนอุปกรณ์ขณะที่ OpenClaw แสดงอยู่"</string>
     <string name="native_844e5b02f3ef05ca" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"%1$s กำลังทำงาน"</string>
+    <string name="native_845572939fd74dd5" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"การสนทนาล้มเหลว: ไม่สามารถเปลี่ยนเสียงได้ โปรดเริ่มการสนทนาอีกครั้ง"</string>
     <string name="native_846b345b42cfe527" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"แก้ไขไฟล์แล้ว %1$s ไฟล์"</string>
     <string name="native_8477f18620f1ef69" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"Background Shell"</string>
     <string name="native_848123d14f84faa2" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"ข้อมูลดิบ"</string>
@@ -1695,6 +1696,7 @@
     <string name="native_f0763ccb558be5df" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"เลือกรูปภาพอื่น"</string>
     <string name="native_f09247433bef8304" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"ตัวอย่างรูปภาพ"</string>
     <string name="native_f0ac2eabb5a584e3" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"แชร์จำนวนก้าวและกิจกรรม"</string>
+    <string name="native_f0bf9ec9c04449ae" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"การสนทนาล้มเหลว: การเปลี่ยนเสียงถูกยกเลิก เริ่มการสนทนาอีกครั้ง"</string>
     <string name="native_f0cae79a3657c1db" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"ต้องตั้งค่า"</string>
     <string name="native_f0d1fb4ac220db11" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"อัปเดต Gateway นี้เพื่อใช้ผู้ช่วยการตั้งค่า OpenClaw"</string>
     <string name="native_f113b3bd283e216c" formatted="false" tools:ignore="Typos,TypographyDashes,TypographyEllipsis">"การเชื่อมต่อ Gateway นี้ต้องมี operator.admin เพื่อติดตั้ง Skills จาก ClawHub"</string>

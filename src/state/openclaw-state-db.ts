@@ -157,6 +157,8 @@ export function repairOpenClawStateDatabaseReadabilityForDoctor(
   if (!existsSync(pathname)) {
     return { changes: [], warnings: [] };
   }
+  // A writer close can checkpoint WAL and invalidate a generation-bound corruption refusal.
+  assertOpenClawStateDatabaseFreshOpenAllowed(options);
   return runWithOpenClawStateWriteAccess(
     {
       databasePath: pathname,
@@ -209,7 +211,10 @@ function ensureSchema(
       assertOpenClawStateWriteAllowed({ database: db, databasePath: pathname, env });
       return;
     }
-  } catch {
+  } catch (error) {
+    if (!db.isOpen) {
+      throw error;
+    }
     // Preserve the existing transactional repair and its diagnostics for drift or corruption.
   }
 
@@ -420,16 +425,15 @@ function openOpenClawStateDatabaseWithBusyTimeout(
     if (lockFailureReporting === "report" || !isOpenClawStateWriteContentionError(error)) {
       stateDbCache.recordOpenClawStateDatabaseLifecycleOpenError(pathname, error);
     }
-    if (!unpublished) {
-      throw error;
-    }
-    const errors = stateDbCache.closeUnpublishedOpenClawStateDatabaseHandle(unpublished);
-    if (errors.length > 0) {
-      throw createSqliteLifecycleAggregateError(
-        [error, ...errors],
-        `Fresh OpenClaw state database open failed releasing access and closing its unpublished handle for ${pathname}.`,
-        error,
-      );
+    if (unpublished) {
+      const errors = stateDbCache.closeUnpublishedOpenClawStateDatabaseHandle(unpublished);
+      if (errors.length > 0) {
+        throw createSqliteLifecycleAggregateError(
+          [error, ...errors],
+          `Fresh OpenClaw state database open failed releasing access and closing its unpublished handle for ${pathname}.`,
+          error,
+        );
+      }
     }
     throw error;
   }

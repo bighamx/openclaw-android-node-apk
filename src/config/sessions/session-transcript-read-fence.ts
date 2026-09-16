@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { sql } from "kysely";
-import { executeSqliteQueryTakeFirstSync } from "../../infra/kysely-sync.js";
+import { executeSqliteQueryTakeFirstSync, getNodeSqliteKysely } from "../../infra/kysely-sync.js";
 import {
   getUserTurnTranscriptAdmissionOwner,
   readPendingUserTurnTranscriptAdmission,
@@ -9,8 +9,8 @@ import type {
   UserTurnTranscriptAdmissionReceipt,
   UserTurnTranscriptRecorder,
 } from "../../sessions/user-turn-transcript.types.js";
+import type { DB } from "../../state/openclaw-agent-db.generated.js";
 import type { OpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
-import { getSessionKysely } from "./session-accessor.sqlite-scope.js";
 import type { SessionTranscriptRuntimeTarget } from "./session-accessor.types.js";
 
 const transcriptReadFenceStorage = new AsyncLocalStorage<UserTurnTranscriptAdmissionReceipt>();
@@ -150,7 +150,15 @@ export function resolveSqliteSessionTranscriptReadFence(params: {
       "Current-turn transcript admission belongs to a different session key",
     );
   }
-  const db = getSessionKysely(params.database.db);
+  const db = getNodeSqliteKysely<
+    Pick<
+      DB,
+      | "transcript_event_identities"
+      | "session_transcript_active_events"
+      | "transcript_events"
+      | "transcript_rewrite_watermarks"
+    >
+  >(params.database.db);
   const boundary = executeSqliteQueryTakeFirstSync(
     params.database.db,
     db

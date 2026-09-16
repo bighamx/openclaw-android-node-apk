@@ -70,7 +70,13 @@ describe("Doctor malformed Workshop catalog recovery", () => {
   it("restores readability before the real config and schema repair chain", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
       const database = await seedState(state);
-      database.db.exec("DROP INDEX idx_task_runs_status;");
+      database.db.exec(`
+        DROP INDEX idx_task_runs_status;
+        PRAGMA foreign_keys = OFF;
+        INSERT INTO task_delivery_state (task_id, requester_origin_json)
+          VALUES ('orphan-preserved', 'preserve orphan payload');
+        PRAGMA foreign_keys = ON;
+      `);
       await closeOpenClawStateDatabaseAsync();
       damageWorkshopIndex(database.path);
       const runtime = { log: vi.fn(), error: vi.fn(), exit: vi.fn() };
@@ -106,6 +112,19 @@ describe("Doctor malformed Workshop catalog recovery", () => {
         expect(repaired.prepare("PRAGMA integrity_check").all()).toEqual([
           { integrity_check: "ok" },
         ]);
+        expect(repaired.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+        const recoveryDirs = fs
+          .readdirSync(path.dirname(database.path))
+          .filter((name) => name.startsWith("openclaw-task-delivery-recovery-"));
+        expect(recoveryDirs).toHaveLength(1);
+        const recovered = fs.readFileSync(
+          path.join(path.dirname(database.path), recoveryDirs[0]!, "orphan-rows.jsonl"),
+          "utf8",
+        );
+        expect(JSON.parse(recovered)).toMatchObject({
+          task_id: "orphan-preserved",
+          requester_origin_json: "preserve orphan payload",
+        });
       } finally {
         repaired.close();
       }

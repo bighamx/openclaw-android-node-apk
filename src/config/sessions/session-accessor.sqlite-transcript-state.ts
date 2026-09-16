@@ -14,6 +14,7 @@ import {
   assertCanonicalSqliteSessionRootWrite,
   canonicalSessionKeyMigrationRequiredError,
 } from "./session-canonical-key.js";
+import { certifyCanonicalSessionValidationRow } from "./session-canonical-validation.js";
 import {
   assertSessionTranscriptHot,
   readSessionColdTranscript,
@@ -236,6 +237,9 @@ export function ensureTranscriptSessionRoot(
         }),
       ),
   );
+  if (!options.allowStoredAlias) {
+    certifyCanonicalSessionValidationRow(database, scope.sessionKey);
+  }
 }
 
 export function readNextTranscriptSeq(database: OpenClawAgentDatabase, sessionId: string): number {

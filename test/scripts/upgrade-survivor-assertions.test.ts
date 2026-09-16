@@ -1117,6 +1117,11 @@ function assertCompanionPluginRecords(
       const isolatedScripts = join(root, "production-assertion-runtime", "scripts");
       const isolatedLib = join(isolatedScripts, "e2e", "lib");
       cpSync("scripts/e2e/lib", isolatedLib, { recursive: true });
+      mkdirSync(join(isolatedScripts, "lib"), { recursive: true });
+      cpSync(
+        "scripts/lib/release-version.mjs",
+        join(isolatedScripts, "lib", "release-version.mjs"),
+      );
       cpSync(
         "scripts/prepublish-plugin-registry-artifact.mjs",
         join(isolatedScripts, "prepublish-plugin-registry-artifact.mjs"),

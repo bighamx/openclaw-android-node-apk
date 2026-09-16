@@ -42,6 +42,8 @@ const SCENARIOS = new Set([
   "configured-plugin-installs",
   "missing-configured-plugin-migration",
   "custom-plugin-siblings",
+  "projects-doctor",
+  "taskflow-restoration",
   "stale-source-plugin-shadow",
   "prerelease-plugin-registry",
   "tilde-log-path",
@@ -1227,14 +1229,15 @@ function readInstalledPluginIndex() {
   return index;
 }
 
-function assertBaselinePlugin([expectedVersion, pluginId = "discord"]) {
+function assertBaselinePlugin([expectedVersion, pluginId, tag]) {
+  assert(["latest", "beta", "alpha"].includes(tag), "baseline plugin selector is not moving");
   const record = readInstalledPluginIndex().installRecords[pluginId];
   assert(record?.source === "npm", "baseline plugin was not installed from npm");
-  assert(record.spec === `@openclaw/${pluginId}@latest`, "baseline plugin selector became pinned");
+  assert(record.spec === `@openclaw/${pluginId}@${tag}`, "baseline plugin selector changed");
   const installed = readJson(path.join(resolveHomePath(record.installPath), "package.json"));
   assert(installed.name === `@openclaw/${pluginId}`, "baseline plugin package identity changed");
   assert(installed.version === expectedVersion, "baseline plugin is not the baseline version");
-  console.log(`Baseline npm plugin: @openclaw/${pluginId}@${expectedVersion}, selector=latest.`);
+  console.log(`Baseline npm plugin: @openclaw/${pluginId}@${expectedVersion}, selector=${tag}.`);
 }
 
 function assertExternalPluginInstall(records, pluginId, packageName) {
@@ -1664,6 +1667,13 @@ function assertSuccessfulUpdateJson([file, expectedVersion, observationRoot]) {
   const result = readUpdateJson(file, observationRoot);
   const plugins = result?.postUpdate?.plugins;
   assert(result?.status === "ok", `update did not report ok: ${String(result?.status)}`);
+  if (["projects-doctor", "taskflow-restoration"].includes(getScenario())) {
+    assertStrict.equal(
+      result.before?.version,
+      "2026.9.4",
+      "Worker cell used the wrong published driver",
+    );
+  }
   const expectedMissingPluginFailure =
     getScenario() === "missing-configured-plugin-migration"
       ? assertExpectedMissingCodexOutcome(result, expectedVersion)

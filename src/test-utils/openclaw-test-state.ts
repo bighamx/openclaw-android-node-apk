@@ -2,7 +2,6 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import {
   closeAuthProfileReadPool,
   resolveAuthProfileDatabasePath,
@@ -306,13 +305,16 @@ export async function createOpenClawTestState(
       extraEnv: options.env ?? {},
     });
     const env = createSpawnEnv(envVars);
-    const snapshot = captureEnv(uniqueStrings([...ENV_KEYS, ...Object.keys(envVars)]));
+    const capturedEnvKeys = new Set([...ENV_KEYS, ...Object.keys(envVars)]);
+    const snapshots = [captureEnv([...capturedEnvKeys])];
     let envApplied = false;
     let releasePromise: Promise<void> | undefined;
     let cleanupPromise: Promise<void> | undefined;
     const restoreAppliedEnv = () => {
       if (envApplied) {
-        snapshot.restore();
+        for (const snapshot of snapshots) {
+          snapshot.restore();
+        }
         resetConfigRuntimeStateForTest();
         envApplied = false;
       }
@@ -352,6 +354,14 @@ export async function createOpenClawTestState(
           throw new Error("Cannot apply a released OpenClaw test state");
         }
         resetConfigRuntimeStateForTest();
+        // envVars is mutable; capture late keys before their first application.
+        const newKeys = Object.keys(envVars).filter((key) => !capturedEnvKeys.has(key));
+        if (newKeys.length > 0) {
+          snapshots.push(captureEnv(newKeys));
+          for (const key of newKeys) {
+            capturedEnvKeys.add(key);
+          }
+        }
         // A later write can throw after earlier keys changed; restoration still owns them.
         envApplied = true;
         for (const [key, value] of Object.entries(envVars)) {

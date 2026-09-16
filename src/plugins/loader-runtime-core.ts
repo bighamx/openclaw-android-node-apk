@@ -81,6 +81,14 @@ export type NativePluginLoadBindings = Pick<PluginRuntime, "modelAuth" | "modelC
   capabilityCatalogContext: NonNullable<PluginLoadOptions["capabilityCatalogContext"]>;
 };
 
+function createCapabilityCatalogContextResolver(
+  context: NativePluginLoadBindings["capabilityCatalogContext"],
+) {
+  // Registrars retain this callback. Keep it outside the loader's lexical scope so
+  // a live replacement cannot retain options.previousRegistry and all older generations.
+  return () => context;
+}
+
 export function loadOpenClawPluginsCore(
   options: PluginLoadOptions,
   nativeBindings: NativePluginLoadBindings,
@@ -111,7 +119,8 @@ export function loadOpenClawPluginsCore(
   const logger = options.logger ?? createSubsystemLogger("plugins");
   const validateOnly = options.mode === "validate";
   const onlyPluginIdSet = createPluginIdScopeSet(context.onlyPluginIds);
-  const cacheEnabled = !options.previousRegistry && isPluginRegistryCacheEnabled(options);
+  const cacheEnabled =
+    !options.previousRegistry && !options.moduleRecoveries && isPluginRegistryCacheEnabled(options);
   if (cacheEnabled) {
     const cached = context.cacheState.get(context.cacheKey);
     if (cached) {
@@ -180,7 +189,8 @@ export function loadOpenClawPluginsCore(
     registryBuilder = createPluginRegistry({
       logger,
       runtime,
-      resolveCapabilityCatalogContext: () => capabilityCatalogContext,
+      resolveCapabilityCatalogContext:
+        createCapabilityCatalogContextResolver(capabilityCatalogContext),
       allowProcessHomeSessionCatalogs: options.allowProcessHomeSessionCatalogs ?? true,
       coreGatewayHandlers: options.coreGatewayHandlers,
       ...(options.coreGatewayMethodNames !== undefined && {
@@ -224,7 +234,10 @@ export function loadOpenClawPluginsCore(
       context.registrationConfigKey,
       loaderCacheIdentity,
     );
-    const replacedIds = new Set(options.replacePluginIds ?? []);
+    const replacedIds = new Set([
+      ...(options.replacePluginIds ?? []),
+      ...(options.moduleRecoveries?.keys() ?? []),
+    ]);
     const memorySlot = context.normalized.slots.memory;
     const dreamingSidecar = resolveAuthorizedDreamingSidecar({
       cfg: context.cfg,

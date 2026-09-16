@@ -36,6 +36,7 @@ const subagentRegistryReadMock = vi.hoisted(() => {
       runsByControllerSessionKey.set(controllerSessionKey, runs);
     }
     return {
+      inputs: { runs: new Map(runsByChildSessionKey), inMemoryRuns: [] },
       runsByControllerSessionKey,
       swarmRunsByRequesterSessionKey: new Map(),
       getDisplaySubagentRun: vi.fn(
@@ -46,6 +47,11 @@ const subagentRegistryReadMock = vi.hoisted(() => {
   });
   return {
     buildSubagentSessionListReadIndex,
+    prepareSubagentSessionListReadIndex: async () =>
+      (function* () {
+        yield;
+        return buildSubagentSessionListReadIndex();
+      })(),
     listSubagentSessionListRunsForControllers: (keys: readonly string[]) => {
       const index = buildSubagentSessionListReadIndex();
       return keys.flatMap((key) => index.runsByControllerSessionKey.get(key) ?? []);

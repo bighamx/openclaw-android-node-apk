@@ -21,6 +21,7 @@ import { resolveInstalledPluginIndexPolicyHash } from "../../../plugins/installe
 import { readPersistedInstalledPluginIndex } from "../../../plugins/installed-plugin-index-store.js";
 import { isTrustedOfficialPluginInstallRecord } from "../../../plugins/official-external-install-records.js";
 import { withPluginLifecycleLease } from "../../../plugins/plugin-lifecycle-lease.js";
+import { createPluginMetadataSnapshotFixture } from "../../../plugins/plugin-metadata.test-support.js";
 import type { BundledProviderPolicySurface } from "../../../plugins/provider-policy-surface.js";
 import { createColdPluginFixture } from "../../../plugins/test-helpers/cold-plugin-fixtures.js";
 import { seedInstalledPluginIndex } from "../../../plugins/test-helpers/installed-plugin-index.js";
@@ -343,14 +344,18 @@ vi.mock("../../../plugins/clawhub.js", () => ({
   installPluginFromClawHub: mocks.installPluginFromClawHub,
 }));
 
-vi.mock("../../../plugins/plugin-metadata-snapshot.js", () => ({
+vi.mock("../../../plugins/plugin-metadata-snapshot.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../plugins/plugin-metadata-snapshot.js")>()),
   loadPluginMetadataSnapshot: mocks.loadPluginMetadataSnapshot,
   resolvePluginMetadataSnapshot: mocks.loadPluginMetadataSnapshot,
 }));
 
 vi.mock("../../../plugins/manifest-contract-eligibility.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../plugins/manifest-contract-eligibility.js")>()),
-  loadManifestMetadataSnapshot: mocks.loadPluginMetadataSnapshot,
+  loadManifestMetadataSnapshot: () => ({
+    ...mocks.loadPluginMetadataSnapshot(),
+    index: createPluginMetadataSnapshotFixture(mocks.loadPluginManifestRegistryCore()).index,
+  }),
 }));
 
 vi.mock("../../../plugins/official-external-plugin-catalog.js", async (importOriginal) => ({

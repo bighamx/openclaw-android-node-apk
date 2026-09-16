@@ -6,6 +6,7 @@ import type { CodexSessionCatalogControl } from "./session-catalog-types.js";
 import {
   commandRpcMocks,
   createCodexSessionCatalogControl,
+  createCodexSessionCatalogControlFactory,
   config,
   idleThread,
   resolveDefaultAgentDir,
@@ -19,6 +20,70 @@ async function fillPageCache(control: CodexSessionCatalogControl) {
 }
 
 describe("Codex supervision catalog", () => {
+  it("reuses native pages across repeated multi-home exclusion walks", async () => {
+    const { listVisiblePage } = await import("./session-catalog-visible-page.js");
+    commandRpcMocks.codexControlRequest.mockImplementation(
+      async (
+        _pluginConfig: unknown,
+        _method: string,
+        request: { cursor?: string },
+        options: { agentDir: string },
+      ) => {
+        const page = Number(request.cursor ?? 0);
+        return {
+          data: [
+            idleThread({
+              id: page === 19 ? `visible-${options.agentDir}` : "managed",
+              source: "cli",
+            }),
+          ],
+          ...(page < 19 ? { nextCursor: String(page + 1) } : {}),
+        };
+      },
+    );
+    const factory = createCodexSessionCatalogControlFactory({
+      getPluginConfig: () => ({ supervision: { enabled: true } }),
+      getRuntimeConfig: () => config,
+      now: () => 1_000,
+    });
+    const primary = factory.homesForAgent("main")[0]!;
+    const controls = ["one", "two", "three", "four", "five", "six", "seven"].map((homeId) =>
+      factory.forRequest("main", {
+        ...primary,
+        sourceHomeId: homeId,
+        agentDir: `/agents/${homeId}`,
+      }),
+    );
+    const list = async (selectedControls = controls) => {
+      const pages = [];
+      // Serial homes preserve the scan order without racing Vitest's cold dynamic mocks.
+      for (const control of selectedControls) {
+        pages.push(
+          await listVisiblePage({ control, excludedThreadIds: new Set(["managed"]), limit: 1 }),
+        );
+      }
+      return pages;
+    };
+
+    const first = await list();
+    expect(first.map((page) => page.sessions.map((session) => session.threadId))).toEqual([
+      ["visible-/agents/one"],
+      ["visible-/agents/two"],
+      ["visible-/agents/three"],
+      ["visible-/agents/four"],
+      ["visible-/agents/five"],
+      ["visible-/agents/six"],
+      ["visible-/agents/seven"],
+    ]);
+    expect(commandRpcMocks.codexControlRequest).toHaveBeenCalledTimes(140);
+    await expect(list()).resolves.toEqual(first);
+    expect(commandRpcMocks.codexControlRequest).toHaveBeenCalledTimes(140);
+
+    await fillPageCache(controls[0]!);
+    await expect(list(controls.slice(1))).resolves.toEqual(first.slice(1));
+    expect(commandRpcMocks.codexControlRequest).toHaveBeenCalledTimes(172);
+  });
+
   it("memoizes cloned request options until runtime config identity changes", async () => {
     let runtimeConfig = { agents: { defaults: { workspace: "/workspace/a" } } } as OpenClawConfig;
     commandRpcMocks.codexControlRequest.mockResolvedValue({ thread: idleThread() });
@@ -283,7 +348,7 @@ describe("Codex supervision catalog", () => {
     },
   );
 
-  it("keeps only 32 settled pages and refreshes their recency on hits", async () => {
+  it("keeps only 32 settled pages per source and refreshes their recency on hits", async () => {
     commandRpcMocks.codexControlRequest.mockResolvedValue({ data: [] });
     const control = createCodexSessionCatalogControl({
       getPluginConfig: () => ({ supervision: { enabled: true } }),

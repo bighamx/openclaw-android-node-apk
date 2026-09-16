@@ -10,7 +10,7 @@ import {
 } from "lit";
 import { McpAppUnmountGate } from "../../../components/mcp-app-unmount.ts";
 import { resolveScrollBehavior } from "../../../lib/scroll-behavior.ts";
-import type { AssistantMessageExpansionState } from "../chat-thread.ts";
+import type { AssistantMessageExpansionState } from "../chat-message-recovery.ts";
 import {
   CHAT_TRANSCRIPT_END_THRESHOLD_PX,
   type ChatSessionScrollPosition,
@@ -244,7 +244,10 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
       anchorTo: "end",
       followOnAppend: false,
       scrollToFn: (offset, options, instance) => {
+        const before = this.scrollElement?.scrollTop ?? 0;
         elementScroll(offset, options, instance);
+        // Record the write without feeding the virtualizer's pending target back as reader input.
+        this.offsetState.recordProgrammaticScroll?.(before, this.scrollElement?.scrollTop ?? 0);
         // Measurement compensation can clamp to the end before the sizer commits.
         // Its native read-back must not grant permission to follow the next delta.
         this.offsetState.measurementScrollOffset =
@@ -286,6 +289,7 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
             state: this.offsetState,
             getScrollElement: () => this.scrollElement,
             prependAnchor: this.prependAnchor,
+            isProgrammaticScroll: () => this.isProgrammaticScroll,
             cancelScroll: () => this.cancelScroll(),
             requestUpdate: () => this.host.requestUpdate(),
             onReaderScroll: (towardEnd) => this.callbacks.onReaderScroll?.(towardEnd),

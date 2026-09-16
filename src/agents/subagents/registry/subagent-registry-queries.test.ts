@@ -1,11 +1,15 @@
 // Subagent registry query tests cover liveness, descendant counting, requester
 // lookup, and stale-row handling for in-memory run snapshots.
 import { describe, expect, it } from "vitest";
+import { claimAgentRunContext, releaseAgentRunContext } from "../../../infra/agent-run-registry.js";
+import { runSynchronousWork } from "../../../shared/synchronous-work.js";
 import {
   createSubagentRunRecord,
   type SubagentRunRecordOverrides,
 } from "../../subagent-test-fixtures.test-helpers.js";
 import {
+  buildSubagentRunReadIndexFromRuns,
+  buildSubagentRunReadIndexWork,
   countActiveRunsForSessionFromRuns,
   countPendingDescendantRunsFromRuns,
   hasDescendantRunAwaitingSettleFromRuns,
@@ -39,6 +43,91 @@ function toRunMap(runs: SubagentRunRecord[]): Map<string, SubagentRunRecord> {
 }
 
 describe("subagent registry query regressions", () => {
+  it("exposes complete snapshot inputs and exact memory winners captured before yielding", () => {
+    const ungrouped = makeRun({ runId: "ungrouped", requesterSessionKey: "", endedAt: 50 });
+    const older = makeRun({ runId: "older", createdAt: 10, endedAt: 15 });
+    const winner = makeRun({
+      runId: "winner",
+      childSessionKey: older.childSessionKey,
+      createdAt: 20,
+      endedAt: 30,
+    });
+    const runs = toRunMap([ungrouped, structuredClone(winner)]);
+    const memory = toRunMap([older, winner]);
+    const work = buildSubagentRunReadIndexWork(
+      { runs, inMemoryRuns: memory.values(), now: 100 },
+      () => true,
+    );
+    expect(work.next().done).toBe(false);
+    memory.clear();
+    const index = runSynchronousWork(work);
+    expect(index.inputs).toBeDefined();
+    expect(index.inputs.runs).toBe(runs);
+    expect(index.inputs.runs.get(ungrouped.runId)).toBe(ungrouped);
+    expect(index.inputs.inMemoryRuns).toHaveLength(1);
+    expect(index.inputs.inMemoryRuns[0]).toBe(winner);
+    const replay = buildSubagentRunReadIndexFromRuns({ ...index.inputs, now: 200 });
+    expect(replay.getDisplaySubagentRun(winner.childSessionKey)).toBe(winner);
+    expect(replay.getDisplaySubagentRun(ungrouped.childSessionKey)).toBe(ungrouped);
+  });
+
+  it("preserves captured display classification while owner liveness changes across a yield", () => {
+    const now = Date.now();
+    const root = "agent:main:captured-index";
+    const running = makeRun({
+      runId: "captured-display",
+      requesterSessionKey: root,
+      createdAt: now - STALE_UNENDED_SUBAGENT_RUN_MS - 1,
+      startedAt: now - STALE_UNENDED_SUBAGENT_RUN_MS - 1,
+    });
+    const ended = makeRun({
+      runId: "captured-ended",
+      requesterSessionKey: root,
+      childSessionKey: running.childSessionKey,
+      createdAt: now - 100,
+      endedAt: now - 10,
+    });
+    const sibling = makeRun({
+      runId: "captured-sibling",
+      requesterSessionKey: root,
+      createdAt: now - STALE_UNENDED_SUBAGENT_RUN_MS - 1,
+      startedAt: now - STALE_UNENDED_SUBAGENT_RUN_MS - 1,
+    });
+    const claims = [running, sibling].map(
+      (entry) =>
+        [
+          entry.runId,
+          claimAgentRunContext(
+            entry.runId,
+            { sessionKey: entry.childSessionKey },
+            { trackOwner: true, ownsContext: true },
+          ),
+        ] as const,
+    );
+    try {
+      const params = { runs: toRunMap([running, ended, sibling]), now };
+      const synchronous = buildSubagentRunReadIndexFromRuns(params);
+      const work = buildSubagentRunReadIndexWork(params, () => true);
+      expect(work.next().done).toBe(false);
+      for (const [id, claim] of claims) {
+        releaseAgentRunContext(id, claim);
+      }
+      const cooperative = runSynchronousWork(work);
+      expect(cooperative.getDisplaySubagentRun(running.childSessionKey)?.runId).toBe(running.runId);
+      expect(cooperative.getDisplaySubagentRun(running.childSessionKey)).toBe(
+        synchronous.getDisplaySubagentRun(running.childSessionKey),
+      );
+      expect(cooperative.countActiveDescendantRuns(root)).toBe(0);
+      expect(cooperative.countActiveDescendantRuns(root)).toBe(
+        synchronous.countActiveDescendantRuns(root),
+      );
+    } finally {
+      for (const [id, claim] of claims) {
+        releaseAgentRunContext(id, claim);
+      }
+    }
+  });
+
   it("selects the newer generation when child runs share a timestamp", () => {
     const childSessionKey = "agent:main:subagent:same-millisecond";
     const runs = toRunMap([

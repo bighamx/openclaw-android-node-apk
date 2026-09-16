@@ -82,7 +82,7 @@ import { getChatSessionProjection, publishChatSessionProjection } from "./histor
 import { handleChatInputHistoryKey } from "./input-history.ts";
 import { installOutboxBrowserStorage } from "./outbox-browser.test-support.ts";
 import { prepareOutboxPayload } from "./outbox-payloads.ts";
-import { updateQueuedMessageEdit } from "./queued-message-edit.ts";
+import { cancelQueuedMessageEdit, updateQueuedMessageEdit } from "./queued-message-edit.ts";
 import { handleChatScrollTakeover } from "./scroll.ts";
 import {
   cacheChatSessionSnapshot,
@@ -8206,6 +8206,95 @@ describe("handleSendChat", () => {
       } finally {
         stopRecovered();
         stopSource();
+      }
+    },
+  );
+
+  it.each(["move", "remove", "edit"] as const)(
+    "honors a queue %s while attachment hydration is pending",
+    async (action) => {
+      const { attachments, dataUrls } = createDeliveryAttachmentBatch();
+      const request = makeRequestMock({
+        "chat.history": () => idleChatHistory(),
+        "chat.send": (params: unknown) => ({
+          runId: requireRecord(params, "reordered attachment send").idempotencyKey,
+          status: "ok",
+          messageSeq: 1,
+        }),
+      });
+      sessionStorage.setItem("openclaw.control.outboxTab.v1", "test-outbox-tab");
+      const host = makeChatHost({
+        client: clientWithRequest(request),
+        connected: false,
+        chatMessage: "attachment A",
+        chatAttachments: attachments,
+      });
+      const unsubscribe = subscribeChatOutboxProjection(host);
+      const readStarted = createDeferred();
+      const releaseRead = createDeferred();
+      let drain: Promise<void> | undefined;
+      try {
+        await handleSendChat(host);
+        host.chatMessage = "text B";
+        await handleSendChat(host);
+        const [first, second] = host.chatQueue;
+        expect(first?.attachmentPayload).toBeDefined();
+        expect(second?.text).toBe("text B");
+        const readPayload = outboxPayloadStore.readOutboxPayload;
+        vi.spyOn(outboxPayloadStore, "readOutboxPayload").mockImplementationOnce(
+          async (...args) => {
+            const result = await readPayload(...args);
+            readStarted.resolve();
+            await releaseRead.promise;
+            return result;
+          },
+        );
+        host.connected = true;
+        drain = retryReconnectableQueuedChatSends(host);
+        await readStarted.promise;
+        if (action === "move") {
+          expect(moveQueuedChatMessage(host, second!.id, first!.id)).toBe("moved");
+        } else if (action === "remove") {
+          expect(removeQueuedMessage(host, first!.id)).toBe("removed");
+        } else {
+          expect(beginQueuedMessageEdit(host, first!.id)).toBe("started");
+          updateQueuedMessageEdit(host, "unfinished correction");
+        }
+        const expected =
+          action === "move"
+            ? ["text B", "attachment A"]
+            : action === "remove"
+              ? ["text B"]
+              : ["attachment A", "text B"];
+        expect(listStoredChatOutboxes(host)[0]?.queue.map((item) => item.text)).toEqual(expected);
+        expect(request.mock.calls.filter(([method]) => method === "chat.send")).toHaveLength(0);
+        releaseRead.resolve();
+        await drain;
+        if (action === "edit") {
+          expect(request.mock.calls.filter(([method]) => method === "chat.send")).toHaveLength(0);
+          expect(host.chatQueuedEdit?.draftText).toBe("unfinished correction");
+          expect(cancelQueuedMessageEdit(host)).toBe(true);
+          await retryReconnectableQueuedChatSends(host);
+        }
+        const sends = request.mock.calls
+          .filter(([method]) => method === "chat.send")
+          .map(([, params]) => requireRecord(params, "reordered delivery"));
+        expect(sends.map((params) => params.message)).toEqual(expected);
+        if (action !== "remove") {
+          expect(sends.find((params) => params.message === "attachment A")?.attachments).toEqual(
+            attachments.map((attachment, index) => ({
+              type: attachment.mimeType.startsWith("image/") ? "image" : "file",
+              mimeType: attachment.mimeType,
+              fileName: attachment.fileName,
+              content: dataUrls[index]!.split(",")[1],
+            })),
+          );
+        }
+        expect(listStoredChatOutboxes(host)).toEqual([]);
+      } finally {
+        releaseRead.resolve();
+        await drain;
+        unsubscribe();
       }
     },
   );

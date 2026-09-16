@@ -11,7 +11,6 @@ import {
 import { assertGatewayConfigEnvSelectionUnchanged } from "../config/gateway-env-selection.js";
 import {
   getRuntimeConfigSourceSnapshot,
-  readConfigFileSnapshot,
   readConfigFileSnapshotWithPluginMetadata,
   setAppliedRuntimeConfigSnapshot,
 } from "../config/io.js";
@@ -71,13 +70,6 @@ type GatewayLogger = ReturnType<typeof createSubsystemLogger>;
 type WorkerEnvironmentStartupLoader = () => Promise<
   typeof import("./server-worker-environment-startup.js")
 >;
-
-function publishGatewayPluginRuntimeConfigAtStartup(params: {
-  runtimeConfig: OpenClawConfig;
-  sourceConfig: OpenClawConfig;
-}): void {
-  setAppliedRuntimeConfigSnapshot(params.runtimeConfig, params.sourceConfig);
-}
 
 export async function prepareGatewayServerBootstrap(input: {
   port: number;
@@ -176,11 +168,11 @@ export async function prepareGatewayServerBootstrap(input: {
       });
     }
   });
-  const { bootstrapGatewayNetworkRuntime } = await startupTrace.measure(
+  const { ensureGlobalUndiciEnvProxyDispatcher } = await startupTrace.measure(
     "runtime.network-imports",
-    () => import("./server-network-runtime.js"),
+    () => import("../infra/net/undici-global-dispatcher.js"),
   );
-  await startupTrace.measure("runtime.network-bootstrap", () => bootstrapGatewayNetworkRuntime());
+  await startupTrace.measure("runtime.network-bootstrap", ensureGlobalUndiciEnvProxyDispatcher);
 
   const minimalTestGateway =
     isVitestRuntimeEnv() && process.env.OPENCLAW_TEST_MINIMAL_GATEWAY === "1";
@@ -265,8 +257,6 @@ export async function prepareGatewayServerBootstrap(input: {
       ? { pluginMetadataSnapshot: startupConfigLoad.pluginMetadataSnapshot }
       : {}),
   });
-  let startupInternalWriteHash: string | null = null;
-  let startupLastGoodSnapshot = configSnapshot;
   const startupActivationSourceConfig = configSnapshot.sourceConfig;
   const startupRuntimeConfig = captureConfigOverrideApplier()(startupConfigSnapshot.config);
   startupTrace.setConfig(startupRuntimeConfig);
@@ -420,7 +410,7 @@ export async function prepareGatewayServerBootstrap(input: {
     const previousSourceConfig =
       params.previousSourceConfig ??
       getRuntimeConfigSourceSnapshot() ??
-      startupLastGoodSnapshot.sourceConfig;
+      configSnapshot.sourceConfig;
     assertGatewayConfigEnvSelectionUnchanged(previousSourceConfig, params.sourceConfig);
     const runtimeEnv = prepareConfigRuntimeEnv({
       previousConfig: previousSourceConfig,
@@ -461,20 +451,11 @@ export async function prepareGatewayServerBootstrap(input: {
       reapplyCompareOverlays,
     };
   };
-  // Keep the old startup-write suppression path intact for compatibility with
-  // callers that may still report a write, but startup itself no longer mutates config.
-  if (startupConfigLoad.wroteConfig || authBootstrap.persistedGeneratedToken) {
-    const startupSnapshot = await startupTrace.measure("config.final-snapshot", () =>
-      readConfigFileSnapshot(),
-    );
-    startupInternalWriteHash = startupSnapshot.hash ?? null;
-    startupLastGoodSnapshot = startupSnapshot;
-  }
-  setAppliedRuntimeConfigSnapshot(cfgAtStart, startupLastGoodSnapshot.sourceConfig);
+  setAppliedRuntimeConfigSnapshot(cfgAtStart, configSnapshot.sourceConfig);
   applyLoggingConfig(cfgAtStart.logging);
-  initializePublishedConfigRuntimeEnv(startupLastGoodSnapshot.sourceConfig, {
+  initializePublishedConfigRuntimeEnv(configSnapshot.sourceConfig, {
     ownedEnv: collectConfigRuntimeEnvOwnership(
-      startupLastGoodSnapshot.sourceConfig,
+      configSnapshot.sourceConfig,
       envBeforeStartupConfigLoad,
       process.env,
     ),
@@ -526,10 +507,7 @@ export async function prepareGatewayServerBootstrap(input: {
   // prepared owners are created so request-time exact-owner lookups cannot see the pre-activation
   // snapshot and reject the Gateway's own model catalog.
   copyConfigResolutionFacts(cfgAtStart, gatewayPluginConfigAtStart);
-  publishGatewayPluginRuntimeConfigAtStartup({
-    runtimeConfig: gatewayPluginConfigAtStart,
-    sourceConfig: startupLastGoodSnapshot.sourceConfig,
-  });
+  setAppliedRuntimeConfigSnapshot(gatewayPluginConfigAtStart, configSnapshot.sourceConfig);
   const coreGatewayMethodNames = listCoreGatewayMethodNames();
   const existingPluginMetadataSnapshot = getGatewayPluginMetadataSnapshot();
   const currentPluginMetadataSnapshot = existingPluginMetadataSnapshot ?? pluginMetadataSnapshot;
@@ -580,8 +558,6 @@ export async function prepareGatewayServerBootstrap(input: {
     activeTaskCount,
     applyFixedGatewayOverlays,
     prepareReloadCandidate,
-    startupInternalWriteHash,
-    startupLastGoodSnapshot,
     workerEnvironmentStartup,
     pluginGatewayContext,
     resolvePluginGatewayContext,
@@ -599,7 +575,3 @@ export async function prepareGatewayServerBootstrap(input: {
     activateRuntimeSecrets,
   };
 }
-
-export const testing = {
-  publishGatewayPluginRuntimeConfigAtStartup,
-};

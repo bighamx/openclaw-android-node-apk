@@ -4,10 +4,8 @@ import type { PluginsRefreshResult } from "../../packages/gateway-protocol/src/s
 import { formatDocsLink } from "../../packages/terminal-core/src/links.js";
 import { sanitizeTerminalText } from "../../packages/terminal-core/src/safe-text.js";
 import { theme } from "../../packages/terminal-core/src/theme.js";
-import {
-  collectConfiguredRuntimePluginIds,
-  resolveConfiguredRuntimePluginInstallCandidate,
-} from "../commands/doctor/shared/configured-runtime-plugin-installs.js";
+import { resolveConfiguredRuntimePluginInstallCandidate } from "../commands/doctor/shared/configured-runtime-plugin-installs.js";
+import { collectConfiguredRuntimePluginIds } from "../commands/doctor/shared/configured-runtime-plugin-owners.js";
 import {
   assertConfigWriteAllowedInCurrentMode,
   getRuntimeConfig,
@@ -258,9 +256,10 @@ async function runPluginPolicyCommand(
 }
 
 export async function runPluginsReloadCommand(
-  pluginId: string,
+  ids: string[],
   opts: { json?: boolean; acceptCapabilities?: boolean } = {},
 ): Promise<void> {
+  const pluginIds = [...new Set(ids)];
   const { resolvePluginLifecycleGateway } = await import("./plugins-lifecycle-client.js");
   const gateway = await resolvePluginLifecycleGateway();
   if (!gateway) {
@@ -273,7 +272,7 @@ export async function runPluginsReloadCommand(
   });
   const result = await gateway<{ runtime: { generation: number }; warnings?: string[] }>(
     "plugins.reload",
-    { plugins: [{ pluginId }] },
+    { plugins: pluginIds.map((pluginId) => ({ pluginId })) },
     consent.onCapabilityConsent,
   );
   if (opts.json) {
@@ -282,7 +281,9 @@ export async function runPluginsReloadCommand(
   for (const warning of result.warnings ?? []) {
     defaultRuntime.log(theme.warn(warning));
   }
-  defaultRuntime.log(`Reloaded plugin "${pluginId}" (generation ${result.runtime.generation}).`);
+  defaultRuntime.log(
+    `Reloaded ${pluginIds.length === 1 ? "plugin" : "plugins"} ${pluginIds.map((id) => `"${id}"`).join(", ")} (generation ${result.runtime.generation}).`,
+  );
 }
 
 export async function runPluginsInstallAction(

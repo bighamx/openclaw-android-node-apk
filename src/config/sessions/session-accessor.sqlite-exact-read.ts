@@ -7,6 +7,7 @@ import {
   type OpenClawAgentDatabaseOptions,
 } from "../../state/openclaw-agent-db.js";
 import type { ExactSessionEntry, SessionAccessScope } from "./session-accessor.sqlite-contract.js";
+import { readCachedExactSessionEntries } from "./session-accessor.sqlite-entry-cache.js";
 import {
   prepareExactSessionEntryRowReads,
   readExactSessionEntryRowValidated,
@@ -18,7 +19,10 @@ import {
   type SessionSqliteTargetResolutionCache,
 } from "./session-accessor.sqlite-scope.js";
 import type { SessionEntryReadScope } from "./session-accessor.types.js";
-import { assertCanonicalSqliteSessionKeysCurrent } from "./session-canonical-key.js";
+import {
+  assertCanonicalSqliteSessionKeysCurrent,
+  readWithCanonicalSessionAdmission,
+} from "./session-canonical-key.js";
 import type { InternalSessionEntry as SessionEntry } from "./types.js";
 
 type ResolvedSqliteSessionEntry = {
@@ -47,7 +51,10 @@ export function resolveSessionEntry(
     };
   };
   if (options.readOnly) {
-    const result = withOpenClawAgentDatabaseReadOnly(read, toDatabaseOptions(resolved));
+    const result = withOpenClawAgentDatabaseReadOnly(
+      (database) => readWithCanonicalSessionAdmission(database, () => read(database)),
+      toDatabaseOptions(resolved),
+    );
     return result.found
       ? result.value
       : { existing: undefined, legacyKeys: [], normalizedKey: resolved.sessionKey };
@@ -103,7 +110,10 @@ export function loadExactSessionEntryCandidates(
   if (!scope.readOnly) {
     return read(openOpenClawAgentDatabase(options));
   }
-  const result = withOpenClawAgentDatabaseReadOnly(read, options);
+  const result = withOpenClawAgentDatabaseReadOnly(
+    (database) => readWithCanonicalSessionAdmission(database, () => read(database)),
+    options,
+  );
   return result.found ? result.value : [];
 }
 
@@ -163,11 +173,16 @@ export function loadExactSessionEntryCandidatesReadOnlyBatch(
         assertCanonicalSqliteSessionKeysCurrent(database);
         const source = { agentId: database.agentId, path: database.path };
         const entries = new Map<string, Result<ExactSessionEntry | undefined, unknown>>();
-        const readPrepared = prepareExactSessionEntryRowReads(
-          database,
-          [...new Set(group.requests.flatMap((request) => request.sessionKeys))],
-          group.projection,
-        );
+        const keys = [...new Set(group.requests.flatMap((request) => request.sessionKeys))];
+        const cachedEntries =
+          group.projection === "list" ? readCachedExactSessionEntries(database, keys) : undefined;
+        let readPrepared: (sessionKey: string) => SessionEntry | undefined;
+        if (cachedEntries) {
+          readPrepared = (sessionKey) => cachedEntries.get(sessionKey);
+        } else {
+          const readRows = prepareExactSessionEntryRowReads(database, keys, group.projection);
+          readPrepared = (sessionKey) => readRows(sessionKey)?.entry;
+        }
         const readEntry = (sessionKey: string): Result<ExactSessionEntry | undefined, unknown> => {
           const cached = entries.get(sessionKey);
           if (cached) {
@@ -175,7 +190,7 @@ export function loadExactSessionEntryCandidatesReadOnlyBatch(
           }
           let result: Result<ExactSessionEntry | undefined, unknown>;
           try {
-            const entry = readPrepared(sessionKey)?.entry;
+            const entry = readPrepared(sessionKey);
             result = ok(entry ? { sessionKey, entry } : undefined);
           } catch (error) {
             result = err(error);

@@ -54,6 +54,7 @@ type UpdateDryRunPreview = {
   tag: string;
   currentVersion: string | null;
   targetVersion: string | null;
+  targetVersionReason?: string;
   downgradeRisk: boolean;
   actions: string[];
   notes: string[];
@@ -78,6 +79,8 @@ function printDryRunPreview(preview: UpdateDryRunPreview, jsonMode: boolean): vo
   }
   if (preview.targetVersion) {
     defaultRuntime.log(`  Target version: ${theme.muted(preview.targetVersion)}`);
+  } else if (preview.targetVersionReason) {
+    defaultRuntime.log(`  Target version: unresolved (${preview.targetVersionReason})`);
   }
   if (preview.downgradeRisk) {
     defaultRuntime.log(theme.warn("  Downgrade confirmation would be required in a real run."));
@@ -174,10 +177,18 @@ export function printUpdateDryRun(params: {
     );
   }
 
+  const run = getUpdateRun(params.runId, { env: params.opts.run?.env });
+  const targetVersionReason = params.targetVersion
+    ? undefined
+    : params.updateInstallKind === "git"
+      ? "Git dry-runs do not select a build-tested target version."
+      : canResolveRegistryVersionForPackageTarget(params.packageInstallSpec ?? params.tag)
+        ? "The package target version could not be resolved."
+        : "The package artifact is not staged during a dry-run.";
   printDryRunPreview(
     {
       runId: params.runId,
-      run: getUpdateRun(params.runId, { env: params.opts.run?.env }),
+      run,
       dryRun: true,
       root: params.root,
       installKind: params.installKind,
@@ -190,8 +201,9 @@ export function printUpdateDryRun(params: {
       storedChannel: params.storedChannel,
       effectiveChannel: params.channel,
       tag: params.packageInstallSpec ?? params.tag,
-      currentVersion: params.currentVersion,
+      currentVersion: run?.before?.version ?? params.currentVersion,
       targetVersion: params.targetVersion,
+      ...(targetVersionReason ? { targetVersionReason } : {}),
       downgradeRisk: params.downgradeRisk,
       actions,
       notes,

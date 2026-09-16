@@ -241,8 +241,20 @@ declared schema support are refused without creating the profile's runtime datab
 Preparation uses the original package spec and owning package manager.
 
 A fresh-profile `--dry-run` leaves the database absent and does not record a run.
+For package targets, it checks the exact target's Node requirements using the same
+runtime planner as a real update. Text output and JSON `notes` report `Would refuse
+update` when no usable runtime is available, or `Would replace` when the updater can
+refresh its owned managed service to a compatible Node. The preview still exits
+successfully and does not install a package or change the service.
 If package metadata cannot be resolved, retry with an exact published `--tag`;
 failed target selection does not initialize the profile with the updater's schema.
+
+`--dry-run --json` reports the known installed version in `currentVersion` for
+package and Git installs, including a saved dev channel that selects conversion
+to Git. If the target version is unresolved, `targetVersion` remains `null` and
+the additive `targetVersionReason` field explains why. Resolved targets omit this
+field. The text preview also shows the installed version and explains unresolved
+targets.
 
 `--yes` also skips the optional shell-completion setup prompt. Existing
 completion profiles and caches are still repaired when needed; installing

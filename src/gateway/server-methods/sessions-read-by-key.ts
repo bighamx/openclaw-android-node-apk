@@ -1,12 +1,19 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { validateSessionsDescribeParams } from "../../../packages/gateway-protocol/src/index.js";
+import { prepareSubagentSessionListReadIndex } from "../../agents/subagents/registry/subagent-registry-read.js";
+import { runSynchronousWork } from "../../shared/synchronous-work.js";
+import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import { hasOperatorBoundary } from "../operator-role-policy.js";
 import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
 import { createSessionListEntryFilter, prepareSessionSharing } from "../session-sharing.js";
 import { readRecentSessionMessagesWithStatsAsync } from "../session-transcript-readers.js";
 import { buildSessionListRowMetadataContext } from "../session-utils-projection.js";
+import {
+  readSessionRowInputs,
+  materializeSessionRow,
+  presentSessionRow,
+} from "../session-utils-row.js";
 import { createGatewaySessionEntryReader } from "../session-utils-store-lookup.js";
-import { buildGatewaySessionRow } from "../session-utils.js";
 import { readPreparedServerMethodModelCatalog } from "./optional-model-catalog.js";
 import { readSessionPlacementFields } from "./session-placement-read-projection.js";
 import { loadSessionEntriesForTarget, requireSessionKey } from "./sessions-shared.js";
@@ -43,7 +50,14 @@ export const sessionByKeyReadHandlers: GatewayRequestHandlers = {
     const modelCatalog = await readPreparedServerMethodModelCatalog(context, {
       agentId: catalogAgent.agentId,
     });
-    // Resolve the visible row after the catalog read yields to configuration or session changes.
+    const now = Date.now();
+    const stateContext = captureOpenClawStateWorkerContext();
+    const subagentRuns = runSynchronousWork(
+      await prepareSubagentSessionListReadIndex(now, stateContext, () => false),
+    );
+    stateContext.maintenanceScope?.assertAdmission();
+    stateContext.admission.assertCurrent();
+    // Resolve visibility and the current row after both metadata reads have yielded.
     const cfg = context.getRuntimeConfig();
     const requestedAgent = resolveRequestedSessionAgentId(cfg, key, params.agentId);
     if (!requestedAgent.ok) {
@@ -62,7 +76,7 @@ export const sessionByKeyReadHandlers: GatewayRequestHandlers = {
       respond(true, { session: null }, undefined);
       return;
     }
-    const row = buildGatewaySessionRow({
+    const { inputs, presentation } = readSessionRowInputs({
       cfg,
       storePath,
       store,
@@ -82,9 +96,10 @@ export const sessionByKeyReadHandlers: GatewayRequestHandlers = {
       includeDerivedTitles: params.includeDerivedTitles,
       includeLastMessage: params.includeLastMessage,
       transcriptUsageMaxBytes: 64 * 1024,
-      rowContext: buildSessionListRowMetadataContext({ now: Date.now() }),
+      rowContext: buildSessionListRowMetadataContext({ now, subagentRuns }),
       includeSwarmChildren: true,
     });
+    const row = presentSessionRow(materializeSessionRow(inputs), presentation);
     Object.assign(row, {
       sharingRole: sharing.roleForTarget({
         agentId: target.agentId,

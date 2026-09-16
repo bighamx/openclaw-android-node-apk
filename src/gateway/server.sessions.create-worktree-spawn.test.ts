@@ -24,7 +24,10 @@ import {
   SESSION_WORK_ADMISSION_DRAIN_TIMEOUT_MS,
 } from "../sessions/session-lifecycle-admission.js";
 import { createDeferredCore } from "../shared/deferred.js";
-import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
+import {
+  closeOpenClawStateDatabaseAsync,
+  closeOpenClawStateDatabaseForTest,
+} from "../state/openclaw-state-db.js";
 import { createOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import { waitForChatAbortControllerRemoval } from "./chat-abort-lifecycle-internal.js";
@@ -163,6 +166,7 @@ beforeEach(async () => {
   const defaultWorkspace = path.join(state.root, "non-git-workspace");
   await fs.mkdir(defaultWorkspace);
   repository = await createRepository("selected-project");
+  await closeOpenClawStateDatabaseAsync();
   closeOpenClawStateDatabaseForTest();
   testState.agentConfig = { workspace: defaultWorkspace };
   ({ storePath } = await createSessionStoreDir());
@@ -176,6 +180,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await closeOpenClawStateDatabaseAsync();
   vi.restoreAllMocks();
   projectCloneMocks.materializeProjectClone.mockReset();
   projectCloneMocks.refreshProjectClone.mockReset();
@@ -304,7 +309,7 @@ test.each([
       getRuntimeConfig,
       trackExecution: async (run) => await run(),
     });
-    const createWorktree = vi.spyOn(managedWorktrees, "create");
+    const createWorktree = vi.spyOn(managedWorktrees, "createWithOutcome");
     const bindChild = vi.spyOn(sessionAccess, "createSessionEntryWithTranscript");
     const registerRun = vi.fn();
     const tool = createSessionsSpawnTool({
@@ -373,7 +378,7 @@ test("required parent rejects immediate registered-project worktree preparation"
     { ...parent, sandbox: "required" },
   );
   const project = await registerProjectRegistry({ path: repository });
-  const createWorktree = vi.spyOn(managedWorktrees, "create");
+  const createWorktree = vi.spyOn(managedWorktrees, "createWithOutcome");
   const key = "agent:main:dashboard:required-immediate-project";
   const result = await createChild({ key, projectId: project.id });
   expect(result).toMatchObject({
@@ -451,9 +456,9 @@ test.each(["archive", "replace", "rebind", "unregister"] as const)(
   "direct-project worktree spawns roll back after parent %s during preparation",
   async (change) => {
     const selectedParent = await createDirectProjectParent();
-    const createWorktree = managedWorktrees.create.bind(managedWorktrees);
-    vi.spyOn(managedWorktrees, "create").mockImplementation(async (params) => {
-      const created = await createWorktree(params);
+    const createWorktree = managedWorktrees.createWithOutcome.bind(managedWorktrees);
+    vi.spyOn(managedWorktrees, "createWithOutcome").mockImplementation(async (params) => {
+      const outcome = await createWorktree(params);
       if (change === "unregister") {
         expect(await removeProjectRegistry(selectedParent.project)).toBe(true);
       } else {
@@ -469,7 +474,7 @@ test.each(["archive", "replace", "rebind", "unregister"] as const)(
           },
         );
       }
-      return created;
+      return outcome;
     });
     const key = `agent:main:dashboard:direct-parent-${change}-child`;
     await expect(createChild({ key }, false, selectedParent.key)).rejects.toThrow(
@@ -496,6 +501,7 @@ test("worktree spawns do not inherit an unregistered parent working directory", 
 
 test("keyed worktree creation reuses its recorded base after reopening the registry", async () => {
   const params = { ...parentCreateParams, cwd: repository };
+  await closeOpenClawStateDatabaseAsync();
   closeOpenClawStateDatabaseForTest();
   const reused = await directSessionReq<CreatedWorktreeSession>(
     "sessions.create",
@@ -614,14 +620,14 @@ test("trusted worktree spawns reject a stale parent registry binding", async () 
 });
 
 test("trusted worktree spawns roll back when the parent changes during preparation", async () => {
-  const createWorktree = managedWorktrees.create.bind(managedWorktrees);
-  vi.spyOn(managedWorktrees, "create").mockImplementation(async (params) => {
-    const created = await createWorktree(params);
+  const createWorktree = managedWorktrees.createWithOutcome.bind(managedWorktrees);
+  vi.spyOn(managedWorktrees, "createWithOutcome").mockImplementation(async (params) => {
+    const outcome = await createWorktree(params);
     replaceSessionEntrySync(
       { agentId: "main", sessionKey: parentKey, storePath },
       { ...parent, sessionId: "replaced-parent" },
     );
-    return created;
+    return outcome;
   });
   const key = "agent:main:dashboard:retired-parent-child";
   await expect(createChild({ key })).rejects.toThrow("Spawn parent managed worktree changed");
@@ -634,7 +640,7 @@ test("publishes a failed worktree spawn only after its durable session failure",
   const target = { agentId: "main", sessionKey: key, storePath };
   const preparation = createDeferredCore<never>();
   const createWorktree = vi
-    .spyOn(managedWorktrees, "create")
+    .spyOn(managedWorktrees, "createWithOutcome")
     .mockReturnValueOnce(preparation.promise);
   const failure = new Error(
     "git ls-tree -r --format=%(objectsize) c79ad267ba623c1a323f1f6e8b60228bd5a30ce5 -- failed (timed out after 120 seconds; signal SIGTERM):\n4514\n4168\nCheck repository access and disk space.",
@@ -820,7 +826,7 @@ test.each(["archive", "replace", "rebind", "stale-child"] as const)(
       counts: { block: 0, final: 0, tool: 0 },
     });
     const resolveRepository = vi.spyOn(managedWorktrees, "resolveRepositoryPaths");
-    const createWorktree = vi.spyOn(managedWorktrees, "create");
+    const createWorktree = vi.spyOn(managedWorktrees, "createWithOutcome");
     let replaced = false;
     const unsubscribe = onAgentEvent((event) => {
       if (

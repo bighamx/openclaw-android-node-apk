@@ -5,7 +5,7 @@ import {
   repairCanonicalSqliteIndexes,
   verifyAndRepairCanonicalSqliteIndexes,
 } from "../infra/sqlite-index-schema.js";
-import { assertSqliteIntegrity } from "../infra/sqlite-integrity.js";
+import { assertSqliteIntegrity, assertSqliteTableIntegrity } from "../infra/sqlite-integrity.js";
 import { assertSqliteSchemaTablesPresent } from "../infra/sqlite-schema-contract.js";
 import { migrateSqliteSchemaToStrictInTransaction } from "../infra/sqlite-strict.js";
 import { runSqliteImmediateTransactionSync } from "../infra/sqlite-transaction.js";
@@ -76,21 +76,30 @@ export function repairStateSchema(
   let ownershipRefused = false;
   try {
     setSqliteBusyTimeout(db, OPENCLAW_SQLITE_BUSY_TIMEOUT_MS);
-    let repairAdmittedSchema: (() => string[]) | undefined;
-    if (scope === "automatic") {
+    const repairAdmittedSchema =
+      scope === "automatic" ? undefined : prepareStateDatabaseSchemaRepair(db, pathname, env);
+    if (!repairAdmittedSchema) {
       assertSupportedStateSchemaVersion(db, pathname);
-    } else {
-      repairAdmittedSchema = prepareStateDatabaseSchemaRepair(db, pathname, env);
-      if (scope === "readability") {
-        return {
-          changes: runSqliteImmediateTransactionSync(db, repairAdmittedSchema, {
+    } else if (scope === "readability") {
+      return {
+        changes: runSqliteImmediateTransactionSync(
+          db,
+          () => {
+            const changes = repairAdmittedSchema();
+            if (changes.length > 0) {
+              assertOpenClawStateDatabaseOwner(db, { pathname });
+              assertSqliteTableIntegrity(db, pathname, "skill_workshop_collection_reviews");
+            }
+            return changes;
+          },
+          {
             busyTimeoutMs: OPENCLAW_SQLITE_BUSY_TIMEOUT_MS,
             databaseLabel: pathname,
             operationLabel: "state.schema.readability-repair",
-          }),
-          warnings: [],
-        };
-      }
+          },
+        ),
+        warnings: [],
+      };
     }
     const applied: string[] = [];
     const changes = runStateSchemaMigrationTransaction(
