@@ -24,6 +24,12 @@ and publishes the result. Avoid exposing a generic SQL callback to application
 code or adding an asynchronous wrapper around an existing asynchronous facade.
 The plugin KV API already has asynchronous methods over its SQLite owner.
 
+Copilot SDK session bindings use these worker-backed data operations. The harness
+serializes binding reads, writes, and in-memory publication per OpenClaw session;
+reset and shutdown join admitted binding work and deferred compaction cleanup.
+Failed persistence retains the existing in-memory fallback. Binding formats,
+compatibility checks, namespace limits, and expiry remain unchanged.
+
 Asynchronous mutable cron-store loads run in the shared-state worker, including
 the existing retired-job deletion and runtime-authority repairs. The connection-bound
 load kernel preserves their separate transactions, partition keys, and fingerprints.
@@ -53,6 +59,13 @@ each recovery operation retains its read-only connection through polling and
 joins worker cleanup before the send publishes its receipt. Numeric message IDs and the latest matching sent message keep their existing recovery
 rules, including the five-second polling deadline. This does not migrate
 iMessage's startup watermark or conversation-binding queries.
+
+Discord presence cooldown reads, claims, and conditional rollback use the shared
+state worker. The listener rechecks current policy and Gateway generation after
+storage waits, queues greetings only after a durable claim, and joins admitted
+work and rollback during provider shutdown, including work detached by reconnect.
+The same namespace, eight-hour expiry, and capacity policy remain in use. Thread
+binding persistence retains its synchronous owner and public completion contract.
 
 Memory-host event appends and bounded journal reads execute on the shared state
 worker. The plugin-state owner allocates the sequence, rereads the cursor and
@@ -119,8 +132,17 @@ current ownership and session tombstones after awaited preparation.
 Incognito databases, archive materialization, and caller-owned transcript
 observers retain their existing local execution. Index publication and
 restoration remain with their existing database and lifecycle owners.
-Worker admission and transport failures preserve the published index and its
-retry state. The existing chunking revision triggers a one-time rebuild to repair
+Cold memory exports restore through the host's existing transcript owner only
+after a read reports cold storage; hot exports add no host SQLite reads.
+Unreadable canonical transcripts, worker admission, and transport failures
+preserve the published index and retry state. Startup checks batch transcript
+statistics and use the transcript mutation watermark, so same-size rewrites are
+detected independently of session activity. The memory source hash carries this
+revision alongside its content hash; source modification times retain activity
+for temporal ranking. Legacy source hashes refresh once without rebuilding
+unchanged chunks. Transcript export hashes and provenance stay unchanged.
+The existing chunking revision
+triggers a one-time rebuild to repair
 previously indexed reset boundaries. Rebuilds reuse cached embeddings when
 available and retain the existing atomic publication path.
 
@@ -200,8 +222,13 @@ retains prepared statements and connection-local canonical-key validation, never
 an authorization result or an open read transaction. Canonical validation checks
 the committed main-key policy before reuse. The companion retires with its writer's
 native close, disposal, or replacement, including eviction and update cleanup.
-Cold readers outside the history worker and extension-capable readers remain
-one-shot; incognito reads retain their existing process-local owner.
+Cold session search retains one read-only connection while synchronously listing
+entries and checking each entry's current visibility. The entry accessor closes
+that connection before transcript search, including on errors; inherited async
+callbacks fall back to ordinary fresh reads. This scope preserves the same
+per-read admission and committed-row checks without caching visibility decisions.
+Other cold readers outside the history worker and extension-capable readers
+remain one-shot; incognito reads retain their existing process-local owner.
 
 The history worker retains one read-only connection across requests, rechecking
 schema, agent owner, and physical file identity before reuse. Every request keeps

@@ -90,9 +90,12 @@ export async function requestCodexAppServerClientJson<T = JsonValue | undefined>
     const timeoutMs = params.timeoutMs ?? 60_000;
     const method = params.method;
     const requestParams = params.requestParams;
+    const attemptWaiterFinished =
+      method === "thread/list" ? params.controlObservation?.attemptWaiterFinished : undefined;
     const options = {
       timeoutMs,
       signal: params.signal,
+      ...(attemptWaiterFinished ? { attemptWaiterFinished } : {}),
       ...(params.assertCurrent
         ? { assertCurrent: () => assertRequestOwnerCurrent(params.assertCurrent) }
         : {}),
@@ -390,9 +393,14 @@ export async function withCodexAppServerJsonClient<T>(
               assertCurrent();
               const method = request.method;
               const requestParams = request.requestParams;
+              const attemptWaiterFinished =
+                method === "thread/list"
+                  ? params.controlObservation?.attemptWaiterFinished
+                  : undefined;
               const requestOptions = {
                 timeoutMs: remainingTimeoutMs(),
                 signal: timeoutController.signal,
+                ...(attemptWaiterFinished ? { attemptWaiterFinished } : {}),
                 ...(params.catalogListKey ? { catalogListKey: params.catalogListKey } : {}),
                 assertCurrent: () => {
                   assertCurrent();

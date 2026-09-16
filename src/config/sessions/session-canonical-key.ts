@@ -276,19 +276,42 @@ export function assertCanonicalSqliteSessionKeysCurrent(
   mainKey?: string,
   collectMetadata = false,
 ): ValidatedSessionMetadata | undefined {
+  return validateCanonicalSqliteSessionKeys(database, mainKey, collectMetadata).metadata;
+}
+
+/** Validate the root's database and key together within its synchronous writer transaction. */
+export function assertCanonicalSqliteSessionRootWrite(
+  database: { agentId: string; db: DatabaseSync },
+  sessionKey: string,
+): void {
+  const { validatedMainKey } = validateCanonicalSqliteSessionKeys(database);
+  assertCanonicalSessionKeyWrite(sessionKey);
+  // Warm validation just read this policy. Cold or changed-policy scans retain
+  // their original post-scan read and error order.
+  assertCanonicalSessionMainKeyWrite(
+    sessionKey,
+    validatedMainKey ?? readCanonicalSessionMainKey(database),
+  );
+}
+
+function validateCanonicalSqliteSessionKeys(
+  database: { agentId: string; db: DatabaseSync },
+  mainKey?: string,
+  collectMetadata = false,
+): { validatedMainKey?: string; metadata?: ValidatedSessionMetadata } {
   const validatedMainKey = validatedDatabases.get(database.db);
   // Another connection can commit a Doctor/startup policy change while this reader stays open.
   if (
     validatedMainKey !== undefined &&
     validatedMainKey === readCanonicalSessionMainKey(database)
   ) {
-    return undefined;
+    return { validatedMainKey };
   }
   const metadata: ValidatedSessionMetadata | undefined = collectMetadata
     ? { dataVersion: readSqliteDataVersion(database.db), entries: new Map(), keys: [] }
     : undefined;
   scanCanonicalSqliteSessionEntries(database, undefined, mainKey, metadata);
-  return metadata;
+  return { metadata };
 }
 
 export function setCanonicalSqliteSessionMainKey(

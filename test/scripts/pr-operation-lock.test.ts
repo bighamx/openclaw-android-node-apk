@@ -35,7 +35,7 @@ import {
   validReview,
   writeReviewArtifacts,
 } from "./pr-review-artifact-fixture.js";
-import { copyPrWrapperSources } from "./pr-wrapper.test-support.js";
+import { copyPrWrapperSources, linkPrWrapperDependencies } from "./pr-wrapper.test-support.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const freshMainTemplateDirs = useAutoCleanupTempDirTracker(afterAll);
@@ -893,11 +893,12 @@ describePosix("scripts/pr per-PR operation lock", () => {
         JSON.stringify({
           number: 42,
           title: "Fixture",
-          url: "https://example.invalid/pull/42",
+          url: "https://github.com/fixture/fixture/pull/42",
           state: "OPEN",
           isDraft: false,
           author: { login: "fixture-author" },
           baseRefName: "main",
+          baseRefOid: remoteMain,
           headRefName: "fixture-pr",
           headRefOid: pullHead,
           headRepository: {
@@ -923,15 +924,16 @@ describePosix("scripts/pr per-PR operation lock", () => {
         "set -euo pipefail",
         'case "$*" in',
         '  "auth token") printf "token:1\\n" >> "$OPENCLAW_TEST_GH_EVENTS"; exit 1 ;;',
+        '  "repo view --json nameWithOwner,url") printf \'{"nameWithOwner":"fixture/fixture","url":"https://github.com/fixture/fixture"}\\n\' ;;',
         '  "api graphql -f query=query { viewer { login } } --include")',
         '    if [ "$OPENCLAW_TEST_AUTH_FAILURE" = 1 ]; then',
         '      printf "viewer:1\\n" >> "$OPENCLAW_TEST_GH_EVENTS"; exit 1',
         "    fi",
         '    printf "viewer:0\\n" >> "$OPENCLAW_TEST_GH_EVENTS"',
         '    printf \'HTTP/2.0 200 OK\\n\\n{"data":{"viewer":{"login":"fixture-user"}}}\\n\' ;;',
-        '  "pr view 42 --json headRefOid"|"pr view 42 --json headRefName,headRefOid,headRepository,headRepositoryOwner")',
+        '  "pr view 42 --json number,url,baseRefName,baseRefOid,headRefName,headRefOid,headRepository,headRepositoryOwner"|"pr view 42 --json headRefOid"|"pr view 42 --json headRefName,headRefOid,headRepository,headRepositoryOwner")',
         '    cat "$OPENCLAW_TEST_PR_METADATA"; printf "head:0\\n" >> "$OPENCLAW_TEST_GH_EVENTS" ;;',
-        '  "pr view 42 --json number,title,state,isDraft,author,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner,url,body,labels,assignees,changedFiles,additions,deletions,statusCheckRollup,files")',
+        '  "pr view 42 --json number,title,state,isDraft,author,baseRefName,baseRefOid,headRefName,headRefOid,headRepository,headRepositoryOwner,url,body,labels,assignees,changedFiles,additions,deletions,statusCheckRollup,files")',
         '    cat "$OPENCLAW_TEST_PR_METADATA"; printf "metadata:0\\n" >> "$OPENCLAW_TEST_GH_EVENTS" ;;',
         '  *) printf "unexpected:99\\n" >> "$OPENCLAW_TEST_GH_EVENTS"; echo "unexpected fixture gh request" >&2; exit 99 ;;',
         "esac",
@@ -1031,7 +1033,7 @@ describePosix("scripts/pr per-PR operation lock", () => {
             .soft(ghEvents, output)
             .toEqual(
               command === "review-init"
-                ? ["metadata:0", "head:0", "token:1", "viewer:1"]
+                ? ["token:1", "metadata:0", "head:0", "token:1", "viewer:1"]
                 : ["token:1", "viewer:1"],
             );
           expect.soft(controller.exitCode, output).toBe(1);
@@ -1809,6 +1811,7 @@ describePosix("scripts/pr per-PR operation lock", () => {
     ({ wrapper, command, failure }) => {
       const repoDir = createRepo();
       const { binDir, cli, wrapperSources } = installPrCliFixture(repoDir);
+      linkPrWrapperDependencies(repoDir);
       const rg = writeFixtureFile(binDir, "rg", [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
@@ -1952,6 +1955,8 @@ describePosix("scripts/pr per-PR operation lock", () => {
             OPENCLAW_TEST_REF_LOCK: refLock,
             OPENCLAW_TEST_RELEASE_CWD: releaseCwd,
             PATH: `${binDir}${delimiter}${process.env.PATH ?? ""}`,
+            // Materialized wrappers outlive exec; keep their files in this fixture lifetime.
+            TMPDIR: tempDirs.make("openclaw-pr-cleanup-tmp-"),
           },
         },
       );

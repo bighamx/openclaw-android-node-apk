@@ -79,7 +79,8 @@ describePosix("native PR main refresh boundaries", () => {
     f.configure({ metadata: { ...f.metadata, headRefOid: "refs/heads/main" } });
     const result = f.run("review-init");
     expect(result.status, result.stdout + result.stderr).not.toBe(0);
-    expect(result.stderr).toContain("full lowercase commit SHA");
+    expect(result.stderr).toContain("Invalid PR identity for #42");
+    expect(result.stderr).toContain("complete base/head OIDs and refs");
     expect(f.git(f.worktree, "rev-parse", "refs/heads/pr-42")).toBe(f.head);
     expect(existsSync(join(f.local, "review-context.env"))).toBe(false);
   });

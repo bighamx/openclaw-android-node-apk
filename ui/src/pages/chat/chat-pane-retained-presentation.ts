@@ -4,22 +4,22 @@ import { t } from "../../i18n/index.ts";
 import { boardProviderCacheKey } from "../../lib/board/provider.ts";
 import { formatUiError } from "../../lib/format-error.ts";
 import { sessionPullRequestsForGateway } from "../../lib/session-pull-requests.ts";
+import { runSessionNavigationIntent } from "../../lib/sessions/navigation-handoff.ts";
+import { sessionNavigationTarget } from "../../lib/sessions/route-navigation.ts";
 import { areUiSessionKeysEquivalent } from "../../lib/sessions/session-key.ts";
 import { storeChatComposerMemoryFallback } from "./chat-composer-memory-fallback.ts";
 import { loadChatBranches, retireChatBranchRequests } from "./chat-history-branches.ts";
 import { getChatHistoryLoadState, isInitialChatHistoryUnavailable } from "./chat-history-state.ts";
 import { loadChatHistory } from "./chat-history.ts";
+import { QUEUED_EDIT_RETENTION_CHANGE_EVENT } from "./chat-page-retained-sessions.ts";
 import { ChatPaneBoard } from "./chat-pane-board.ts";
-import {
-  consumePaneSessionHandoff,
-  type PaneSessionHandoff,
-  preparePaneSessionHandoff,
-} from "./chat-pane-shared.ts";
+import { consumePaneSessionHandoff, type PaneSessionHandoff } from "./chat-pane-shared.ts";
 import { retirePullRequestRefreshes } from "./chat-pull-request-refresh.ts";
 import { stopChatRealtimeTalk } from "./chat-realtime.ts";
 import { retryReconnectableQueuedChatSends } from "./chat-send-actions.ts";
 import { setChatError } from "./chat-send-queue-state.ts";
 import { refreshCurrentChatSessionList } from "./chat-session.ts";
+import type { ChatPageHost } from "./chat-state-host.ts";
 import { invalidateImageLightbox } from "./chat-state-page.ts";
 import { refreshChatMetadata } from "./chat-state-refresh.ts";
 import { selectedChatSessionRow } from "./chat-state-route.ts";
@@ -28,15 +28,61 @@ import { dismissConfirmedActionPopovers } from "./components/chat-message.ts";
 import { clearSessionWorkspacePreviews } from "./components/chat-session-workspace-state.ts";
 import { resetTaskDetail } from "./components/chat-task-detail-state.ts";
 import { resetTranscriptSession } from "./components/chat-thread-interactions.ts";
-import { CHAT_COMPOSER_DRAFT_STORAGE_ERROR } from "./composer-persistence.ts";
+import { activeQueuedMessageEdit } from "./queued-message-edit.ts";
 
 const COMPOSER_PREFILL_ATTENTION_DURATION_MS = 600;
 const COMPOSER_PREFILL_ATTENTION_CLASS = "agent-chat__input--prefill-attention";
 
 /** Owns foreground resources and composer state that follow one retained presentation. */
 export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
+  private retainedQueuedEdit = false;
+
+  get hasQueuedMessageEdit(): boolean {
+    return Boolean(this.state?.chatQueuedEdit);
+  }
+
+  protected syncQueuedEditRetention(): void {
+    const retained = this.hasQueuedMessageEdit;
+    if (retained !== this.retainedQueuedEdit) {
+      this.retainedQueuedEdit = retained;
+      this.dispatchEvent(new Event(QUEUED_EDIT_RETENTION_CHANGE_EVENT, { bubbles: true }));
+    }
+  }
+
   protected abstract syncActiveBindings(): void;
   protected abstract activateComposerPresentation(): void;
+
+  protected reviewQueuedMessageEdit(pageState: ChatPageHost): void {
+    const edit = activeQueuedMessageEdit(pageState);
+    if (!edit || this.state !== pageState || !this.isConnected) {
+      return;
+    }
+    const client = pageState.client;
+    const target = sessionNavigationTarget({
+      context: this.context,
+      face: "chat",
+      sessionKey: edit.sessionKey,
+      agentId: edit.agentId,
+      exactKey: true,
+    });
+    runSessionNavigationIntent(this, {
+      face: "chat",
+      sessionKey: edit.sessionKey,
+      commit: () => {
+        if (
+          this.state !== pageState ||
+          pageState.client !== client ||
+          this.context.gateway.snapshot.client !== client ||
+          activeQueuedMessageEdit(pageState) !== edit
+        ) {
+          return false;
+        }
+        this.onFocusPane?.(this.paneId, "review-edit");
+        this.context.navigate("chat", target.options);
+        return true;
+      },
+    });
+  }
 
   protected clearComposerPrefillAttention(): void {
     if (this.composerPrefillAttentionTimer !== null) {
@@ -251,16 +297,8 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
         });
       }
     }
-    preparePaneSessionHandoff(this.context, this.paneId, state.sessionKey, {
-      // The gateway-scoped disconnect handoff owns attachments and memory
-      // fallbacks. This transfer carries only composer metadata and the draft.
-      attachments: [],
-      draft: state.chatMessage,
-      ...(state.chatMentions?.length ? { mentions: state.chatMentions } : {}),
-      ...(state.chatGoalDraftMode ? { goalMode: state.chatGoalDraftMode } : {}),
-      restore: true,
-      storageFailed: persistResult.status === "storage-failed",
-    });
+    // Disconnect transfers the complete composer under its existing revision;
+    // a separate unversioned draft would supersede newer edits on remount.
   }
 
   protected takeSessionHandoff(sessionKey: string): PaneSessionHandoff | null {
@@ -273,36 +311,21 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
     }
     const handoff = this.takeSessionHandoff(sessionKey);
     if (handoff) {
-      this.applySessionHandoff(sessionKey, handoff, !handoff.restore);
+      this.applySessionHandoff(sessionKey, handoff);
     }
   }
 
-  protected applySessionHandoff(
-    sessionKey: string,
-    handoff: PaneSessionHandoff,
-    notifyDraftChange: boolean,
-  ): void {
+  protected applySessionHandoff(sessionKey: string, handoff: PaneSessionHandoff): void {
     const state = this.state;
     if (!state) {
       return;
     }
-    if (!handoff.restore) {
-      if (handoff.composerFallbacks) {
-        state.chatComposerFallbackByScope = handoff.composerFallbacks;
-      }
-      state.chatAttachments = [...handoff.attachments];
+    if (handoff.composerFallbacks) {
+      state.chatComposerFallbackByScope = handoff.composerFallbacks;
     }
+    state.chatAttachments = [...handoff.attachments];
     state.chatGoalDraftMode = handoff.goalMode ?? null;
-    if (notifyDraftChange) {
-      state.handleChatDraftChange(handoff.draft, handoff.mentions ?? []);
-    } else {
-      state.chatMessage = handoff.draft;
-      state.chatMentions = handoff.mentions;
-    }
-    if (handoff.storageFailed) {
-      state.lastError = CHAT_COMPOSER_DRAFT_STORAGE_ERROR;
-      state.chatError = CHAT_COMPOSER_DRAFT_STORAGE_ERROR;
-    }
+    state.handleChatDraftChange(handoff.draft, handoff.mentions ?? []);
     state.requestUpdate?.();
     if (handoff.send) {
       const composer = getChatComposerState(this.presentationId);

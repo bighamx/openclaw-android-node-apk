@@ -57,6 +57,7 @@ afterEach(() => {
 
 describe("Codex catalog request lifetime", () => {
   it("lets a fresh caller join a written request after its first waiter expires", async () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(10);
     const harness = createHarness();
     const key = { scope: {}, key: "home" };
     const controller = new AbortController();
@@ -72,14 +73,31 @@ describe("Codex catalog request lifetime", () => {
     expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
     const oldGuardCalls = expiredGuard.mock.calls.length;
 
-    const second = read(harness, key, { timeoutMs: 500 });
+    clock.mockReturnValue(30);
+    const attemptWaiterFinished = vi.fn();
+    const second = read(harness, key, { timeoutMs: 500, attemptWaiterFinished });
     expect(harness.writes).toHaveLength(1);
+    clock.mockReturnValue(90);
     harness.send({ id, result: page });
     await expect(second).resolves.toEqual(page);
     expect(await first).toMatchObject({ reason: "timed out" });
     expect(expiredGuard).toHaveBeenCalledTimes(oldGuardCalls);
     expect(harness.client.getCloseError()).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
+    expect(attemptWaiterFinished).toHaveBeenCalledExactlyOnceWith({
+      clientInstanceId: harness.client.getInstanceId(),
+      rpcId: id,
+      waiterOrdinal: 2,
+      disposition: "joined",
+      overloadAttemptOrdinal: 1,
+      attemptCreatedAtMs: 10,
+      firstPossibleWriteAtMs: 10,
+      waiterAttachedAtMs: 30,
+      waiterSettledAtMs: 90,
+      waiterOutcome: "resolved",
+      wireOutcomeAtWaiterSettlement: "native-ok",
+      wireObservedAtMs: 90,
+    });
   });
 
   it("registers before an immediate reply and does not retain the completed result", async () => {
@@ -90,9 +108,13 @@ describe("Codex catalog request lifetime", () => {
       },
     });
     const key = { scope: {}, key: "home" };
-    await expect(read(harness, key)).resolves.toEqual(page);
-    await expect(read(harness, key)).resolves.toEqual(page);
+    const attemptWaiterFinished = vi.fn(() => {
+      throw new Error("diagnostic sink failed");
+    });
+    await expect(read(harness, key, { attemptWaiterFinished })).resolves.toEqual(page);
+    await expect(read(harness, key, { attemptWaiterFinished })).resolves.toEqual(page);
     expect(harness.writes).toHaveLength(2);
+    expect(attemptWaiterFinished).toHaveBeenCalledTimes(2);
     expect(requestId(harness, 1)).not.toBe(requestId(harness));
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -102,16 +124,21 @@ describe("Codex catalog request lifetime", () => {
     const key = { scope: {}, key: "home" };
     const valid = read(harness, key);
     const denied = new Error("caller denied");
+    const deniedObservation = vi.fn();
     await expect(
       read(harness, key, {
+        attemptWaiterFinished: deniedObservation,
         assertCurrent: () => {
           throw denied;
         },
       }),
     ).rejects.toBe(denied);
+    expect(deniedObservation).not.toHaveBeenCalled();
     let current = true;
     const retired = new Error("caller retired");
+    const guardedObservation = vi.fn();
     const guarded = read(harness, key, {
+      attemptWaiterFinished: guardedObservation,
       assertCurrent: () => {
         if (!current) {
           throw retired;
@@ -122,6 +149,12 @@ describe("Codex catalog request lifetime", () => {
     harness.send({ id: requestId(harness), result: page });
     await expect(valid).resolves.toEqual(page);
     expect(await guarded).toBe(retired);
+    expect(guardedObservation).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        waiterOutcome: "authority-rejected",
+        wireOutcomeAtWaiterSettlement: "native-ok",
+      }),
+    );
     expect(harness.writes).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -132,12 +165,15 @@ describe("Codex catalog request lifetime", () => {
       const harness = createHarness();
       const key = { scope: {}, key: "home" };
       const sharedController = new AbortController();
+      const attemptWaiterFinished = vi.fn();
       for (let index = 0; index < 4; index += 1) {
         const controller = mode === "timeout" ? sharedController : new AbortController();
         const waiterSignal = controller.signal;
-        const waiting = read(harness, key, { timeoutMs: 100, signal: waiterSignal }).catch(
-          (error: unknown) => error,
-        );
+        const waiting = read(harness, key, {
+          timeoutMs: 100,
+          signal: waiterSignal,
+          attemptWaiterFinished,
+        }).catch((error: unknown) => error);
         expect(getEventListeners(waiterSignal, "abort")).toHaveLength(1);
         if (mode === "abort") {
           controller.abort(new Error("poll cancelled"));
@@ -153,6 +189,17 @@ describe("Codex catalog request lifetime", () => {
       }
       expect(harness.writes).toHaveLength(1);
       harness.send({ id: requestId(harness), result: page });
+      expect(attemptWaiterFinished).toHaveBeenCalledTimes(4);
+      expect(attemptWaiterFinished.mock.calls.map(([summary]) => summary.waiterOutcome)).toEqual(
+        Array(4).fill(mode === "abort" ? "aborted" : "timed-out"),
+      );
+      expect(
+        attemptWaiterFinished.mock.calls.every(
+          ([summary]) =>
+            summary.wireOutcomeAtWaiterSettlement === "retained-pending" &&
+            summary.wireObservedAtMs === null,
+        ),
+      ).toBe(true);
     },
   );
 
@@ -161,7 +208,10 @@ describe("Codex catalog request lifetime", () => {
     async (outcome) => {
       const harness = createHarness();
       const key = { scope: {}, key: "home" };
-      const first = read(harness, key, { timeoutMs: 100 }).catch((error: unknown) => error);
+      const attemptWaiterFinished = vi.fn();
+      const first = read(harness, key, { timeoutMs: 100, attemptWaiterFinished }).catch(
+        (error: unknown) => error,
+      );
       const oldId = requestId(harness);
       await vi.advanceTimersByTimeAsync(100);
       expect(await first).toMatchObject({ reason: "timed out" });
@@ -182,6 +232,7 @@ describe("Codex catalog request lifetime", () => {
       expect(harness.writes).toHaveLength(2);
       harness.send({ id: newId, result: page });
       await expect(Promise.all([next, joined])).resolves.toEqual([page, page]);
+      expect(attemptWaiterFinished).toHaveBeenCalledOnce();
     },
   );
 
@@ -190,7 +241,10 @@ describe("Codex catalog request lifetime", () => {
     async (outcome) => {
       const harness = createHarness();
       const key = { scope: {}, key: "home" };
-      const late = read(harness, key, { timeoutMs: 100 }).catch((error: unknown) => error);
+      const attemptWaiterFinished = vi.fn();
+      const late = read(harness, key, { timeoutMs: 100, attemptWaiterFinished }).catch(
+        (error: unknown) => error,
+      );
       const valid = read(harness, key, { timeoutMs: 500 }).catch((error: unknown) => error);
       vi.setSystemTime(1_100);
       harness.send(
@@ -199,6 +253,12 @@ describe("Codex catalog request lifetime", () => {
           : { id: requestId(harness), error: { code: -32602, message: "Invalid query" } },
       );
       expect(await late).toMatchObject({ reason: "timed out", mayHaveWritten: true });
+      expect(attemptWaiterFinished).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          waiterOutcome: "timed-out",
+          wireOutcomeAtWaiterSettlement: outcome === "response" ? "native-ok" : "native-error",
+        }),
+      );
       expect(await valid).toEqual(
         outcome === "response"
           ? page
@@ -218,7 +278,8 @@ describe("Codex catalog request lifetime", () => {
       const harness = createHarness();
       const key = { scope: {}, key: "home" };
       const controller = new AbortController();
-      const first = read(harness, key, { signal: controller.signal }).catch(
+      const attemptWaiterFinished = vi.fn();
+      const first = read(harness, key, { signal: controller.signal, attemptWaiterFinished }).catch(
         (error: unknown) => error,
       );
       const id = requestId(harness);
@@ -237,6 +298,14 @@ describe("Codex catalog request lifetime", () => {
       harness.send({ id, result: { data: [{ id: "old-connection" }] } });
       successor.send({ id: requestId(successor), result: page });
       await expect(next).resolves.toEqual(page);
+      expect(attemptWaiterFinished).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          clientInstanceId: harness.client.getInstanceId(),
+          waiterOutcome: order === "response first" ? "resolved" : "client-closed",
+          wireOutcomeAtWaiterSettlement:
+            order === "response first" ? "native-ok" : "correlation-closed",
+        }),
+      );
       harness.emitExit();
       expect(vi.getTimerCount()).toBe(0);
     },
@@ -249,9 +318,11 @@ describe("Codex catalog request lifetime", () => {
       const key = { scope: {}, key: "home" };
       const controller = new AbortController();
       let delivering = false;
+      const attemptWaiterFinished = vi.fn();
       const guarded = read(harness, key, {
         timeoutMs: 100,
         signal: controller.signal,
+        attemptWaiterFinished,
         assertCurrent: () => {
           if (delivering) {
             if (change === "deadline") {
@@ -270,6 +341,12 @@ describe("Codex catalog request lifetime", () => {
         mayHaveWritten: true,
       });
       await expect(sibling).resolves.toEqual(page);
+      expect(attemptWaiterFinished).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          waiterOutcome: change === "deadline" ? "timed-out" : "aborted",
+          wireOutcomeAtWaiterSettlement: "native-ok",
+        }),
+      );
       expect(harness.writes).toHaveLength(1);
       expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
       expect(vi.getTimerCount()).toBe(0);
@@ -315,7 +392,8 @@ describe("Codex catalog request lifetime", () => {
         failWrite = typeof encoding === "function" ? encoding : callback;
         return false;
       });
-    const first = read(harness, key).catch((error: unknown) => error);
+    const attemptWaiterFinished = vi.fn();
+    const first = read(harness, key, { attemptWaiterFinished }).catch((error: unknown) => error);
     const sibling = read(harness, key).catch((error: unknown) => error);
     expect(failWrite).toBeTypeOf("function");
     failWrite!(writeError);
@@ -328,6 +406,13 @@ describe("Codex catalog request lifetime", () => {
     expect(harness.writes).toHaveLength(1);
     harness.send({ id: requestId(harness), result: page });
     await expect(second).resolves.toEqual(page);
+    expect(attemptWaiterFinished).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        waiterOutcome: "local-failed",
+        wireOutcomeAtWaiterSettlement: "retained-pending",
+        wireObservedAtMs: null,
+      }),
+    );
 
     const companion = harness.client.request("model/list", {}, { timeoutMs: 100 });
     const request = JSON.parse(harness.writes[1] ?? "{}") as { id: number; method: string };
@@ -337,14 +422,22 @@ describe("Codex catalog request lifetime", () => {
   });
 
   it("lets only active callers retry overload and keeps an old id from clearing the retry", async () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(10);
     const harness = createHarness();
     const key = { scope: {}, key: "home" };
-    const active = read(harness, key);
-    const expired = read(harness, key, { timeoutMs: 5 }).catch((error: unknown) => error);
+    const attemptWaiterFinished = vi.fn();
+    const expiredObservation = vi.fn();
+    const active = read(harness, key, { attemptWaiterFinished });
+    const expired = read(harness, key, {
+      timeoutMs: 5,
+      attemptWaiterFinished: expiredObservation,
+    }).catch((error: unknown) => error);
     const oldId = requestId(harness);
+    clock.mockReturnValue(20);
     harness.send({ id: oldId, error: { code: -32001, message: "Server overloaded" } });
     await vi.advanceTimersByTimeAsync(5);
     expect(await expired).toMatchObject({ reason: "timed out", mayHaveWritten: false });
+    clock.mockReturnValue(30);
     await vi.advanceTimersByTimeAsync(40);
     const newId = requestId(harness, 1);
     expect(newId).not.toBe(oldId);
@@ -356,6 +449,18 @@ describe("Codex catalog request lifetime", () => {
     await vi.advanceTimersByTimeAsync(1_000);
     expect(harness.writes).toHaveLength(2);
     expect(vi.getTimerCount()).toBe(0);
+    expect(
+      attemptWaiterFinished.mock.calls.map(([summary]) => [
+        summary.rpcId,
+        summary.overloadAttemptOrdinal,
+        summary.firstPossibleWriteAtMs,
+        summary.wireOutcomeAtWaiterSettlement,
+      ]),
+    ).toEqual([
+      [oldId, 1, 10, "ingress-rejected"],
+      [newId, 2, 30, "native-ok"],
+    ]);
+    expect(expiredObservation).toHaveBeenCalledOnce();
   });
 
   it("keeps ordinary thread/list requests independent", async () => {

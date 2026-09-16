@@ -1,12 +1,81 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { sql } from "kysely";
 import { executeSqliteQueryTakeFirstSync } from "../../infra/kysely-sync.js";
-import type { UserTurnTranscriptAdmissionReceipt } from "../../sessions/user-turn-transcript.types.js";
+import {
+  getUserTurnTranscriptAdmissionOwner,
+  readPendingUserTurnTranscriptAdmission,
+} from "../../sessions/user-turn-transcript-admission.js";
+import type {
+  UserTurnTranscriptAdmissionReceipt,
+  UserTurnTranscriptRecorder,
+} from "../../sessions/user-turn-transcript.types.js";
 import type { OpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
 import { getSessionKysely } from "./session-accessor.sqlite-scope.js";
 import type { SessionTranscriptRuntimeTarget } from "./session-accessor.types.js";
 
 const transcriptReadFenceStorage = new AsyncLocalStorage<UserTurnTranscriptAdmissionReceipt>();
+
+type QuestionAnswerScope = {
+  recorder: UserTurnTranscriptRecorder | undefined;
+  assertActive: () => void;
+  inputs: Map<string, UserTurnTranscriptAdmissionReceipt>;
+};
+const questionAnswerStorage = new AsyncLocalStorage<QuestionAnswerScope>();
+
+/** Answer custody outlives question registration, but never the creator's admitted run. */
+export function withSessionTranscriptQuestionAnswers<T>(
+  recorder: UserTurnTranscriptRecorder | undefined,
+  assertActive: () => void,
+  run: (admitAnswer: (source: UserTurnTranscriptRecorder | undefined) => void) => T,
+): T {
+  const scope: QuestionAnswerScope = { recorder, assertActive, inputs: new Map() };
+  return questionAnswerStorage.run(scope, () =>
+    run((source) => {
+      scope.assertActive();
+      const creator = scope.recorder && getUserTurnTranscriptAdmissionOwner(scope.recorder);
+      const original = creator?.receipt();
+      const input = readPendingUserTurnTranscriptAdmission(source);
+      if (
+        original &&
+        input &&
+        !creator?.blocked() &&
+        input.agentId === original.agentId &&
+        input.sessionId === original.sessionId &&
+        input.sessionKey === original.sessionKey &&
+        input.storePath === original.storePath &&
+        input.generation === original.generation
+      ) {
+        scope.inputs.set(input.entryId, input);
+      }
+    }),
+  );
+}
+
+export function resolveSessionTranscriptQuestionAnswer(
+  database: Pick<OpenClawAgentDatabase, "path">,
+  sessionId: string,
+  entryId: string,
+  admittedUserId?: string,
+): UserTurnTranscriptAdmissionReceipt | undefined {
+  const scope = questionAnswerStorage.getStore();
+  const input = scope?.inputs.get(entryId);
+  if (!scope || !input || input.storePath !== database.path || input.sessionId !== sessionId) {
+    return undefined;
+  }
+  scope.assertActive();
+  const creator = scope.recorder && getUserTurnTranscriptAdmissionOwner(scope.recorder);
+  const original = creator?.receipt();
+  return original &&
+    !creator?.blocked() &&
+    original.agentId === input.agentId &&
+    original.sessionId === input.sessionId &&
+    original.sessionKey === input.sessionKey &&
+    original.storePath === input.storePath &&
+    original.generation === input.generation &&
+    (admittedUserId === undefined || original.entryId === admittedUserId)
+    ? input
+    : undefined;
+}
 
 export class SessionTranscriptReadFenceError extends Error {
   constructor(message: string) {

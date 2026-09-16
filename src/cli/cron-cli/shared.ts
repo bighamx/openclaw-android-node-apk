@@ -371,12 +371,7 @@ export function parseCronStaggerMs(params: {
   return parsed;
 }
 
-export function parseCronToolsAllow(input: unknown): string[] | undefined {
-  const tools = parseCronFallbacks(input);
-  return tools?.length ? tools : undefined;
-}
-
-export function parseCronFallbacks(input: unknown): string[] | undefined {
+export function parseCronStringList(input: unknown): string[] | undefined {
   if (input === undefined) {
     return undefined;
   }
@@ -387,8 +382,8 @@ export function parseCronFallbacks(input: unknown): string[] | undefined {
       : "";
   return raw
     .split(/[,\s]+/u)
-    .map((fallback) => normalizeOptionalString(fallback))
-    .filter((fallback): fallback is string => Boolean(fallback));
+    .map((entry) => normalizeOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry));
 }
 
 /**

@@ -5,6 +5,7 @@ import path from "node:path";
 import { createAssistantMessageEventStream, type Model } from "openclaw/plugin-sdk/llm";
 import { Value } from "typebox/value";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createDeferred } from "../../test/helpers/promise.js";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import {
   configureExecutionDecisionWorkSink,
@@ -18,6 +19,7 @@ import {
   listSessionParticipantsReadOnly,
   upsertSessionEntryCore,
 } from "../config/sessions/session-accessor.js";
+import { readInProcessSubagentResume } from "../gateway/in-process-subagent-resume.js";
 import {
   drainSystemEventEntries,
   peekSystemEventEntries,
@@ -60,6 +62,7 @@ vi.mock("../config/config.js", () => ({
 
 import "./test-helpers/fast-openclaw-tools-sessions.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
+import { createOperationalRunInstanceRef } from "./admitted-run-context.js";
 import { steerActiveSessionWithOptionalDeliveryWait } from "./embedded-agent-runner/run/attempt-queue-message.js";
 import {
   setActiveEmbeddedRun,
@@ -75,6 +78,8 @@ import {
   streamMocks,
 } from "./sessions/agent-session-loop-correctness.test-support.js";
 import { SessionManager } from "./sessions/session-manager.js";
+import { subagentRuns } from "./subagents/registry/subagent-registry-memory.js";
+import { addSubagentRunForTests } from "./subagents/registry/subagent-registry.test-helpers.js";
 import { textAssistant } from "./test-helpers/sparse-transcript.test-support.js";
 import { compactToolOutputHint, toolSchemaDeclaration } from "./tool-schema-hints.js";
 import { testing as agentStepTesting } from "./tools/agent-step.test-support.js";
@@ -313,6 +318,117 @@ describe("sessions tools", () => {
   });
   afterEach(resetGatewayWorkAdmission);
   afterEach(resetSystemEventsForTest);
+
+  it("sessions_send resume rejects a caller without admitted authority instead of sending a message", async () => {
+    const tool = getSessionTool("sessions_send", { agentSessionKey: "agent:main:main" });
+    const result = await tool.execute("resume", {
+      sessionKey: "agent:main:dashboard:paused-child",
+      message: "Continue the assigned task",
+      mode: "resume",
+    });
+    expect(result.details).toMatchObject({
+      status: "forbidden",
+      error: expect.stringContaining("admitted"),
+    });
+    expect(callGatewayMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["agent:main:subagent:resume-child", "agent:main:dashboard:resume-child"])(
+    "sessions_send resume returns admission only for %s without a reply watcher",
+    async (targetKey) => {
+      const parent = "agent:main:main";
+      const previousRunId = "tool-resume-paused";
+      addSubagentRunForTests({
+        runId: previousRunId,
+        childSessionKey: targetKey,
+        requesterSessionKey: parent,
+        requesterDisplayKey: parent,
+        controllerSessionKey: parent,
+        task: "Wait",
+        cleanup: "keep",
+        startedAt: Date.now() - 100,
+        endedAt: Date.now(),
+        pauseReason: "sessions_yield",
+        expectsCompletionMessage: true,
+      });
+      loadSessionEntryByKeyMock.mockReturnValue({
+        sessionId: "tool-resume-session",
+        updatedAt: Date.now(),
+      });
+      callGatewayMock.mockImplementation(async ({ method }) =>
+        method === "agent"
+          ? { status: "accepted", runId: "tool-resume-successor", taskRunId: previousRunId }
+          : {},
+      );
+      const tool = getSessionTool("sessions_send", { agentSessionKey: parent });
+      try {
+        const result = await withGatewayToolCallerIdentity(
+          {
+            agentId: "main",
+            sessionKey: parent,
+            operationalRunInstance: createOperationalRunInstanceRef("parent-turn"),
+            receiptAuthority: () => true,
+          },
+          () =>
+            tool.execute("resume", { sessionKey: targetKey, message: "Continue", mode: "resume" }),
+        );
+        expect(result.details).toEqual({
+          status: "accepted",
+          mode: "resume",
+          runId: "tool-resume-successor",
+          taskRunId: previousRunId,
+          sessionKey: targetKey,
+          completion: "task",
+        });
+        expect(Value.Check(tool.outputSchema!, result.details)).toBe(true);
+        expect(
+          callGatewayMock.mock.calls.filter(([request]) => request.method === "agent"),
+        ).toHaveLength(1);
+        expect(
+          callGatewayMock.mock.calls.some(([request]) => request.method === "agent.wait"),
+        ).toBe(false);
+        const request = callGatewayMock.mock.calls.find(
+          ([candidate]) => candidate.method === "agent",
+        )?.[0];
+        expect(readInProcessSubagentResume(request)).toMatchObject({
+          previousRunId,
+          childSessionKey: targetKey,
+          childSessionId: "tool-resume-session",
+        });
+        expect(request.params).toMatchObject({ expectedExistingSessionId: "tool-resume-session" });
+        expect(request.params).not.toHaveProperty("subagentResume");
+        expect(subagentRuns.get(previousRunId)?.pauseReason).toBe("sessions_yield");
+      } finally {
+        subagentRuns.delete(previousRunId);
+      }
+    },
+  );
+
+  it.each([{ watch: true }, { timeoutSeconds: 1 }])(
+    "sessions_send resume rejects competing delivery options %j",
+    async (options) => {
+      const parent = "agent:main:main";
+      const tool = getSessionTool("sessions_send", { agentSessionKey: parent });
+      await expect(
+        withGatewayToolCallerIdentity(
+          {
+            agentId: "main",
+            sessionKey: parent,
+            operationalRunInstance: createOperationalRunInstanceRef("parent-options-turn"),
+            receiptAuthority: () => true,
+          },
+          () =>
+            tool.execute("resume-options", {
+              sessionKey: "agent:main:subagent:child",
+              message: "Continue",
+              mode: "resume",
+              ...options,
+            }),
+        ),
+      ).rejects.toThrow("admission only");
+      expect(callGatewayMock).not.toHaveBeenCalled();
+    },
+  );
 
   it("sessions_send notify queues next-turn context without starting or steering work", async () => {
     const targetKey = "agent:main:dashboard:notification-target";
@@ -2269,8 +2385,16 @@ describe("sessions tools", () => {
       guardSessionManager(sessionManager);
       const { session } = await createTestSession({ sessionManager });
       let finishInitialResponse: (() => void) | undefined;
+      let closing = false;
+      const initialResponseStarted = createDeferred();
+      const queued = createDeferred();
+      const unsubscribe = session.subscribe((event) => {
+        if (event.type === "queue_update") {
+          queued.resolve();
+        }
+      });
       streamMocks.streamSimple.mockImplementation((model: Model) => {
-        if (finishInitialResponse) {
+        if (finishInitialResponse || closing) {
           return createAssistantResultStream(
             createAssistant(model, [{ type: "text", text: "received" }]),
           );
@@ -2284,75 +2408,90 @@ describe("sessions tools", () => {
           });
           stream.end();
         };
+        initialResponseStarted.resolve();
         return stream;
       });
       const prompt = session.prompt("wait for another session");
-      await vi.waitFor(() => expect(streamMocks.streamSimple).toHaveBeenCalledOnce());
-      const queueMessage = vi.fn((text: string, options?: EmbeddedAgentQueueMessageOptions) =>
-        steerActiveSessionWithOptionalDeliveryWait(session, text, options, runScopedCallerKey),
-      );
-      setActiveEmbeddedRun(
-        "caller-active-session",
-        {
-          queueMessage,
-          isStreaming: () => true,
-          isCompacting: () => false,
-          supportsTranscriptCommitWait,
-          sourceReplyDeliveryMode: mode === "steer" ? "automatic" : "message_tool_only",
-          abort: () => {},
-        },
-        runScopedCallerKey,
-      );
-      callGatewayMock.mockImplementation(async (opts: unknown) => {
-        const request = opts as { method?: string };
-        calls.push(request);
-        if (request.method === "agent") {
-          throw new Error("fallback agent should not start");
-        }
-        return {};
-      });
+      const pending: Promise<unknown>[] = [prompt];
+      try {
+        // Dispatch can await transport initialization; synchronize on provider entry.
+        await Promise.race([initialResponseStarted.promise, prompt]);
+        expect(streamMocks.streamSimple).toHaveBeenCalledOnce();
+        const queueMessage = vi.fn((text: string, options?: EmbeddedAgentQueueMessageOptions) =>
+          steerActiveSessionWithOptionalDeliveryWait(session, text, options, runScopedCallerKey),
+        );
+        setActiveEmbeddedRun(
+          "caller-active-session",
+          {
+            queueMessage,
+            isStreaming: () => true,
+            isCompacting: () => false,
+            supportsTranscriptCommitWait,
+            sourceReplyDeliveryMode: mode === "steer" ? "automatic" : "message_tool_only",
+            abort: () => {},
+          },
+          runScopedCallerKey,
+        );
+        callGatewayMock.mockImplementation(async (opts: unknown) => {
+          const request = opts as { method?: string };
+          calls.push(request);
+          if (request.method === "agent") {
+            throw new Error("fallback agent should not start");
+          }
+          return {};
+        });
 
-      const tool = getSessionTool("sessions_send", {
-        agentSessionKey: requesterKey,
-        agentChannel: "telegram",
-        config: { ...TEST_CONFIG, session: { ...TEST_CONFIG.session, store: scope.storePath } },
-      });
+        const tool = getSessionTool("sessions_send", {
+          agentSessionKey: requesterKey,
+          agentChannel: "telegram",
+          config: { ...TEST_CONFIG, session: { ...TEST_CONFIG.session, store: scope.storePath } },
+        });
 
-      const send = tool.execute("call-run-scoped-caller", {
-        mode,
-        sessionKey: runScopedCallerKey,
-        message: "[TASK-COMPLETE] re-portal occupancy ready",
-        timeoutSeconds: 0,
-      });
-      await vi.waitFor(() => expect(session.pendingMessageCount).toBe(1));
-      finishInitialResponse?.();
-      const [result] = await Promise.all([send, prompt]);
+        const send = tool.execute("call-run-scoped-caller", {
+          mode,
+          sessionKey: runScopedCallerKey,
+          message: "[TASK-COMPLETE] re-portal occupancy ready",
+          timeoutSeconds: 0,
+        });
+        pending.push(send);
+        await Promise.race([queued.promise, send, prompt]);
+        expect(session.pendingMessageCount).toBe(1);
+        finishInitialResponse?.();
+        const [result] = await Promise.all([send, prompt]);
 
-      const details = sessionsSendDetails(result.details);
-      expect(details.status).toBe("accepted");
-      expect(details.sessionKey).toBe(runScopedCallerKey);
-      expect(details.targetDisposition).toBe("steered");
-      expect(details.delivery?.status).toBe("skipped");
-      expect(details.delivery?.mode).toBe("announce");
-      expect(queueMessage).toHaveBeenCalledOnce();
-      expect(queueMessage.mock.calls[0]?.[1]?.waitForTranscriptCommit).toBe(
-        supportsTranscriptCommitWait ? true : undefined,
-      );
-      expect(SessionManager.open(scope, dir).getEntries()).toContainEqual(
-        expect.objectContaining({
-          type: "message",
-          message: expect.objectContaining({
-            role: "user",
-            provenance: {
-              kind: "inter_session",
-              sourceSessionKey: requesterKey,
-              sourceChannel: "telegram",
-              sourceTool: "sessions_send",
-            },
+        const details = sessionsSendDetails(result.details);
+        expect(details.status).toBe("accepted");
+        expect(details.sessionKey).toBe(runScopedCallerKey);
+        expect(details.targetDisposition).toBe("steered");
+        expect(details.delivery?.status).toBe("skipped");
+        expect(details.delivery?.mode).toBe("announce");
+        expect(queueMessage).toHaveBeenCalledOnce();
+        expect(queueMessage.mock.calls[0]?.[1]?.waitForTranscriptCommit).toBe(
+          supportsTranscriptCommitWait ? true : undefined,
+        );
+        expect(SessionManager.open(scope, dir).getEntries()).toContainEqual(
+          expect.objectContaining({
+            type: "message",
+            message: expect.objectContaining({
+              role: "user",
+              provenance: {
+                kind: "inter_session",
+                sourceSessionKey: requesterKey,
+                sourceChannel: "telegram",
+                sourceTool: "sessions_send",
+              },
+            }),
           }),
-        }),
-      );
-      expect(calls.some((call) => call.method === "agent")).toBe(false);
+        );
+        expect(calls.some((call) => call.method === "agent")).toBe(false);
+      } finally {
+        // Release even a late provider callback, then join work before fixture teardown.
+        closing = true;
+        unsubscribe();
+        finishInitialResponse?.();
+        await session.abort();
+        await Promise.allSettled(pending);
+      }
     },
   );
 

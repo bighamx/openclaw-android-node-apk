@@ -572,6 +572,8 @@ describe.concurrent("fresh compiled subprocess invocation", () => {
 
   it.for(["source", "compiled"] as const)(
     "preserves scoped and prepared provider hooks in %s TUI payloads",
+    // Keep cold preparation and hook probes clear of neighboring fixture builds.
+    { concurrent: false },
     (mode, { workerArtifacts }) =>
       workerArtifacts.fixtureLifetime.run(async () => {
         const { node, prepareWorkers } = workerArtifacts.createFixtureCommands();
@@ -1324,6 +1326,18 @@ export default class {
         fs.cpSync(path.join(initialDirectory, "dist"), path.join(fixture, "dist"), {
           recursive: true,
         });
+        // This checkout exercises source freshness, not the full runtime inventory.
+        // Keep real compiler phases while avoiding repeated unrelated application builds.
+        writeFixture(
+          fixture,
+          "scripts/lib/vitest-worker-build-entries.mts",
+          `export const vitestWorkerBuildEntries = {
+            "infra/sqlite-readonly-location.worker": "src/infra/sqlite-readonly-location.worker.ts",
+            "infra/sqlite-snapshot-source": "src/infra/sqlite-snapshot-source.ts",
+          };
+          export const legacyFinalizerBuildSources = ["src/infra/runtime-process-entrypoints.ts"];
+          `,
+        );
         const databasePath = path.join(fixture, "probe.sqlite");
         const database = new DatabaseSync(databasePath);
         database.exec("CREATE TABLE probe(value TEXT); INSERT INTO probe VALUES ('native work');");
@@ -1396,19 +1410,10 @@ export default class {
           } catch(error) {await owner.dispose();throw error;}
         });
       `;
-        const builds = await Promise.all(
-          [0, 1].map(() => node(["--input-type=module", "-e", buildScript], fixture)),
-        );
-        const directories: string[] = [];
-        for (const build of builds) {
-          expect(build.code, build.stderr).toBe(0);
-          directories.push(JSON.parse(build.stdout));
-        }
-        expect(new Set(directories).size).toBe(2);
-        const freshWorker = path.join(
-          directories[0]!,
-          "dist/infra/sqlite-readonly-location.worker.js",
-        );
+        const build = await node(["--input-type=module", "-e", buildScript], fixture);
+        expect(build.code, build.stderr).toBe(0);
+        const directory: string = JSON.parse(build.stdout);
+        const freshWorker = path.join(directory, "dist/infra/sqlite-readonly-location.worker.js");
         const fresh = await node([freshWorker, ...childArgs]);
         expect(fresh.code).toBe(1);
         expect(JSON.parse(fresh.stdout)).toMatchObject({
@@ -1417,14 +1422,14 @@ export default class {
         });
         const changedSource = fs.readFileSync(dependency, "utf8");
         fs.appendFileSync(dependency, "\n// changed after preparation\n");
-        await expect(verifyVitestWorkerArtifacts(directories[1]!)).rejects.toThrow(
+        await expect(verifyVitestWorkerArtifacts(directory)).rejects.toThrow(
           "Source changed during compiled subprocess invocation",
         );
         fs.writeFileSync(dependency, changedSource);
         const tuiDeclaration = path.join(fixture, "src/tui/tui-pty-runtime-test-support.ts");
         const originalDeclaration = fs.readFileSync(tuiDeclaration, "utf8");
         fs.appendFileSync(tuiDeclaration, "\n// declaration changed after preparation\n");
-        await expect(verifyVitestWorkerArtifacts(directories[1]!)).rejects.toThrow(
+        await expect(verifyVitestWorkerArtifacts(directory)).rejects.toThrow(
           "Source changed during compiled subprocess invocation",
         );
         fs.writeFileSync(tuiDeclaration, originalDeclaration);

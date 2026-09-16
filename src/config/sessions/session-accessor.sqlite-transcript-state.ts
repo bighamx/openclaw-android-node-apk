@@ -11,8 +11,7 @@ import { publishSessionEntryCacheInvalidation } from "./session-accessor.sqlite-
 import { getSessionKysely, type ResolvedTranscriptScope } from "./session-accessor.sqlite-scope.js";
 import { parseSessionEntryJson } from "./session-accessor.sqlite-status.js";
 import {
-  assertCanonicalSqliteSessionKeysCurrent,
-  assertCanonicalSessionKeyWriteMatchesDatabase,
+  assertCanonicalSqliteSessionRootWrite,
   canonicalSessionKeyMigrationRequiredError,
 } from "./session-canonical-key.js";
 import {
@@ -121,8 +120,7 @@ export function ensureTranscriptSessionRoot(
 ): void {
   const db = getSessionKysely(database.db);
   if (!options.allowStoredAlias) {
-    assertCanonicalSqliteSessionKeysCurrent(database);
-    assertCanonicalSessionKeyWriteMatchesDatabase(database, scope.sessionKey);
+    assertCanonicalSqliteSessionRootWrite(database, scope.sessionKey);
     const persistedSessionKey = executeSqliteQueryTakeFirstSync(
       database.db,
       db

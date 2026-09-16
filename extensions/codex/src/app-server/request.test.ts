@@ -8,6 +8,7 @@ import {
 import { withTempDir } from "openclaw/plugin-sdk/test-env";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CodexAppServerRpcError } from "./rpc-error.js";
+import { createClientHarness } from "./test-support.js";
 
 const sharedClientMocks = vi.hoisted(() => ({
   CodexAppServerStartSelectionChangedError: class extends Error {
@@ -28,8 +29,12 @@ vi.mock("./shared-client.js", () => ({
   getLeasedSharedCodexAppServerClient: sharedClientMocks.getSharedCodexAppServerClient,
 }));
 
-const { readCodexAppServerUsage, requestCodexAppServerJson, withCodexAppServerJsonClient } =
-  await import("./request.js");
+const {
+  readCodexAppServerUsage,
+  requestCodexAppServerClientJson,
+  requestCodexAppServerJson,
+  withCodexAppServerJsonClient,
+} = await import("./request.js");
 const { listAllCodexAppServerModels } = await import("./models.js");
 
 const expectDeadlineOptions = () =>
@@ -357,6 +362,56 @@ describe("requestCodexAppServerJson sandbox guard", () => {
       );
       expect(sharedClientMocks.releaseLeasedSharedCodexAppServerClient).toHaveBeenCalledOnce();
       expect(JSON.stringify(controlObservation.failed.mock.calls)).not.toContain("private-");
+    },
+  );
+
+  it.each([
+    ["acquired", "thread/list"],
+    ["owned", "thread/list"],
+    ["acquired", "model/list"],
+    ["owned", "model/list"],
+  ] as const)(
+    "forwards only the catalog callback for an %s client and %s",
+    async (owner, method) => {
+      const harness = createClientHarness({
+        autoEmitExit: false,
+        onWrite(line, send) {
+          const frame = JSON.parse(line) as { id: number };
+          expect(frame).toEqual({ id: expect.any(Number), method, params: {} });
+          send({ id: frame.id, result: { data: [] } });
+        },
+      });
+      const request = vi.spyOn(harness.client, "request");
+      const attemptWaiterFinished = vi.fn();
+      const controlObservation = { phase: vi.fn(), failed: vi.fn(), attemptWaiterFinished };
+      sharedClientMocks.getSharedCodexAppServerClient.mockResolvedValue(harness.client);
+      try {
+        const params = { method, requestParams: {}, controlObservation };
+        const result =
+          owner === "owned"
+            ? requestCodexAppServerClientJson({ ...params, client: harness.client })
+            : requestCodexAppServerJson(params);
+        await expect(result).resolves.toEqual({ data: [] });
+        const options = request.mock.calls[0]?.[2];
+        expect(options).not.toHaveProperty("controlObservation");
+        if (method === "thread/list") {
+          expect(options?.attemptWaiterFinished).toBe(attemptWaiterFinished);
+          expect(attemptWaiterFinished).toHaveBeenCalledOnce();
+        } else {
+          expect(options).not.toHaveProperty("attemptWaiterFinished");
+          expect(attemptWaiterFinished).not.toHaveBeenCalled();
+        }
+        if (owner === "owned") {
+          expect(sharedClientMocks.getSharedCodexAppServerClient).not.toHaveBeenCalled();
+        } else {
+          const acquisition = sharedClientMocks.getSharedCodexAppServerClient.mock.calls[0]?.[0];
+          expect(acquisition).not.toHaveProperty("controlObservation");
+          expect(acquisition).not.toHaveProperty("attemptWaiterFinished");
+        }
+      } finally {
+        harness.client.close();
+        harness.emitExit();
+      }
     },
   );
 

@@ -151,9 +151,12 @@ describe("diagnostic CPU profile owner", () => {
     expect((await capture()).status).toBe("complete");
   });
 
-  it("preserves sample order when native timestamps move backward", async () => {
+  it("preserves native source offsets and signed sample order", async () => {
     const value = profile();
     value.timeDeltas = [10_000, -500, 10_500];
+    value.nodes[1].callFrame.lineNumber = -10;
+    value.nodes[1].callFrame.columnNumber = -200;
+    value.nodes[1].positionTicks = [{ line: -9, ticks: 2 }];
     native.post.mockImplementation(async (method) =>
       method === "Profiler.stop" ? { profile: value } : {},
     );
@@ -161,6 +164,13 @@ describe("diagnostic CPU profile owner", () => {
       status: "complete",
       result: {
         profile: {
+          nodes: expect.arrayContaining([
+            expect.objectContaining({
+              id: 2,
+              callFrame: expect.objectContaining({ lineNumber: -10, columnNumber: -200 }),
+              positionTicks: [{ line: -9, ticks: 2 }],
+            }),
+          ]),
           samples: [2, 3, 2],
           timeDeltas: [10_000, -500, 10_500],
         },
@@ -400,6 +410,24 @@ describe("diagnostic CPU profile owner", () => {
       "invalid delta",
       (value: ProfileFixture) => {
         value.timeDeltas[0] = Number.NaN;
+      },
+    ],
+    [
+      "fractional source line",
+      (value: ProfileFixture) => {
+        value.nodes[1].callFrame.lineNumber = -1.5;
+      },
+    ],
+    [
+      "fractional source column",
+      (value: ProfileFixture) => {
+        value.nodes[1].callFrame.columnNumber = -1.5;
+      },
+    ],
+    [
+      "fractional position-tick line",
+      (value: ProfileFixture) => {
+        value.nodes[1].positionTicks = [{ line: -1.5, ticks: 2 }];
       },
     ],
     [

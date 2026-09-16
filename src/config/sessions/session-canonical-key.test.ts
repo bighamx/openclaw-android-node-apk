@@ -20,6 +20,7 @@ import {
 import { scanDoctorSessionEntriesStrict } from "./session-accessor.sqlite-canonical-inventory.js";
 import { readSessionEntryCache } from "./session-accessor.sqlite-entry-cache.js";
 import { ensureTranscriptSessionRoot } from "./session-accessor.sqlite-transcript-state.js";
+import { appendTranscriptEventInTransaction } from "./session-accessor.sqlite-transcript-store.js";
 import { setCanonicalSqliteSessionMainKey } from "./session-canonical-key.js";
 import type { SessionEntry } from "./types.js";
 
@@ -195,6 +196,68 @@ describe("cold canonical session validation", () => {
     expect(() => listSessionEntriesReadOnly({ ...scope, projection: "list" })).toThrow(
       "openclaw doctor --fix",
     );
+  });
+
+  it("revalidates a changed policy before refusing a warm transcript root", () => {
+    const scope = createScope();
+    const otherKey = "agent:main:z-later";
+    const otherEntry = { sessionId: "later", updatedAt: 1 };
+    replaceSessionEntrySync(scope, { sessionId: "cold-key", updatedAt: 1 });
+    replaceSessionEntrySync({ ...scope, sessionKey: otherKey }, otherEntry);
+    const database = openOpenClawAgentDatabase({ ...scope, path: scope.storePath });
+    runOpenClawAgentWriteTransaction(
+      (writer) => {
+        ensureTranscriptSessionRoot(writer, { ...scope, sessionId: "cold-key" }, 1);
+      },
+      { ...scope, path: scope.storePath },
+    );
+    const append = () =>
+      runOpenClawAgentWriteTransaction(
+        (writer) =>
+          appendTranscriptEventInTransaction(
+            writer,
+            { ...scope, sessionKey: "agent:main:main", sessionId: "new-root" },
+            { type: "message", id: "new-message", message: { role: "user", content: "new" } },
+          ),
+        { ...scope, path: scope.storePath },
+      );
+    // A separate writer changes policy without clearing this reader's warm validation.
+    const external = new DatabaseSync(scope.storePath);
+    try {
+      external.prepare("UPDATE session_key_contract SET main_key = ? WHERE id = 1").run("custom");
+      external
+        .prepare("UPDATE session_nodes SET entry_json = '{' WHERE session_key = ?")
+        .run(otherKey);
+      expect(append).toThrow(
+        "invalid persisted session row requires repair for agent:main:z-later",
+      );
+      external
+        .prepare("UPDATE session_nodes SET entry_json = ? WHERE session_key = ?")
+        .run(JSON.stringify(otherEntry), otherKey);
+      external
+        .prepare("UPDATE session_nodes SET entry_valid = 1 WHERE session_key = ?")
+        .run(otherKey);
+      expect(append).toThrow("refusing non-canonical session key write agent:main:main");
+      expect(
+        database.db
+          .prepare("SELECT session_id FROM session_windows WHERE session_id = ?")
+          .get("new-root"),
+      ).toBeUndefined();
+      expect(
+        database.db
+          .prepare("SELECT seq FROM transcript_events WHERE session_id = ?")
+          .all("new-root"),
+      ).toEqual([]);
+      external.prepare("UPDATE session_key_contract SET main_key = ? WHERE id = 1").run("main");
+      expect(append()).toEqual(expect.any(String));
+      expect(
+        database.db
+          .prepare("SELECT seq FROM transcript_events WHERE session_id = ?")
+          .all("new-root"),
+      ).toEqual([{ seq: 0 }]);
+    } finally {
+      external.close();
+    }
   });
 
   it.each([false, true])(

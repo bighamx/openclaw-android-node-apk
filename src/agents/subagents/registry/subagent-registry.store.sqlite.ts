@@ -612,7 +612,8 @@ export function loadSubagentRunsForSessionsFromSqlite(
       .filter((row) => selectedRunIds.has(row.run_id.trim()))
       .map((row) => row.run_id);
     const runs = new Map<string, SubagentRunReadRecord>();
-    const complete = projection === "full" && runIds.length === identities.length;
+    // Each projection has its own cache; only complete physical coverage may seed it.
+    const complete = runIds.length === identities.length;
     if (runIds.length) {
       if (projection === "full") {
         for (const row of readSubagentRegistryRows(
