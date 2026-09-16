@@ -226,7 +226,10 @@ function rememberSubagentRunsSnapshot<T extends SubagentRunReadRecord>(
       const entry = runs.get(runId);
       changes.set(runId, entry ? cache.copy(entry) : undefined);
     }
-    cache.state = { changes, context, pending: previous.pending };
+    // Named deltas keep pending and failed-fill waiters in the same cache cohort.
+    previous.changes = changes;
+    previous.context = context;
+    cache.state = previous;
     return;
   }
   for (const runId of new Set(changedRunIds)) {
@@ -478,6 +481,7 @@ export async function withSubagentSessionListRunsSnapshotForRead<T>(
   inMemoryRuns: Map<string, SubagentRunRecord>,
   context: OpenClawStateWorkerContext,
   read: (runs: Map<string, SubagentRunReadRecord>) => T,
+  yieldIfNeeded?: () => Promise<void> | undefined,
 ): Promise<T> {
   const cache = persistedSubagentSessionListRunsReadCache;
   const consume = (persisted?: Map<string, SubagentRunReadRecord>) => {
@@ -487,15 +491,24 @@ export async function withSubagentSessionListRunsSnapshotForRead<T>(
     }
     return read(merged);
   };
-  if (!shouldReadPersistedSubagentRuns()) {
-    return read(new Map([...inMemoryRuns].map(([id, entry]) => [id, cache.project(entry)])));
-  }
+  const readPersisted = shouldReadPersistedSubagentRuns();
   const assertCurrent = () => {
     context.maintenanceScope?.assertAdmission();
     context.admission.assertCurrent();
   };
   let waiting = false;
+  let settledFill: SubagentRunsCacheFill<SubagentRunReadRecord> | undefined;
   while (true) {
+    // Yield before acceptance so persisted rows and live ownership stay in one continuation.
+    const pause = yieldIfNeeded?.();
+    if (pause) {
+      await pause;
+      // Another resumed caller may have spent the shared slice before this continuation.
+      continue;
+    }
+    if (!readPersisted) {
+      return read(new Map([...inMemoryRuns].map(([id, entry]) => [id, cache.project(entry)])));
+    }
     assertCurrent();
     let state = cache.state;
     if (!matchesSubagentCacheContext(state.context, context)) {
@@ -512,6 +525,10 @@ export async function withSubagentSessionListRunsSnapshotForRead<T>(
     const persisted = getPersistedSubagentRunsSnapshot(cache, context);
     if (persisted) {
       return consume(persisted);
+    }
+    // Existing waiters share a failed/absent read; a later independent call can retry.
+    if (cache.state === settledFill?.fallbackState) {
+      return consume();
     }
     if (!state.pending) {
       state.context = context;
@@ -554,10 +571,7 @@ export async function withSubagentSessionListRunsSnapshotForRead<T>(
       cache.state.pending = undefined;
       fill.fallbackState = cache.state;
     }
-    // Existing waiters share a failed/absent read; a later independent call can retry.
-    if (cache.state === fill.fallbackState) {
-      return consume();
-    }
+    settledFill = fill;
   }
 }
 

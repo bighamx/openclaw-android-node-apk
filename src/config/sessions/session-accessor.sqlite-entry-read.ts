@@ -75,6 +75,7 @@ function prepareExactSessionEntryQueries(database: DatabaseSync) {
           (parameter) =>
             selectSessionEntryRows({ db: database }, "list", [], ownerColumns)
               .select(["current_session_id", "updated_at"])
+              .select((eb) => eb.cast<string>("session_nodes.rowid", "text").as("rowid"))
               .where(
                 "session_key",
                 "=",
@@ -107,8 +108,9 @@ function getExactSessionEntryQueries(database: DatabaseSync) {
 export type ResolvedSessionEntryRow = {
   entry: SessionEntry;
   row: Pick<SessionEntryRow, "current_session_id" | "entry_json" | "session_key" | "updated_at"> &
-    SqliteSessionOwnerRow &
-    Partial<Pick<SessionEntryRow, "legacy_acp_migration_json">>;
+    SqliteSessionOwnerRow & { rowid?: string } & Partial<
+      Pick<SessionEntryRow, "legacy_acp_migration_json">
+    >;
 };
 
 function parseReadableSessionEntryData(

@@ -1,9 +1,9 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { validateSessionsDescribeParams } from "../../../packages/gateway-protocol/src/index.js";
 import { prepareSubagentSessionListReadIndex } from "../../agents/subagents/registry/subagent-registry-read.js";
-import { runSynchronousWork } from "../../shared/synchronous-work.js";
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import { hasOperatorBoundary } from "../operator-role-policy.js";
+import { withSessionProjectionWorkBudget } from "../session-projection-work.js";
 import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
 import { createSessionListEntryFilter, prepareSessionSharing } from "../session-sharing.js";
 import { readRecentSessionMessagesWithStatsAsync } from "../session-transcript-readers.js";
@@ -50,68 +50,106 @@ export const sessionByKeyReadHandlers: GatewayRequestHandlers = {
     const modelCatalog = await readPreparedServerMethodModelCatalog(context, {
       agentId: catalogAgent.agentId,
     });
-    const now = Date.now();
+    const readVisibleSession = (includeStoreChildEntries: boolean) => {
+      const cfg = context.getRuntimeConfig();
+      const requestedAgent = resolveRequestedSessionAgentId(cfg, key, params.agentId);
+      if (!requestedAgent.ok) {
+        respond(false, undefined, requestedAgent.error);
+        return null;
+      }
+      const { target, storePath, store, entry } = loadSessionEntriesForTarget({
+        key,
+        cfg,
+        includeStoreChildEntries,
+        ...(requestedAgent.agentId ? { agentId: requestedAgent.agentId } : {}),
+      });
+      const sharing = prepareSessionSharing({ client, cfg });
+      const boundaryFilter = hasOperatorBoundary(client, cfg) ? sharing.entryFilter : undefined;
+      if (!entry || boundaryFilter?.(target.canonicalKey, entry) === false) {
+        respond(true, { session: null }, undefined);
+        return null;
+      }
+      return { cfg, target, storePath, store, entry, sharing };
+    };
+    if (!readVisibleSession(false)) {
+      return;
+    }
     const stateContext = captureOpenClawStateWorkerContext();
-    const subagentRuns = runSynchronousWork(
-      await prepareSubagentSessionListReadIndex(now, stateContext, () => false),
-    );
-    stateContext.maintenanceScope?.assertAdmission();
-    stateContext.admission.assertCurrent();
-    // Resolve visibility and the current row after both metadata reads have yielded.
-    const cfg = context.getRuntimeConfig();
-    const requestedAgent = resolveRequestedSessionAgentId(cfg, key, params.agentId);
-    if (!requestedAgent.ok) {
-      respond(false, undefined, requestedAgent.error);
-      return;
-    }
-    const { target, storePath, store, entry } = loadSessionEntriesForTarget({
-      key,
-      cfg,
-      includeStoreChildEntries: true,
-      ...(requestedAgent.agentId ? { agentId: requestedAgent.agentId } : {}),
-    });
-    const sharing = prepareSessionSharing({ client, cfg });
-    const boundaryFilter = hasOperatorBoundary(client, cfg) ? sharing.entryFilter : undefined;
-    if (!entry || boundaryFilter?.(target.canonicalKey, entry) === false) {
-      respond(true, { session: null }, undefined);
-      return;
-    }
-    const { inputs, presentation } = readSessionRowInputs({
-      cfg,
-      storePath,
-      store,
-      modelSource: {
-        entry,
-        loadSessionEntry: createGatewaySessionEntryReader({
-          cfg,
-          agentId: target.agentId,
-          store,
-          readSource: target.readSource,
-        }),
-      },
-      key: target.canonicalKey,
-      entry,
-      agentId: target.agentId,
-      modelCatalog: new Map([[catalogAgent.agentId, modelCatalog]]),
-      includeDerivedTitles: params.includeDerivedTitles,
-      includeLastMessage: params.includeLastMessage,
-      transcriptUsageMaxBytes: 64 * 1024,
-      rowContext: buildSessionListRowMetadataContext({ now, subagentRuns }),
-      includeSwarmChildren: true,
-    });
-    const row = presentSessionRow(materializeSessionRow(inputs), presentation);
-    Object.assign(row, {
-      sharingRole: sharing.roleForTarget({
-        agentId: target.agentId,
-        canonicalKey: target.canonicalKey,
-        entry,
-        storeKey: target.canonicalKey,
-        storeKeys: target.storeKeys,
+    const assertCurrent = () => {
+      stateContext.maintenanceScope?.assertAdmission();
+      stateContext.admission.assertCurrent();
+    };
+    return withSessionProjectionWorkBudget(async (budget) => {
+      const indexNow = Date.now();
+      const work = await prepareSubagentSessionListReadIndex(
+        indexNow,
+        stateContext,
+        budget.shouldYield,
+        budget.yieldIfNeeded,
+      );
+      budget.resumeAfterAwait();
+      let step: ReturnType<typeof work.next>;
+      do {
+        const pause = budget.yieldIfNeeded();
+        if (pause) {
+          await pause;
+        }
+        assertCurrent();
+        step = work.next();
+      } while (!step.done);
+      const pause = budget.yieldIfNeeded();
+      if (pause) {
+        await pause;
+      }
+      assertCurrent();
+      // Target, sharing, lineage and placement facts belong to this final synchronous read.
+      const current = readVisibleSession(true);
+      if (!current) {
+        return;
+      }
+      const { cfg, target, storePath, store, entry, sharing } = current;
+      const now = Date.now();
+      const { inputs, presentation } = readSessionRowInputs({
+        cfg,
         storePath,
-      }),
-      ...readSessionPlacementFields(context, row.sessionId),
+        store,
+        modelSource: {
+          entry,
+          loadSessionEntry: createGatewaySessionEntryReader({
+            cfg,
+            agentId: target.agentId,
+            store,
+            readSource: target.readSource,
+          }),
+        },
+        key: target.canonicalKey,
+        entry,
+        agentId: target.agentId,
+        now,
+        modelCatalog: new Map([[catalogAgent.agentId, modelCatalog]]),
+        includeDerivedTitles: params.includeDerivedTitles,
+        includeLastMessage: params.includeLastMessage,
+        transcriptUsageMaxBytes: 64 * 1024,
+        rowContext: buildSessionListRowMetadataContext({
+          now,
+          subagentRuns: step.value.atTime(now),
+        }),
+        includeSwarmChildren: true,
+      });
+      const row = presentSessionRow(materializeSessionRow(inputs), presentation);
+      Object.assign(row, {
+        sharingRole: sharing.roleForTarget({
+          agentId: target.agentId,
+          canonicalKey: target.canonicalKey,
+          entry,
+          storeKey: target.canonicalKey,
+          storeKeys: target.storeKeys,
+          storePath,
+        }),
+        ...readSessionPlacementFields(context, row.sessionId),
+      });
+      respond(true, { session: row });
     });
-    respond(true, { session: row });
   },
   "sessions.get": async ({ params, respond, context, client }) => {
     // SAFETY: Gateway dispatch supplies object params; each optional field is narrowed before use.

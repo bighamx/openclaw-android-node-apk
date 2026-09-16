@@ -6,9 +6,8 @@ import {
   closeAuthProfileReadPool,
   resolveAuthProfileDatabasePath,
 } from "../agents/auth-profiles/sqlite.js";
-import { saveAuthProfileStore } from "../agents/auth-profiles/store-runtime.js";
 import type { AuthProfileStore } from "../agents/auth-profiles/types.js";
-import * as configRuntime from "../config/config.js";
+import * as configRuntime from "../config/runtime-snapshot.js";
 import { GATEWAY_STARTUP_MUTATED_ENV_KEYS } from "../gateway/test-helpers.env.js";
 import { AsyncWorkScope } from "../shared/async-work-scope.js";
 import { captureEnv } from "./env.js";
@@ -341,13 +340,14 @@ export async function createOpenClawTestState(
         await fs.writeFile(filePath, value, "utf8");
         return filePath;
       },
-      writeAuthProfiles: (store, agentId = "main") => {
+      writeAuthProfiles: async (store, agentId = "main") => {
         const targetAgentDir = agentDir(agentId);
+        const { saveAuthProfileStore } = await import("../agents/auth-profiles/store-runtime.js");
         saveAuthProfileStore(store as AuthProfileStore, targetAgentDir, {
           filterExternalAuthProfiles: false,
           syncExternalCli: false,
         });
-        return Promise.resolve(resolveAuthProfileDatabasePath(targetAgentDir));
+        return resolveAuthProfileDatabasePath(targetAgentDir);
       },
       applyEnv: () => {
         if (releasePromise || cleanupPromise) {

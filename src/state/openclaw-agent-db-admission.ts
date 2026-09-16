@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { isMainThread } from "node:worker_threads";
+import { cloneEnvWithPlatformSemantics } from "../config/config-env-vars.js";
 import { assertSqliteIntegrityInWorker } from "../infra/sqlite-integrity-worker.js";
 import {
   runSqliteIntegrityCheckSync,
@@ -114,7 +115,10 @@ export function createOpenClawAgentDatabaseAdmissionOwner(
       return Promise.reject(error);
     }
     // Admission retains its original path, registration, and permission inputs across awaits.
-    const options = { ...inputOptions, env: { ...(inputOptions.env ?? process.env) } };
+    const options = {
+      ...inputOptions,
+      env: cloneEnvWithPlatformSemantics(inputOptions.env ?? process.env),
+    };
     const agentId = normalizeAgentId(options.agentId);
     const pathname = resolveOpenClawAgentSqlitePath({ ...options, agentId });
     const existing = cache.pending.get(pathname);
@@ -165,7 +169,10 @@ export function createOpenClawAgentDatabaseAdmissionOwner(
     withAdmission: OpenClawAgentDatabaseWriteAdmission,
     operation: (database: OpenClawAgentDatabase) => T | Promise<T>,
   ): Promise<T> {
-    const options = { ...inputOptions, env: { ...(inputOptions.env ?? process.env) } };
+    const options = {
+      ...inputOptions,
+      env: cloneEnvWithPlatformSemantics(inputOptions.env ?? process.env),
+    };
     const agentId = normalizeAgentId(options.agentId);
     const pathname = resolveOpenClawAgentSqlitePath({ ...options, agentId });
     const existing = cache.pending.get(pathname);

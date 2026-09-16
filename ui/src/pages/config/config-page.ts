@@ -12,7 +12,7 @@ import type {
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ModelCatalogEntry } from "../../api/types.ts";
 import { subtitleForRoute, titleForRoute } from "../../app-navigation.ts";
-import { pathForRoute, type RouteId } from "../../app-route-paths.ts";
+import { pathForRoute } from "../../app-route-paths.ts";
 import { applicationContext, type ApplicationContext } from "../../app/context.ts";
 import { hasNativeBrowserBridge } from "../../app/native-browser-host.ts";
 import { hasOperatorAdminAccess, hasOperatorWriteAccess } from "../../app/operator-access.ts";
@@ -123,29 +123,6 @@ type ConfigPageSetting =
   | "catalogOpenTarget"
   | "composerHoldToRecord"
   | "openLinksInControlUiBrowser";
-
-// Sections relocated by the settings restructure, keyed by "<oldPage>:<section>".
-// Kept so pre-restructure bookmarks and generated links still land somewhere
-// sensible instead of silently opening the old page's default section.
-const MOVED_SECTION_ROUTES: Record<
-  string,
-  { routeId: RouteId; keepSection: boolean; search?: string; advanced?: boolean }
-> = {
-  "communications:__notifications__": { routeId: "notifications", keepSection: false },
-  "communications:channels": { routeId: "channels", keepSection: false },
-  "communications:broadcast": { routeId: "advanced", keepSection: true },
-  "communications:talk": { routeId: "talk", keepSection: true },
-  "appearance:wizard": { routeId: "advanced", keepSection: true },
-  "advanced:transcripts": { routeId: "communications", keepSection: true, advanced: true },
-  "automation:approvals": { routeId: "security", keepSection: true },
-  "automation:plugins": {
-    routeId: "plugin-settings",
-    keepSection: false,
-    search: "?tab=advanced",
-  },
-  "ai-agents:memory": { routeId: "memory", keepSection: true },
-  "ai-agents:models": { routeId: "model-providers", keepSection: false },
-};
 
 const SESSION_OBSERVER_STATUS_POLL_INTERVAL_MS = 10_000;
 const EMPTY_SESSION_CATALOG_LABELS: ReadonlyMap<string, string> = new Map();
@@ -632,25 +609,6 @@ export class ConfigPage extends OpenClawLightDomElement {
   }
 
   private syncRouteData() {
-    // Pre-restructure deep links: sections that moved to their own page must
-    // redirect before normalization discards them from the old page's list.
-    const rawSection = this.routeData
-      ? this.routeData.section
-      : new URLSearchParams(globalThis.location?.search ?? "").get("section");
-    if (rawSection) {
-      const movedRoute = MOVED_SECTION_ROUTES[`${this.pageId}:${rawSection}`];
-      if (movedRoute) {
-        this.context?.navigate(movedRoute.routeId, {
-          search:
-            movedRoute.search ??
-            (movedRoute.keepSection
-              ? `?section=${encodeURIComponent(rawSection)}${movedRoute.advanced ? "&advanced=1" : ""}`
-              : ""),
-          hash: this.routeData?.hash ?? globalThis.location?.hash ?? "",
-        });
-        return;
-      }
-    }
     const selection = this.routeData
       ? normalizeConfigSelection(this.pageId, this.routeData.section, null)
       : configSelectionFromSearch(this.pageId, globalThis.location?.search ?? "");

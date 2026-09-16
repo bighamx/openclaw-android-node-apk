@@ -20,7 +20,7 @@ import {
   recordSessionParticipant,
   replaceSessionEntrySync,
 } from "./session-accessor.js";
-import { captureSessionEntryCacheRead } from "./session-accessor.sqlite-entry-cache.js";
+import { captureSessionEntryRead } from "./session-accessor.sqlite-entry-read-lifetime.js";
 import { loadExactSessionEntryCandidates } from "./session-accessor.sqlite-exact-read.js";
 import { ensureTranscriptSessionRoot } from "./session-accessor.sqlite-transcript-state.js";
 import {
@@ -378,10 +378,10 @@ describe("exact SQLite session batches", () => {
     },
   );
 
-  it.each(["missing", "partial"] as const)(
-    "keeps a %s cache from hydrating unrelated rows",
-    (kind) => {
-      const env = { OPENCLAW_STATE_DIR: autoTempDirs.make("openclaw-exact-read-partial-") };
+  it.each([false, true])(
+    "reads only the target without a listing cache (retained read: %s)",
+    (retained) => {
+      const env = { OPENCLAW_STATE_DIR: autoTempDirs.make("openclaw-exact-read-uncached-") };
       const scope = { agentId: "main", env, sessionKey: "agent:main:target" };
       replaceSessionEntrySync(scope, { sessionId: "target", updatedAt: 1 });
       replaceSessionEntrySync(
@@ -390,8 +390,7 @@ describe("exact SQLite session batches", () => {
       );
       loadExactSessionEntryReadOnly({ ...scope, projection: "list" });
       const database = openOpenClawAgentDatabase(scope);
-      const held =
-        kind === "partial" ? captureSessionEntryCacheRead(database, scope.sessionKey) : undefined;
+      const held = retained ? captureSessionEntryRead(database, scope.sessionKey) : undefined;
       const queries = trackSqliteStatementExecutions(database.db, ["entries"], (sql) =>
         /from\s+"session_nodes"/i.test(sql) ? "entries" : null,
       );

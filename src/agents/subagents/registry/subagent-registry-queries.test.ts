@@ -121,6 +121,8 @@ describe("subagent registry query regressions", () => {
       expect(cooperative.countActiveDescendantRuns(root)).toBe(
         synchronous.countActiveDescendantRuns(root),
       );
+      expect(cooperative.atTime(now).getDisplaySubagentRun(running.childSessionKey)).toBe(ended);
+      expect(cooperative.getDisplaySubagentRun(running.childSessionKey)).toBe(running);
     } finally {
       for (const [id, claim] of claims) {
         releaseAgentRunContext(id, claim);
