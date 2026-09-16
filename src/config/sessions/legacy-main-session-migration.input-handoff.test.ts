@@ -137,7 +137,7 @@ function createInputHandoff(sharedStore = false) {
       );
     }, options(target));
   const migrate = () =>
-    migrateLegacyMainSessionKeys({ cfg: fixture.cfg, env: fixture.env, mode: "automatic" });
+    migrateLegacyMainSessionKeys({ cfg: fixture.cfg, env: fixture.env, mode: "doctor-fix" });
   return {
     source,
     destination,

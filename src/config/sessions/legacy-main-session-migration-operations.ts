@@ -530,7 +530,7 @@ export async function processIdenticalClaims(params: {
   const crossStore = params.aliases.some(
     (claim) => !samePhysicalStore(claim.store, params.destination),
   );
-  if (params.mode === "detect") {
+  if (params.mode !== "doctor-fix") {
     return {
       kind: params.canonical
         ? "canonical-exists-identical"
@@ -647,7 +647,7 @@ export async function repairDivergentClaims(params: {
       canonicalKey: params.canonicalKey,
       destination: params.destination,
       env: params.env,
-      mode: "automatic",
+      mode: "doctor-fix",
     });
     if (migrated.kind === "divergent-aliases" || migrated.kind === "divergent-canonical") {
       return { quarantinedKeys: [], resolved: false };
@@ -678,7 +678,7 @@ export async function repairDivergentClaims(params: {
       canonicalKey: params.canonicalKey,
       destination: params.destination,
       env: params.env,
-      mode: "automatic",
+      mode: "doctor-fix",
     });
     if (migrated.kind === "divergent-aliases" || migrated.kind === "divergent-canonical") {
       return { quarantinedKeys: [], resolved: false };

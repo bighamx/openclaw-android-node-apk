@@ -1,19 +1,14 @@
 // Tracks queue state for active, pending, and recently deduped reply runs.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { QueueMode } from "../../../../packages/gateway-protocol/src/schema/logs-chat.js";
-import { resolveAgentConfig } from "../../../agents/agent-scope-config.js";
 import type { ModelCatalogEntry } from "../../../agents/model-catalog.types.js";
 import type { ModelFallbackRouteResolution } from "../../../agents/model-fallback.types.js";
 import { resolveThinkingDefault } from "../../../agents/model-thinking-default.js";
 import { resolveGlobalMap } from "../../../shared/global-singleton.js";
 import { applyQueueRuntimeSettings } from "../../../utils/queue-helpers.js";
 import { normalizeThinkLevel, resolveSupportedThinkingLevel } from "../../thinking.js";
-import {
-  completeFollowupRunLifecycle,
-  type FollowupRun,
-  type QueueDropPolicy,
-  type QueueSettings,
-} from "./types.js";
+import { completeFollowupRunLifecycle } from "./lifecycle.js";
+import type { FollowupRun, QueueDropPolicy, QueueSettings } from "./types.js";
 
 type FollowupQueueState = {
   abortController: AbortController;
@@ -293,8 +288,7 @@ export function refreshQueuedFollowupSession(params: {
           ...thinkingPolicy,
           level:
             explicitLevel ??
-            resolveAgentConfig(run.config, run.agentId)?.thinkingDefault ??
-            resolveThinkingDefault({ cfg: run.config, ...thinkingPolicy }),
+            resolveThinkingDefault({ cfg: run.config, agentId: run.agentId, ...thinkingPolicy }),
         });
       }
     }

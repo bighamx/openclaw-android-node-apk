@@ -111,13 +111,13 @@ describe("legacy main session history handoff", () => {
       assertAllowed: () => {},
     });
     try {
-      const blocked = await migrateLegacyMainSessionKeys({
-        cfg: fixture.cfg,
-        env: fixture.env,
-        mode: "automatic",
-      });
-      expect(blocked.complete).toBe(false);
-      expect(blocked.warnings.join("\n")).toContain("competing work is in flight");
+      await expect(
+        migrateLegacyMainSessionKeys({
+          cfg: fixture.cfg,
+          env: fixture.env,
+          mode: "doctor-fix",
+        }),
+      ).rejects.toThrow("competing work is in flight");
       expect(readClaim(source)).toEqual(sourceBefore);
     } finally {
       admission.release();
@@ -126,12 +126,12 @@ describe("legacy main session history handoff", () => {
     const repaired = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "doctor-fix",
     });
     const retry = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "doctor-fix",
     });
 
     expect(repaired.complete).toBe(true);
@@ -166,12 +166,12 @@ describe("legacy main session history handoff", () => {
     const result = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "doctor-fix",
     });
     const retry = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "doctor-fix",
     });
 
     expect(result.complete).toBe(true);
@@ -209,7 +209,7 @@ describe("legacy main session history handoff", () => {
     const result = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "doctor-fix",
     });
 
     expect(result.complete).toBe(true);
@@ -287,7 +287,7 @@ describe("legacy main session history handoff", () => {
     const result = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "doctor-fix",
     });
 
     expect(result.complete).toBe(true);
@@ -394,12 +394,24 @@ describe("legacy main session history handoff", () => {
     if (beforeCopy) {
       changeOwnership();
     }
-    const { result, committed } = await recordHarnessDeletions(
-      () => migrateLegacyMainSessionKeys({ cfg: fixture.cfg, env: fixture.env, mode: "automatic" }),
+    const { committed } = await recordHarnessDeletions(
+      async () => {
+        const migration = migrateLegacyMainSessionKeys({
+          cfg: fixture.cfg,
+          env: fixture.env,
+          mode: beforeCopy ? "detect" : "doctor-fix",
+        });
+        if (beforeCopy || phase === "during-delete") {
+          expect((await migration).complete).toBe(false);
+        } else {
+          await expect(migration).rejects.toThrow(
+            "Canonical session changed before legacy cleanup: agent:ops:chat",
+          );
+        }
+      },
       beforeCopy ? undefined : changeOwnership,
     );
     expect(changed).toBe(true);
-    expect(result.complete).toBe(false);
     expect(readClaim(source)).toEqual(before);
     expect(readClaim(destination)?.events).toEqual(before?.events);
     expect(committed).toEqual([]);
@@ -495,7 +507,7 @@ describe("legacy main session history handoff", () => {
       const result = await migrateLegacyMainSessionKeys({
         cfg: fixture.cfg,
         env: fixture.env,
-        mode: "automatic",
+        mode: "doctor-fix",
       });
 
       expect(result.complete).toBe(true);
@@ -532,7 +544,7 @@ describe("legacy main session history handoff", () => {
       const retry = await migrateLegacyMainSessionKeys({
         cfg: fixture.cfg,
         env: fixture.env,
-        mode: "automatic",
+        mode: "doctor-fix",
       });
       expect(retry.ledgerComplete).toBe(true);
       expect(snapshot("ops", destinationPath)).toEqual(after);
@@ -563,12 +575,12 @@ describe("legacy main session history handoff", () => {
     const converged = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "doctor-fix",
     });
     const ledgerRerun = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "detect",
     });
 
     expect(converged.complete).toBe(true);
@@ -653,7 +665,7 @@ describe("legacy main session history handoff", () => {
     const result = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "doctor-fix",
     });
 
     expect(result.complete).toBe(true);

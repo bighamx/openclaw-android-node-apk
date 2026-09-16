@@ -23,6 +23,7 @@ import {
   type OpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
 import type { DeliveryContext } from "../../utils/delivery-context.types.js";
+import { cloneEnvWithPlatformSemantics } from "../config-env-vars.js";
 import { resolveStateDir } from "../paths.js";
 import { isInternalSessionEffectsKey } from "./internal-session-key.js";
 import { deriveLastRoutePatch, deriveSessionMetaPatch } from "./metadata.js";
@@ -523,7 +524,10 @@ async function patchSqliteSessionEntrySnapshot(
 ): Promise<SessionEntry | null> {
   const { options, sessionKey } = params;
   // Queueing and either cold open must retain the same registration and lease owner.
-  const resolved = { ...params.resolved, env: { ...(params.resolved.env ?? process.env) } };
+  const resolved = {
+    ...params.resolved,
+    env: cloneEnvWithPlatformSemantics(params.resolved.env ?? process.env),
+  };
   resolved.env.OPENCLAW_STATE_DIR = resolveStateDir(resolved.env);
   const databaseOptions = toDatabaseOptions(resolved);
   const databasePath = resolveOpenClawAgentSqlitePath(databaseOptions);

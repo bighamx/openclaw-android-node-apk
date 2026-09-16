@@ -936,6 +936,7 @@ test("sessions.create with an empty message preserves its owned checkout above t
         },
       );
       await migrateManagedWorktreeCanonicalWorkspaces({
+        mode: "doctor-fix",
         agentId: "main",
         cfg: getRuntimeConfig(),
         storePath,

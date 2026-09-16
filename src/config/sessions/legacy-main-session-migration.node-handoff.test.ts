@@ -141,7 +141,7 @@ function createNodeHandoff(existingCanonical = false) {
     migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "doctor-fix",
     });
   return { source, destination, entry, withDatabase, artifacts, seedArtifacts, migrate };
 }
@@ -353,12 +353,17 @@ describe("legacy main session node artifact handoff", () => {
       };
       diagnostics.subscribe(onPlanningComplete);
       try {
-        const result = await f.migrate();
+        if (side === "destination") {
+          await expect(f.migrate()).rejects.toThrow(
+            "Canonical session changed before legacy cleanup: agent:ops:chat",
+          );
+        } else {
+          expect((await f.migrate()).complete).toBe(false);
+        }
         expect(mutationError).toBeUndefined();
         expect(injected).toBe(true);
         expect(changedRows).toBe(1);
         expect(changedArtifacts).toBeDefined();
-        expect(result.complete).toBe(false);
         expect(readClaim(f.source)).toEqual(sourceBefore);
         expect(readClaim(f.destination)?.entry).toMatchObject(sourceBefore!.entry);
         expect(f.artifacts(target)).toEqual(changedArtifacts);

@@ -49,6 +49,11 @@ export type ConfigNodeRenderParams = {
   controlIdentity?: unknown;
   structuredDraftOwner?: boolean;
   showLabel?: boolean;
+  /** Description rendered by the surrounding field layout. */
+  descriptionId?: string;
+  /** Compact editors show effective defaults and inline collection controls. */
+  compact?: boolean;
+  commitOnBlur?: boolean;
   /** Section shells own the title while collection rows still own help/default metadata. */
   showHeaderMeta?: boolean;
   searchCriteria?: ConfigSearchCriteria;
@@ -191,24 +196,11 @@ export function wrapSensitiveControl(
   return html`<span class="settings-secret">${control}${toggle}</span>`;
 }
 
-export function renderTags(tags: string[]): TemplateResult | typeof nothing {
-  const visibleTags = tags.filter((tag) => tag !== "advanced");
-  if (visibleTags.length === 0) {
-    return nothing;
-  }
-  return html`
-    <div class="cfg-tags">
-      ${visibleTags.map((tag) => html`<span class="cfg-tag">${tag}</span>`)}
-    </div>
-  `;
-}
-
 export function renderFieldRow(params: {
   label: unknown;
   help?: unknown;
   helpId?: string;
   defaultDescription?: unknown;
-  tags: string[];
   showLabel: boolean;
   control: TemplateResult | typeof nothing;
   stacked?: boolean;
@@ -220,11 +212,7 @@ export function renderFieldRow(params: {
   const help = params.showLabel ? params.help : undefined;
   const defaultDescription = params.showLabel ? params.defaultDescription : undefined;
   const hasText =
-    params.showLabel ||
-    Boolean(help) ||
-    Boolean(defaultDescription) ||
-    params.tags.length > 0 ||
-    Boolean(params.error);
+    params.showLabel || Boolean(help) || Boolean(defaultDescription) || Boolean(params.error);
   // Control-only rows (array/map item values) stack so the control gets full width.
   const stacked = params.stacked || !hasText;
   const className = stacked ? "settings-row settings-row--stacked" : "settings-row";
@@ -251,7 +239,6 @@ export function renderFieldRow(params: {
                     ? html`<span class="settings-row__desc">${defaultDescription}</span>`
                     : nothing
                 }
-                ${renderTags(params.tags)}
                 ${
                   params.error
                     ? html`<span class="cfg-field__error" role="alert">${params.error}</span>`
@@ -301,6 +288,7 @@ export function renderSegmentedControl(params: {
   resolvedValue: unknown;
   disabled: boolean;
   ariaLabel: string;
+  descriptionId?: string;
   onSelect: (value: unknown) => boolean | void;
 }): TemplateResult {
   const selectedIndex = params.options.findIndex((option) =>
@@ -314,6 +302,7 @@ export function renderSegmentedControl(params: {
     })),
     disabled: params.disabled,
     ariaLabel: params.ariaLabel,
+    descriptionId: params.descriptionId,
     onChange: (index) => {
       const option = params.options[Number(index)];
       if (option !== undefined) {

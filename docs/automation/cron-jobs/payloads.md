@@ -64,6 +64,20 @@ unrestricted `*` policy; `automations edit --clear-tools` restores that explicit
 policy. Existing jobs that predate an explicit tool policy retain their current behavior
 until their tool policy is explicitly edited or the job is recreated.
 
+Changing an account-bound job to a payload that does not run tools and later back
+to an agent turn preserves its account restriction. A payload conversion does not
+reauthorize that job as an operator-created job.
+
+Management edits cannot restore missing policy metadata as operator authority.
+For a legacy job that has lost its policy, an authenticated operator can explicitly
+reauthorize it, or an authenticated creator can recreate it with a fresh tool cap.
+
+When the creator's `exec` capability is fixed to the Gateway, the automation also
+retains that target. With `tools.exec.host: "auto"`, the saved target determines
+placement. A conflicting current explicit host setting or required sandbox
+isolation blocks the command instead of moving it to another host. Current tool
+and approval policies still apply.
+
 `--model` sets the job's primary model; it does not replace a session `/model` override, so configured fallback chains still apply on top of it. An unresolved or disallowed model fails the run with an explicit validation error rather than silently falling back to the default. If a job has `--model` but no explicit or configured fallback list, OpenClaw passes an empty fallback override instead of silently appending the agent primary as a hidden retry target.
 
 Pick the model for the job's difficulty, not the agent's default. Routine

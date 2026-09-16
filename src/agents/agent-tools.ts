@@ -94,6 +94,7 @@ import type { PreparedModelRuntimeSnapshot } from "./prepared-model-runtime.js";
 import type { SandboxContext } from "./sandbox.js";
 import { resolveSandboxFileIdentity } from "./sandbox/file-mutation-identity.js";
 import {
+  resolveScheduledExecPolicy,
   resolveScheduledToolCallerContext,
   type ScheduledToolPolicyContext,
 } from "./scheduled-tool-policy.js";
@@ -614,6 +615,10 @@ export function createOpenClawCodingToolsInternal(
   // Its approval floor outranks a reused full session; the wrapper below
   // prevents caller arguments from weakening either restriction.
   const scheduledExecTarget = options?.scheduledToolPolicy?.execTarget;
+  const scheduledExecPolicy = resolveScheduledExecPolicy(
+    { ...effectiveExecPolicy, host: execDefaults.host ?? execConfig.host },
+    scheduledExecTarget,
+  );
   const processToolAvailabilityRef: NonNullable<ExecToolDefaults["processToolAvailabilityRef"]> =
     {};
   const coreTools = createCoreCodingTools({
@@ -640,10 +645,7 @@ export function createOpenClawCodingToolsInternal(
         scheduledExecTarget?.ask !== "always" &&
         sessionCoreToolPolicy?.bypassHostApprovalFloors &&
         effectiveExecPolicy.security === "full",
-      host: scheduledExecTarget?.host ?? options?.exec?.host ?? execConfig.host,
-      mode: scheduledExecTarget?.ask ? undefined : effectiveExecPolicy.mode,
-      security: effectiveExecPolicy.security,
-      ask: scheduledExecTarget?.ask ?? effectiveExecPolicy.ask,
+      ...scheduledExecPolicy,
       config: execRuntimeConfig,
       preparedRunEnvironment,
       reviewer: options?.exec?.reviewer ?? execConfig.reviewer,
@@ -840,10 +842,7 @@ export function createOpenClawCodingToolsInternal(
               ? { permissionMode: sessionPermissionPolicy.mode }
               : undefined,
             execOverrides: {
-              host: scheduledExecTarget?.host ?? options?.exec?.host ?? execConfig.host,
-              mode: scheduledExecTarget?.ask ? undefined : effectiveExecPolicy.mode,
-              security: effectiveExecPolicy.security,
-              ask: scheduledExecTarget?.ask ?? effectiveExecPolicy.ask,
+              ...scheduledExecPolicy,
               node: options?.exec?.node ?? execConfig.node,
             },
             approvalReviewerDeviceIds: options?.approvalReviewerDeviceId

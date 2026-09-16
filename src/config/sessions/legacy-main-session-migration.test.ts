@@ -116,7 +116,7 @@ describe("legacy main session migration", () => {
         const result = await migrateLegacyMainSessionKeys({
           cfg: fixture.cfg,
           env: fixture.env,
-          mode: "automatic",
+          mode: "doctor-fix",
         });
         expect(
           readClaim({
@@ -148,7 +148,7 @@ describe("legacy main session migration", () => {
         return await migrateLegacyMainSessionKeys({
           cfg: fixture.cfg,
           env: fixture.env,
-          mode: "automatic",
+          mode: "doctor-fix",
         });
       },
     },
@@ -171,7 +171,7 @@ describe("legacy main session migration", () => {
         return await migrateLegacyMainSessionKeys({
           cfg: fixture.cfg,
           env: fixture.env,
-          mode: "automatic",
+          mode: "detect",
         });
       },
     },
@@ -198,7 +198,7 @@ describe("legacy main session migration", () => {
         const result = await migrateLegacyMainSessionKeys({
           cfg: fixture.cfg,
           env: fixture.env,
-          mode: "automatic",
+          mode: "detect",
         });
         expect(
           readClaim({
@@ -277,7 +277,7 @@ describe("legacy main session migration", () => {
     const result = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "detect",
     });
 
     expect(outcomeKinds(result)).toContain("divergent-canonical");
@@ -323,7 +323,7 @@ describe("legacy main session migration", () => {
       migrateLegacyMainSessionKeys({
         cfg: fixture.cfg,
         env: fixture.env,
-        mode: "automatic",
+        mode: "doctor-fix",
       }),
     );
 
@@ -371,7 +371,8 @@ describe("legacy main session migration", () => {
     let canonicalBefore: ReturnType<typeof readClaim>;
 
     const { result, committed } = await recordHarnessDeletions(
-      () => migrateLegacyMainSessionKeys({ cfg: fixture.cfg, env: fixture.env, mode: "automatic" }),
+      () =>
+        migrateLegacyMainSessionKeys({ cfg: fixture.cfg, env: fixture.env, mode: "doctor-fix" }),
       () => {
         seedClaim({
           ...canonicalTarget,
@@ -444,13 +445,13 @@ describe("legacy main session migration", () => {
     const first = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "doctor-fix",
       now: () => 100,
     });
     const second = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "detect",
       now: () => 200,
     });
     expect(readLedgerReport(fixture.env)).toMatchObject({
@@ -573,7 +574,7 @@ describe("legacy main session migration", () => {
     const result = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "detect",
     });
 
     expect(result).toMatchObject({
@@ -599,7 +600,7 @@ describe("legacy main session migration", () => {
     const result = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "doctor-fix",
     });
 
     expect(result).toMatchObject({ armed: true, complete: true, ownerAgentId: "ops" });
@@ -615,9 +616,9 @@ describe("legacy main session migration", () => {
     ).toBeDefined();
   });
 
-  it("keeps automatic detection non-throwing for unreadable stores and treats ENOENT as absence", async () => {
+  it("keeps detection non-throwing for unreadable stores and treats ENOENT as absence", async () => {
     const absent = createFixture();
-    const unreadablePath = path.join(tempDirs.make("automatic-unreadable-"), "sessions.sqlite");
+    const unreadablePath = path.join(tempDirs.make("detect-unreadable-"), "sessions.sqlite");
     fs.symlinkSync(`${unreadablePath}.missing`, unreadablePath);
     const unreadable = createFixture({
       agents: { entries: { ops: {} } },
@@ -627,12 +628,12 @@ describe("legacy main session migration", () => {
     const absentResult = await migrateLegacyMainSessionKeys({
       cfg: absent.cfg,
       env: absent.env,
-      mode: "automatic",
+      mode: "detect",
     });
     const unreadableResult = await migrateLegacyMainSessionKeys({
       cfg: unreadable.cfg,
       env: unreadable.env,
-      mode: "automatic",
+      mode: "detect",
     });
 
     expect(absentResult).toMatchObject({ complete: true, outcomes: [{ kind: "no-legacy-rows" }] });
@@ -647,7 +648,7 @@ describe("legacy main session migration", () => {
     ).rejects.toThrow(`cannot read legacy session store ${unreadablePath}`);
   });
 
-  it("keeps automatic mode report-only while a legacy JSON candidate blocks inspection", async () => {
+  it("keeps detection read-only while a legacy JSON candidate blocks inspection", async () => {
     const fixture = createFixture();
     const mainPath = databasePath(fixture.stateDir, "main");
     seedClaim({ databaseAgentId: "main", databasePath: mainPath, key: "agent:main:chat" });
@@ -658,7 +659,7 @@ describe("legacy main session migration", () => {
     const result = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env: fixture.env,
-      mode: "automatic",
+      mode: "detect",
     });
 
     expect(outcomeKinds(result)).toContain("legacy-json-store");
@@ -695,7 +696,7 @@ describe("legacy main session migration", () => {
     const result = await migrateLegacyMainSessionKeys({
       cfg: fixture.cfg,
       env,
-      mode: "automatic",
+      mode: "doctor-fix",
     });
 
     expect(
