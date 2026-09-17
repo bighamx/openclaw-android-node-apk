@@ -42,7 +42,14 @@ function staticString(node: StaticStringNode | null | undefined): string | undef
 }
 
 type RequireReferencePath = {
-  node: (StaticStringNode & { name?: string; computed?: boolean }) | null;
+  node:
+    | (StaticStringNode & {
+        name?: string;
+        computed?: boolean;
+        source?: StaticStringNode;
+        specifiers?: readonly unknown[];
+      })
+    | null;
   scope: {
     getBinding(name: string): { constant: boolean; path: RequireReferencePath } | undefined;
   };
@@ -68,6 +75,87 @@ function unwrapReferenceArgument(input: RequireReferencePath | undefined) {
     argument = argument.get("expression");
   }
   return argument;
+}
+
+/** Inspect authored TypeScript syntax before Jiti rewrites module operations. */
+export function inspectPluginTypeScriptExecutionFacts(
+  source: string,
+  sourceText: string,
+  resolver: ReturnType<typeof createJiti>,
+): {
+  hasComputedImport: boolean;
+  staticImports: Array<{ specifier: string; sideEffect: boolean }>;
+} {
+  let hasComputedImport = false;
+  const staticImports = new Map<string, boolean>();
+  const recordStaticImport = (specifier: string, sideEffect: boolean) => {
+    staticImports.set(specifier, (staticImports.get(specifier) ?? false) || sideEffect);
+  };
+  resolver.transform({
+    source: sourceText,
+    filename: source,
+    ts: true,
+    async: true,
+    babel: {
+      plugins: [
+        {
+          pre(file: {
+            path: {
+              traverse(visitor: {
+                CallExpression(call: RequireReferencePath): void;
+                ImportDeclaration(declaration: RequireReferencePath): void;
+                ExportNamedDeclaration(declaration: RequireReferencePath): void;
+                ExportAllDeclaration(declaration: RequireReferencePath): void;
+                ImportExpression(expression: RequireReferencePath): void;
+              }): void;
+            };
+          }) {
+            file.path.traverse({
+              ImportDeclaration(declaration) {
+                const specifier = staticString(declaration.get("source").node);
+                if (specifier !== undefined) {
+                  recordStaticImport(specifier, declaration.node?.specifiers?.length === 0);
+                }
+              },
+              ExportNamedDeclaration(declaration) {
+                const specifier = staticString(declaration.get("source").node);
+                if (specifier !== undefined) {
+                  recordStaticImport(specifier, false);
+                }
+              },
+              ExportAllDeclaration(declaration) {
+                const specifier = staticString(declaration.get("source").node);
+                if (specifier !== undefined) {
+                  recordStaticImport(specifier, false);
+                }
+              },
+              ImportExpression(expression) {
+                if (staticString(expression.get("source").node) === undefined) {
+                  hasComputedImport = true;
+                }
+              },
+              CallExpression(call) {
+                const args = call.get("arguments");
+                if (
+                  call.get("callee").node?.type === "Import" &&
+                  staticString(unwrapReferenceArgument(args[0])?.node) === undefined
+                ) {
+                  hasComputedImport = true;
+                }
+              },
+            });
+          },
+        },
+      ],
+    },
+  });
+  return {
+    hasComputedImport,
+    staticImports: [...staticImports].map(([specifier, sideEffect]) => ({
+      specifier,
+      sideEffect,
+    })),
+  };
 }
 
 /** Read the native factory binding before Jiti rewrites modules and import.meta. */

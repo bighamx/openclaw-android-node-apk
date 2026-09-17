@@ -54,16 +54,10 @@ import {
   emitDaemonInstallRuntimeWarning,
   resolveDaemonInstallRuntimeInputs,
   resolveDaemonServicePathDirs,
+  type GatewayInstallPlan,
 } from "./daemon-install-plan.shared.js";
 import type { DaemonInstallWarnFn } from "./daemon-install-runtime-warning.js";
 import type { GatewayDaemonRuntime } from "./daemon-runtime.js";
-
-type GatewayInstallPlan = {
-  programArguments: string[];
-  workingDirectory?: string;
-  environment: Record<string, string | undefined>;
-  environmentValueSources?: Record<string, GatewayServiceEnvironmentValueSource | undefined>;
-};
 
 // Gateway ingress secrets must never be newly materialized into supervisor metadata.
 // Existing active service values are retained separately during regeneration.
@@ -796,6 +790,7 @@ export async function buildGatewayInstallPlan(params: {
   existingCommand?: GatewayServiceCommandConfig | null;
   devMode?: boolean;
   runtimePath?: string;
+  pinnedRuntimePath?: string;
   wrapperPath?: string;
   platform?: NodeJS.Platform;
   warn?: DaemonInstallWarnFn;
@@ -826,6 +821,7 @@ export async function buildGatewayInstallPlan(params: {
     runtime: params.runtime,
     devMode: params.devMode,
     runtimePath: params.runtimePath,
+    pinnedRuntimePath: params.pinnedRuntimePath,
     wrapperPath,
   });
   const serviceInputEnv: Record<string, string | undefined> = wrapperPath

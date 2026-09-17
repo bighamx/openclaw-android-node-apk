@@ -22,7 +22,11 @@ import {
   isSystemAgentInferenceUnavailableError,
 } from "./inference-error.js";
 import { isSystemAgentNavigationOperation } from "./operation-types.js";
-import { SystemAgentOperationExitError } from "./operations-execution-helpers.js";
+import {
+  getRegularAgentSetupNotice,
+  resolveTuiAgentId,
+  SystemAgentOperationExitError,
+} from "./operations-execution-helpers.js";
 import { isInvalidConfigSetOperation } from "./operations-internal.js";
 import {
   describeSystemAgentPersistentOperation,
@@ -316,6 +320,13 @@ export class ChatTurnRouter {
       result.bootstrapPending === true &&
       verify === null
     ) {
+      const setupNotice = getRegularAgentSetupNotice(
+        await this.callbacks.loadOverview(),
+        result.agentId,
+      );
+      if (setupNotice) {
+        return { text: `${baseText}\n\n${setupNotice}`, action: "none", applied: true };
+      }
       return {
         text: [
           baseText,
@@ -409,6 +420,18 @@ export class ChatTurnRouter {
     }
     if (recordedOperation.kind === "open-tui") {
       this.clearPendingProposals();
+      const overview = await this.callbacks.loadOverview();
+      const setupNotice = getRegularAgentSetupNotice(
+        overview,
+        resolveTuiAgentId({
+          requestedAgentId: recordedOperation.agentId,
+          requestedWorkspace: recordedOperation.workspace,
+          overview,
+        }),
+      );
+      if (setupNotice) {
+        return { text: setupNotice, action: "none" };
+      }
       return {
         text: `Opening a chat with your agent. ${this.agentHandoffReturnHint()}`,
         action: "open-tui",

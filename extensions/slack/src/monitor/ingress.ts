@@ -4,7 +4,6 @@ import {
   createChannelIngressError,
   createChannelIngressMonitor,
   type ChannelIngressQueue,
-  type ChannelIngressMonitorLifecycle,
 } from "openclaw/plugin-sdk/channel-outbound";
 import {
   collectErrorGraphCandidates,
@@ -15,22 +14,15 @@ import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import type { PluginJsonValue } from "openclaw/plugin-sdk/plugin-entry";
 import { asOptionalRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { getSlackRuntime } from "../runtime.js";
+import type { SlackIngressTurnLifecycle } from "./ingress.types.js";
 import { isNonRecoverableSlackAuthError } from "./reconnect-policy.js";
+import { isTransientSlackThreadLookupError } from "./thread-resolution.js";
 
 const SLACK_INGRESS_PAYLOAD_VERSION = 1;
 const SLACK_INGRESS_POLL_INTERVAL_MS = 1_000;
 const SLACK_BOLT_AUTHORIZATION_ERROR = "slack_bolt_authorization_error";
 
 const SLACK_INGRESS_LIFECYCLE_CONTEXT_KEY = "openclawIngressLifecycle";
-
-export type SlackIngressTurnLifecycle = Omit<
-  ChannelIngressMonitorLifecycle,
-  "onAdoptionFinalizing"
-> & {
-  onSessionRouted?: (sessionKey: string) => Promise<void>;
-  /** A logical duplicate awaits its existing owner before session routing. */
-  onDispatchWaiting?: () => void;
-};
 
 type SlackIngressPayload = {
   version: number;
@@ -192,16 +184,21 @@ function inspectSlackIngress(raw: SlackIngressRawEvent): { eventId: string; lane
 }
 
 function resolveSlackIngressNonRetryableFailure(error: unknown) {
-  for (const candidate of collectErrorGraphCandidates(error, (current) => [
+  const candidates = collectErrorGraphCandidates(error, (current) => [
     current.cause,
     current.error,
     current.original,
-  ])) {
+  ]);
+  // Bolt wraps auth.test outages in AuthorizationError too. Keep the durable
+  // event retryable for those failures; dispatch still requires authorization.
+  const transientAuthorizationFailure = candidates.some(isTransientSlackThreadLookupError);
+  for (const candidate of candidates) {
     if (candidate instanceof SlackIngressPayloadError || candidate instanceof SyntaxError) {
       return { reason: "invalid-event", message: formatErrorMessage(candidate) };
     }
     if (
-      extractErrorCode(candidate) === SLACK_BOLT_AUTHORIZATION_ERROR ||
+      (extractErrorCode(candidate) === SLACK_BOLT_AUTHORIZATION_ERROR &&
+        !transientAuthorizationFailure) ||
       isNonRecoverableSlackAuthError(candidate)
     ) {
       return { reason: "slack-auth", message: formatErrorMessage(candidate) };

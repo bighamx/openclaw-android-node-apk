@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+import { isRuntimeToolAllowed } from "../../agents/tool-policy-match.js";
 import { cloneCronRuntimeAuthority, type CronRuntimeAuthority } from "../runtime-authority.js";
 import {
   createTrustedCronScheduledToolPolicy,
@@ -12,6 +14,33 @@ import type {
   CronToolsAllowProvenance,
 } from "../types.js";
 import type { CronAddOptions, CronUpdateOptions } from "./state.js";
+
+/** Snapshots the normalized permissions used by scheduled message access. */
+export function resolveCronJobMessageActionAuthorityInputs(job: CronStoredJob) {
+  const policy = resolveCronScheduledToolPolicy({
+    toolsAllow: job.payload.toolsAllow,
+    scheduledToolPolicy: job.scheduledToolPolicy,
+    owner: job.owner,
+  });
+  if (
+    !cronJobUsesToolRuntime(job) ||
+    policy?.mode !== "trusted" ||
+    !isRuntimeToolAllowed("message", job.payload.toolsAllow)
+  ) {
+    return undefined;
+  }
+  return { policy };
+}
+
+export function cronJobMessageActionAuthorityInputsEqual(
+  previous: CronStoredJob,
+  next: CronStoredJob,
+): boolean {
+  return isDeepStrictEqual(
+    resolveCronJobMessageActionAuthorityInputs(previous),
+    resolveCronJobMessageActionAuthorityInputs(next),
+  );
+}
 
 export function consumeRuntimeAuthorityMutationOptions(
   opts: CronAddOptions | CronUpdateOptions | undefined,

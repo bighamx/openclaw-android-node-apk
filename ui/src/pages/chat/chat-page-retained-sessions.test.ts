@@ -11,6 +11,7 @@ vi.mock("../../app/native-gateways.runtime.ts", () => ({
 
 import type { GatewayHelloOk } from "../../api/gateway.ts";
 import { chatInputOwnerForContext } from "../../app/chat-input-owner.ts";
+import { createChatSubmissions } from "../../app/chat-submissions.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { loadSettings } from "../../app/settings.ts";
 import { UI_COMMAND_EVENT } from "../../components/panel-toggle-contract.ts";
@@ -60,6 +61,7 @@ function setNavigationContext(page: ChatPage) {
   const context = {
     basePath: "",
     sessions: { ...createChatPageSessions(), patch },
+    chatSubmissions: createChatSubmissions(),
     agents: { state: { agentsList: { defaultId: "main", mainKey: "main" } } },
     gateway: {
       snapshot: { hello: null },
@@ -158,7 +160,7 @@ describe("chat page retained sessions", () => {
     );
     await page.updateComplete;
     expect(context.gateway.setSessionKey).toHaveBeenLastCalledWith(otherSession);
-    expect(context.agentSelection.set).toHaveBeenLastCalledWith("research");
+    expect(context.agentSelection.set).toHaveBeenLastCalledWith("research", { background: true });
     page
       .querySelector<HTMLElement>(".chat-split-view__cell")
       ?.dispatchEvent(new Event("pointerdown"));
@@ -169,7 +171,7 @@ describe("chat page retained sessions", () => {
       sessionKey: workSessionKey,
       lastActiveSessionKey: workSessionKey,
     });
-    expect(context.agentSelection.set).toHaveBeenLastCalledWith("main");
+    expect(context.agentSelection.set).toHaveBeenLastCalledWith("main", { background: true });
     expect(chatInputOwnerForContext(context).current).toBe("dock");
   });
 

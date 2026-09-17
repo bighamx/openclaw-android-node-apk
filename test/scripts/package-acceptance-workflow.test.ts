@@ -2119,9 +2119,10 @@ describe("frozen admission workflow barriers", () => {
   );
 
   it.each(["published-upgrade-survivor", "update-migration"])(
-    "acquires the selected mobile-pairing blob before expanded %s admission",
+    "acquires selected upgrade metadata before expanded %s admission",
     (lane) => {
       const path = "src/gateway/node-command-policy.ts";
+      const scenarioCatalog = "scripts/lib/upgrade-survivor-scenarios.json";
       const inputs = {
         docker_lanes: lane,
         include_release_path_suites: false,
@@ -2144,6 +2145,7 @@ describe("frozen admission workflow barriers", () => {
       );
       const planned = fixture.selection();
       expect(planned.sourcePaths).toContain(path);
+      expect(planned.sourcePaths).toContain(scenarioCatalog);
       const origin = join(fixture.root, "origin.git");
       fixture.git("clone", "--bare", "--no-hardlinks", fixture.target, origin);
       fixture.git("-C", origin, "config", "uploadpack.allowFilter", "true");
@@ -2151,7 +2153,17 @@ describe("frozen admission workflow barriers", () => {
       fixture.git("config", "remote.origin.promisor", "true");
       fixture.git("config", "remote.origin.partialclonefilter", "blob:none");
       const oid = fixture.git("rev-parse", `${fixture.sha}:${path}`);
+      const scenarioCatalogOid = fixture.git("rev-parse", `${fixture.sha}:${scenarioCatalog}`);
       unlinkSync(join(fixture.target, ".git", "objects", oid.slice(0, 2), oid.slice(2)));
+      unlinkSync(
+        join(
+          fixture.target,
+          ".git",
+          "objects",
+          scenarioCatalogOid.slice(0, 2),
+          scenarioCatalogOid.slice(2),
+        ),
+      );
 
       const unavailable = fixture.admit();
       expect(unavailable.status).not.toBe(0);
@@ -2163,14 +2175,16 @@ describe("frozen admission workflow barriers", () => {
       const gitPath = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
       writeFileSync(
         join(acquisitionBin, "git"),
-        `#!/bin/sh\nif [ "$#" = 5 ] && [ "$3" = cat-file ] && [ "$4" = blob ] && [ "$5" = '${oid}' ]; then printf '%s\\n' "$5" >> '${requested}'; fi\nexec '${gitPath}' "$@"\n`,
+        `#!/bin/sh\nif [ "$#" = 5 ] && [ "$3" = cat-file ] && [ "$4" = blob ]; then printf '%s\\n' "$5" >> '${requested}'; fi\nexec '${gitPath}' "$@"\n`,
         { mode: 0o755 },
       );
       const acquired = fixture.run("Acquire selected contract objects", {
         PATH: `${acquisitionBin}:${process.env.PATH}`,
       });
       expect(acquired.status, acquired.stderr).toBe(0);
-      expect(readFileSync(requested, "utf8")).toBe(`${oid}\n`);
+      expect(readFileSync(requested, "utf8").trim().split("\n")).toEqual(
+        expect.arrayContaining([oid, scenarioCatalogOid]),
+      );
       const admitted = fixture.admit();
       expect(admitted.status, admitted.stderr).toBe(0);
       const record = JSON.parse(readFileSync(join(fixture.root, "frozen-admission.json"), "utf8"));
@@ -9889,6 +9903,14 @@ describe("package artifact reuse", () => {
         "${{ inputs.use_github_hosted_runners && 'ubuntu-24.04' || 'blacksmith-32vcpu-ubuntu-2404' }}",
       );
     }
+    const repoE2eHarnessCheckout = workflowStep(
+      workflowJob(".github/workflows/openclaw-repo-e2e-reusable.yml", "build"),
+      "Checkout trusted artifact harness",
+    );
+    expect(repoE2eHarnessCheckout.with).toMatchObject({
+      "sparse-checkout": "/package.json\n/scripts/\n/src/shared/non-packaged-plugin-dirs.ts\n",
+      "sparse-checkout-cone-mode": false,
+    });
     expect(workflow).toContain("suite_id: native-live-src-gateway-core");
     expect(workflow).toContain("suite_id: native-live-src-gateway-backends");
     expect(workflow).toContain(
@@ -10683,12 +10705,12 @@ printf '%s\\n' "$DEEPSEEK_API_KEY" "$DEEPINFRA_API_KEY"`,
     },
   );
 
-  it.each([
-    ["stable", "2026.8.1"],
-    ["full", "2026.8.1"],
-    ["stable", "2026.9.1"],
-    ["full", "2026.9.1"],
-  ])("waives only Telegram integration lanes for approved %s %s", (profile, version) => {
+  it.each(
+    ["2026.8.1", "2026.9.1", "2026.9.5"].flatMap((version) => [
+      ["stable", version],
+      ["full", version],
+    ]),
+  )("waives only reviewed integration lanes for approved %s %s", (profile, version) => {
     const options = { telegramWaiver: `${version}-owner-approved`, version };
     const direct = runReleaseChecksInputValidation(profile, "false", "all", "false", "", options);
     const umbrella = runFullReleaseInputValidation(profile, "false", options);
@@ -10697,6 +10719,8 @@ printf '%s\\n' "$DEEPSEEK_API_KEY" "$DEEPINFRA_API_KEY"`,
     const output = readFileSync(direct.outputPath, "utf8");
     expect(output).toContain(`telegram_waiver=${version}-owner-approved`);
     expect(output).toContain("qa_live_telegram_enabled=false");
+    expect(output).toContain(`qa_live_matrix_enabled=${version !== "2026.9.5"}`);
+    expect(output).toContain("qa_live_buzz_enabled=true");
     expect(output).toContain("run_release_soak=true");
     expect(output).toContain("skip_package_telegram_e2e=false");
   });

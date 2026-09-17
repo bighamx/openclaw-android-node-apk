@@ -6,10 +6,19 @@ import {
 } from "../../../packages/gateway-protocol/src/gateway-error-details.js";
 import { withGroupThreadTurn } from "../../auto-reply/group-thread-context.js";
 import type { ChannelPlugin } from "../../channels/plugins/types.public.js";
+import {
+  clearBootEchoContextForSession,
+  setBootEchoContextForSession,
+} from "../../gateway/boot-echo-guard.js";
 import type {
   MessageActionInput,
   MessageActionResult,
 } from "../../infra/outbound/message-action-contracts.js";
+import { runMessageAction as runRealMessageAction } from "../../infra/outbound/message-action-runner.js";
+import {
+  workspaceConfig,
+  workspaceTestPlugin,
+} from "../../infra/outbound/message-action-runner.test-support.js";
 import type { PluginHookMessageSendingResult } from "../../plugins/hook-message.types.js";
 import { createHookRunner } from "../../plugins/hooks.js";
 import { createMockPluginRegistry } from "../../plugins/hooks.test-fixtures.js";
@@ -18,6 +27,7 @@ import {
   createChannelTestPluginBase,
   createTestRegistry,
 } from "../../test-utils/channel-plugins.js";
+import { jsonResult } from "./common.js";
 import { createMessageTool } from "./message-tool-execution.js";
 
 const EMPTY_CATALOG = {
@@ -123,7 +133,78 @@ describe("message tool prompt-cache contract", () => {
 });
 
 describe("message tool group thread replies", () => {
-  afterEach(() => resetPluginRuntimeStateForTest());
+  const sessionKey = "agent:main:workspace:group:C12345678:thread:42";
+  const bootPrompt =
+    "When you wake up each morning, send a thoughtful greeting to the operator over the configured channel.";
+  afterEach(() => {
+    resetPluginRuntimeStateForTest();
+    clearBootEchoContextForSession(sessionKey);
+  });
+
+  it.each([
+    { name: "no accompanying text", message: undefined },
+    { name: "boot echo", message: bootPrompt },
+    {
+      name: "internal runtime context",
+      message:
+        "<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\nBOOT.md:\nWake up and report.\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>",
+    },
+    {
+      name: "inbound delivery metadata",
+      message:
+        "Delivery: Final assistant text is not automatically delivered in this run. Use the `message` tool to send user-visible output.",
+    },
+  ])("sends a native location without an attribution caption after $name", async ({ message }) => {
+    setBootEchoContextForSession(sessionKey, bootPrompt);
+    const received: Record<string, unknown>[] = [];
+    setActivePluginRegistry(
+      createTestRegistry([
+        {
+          pluginId: "workspace",
+          source: "test",
+          plugin: {
+            ...workspaceTestPlugin,
+            actions: {
+              describeMessageTool: () => ({ actions: ["send"] }),
+              handleAction: async ({ params }) => {
+                received.push(params);
+                return jsonResult({ ok: true, messageId: "location-1" });
+              },
+            },
+          } satisfies ChannelPlugin,
+        },
+      ]),
+    );
+    const tool = createMessageTool({
+      config: workspaceConfig,
+      agentSessionKey: sessionKey,
+      currentChannelProvider: "workspace",
+      currentChannelId: "C12345678",
+      currentMessagingTarget: "C12345678",
+      currentThreadTs: "42",
+      getScopedChannelsCommandSecretTargets: () => ({ targetIds: new Set<string>() }),
+      resolveCommandSecretRefsViaGateway: async ({ config }) => ({
+        resolvedConfig: config,
+        diagnostics: [],
+        targetStatesByPath: {},
+        hadUnresolvedTargets: false,
+      }),
+      runMessageAction: runRealMessageAction,
+    });
+    const participant = { agentId: "reviewer", name: "Reviewer" };
+    const location = { latitude: 48.858844, longitude: 2.294351 };
+    await withGroupThreadTurn(
+      {
+        turn: { ...participant, round: 1, messageId: "inbound-1" },
+        participant,
+        formatReply: (text, agent) => `**${agent.name}**\n${text}`,
+        recordReply: vi.fn(),
+      },
+      () => tool.execute("source-location", { action: "send", message, location }),
+    );
+
+    expect(received).toEqual([expect.objectContaining({ message: "", location })]);
+  });
 
   it.each(["telegram", "slack", "discord"] as const)(
     "labels source replies and observes only successful final text in the originating %s thread",

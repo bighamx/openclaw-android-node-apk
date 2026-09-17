@@ -238,8 +238,6 @@ export class ChatPane extends ChatPaneLayoutRender {
       activeRunIds: selectedSession?.activeRunIds,
       queue: state.chatQueue,
     });
-    const attachmentReads = this.chatState.attachmentReads;
-    const attachmentReadSignal = attachmentReads.readSignal;
     const historyHasMore = catalogKey
       ? Boolean(this.catalogCursor)
       : state.chatHistoryPagination.hasMore;
@@ -575,17 +573,7 @@ export class ChatPane extends ChatPaneLayoutRender {
           : (command) => void state.handleSendChat(command),
       showNewMessages: state.chatNewMessagesBelow,
       onScrollToBottom: state.scrollToBottom,
-      attachments: state.chatAttachments,
-      attachmentLimits: state.hello?.policy?.attachments,
-      getAttachments: () => state.chatAttachments,
-      pendingAttachmentReads: attachmentReads.pendingReads,
-      getPendingAttachmentReads: () => attachmentReads.pendingReads,
-      readSignal: attachmentReadSignal,
-      onPendingReadsChange: (delta) => attachmentReads.updatePending(attachmentReadSignal, delta),
-      onAttachmentsChange: (next) => {
-        state.chatAttachments = next;
-        state.requestUpdate?.();
-      },
+      ...this.chatState.attachmentInputProps(state),
       onRemoveAttachment: this.removeBrowserAnnotation,
       onSend: (followUpModeOverride, submissionAction) =>
         !composerAvailability.canSend ||

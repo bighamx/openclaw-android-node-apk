@@ -58,6 +58,7 @@ const MODEL_CATALOG_FOREGROUND_WAIT_MS = 5_000;
 
 export function createFullModelCatalogAccess(params: {
   agentFacts: PreparedModelRuntimeAgentFacts;
+  nativeConfigFingerprint: string;
   catalogFacts: PreparedModelRuntimeCatalogFacts;
   pluginGeneration: PreparedModelRuntimePluginGeneration;
   isCurrent: () => boolean;
@@ -93,8 +94,7 @@ export function createFullModelCatalogAccess(params: {
   const inventoryKey = preparedModelInventoryKey(params.agentFacts.input);
   const nativeSource = fingerprintPreparedRuntimeFacts({
     runtimePluginSelections: params.agentFacts.input.runtimePluginSelections,
-    agents: params.agentFacts.input.config.agents,
-    plugins: params.agentFacts.input.config.plugins,
+    config: params.nativeConfigFingerprint,
     configuredModelRefs: params.agentFacts.configuredModelRefs,
   });
   const previousInventory = params.inventoryOwner.catalogInventory;

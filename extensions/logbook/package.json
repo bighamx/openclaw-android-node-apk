@@ -17,6 +17,7 @@
   },
   "openclaw": {
     "build": {
+      "bundledDist": true,
       "workerEntries": [
         "./src/store.worker.ts"
       ],

@@ -7,6 +7,7 @@ import {
   serializeConfigResolutionFacts,
 } from "../config/resolution-facts.js";
 import { projectConfigOntoRuntimeSourceSnapshot } from "../config/runtime-source-projection.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { runtimeProcessEntrypoints } from "../infra/runtime-process-entrypoints.js";
 import { resolveRuntimeWorkerUrl } from "../infra/runtime-worker-url.js";
 import { WorkerTaskError, WorkerTaskPool } from "../infra/worker-task-pool.js";
@@ -18,6 +19,7 @@ import type { PreparedSyntheticAuthFacts } from "../plugins/provider-synthetic-a
 import type { PluginRegistry } from "../plugins/registry-types.js";
 import { withPluginRuntimeGenerationScope } from "../plugins/runtime/generation-scope.js";
 import { listManifestSyntheticAuthProviderRefs } from "../plugins/synthetic-auth.runtime.js";
+import { isDeeplyFrozenPlainData } from "../shared/immutable-data.js";
 import type { PreparedAgentCredentialModes } from "./agent-auth-credential-modes.js";
 import { cloneAuthProfileStore } from "./auth-profiles/clone.js";
 import type { AuthProfileStore } from "./auth-profiles/types.js";
@@ -133,6 +135,22 @@ function fingerprintPreparedModelCatalogPlugins(snapshot: PluginMetadataSnapshot
   });
 }
 
+const immutableGenerationConfigFingerprints = new WeakMap<OpenClawConfig, string>();
+
+function fingerprintPreparedModelCatalogConfig(config: OpenClawConfig): string {
+  const immutable = isDeeplyFrozenPlainData(config);
+  const cached = immutable ? immutableGenerationConfigFingerprints.get(config) : undefined;
+  if (cached !== undefined) {
+    return cached;
+  }
+  // Worker generation facts must retain the distinction between undefined and null.
+  const fingerprint = fingerprintPreparedRuntimeFacts(config);
+  if (immutable) {
+    immutableGenerationConfigFingerprints.set(config, fingerprint);
+  }
+  return fingerprint;
+}
+
 export function fingerprintPreparedModelCatalogGeneration(params: {
   input: PreparedModelRuntimeInput;
   sourceConfigForSecrets: PreparedModelRuntimeInput["config"];
@@ -144,8 +162,8 @@ export function fingerprintPreparedModelCatalogGeneration(params: {
   pluginMetadataSnapshot: PluginMetadataSnapshot;
 }): string {
   return fingerprintPreparedRuntimeFacts({
-    input: params.input,
-    sourceConfigForSecrets: params.sourceConfigForSecrets,
+    input: { ...params.input, config: fingerprintPreparedModelCatalogConfig(params.input.config) },
+    sourceConfigForSecrets: fingerprintPreparedModelCatalogConfig(params.sourceConfigForSecrets),
     configResolutionFacts: params.configResolutionFacts,
     sourceConfigResolutionFacts: params.sourceConfigResolutionFacts,
     authStore: params.authStore,

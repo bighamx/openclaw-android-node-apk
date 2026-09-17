@@ -33,6 +33,8 @@ export type PluginBundleFormat = "agent" | "codex" | "claude" | "cursor";
 export type PluginDiagnosticCode =
   | "backup-resource-declaration-invalid"
   | "channel-setup-failure"
+  | "configured-plugin-path-inspection-failed"
+  | "configured-plugin-path-unavailable"
   | "dashboard-declaration-invalid"
   | "plugin-verification"
   | "sdk-incompatible"
@@ -45,6 +47,9 @@ export type PluginDiagnostic = {
   pluginId?: string;
   source?: string;
   code?: PluginDiagnosticCode;
+  configDisposition?: "preserve";
+  errorCode?: string;
+  fixHint?: string;
   sdkCompatibility?: {
     seam: string;
     coreVersion: string;
@@ -607,6 +612,10 @@ export type PluginManifestProviderAuthChoice = {
   method: string;
   /** Stable auth-choice id used by onboarding and other CLI auth flows. */
   choiceId: string;
+  /** Configure a utility model without replacing the regular agent primary. */
+  modelTarget?: "utility";
+  /** Supported Gateway host platforms; omission allows all, an empty list allows none. */
+  platforms?: NodeJS.Platform[];
   /** Optional user-facing choice label/hint for grouped onboarding UI. */
   choiceLabel?: string;
   choiceHint?: string;
@@ -617,7 +626,7 @@ export type PluginManifestProviderAuthChoice = {
   /** Lower values sort earlier in interactive assistant pickers. */
   assistantPriority?: number;
   /** Keep the choice out of interactive assistant pickers while preserving manual CLI support. */
-  assistantVisibility?: "visible" | "manual-only";
+  assistantVisibility?: "visible" | "manual-only" | "detected-only";
   /** Legacy choice ids that should point users at this replacement choice. */
   deprecatedChoiceIds?: string[];
   /** Optional grouping metadata for auth-choice pickers. */

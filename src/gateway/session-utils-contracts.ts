@@ -24,7 +24,7 @@ export type SessionActorProfileIdentity = Extract<CurrentUserProfileDisplay, { k
 
 export type GatewaySessionModelSource = {
   entry: SessionEntry | undefined;
-  loadSessionEntry: (key: string) => SessionEntry | undefined;
+  readSourceEntry: (key: string) => SessionEntry | undefined;
 };
 
 export type SessionListRowContext = {
@@ -32,7 +32,7 @@ export type SessionListRowContext = {
   projectedAgentRuns?: ProjectedAgentRunIndex;
   subagentRuns: SubagentRunReadIndex<SubagentRunReadRecord>;
   subagentRunsByChildSessionKey: ReadonlyMap<string, readonly SubagentRunReadRecord[]>;
-  selectedModelByOverrideRef: Map<string, ReturnType<typeof resolveSessionModelRef>>;
+  configuredDefaultModelByAgent: Map<string, ReturnType<typeof resolveSessionModelRef>>;
   thinkingMetadataByModelRef: Map<string, GatewayModelThinkingProfile>;
   findModelCatalogEntry: typeof findModelCatalogEntry;
   selectModelCatalogRuntimeEntry: typeof selectModelCatalogRuntimeEntry;

@@ -129,6 +129,7 @@ vi.mock("./compaction-runtime-preparation.js", () => ({
     modelId,
   }),
   prepareCompactionHarnessAuth: vi.fn(async () => ({
+    ok: true,
     runtimeAuthProfileStore: {},
     runtimeAuthPreparation: {
       plan: { selectedAuthMode: "api-key" },
@@ -158,6 +159,7 @@ vi.mock("../provider-runtime-auth-protection.js", () => ({
 
 vi.mock("../provider-secret-egress.js", () => ({
   unwrapSecretSentinelsForProviderEgress: (value: unknown) => value,
+  unwrapModelHeaderSentinelsForProviderEgress: (model: unknown) => model,
 }));
 
 vi.mock("../provider-request-config.js", () => ({

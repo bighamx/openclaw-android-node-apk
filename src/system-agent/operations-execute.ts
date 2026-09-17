@@ -17,6 +17,7 @@ import {
   formatChannelDocsUrl,
   formatConfigValidationLine,
   formatGatewayStatusLine,
+  getRegularAgentSetupNotice,
   isPluginBackingDefaultInferenceRoute,
   loadOverviewForOperation,
   readConfigFileSnapshotLazy,
@@ -62,6 +63,8 @@ export async function executeSystemAgentOperation(
               agent.id,
               agent.isDefault ? "default" : undefined,
               agent.name ? `name=${agent.name}` : undefined,
+              `model=${agent.model ?? "not configured"}`,
+              agent.utilityModel ? `utility=${agent.utilityModel}` : undefined,
               agent.workspace
                 ? `workspace=${shortenHomePath(resolveUserPath(agent.workspace))}`
                 : undefined,
@@ -77,6 +80,8 @@ export async function executeSystemAgentOperation(
       runtime.log(
         [
           `Default model: ${overview.defaultModel ?? "not configured"}`,
+          ...(overview.setupModel ? [`Setup model: ${overview.setupModel}`] : []),
+          ...(overview.utilityModel ? [`Utility model: ${overview.utilityModel}`] : []),
           `Codex: ${overview.tools.codex.found ? "found" : "not found"}`,
           `Claude Code: ${overview.tools.claude.found ? "found" : "not found"}`,
           `Gemini CLI: ${overview.tools.gemini.found ? "found" : "not found"}`,
@@ -588,6 +593,11 @@ export async function executeSystemAgentOperation(
         requestedWorkspace: operation.workspace,
         overview,
       });
+      const setupNotice = getRegularAgentSetupNotice(overview, agentId);
+      if (setupNotice) {
+        runtime.log(setupNotice);
+        return { applied: false, message: setupNotice };
+      }
       const session = agentId ? buildAgentMainSessionKey({ agentId }) : undefined;
       const runTui = opts.deps?.runTui ?? (await import("../tui/tui.js")).runTui;
       // A reachable Gateway owns the state lock, so embedded mode would fail during hatch.

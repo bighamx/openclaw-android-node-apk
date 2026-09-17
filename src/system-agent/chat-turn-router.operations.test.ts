@@ -39,6 +39,7 @@ function createRouterHarness(
     wizardDependencies?: NonNullable<
       ConstructorParameters<typeof ChatWizardHost>[0]["dependencies"]
     >;
+    loadOverview?: ReturnType<typeof fakeOverviewLoader>;
   } = {},
 ) {
   const verifiedInference = expectDefined(
@@ -64,7 +65,7 @@ function createRouterHarness(
       requirePersistentApplyInference: async () => verifiedInference.execution,
       rebindVerifiedInference: () => {},
       getVerifiedInference: () => verifiedInference,
-      loadOverview: fakeOverviewLoader(),
+      loadOverview: internals.loadOverview ?? fakeOverviewLoader(),
       verifyConfigAfterWrite: async () => null,
     },
   );
@@ -72,6 +73,41 @@ function createRouterHarness(
 }
 
 describe("SystemAgentChatEngine operations", () => {
+  it.each(
+    (["typed", "tool"] as const).flatMap((source) =>
+      [undefined, "helper"].map((agentId) => ({ source, agentId })),
+    ),
+  )("keeps utility-only $source handoff to $agentId in setup", async ({ source, agentId }) => {
+    const router = createRouterHarness(
+      {
+        runAgentTurn: async () => ({
+          text: "Opening your agent.",
+          directive: { kind: "open-tui", ...(agentId ? { agentId } : {}) },
+        }),
+      },
+      {
+        loadOverview: async () => ({
+          ...(await fakeOverviewLoader({
+            defaultModel: agentId ? "fixture/primary" : undefined,
+            setupModel: agentId ? undefined : "fixture/utility",
+          })()),
+          agents: agentId
+            ? [
+                { id: "main", isDefault: true, model: "fixture/primary" },
+                { id: agentId, isDefault: false, utilityModel: "fixture/utility" },
+              ]
+            : [],
+        }),
+      },
+    );
+    const reply = await router.resolveTurn(
+      source === "typed" ? `talk to ${agentId ? `${agentId} ` : ""}agent` : "please open my agent",
+    );
+    expect(reply.action).toBe("none");
+    expect(reply.handoff).toBeUndefined();
+    expect(reply.text).toContain("needs a primary model");
+  });
+
   it.each([
     {
       args: { action: "create_agent", agentId: "coordinator", role: "coordinator" },

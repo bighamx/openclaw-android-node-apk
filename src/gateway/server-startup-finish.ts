@@ -218,10 +218,7 @@ export async function finishGatewayStartup(params: {
         cfgAtStart,
         deps,
         sessionDeliveryRecoveryMaxEnqueuedAt,
-        cronState: runtimeState.cronState,
-        cronReconciliation,
-        startCron: false,
-        logCron,
+        cronEnabled: runtimeState.cronState.cronEnabled,
         log,
         resolveGatewayContext: resolvePluginGatewayContext,
       });

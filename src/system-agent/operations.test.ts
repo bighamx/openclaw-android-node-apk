@@ -261,6 +261,13 @@ describe("system agent operations", () => {
     vi.unstubAllEnvs();
   });
 
+  it("includes each agent's effective model in the agents tool result", async () => {
+    const { runtime, lines } = createSystemAgentTestRuntime();
+    await executeSystemAgentOperation({ kind: "agents" }, runtime);
+    expect(lines.join("\n")).toContain("main | default | model=not configured");
+    expect(lines.join("\n")).toContain("work | model=openai/gpt-5.2");
+  });
+
   it("redacts sensitive config values using their complete paths", async () => {
     mockConfig.setConfig({
       models: {

@@ -183,6 +183,7 @@ export const databaseWorkerExtensionTestFiles = [
   "extensions/zalo/src/outbound-media.test.ts",
   "extensions/zalouser/doctor-contract-api.test.ts",
   "extensions/zalouser/src/zalo-js.credentials.test.ts",
+  "extensions/zalouser/src/zalo-js.listener.test.ts",
   "extensions/zalouser/src/zalo-quote-metadata.test.ts",
   "extensions/imessage/src/approval-reactions.persistence.test.ts",
   "extensions/imessage/src/send.sqlite.test.ts",

@@ -539,6 +539,33 @@ describe("CustodianSessionStore", () => {
     await expect(store.send("should not send")).resolves.toBe("rejected");
   });
 
+  it("uses an explicit utility for the setup assistant and requires a primary before regular chat", async () => {
+    const request = vi.fn().mockResolvedValue({
+      sessionId: "utility-setup-session",
+      reply: "Choose a primary model for your agent.",
+      action: "none",
+    });
+    const { context } = createContext(request, ["openclaw.chat"], {
+      agentsList: {
+        defaultId: "main",
+        mainKey: "main",
+        scope: "per-sender",
+        agents: [{ id: "main", utilityModel: "local/setup" }],
+      },
+    });
+    const store = new CustodianSessionStore();
+
+    store.connect(context, "onboarding");
+    await waitForFast(() => expect(store.messages.at(-1)?.text).toContain("Choose a primary"));
+
+    expect(store.setupRequired).toBe(false);
+    expect(store.canSend).toBe(true);
+    expect(request.mock.calls[0]?.[1]).toMatchObject({ welcomeVariant: "onboarding" });
+    expect(context.agents.state.agentsList?.agents[0]?.model?.primary).toBeUndefined();
+    store.exitSetup();
+    expect(context.navigate).toHaveBeenCalledWith("model-setup", { search: "?firstRun=1" });
+  });
+
   it("does not let a late onboarding reply navigate after the destination rotates context", async () => {
     let resolveReply!: (value: unknown) => void;
     let requestSignal: AbortSignal | undefined;
