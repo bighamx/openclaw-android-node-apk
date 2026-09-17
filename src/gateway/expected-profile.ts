@@ -1,24 +1,28 @@
 import { ErrorCodes, errorShape } from "../../packages/gateway-protocol/src/index.js";
 import { USER_PROFILE_ID_MAX_LENGTH } from "../../packages/gateway-protocol/src/schema/user-profile-constants.js";
-import { resolveUserProfileId } from "../state/user-profiles.js";
+import { readUserProfileIdentity } from "../state/user-profile-list.js";
 import type { GatewayClient, RespondFn } from "./server-methods/types.js";
 import type { GatewayWsClient } from "./server/ws-types.js";
 import { SessionMutationAuthorizationChangedError } from "./session-mutation-authorization-error.js";
 
 /** Prepare at identity lifecycle boundaries; serialization must never query profile storage. */
-export function prepareGatewayRecipientProfile(client: GatewayWsClient): void {
+export function prepareGatewayRecipientProfile(
+  client: GatewayClient & Pick<GatewayWsClient, "connectionKind" | "preparedRecipientProfileId">,
+): void {
   client.preparedRecipientProfileId = undefined;
+  client.preparedSessionProfile = undefined;
   if (client.connectionKind === "worker" || (client.connect.role ?? "operator") !== "operator") {
     return;
   }
   try {
     const attached = client.authenticatedUserProfile?.profileId;
-    const canonical = attached ? resolveUserProfileId(attached) : undefined;
-    if (canonical && canonical.length <= USER_PROFILE_ID_MAX_LENGTH) {
-      client.preparedRecipientProfileId = canonical;
+    const profile = attached ? readUserProfileIdentity(attached) : undefined;
+    if (profile && profile.profileId.length <= USER_PROFILE_ID_MAX_LENGTH) {
+      client.preparedSessionProfile = profile;
+      client.preparedRecipientProfileId = profile.profileId;
     }
   } catch {
-    // Leave only the publication stamp unavailable. Existing authentication stays intact.
+    // Failed acquisition leaves prepared identity unavailable; existing authentication stays intact.
   }
 }
 
@@ -38,7 +42,7 @@ export function createExpectedProfileBinding(
       const profileId = client?.authenticatedUserProfile?.profileId;
       // Only the authenticated side follows merges. A selection must never silently
       // move to another account because its former ID now aliases that account.
-      if (profileId && resolveUserProfileId(profileId) === expectedProfileId) {
+      if (profileId && readUserProfileIdentity(profileId)?.profileId === expectedProfileId) {
         return undefined;
       }
     } catch {

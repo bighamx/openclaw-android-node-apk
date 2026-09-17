@@ -79,6 +79,7 @@ export async function prepareGitCandidateTransfer(params: {
     "rev-list",
     "--objects",
     "--no-object-names",
+    "--missing=allow-any",
     candidateSha,
     ...(upstreamSha ? [upstreamSha] : []),
     ...(beforeSha ? [`^${beforeSha}`] : []),

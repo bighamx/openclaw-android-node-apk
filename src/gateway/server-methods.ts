@@ -66,6 +66,7 @@ import type {
 import type { GatewayRequestEntry } from "./server-request-entry.js";
 import type { GatewayRpcDiagnostics } from "./server/ws-connection/request-diagnostics.js";
 import { sessionMutationTargetFields } from "./session-method-policy.js";
+import { getSessionRowProjection } from "./session-row-projection-access.js";
 import { resolveDirectIncognitoTargets } from "./session-sharing-target-input.js";
 import {
   resolveSessionMutationAuthorization,
@@ -273,6 +274,9 @@ export async function authorizeGatewayRequestPreDispatch(params: {
   error: ErrorShape | null;
   sessionMutationAuthorization?: SessionMutationAuthorization;
 }> {
+  if (params.context.ensureSessionRowProjection) {
+    await params.context.ensureSessionRowProjection();
+  }
   while (true) {
     // Dynamic scope lookup must use the same registry as the eventual handler.
     const authError = withPluginRuntimeRegistryScope(
@@ -317,6 +321,12 @@ export async function authorizeGatewayRequestPreDispatch(params: {
           },
         ),
       };
+    }
+    const projection =
+      params.method === "sessions.describe" ? getSessionRowProjection(params.context) : undefined;
+    if (projection?.needsMaterialization) {
+      await projection.ensureMaterialized();
+      continue;
     }
     const preparedSessionMutation = withCanonicalSessionValidationDeferral(() =>
       resolveSessionMutationAuthorization({

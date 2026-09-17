@@ -2396,80 +2396,6 @@ describe("initSessionState RawBody", () => {
       );
     }
   });
-  it.each([
-    {
-      name: "rotates local session state for /new on bound ACP sessions",
-      body: "/new",
-      to: "1478836151241412759",
-      includeBinding: true,
-    },
-    {
-      name: "rotates local session state for ACP /new when no matching conversation binding exists",
-      body: "/new",
-      to: "user:12345",
-      originatingTo: "user:12345",
-      includeBinding: false,
-    },
-    {
-      name: "keeps custom reset triggers working on bound ACP sessions",
-      body: "/fresh",
-      to: "1478836151241412759",
-      includeBinding: true,
-      resetTriggers: ["/fresh"],
-    },
-    {
-      name: "keeps normal /new behavior for unbound ACP-shaped session keys",
-      body: "/new",
-      to: "1478836151241412759",
-      includeBinding: false,
-    },
-  ])("$name", async (scenario) => {
-    const storePath = await createStorePath("openclaw-rawbody-acp-reset-");
-    const sessionKey = "agent:codex:acp:binding:discord:default:feedface";
-    const existingSessionId = "session-existing";
-    await writeSessionStoreFast(storePath, {
-      [sessionKey]: { sessionId: existingSessionId, updatedAt: Date.now(), systemSent: true },
-    });
-    const bindings = scenario.includeBinding
-      ? [
-          {
-            type: "acp" as const,
-            agentId: "codex",
-            match: {
-              channel: "discord",
-              accountId: "default",
-              peer: { kind: "channel" as const, id: "1478836151241412759" },
-            },
-            acp: { mode: "persistent" as const },
-          },
-        ]
-      : undefined;
-    const result = await initSessionState({
-      ctx: {
-        RawBody: scenario.body,
-        CommandBody: scenario.body,
-        Provider: "discord",
-        Surface: "discord",
-        SenderId: "12345",
-        From: "discord:12345",
-        To: scenario.to,
-        OriginatingTo: "originatingTo" in scenario ? scenario.originatingTo : undefined,
-        SessionKey: sessionKey,
-      },
-      cfg: {
-        session: {
-          store: storePath,
-          ...("resetTriggers" in scenario ? { resetTriggers: scenario.resetTriggers } : {}),
-        },
-        ...(bindings ? { bindings } : {}),
-        channels: { discord: { allowFrom: ["*"] } },
-      } as OpenClawConfig,
-    });
-
-    expect(result.resetTriggered).toBe(true);
-    expect(result.isNewSession).toBe(true);
-    expect(result.sessionId).not.toBe(existingSessionId);
-  });
   it("does not suppress /new when active conversation binding points to a non-ACP session", async () => {
     const root = await makeCaseDir("openclaw-rawbody-acp-nonacp-binding-");
     const storePath = path.join(root, "sessions.json");
@@ -2857,7 +2783,9 @@ describe("initSessionState RawBody", () => {
     expect(result.sessionKey).toBe(sourceSessionKey);
     expect(result.sessionId).toBe(sourceSessionId);
     if ("reset" in scenario) {
-      expect(result.resetTriggered).toBe(true);
+      // The bound ACP handler owns reset; preprocessing must not rotate its transport session.
+      expect(result.resetTriggered).toBe(false);
+      expect(result.isNewSession).toBe(false);
     }
     expect(result.sessionCtx.SessionKey).toBe(sourceSessionKey);
     expect(

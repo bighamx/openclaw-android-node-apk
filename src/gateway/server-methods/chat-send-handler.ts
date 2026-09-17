@@ -91,7 +91,7 @@ async function handleChatSendWithOptions(
   options?: ChatSendInternalOptions,
 ): Promise<void> {
   const setup = await prepareAndAdmitChatSend(
-    { params, respond, context, client, sessionMutationAuthorization },
+    { params, respond, context, client, hasCurrentClientAuthority, sessionMutationAuthorization },
     onAdmissionOwned,
     options,
   );
@@ -158,6 +158,7 @@ async function handleChatSendWithOptions(
     sessionKey,
     spawnedBy: entry?.spawnedBy,
     client,
+    isCurrent: hasCurrentClientAuthority,
     inputProvenance: systemInputProvenance,
     hasExplicitOrigin: normalizedRequest.value.explicitOrigin !== undefined,
     hasRestoredCronContinuation: entry?.cronRunContinuation !== undefined,

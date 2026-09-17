@@ -9,7 +9,7 @@ import {
 } from "../../packages/gateway-protocol/src/client-info.js";
 import { listSystemPresence } from "../infra/system-presence.js";
 import { trackAsyncWork } from "../shared/async-work-scope.js";
-import * as userProfiles from "../state/user-profiles.js";
+import * as userProfileCatalog from "../state/user-profile-list.js";
 import {
   ensureProfileForEmail,
   getUserProfileDisplay,
@@ -17,6 +17,7 @@ import {
   resolveUserProfileId,
 } from "../state/user-profiles.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
+import { captureGatewayDeviceRevocation } from "./device-revocation.js";
 import { prepareGatewayRecipientProfile } from "./expected-profile.js";
 import { createGatewayBroadcaster } from "./server-broadcast.js";
 import {
@@ -58,6 +59,7 @@ function makeContextParams(overrides: Partial<RequestRuntime> = {}): GatewayRequ
   const config = {} as never;
   return {
     runtime: {
+      getSessionRowProjection: () => undefined,
       connectionWork: { track: trackAsyncWork },
       deps: {} as never,
       runtimeState: {
@@ -209,6 +211,14 @@ function makeGatewayClient(params: {
   };
 }
 
+function makeDeviceClient(connId: string, deviceId: string, role = "primary") {
+  return {
+    connId,
+    connect: { device: { id: deviceId }, role },
+    socket: { close: vi.fn() },
+  };
+}
+
 describe("createGatewayRequestContext", () => {
   it("prepares every recipient before the real merge's first notification and contains resolution failure", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
@@ -289,7 +299,7 @@ describe("createGatewayRequestContext", () => {
         expect(frames.some((frame) => frame.event === "sessions.changed")).toBe(true);
         const authenticated = peers.map((peer) => peer.authenticatedUserProfile);
         const resolve = vi
-          .spyOn(userProfiles, "resolveUserProfileId")
+          .spyOn(userProfileCatalog, "readUserProfileIdentity")
           .mockImplementationOnce(() => {
             throw new Error("fixture storage unavailable");
           });
@@ -922,16 +932,8 @@ describe("createGatewayRequestContext", () => {
   });
 
   it("invalidateClientsForDevice sets the flag on matching clients without closing the socket", () => {
-    const target = {
-      connId: "conn-target",
-      connect: { device: { id: "device-1" }, role: "primary" },
-      socket: { close: vi.fn() },
-    };
-    const unrelated = {
-      connId: "conn-unrelated",
-      connect: { device: { id: "device-2" }, role: "primary" },
-      socket: { close: vi.fn() },
-    };
+    const target = makeDeviceClient("conn-target", "device-1");
+    const unrelated = makeDeviceClient("conn-unrelated", "device-2");
     const clients = new Set([target, unrelated]) as never;
     const invalidateDeviceTransports = vi.fn();
     const invalidateConnectionForPairingChange = vi.fn();
@@ -946,7 +948,11 @@ describe("createGatewayRequestContext", () => {
         nodeRegistry: { invalidateConnectionForPairingChange } as never,
       }),
     );
+    const detached = captureGatewayDeviceRevocation(context, { deviceId: "device-1" }, () => true);
+    onTestFinished(detached.release);
+    expect(detached.isCurrent()).toBe(true);
     context.invalidateClientsForDevice?.("device-1", { reason: "device-token-rotated" });
+    expect(detached.isCurrent()).toBe(false);
 
     expect((target as { invalidated?: boolean }).invalidated).toBe(true);
     expect((target as { invalidatedReason?: string }).invalidatedReason).toBe(
@@ -966,11 +972,7 @@ describe("createGatewayRequestContext", () => {
   });
 
   it("disconnectClientsForDevice also marks the invalidated flag before closing", () => {
-    const target = {
-      connId: "conn-target",
-      connect: { device: { id: "device-1" }, role: "primary" },
-      socket: { close: vi.fn() },
-    };
+    const target = makeDeviceClient("conn-target", "device-1");
     const clients = new Set([target]) as never;
     const disconnectDeviceTransports = vi.fn();
 
@@ -983,7 +985,11 @@ describe("createGatewayRequestContext", () => {
         },
       }),
     );
+    const detached = captureGatewayDeviceRevocation(context, { deviceId: "device-1" }, () => true);
+    onTestFinished(detached.release);
+    expect(detached.isCurrent()).toBe(true);
     context.disconnectClientsForDevice?.("device-1");
+    expect(detached.isCurrent()).toBe(false);
 
     expect((target as { invalidated?: boolean }).invalidated).toBe(true);
     expect((target as { invalidatedReason?: string }).invalidatedReason).toBe("device-removed");
@@ -1040,16 +1046,8 @@ describe("createGatewayRequestContext", () => {
   });
 
   it("invalidateClientsForDevice filters by role when provided", () => {
-    const primary = {
-      connId: "conn-primary",
-      connect: { device: { id: "device-1" }, role: "primary" },
-      socket: { close: vi.fn() },
-    };
-    const secondary = {
-      connId: "conn-secondary",
-      connect: { device: { id: "device-1" }, role: "secondary" },
-      socket: { close: vi.fn() },
-    };
+    const primary = makeDeviceClient("conn-primary", "device-1");
+    const secondary = makeDeviceClient("conn-secondary", "device-1", "secondary");
     const clients = new Set([primary, secondary]) as never;
 
     const context = createGatewayRequestContext(makeContextParams({ clients }));

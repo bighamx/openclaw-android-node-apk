@@ -329,6 +329,7 @@ export function createWorkerNodeDesktopCarrier(options: WorkerNodeDesktopCarrier
         control: request.control,
         requester: request.requester,
         attachment,
+        onAbandon: () => stopStream(active),
         preauth: {
           auth: "vnc-password",
           credentials: { password: attached.vncPassword },

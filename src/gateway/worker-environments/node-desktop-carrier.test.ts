@@ -147,6 +147,56 @@ describe("worker node desktop carrier", () => {
     }
   });
 
+  it("releases abandoned observations without disconnecting the requester or taking control", async () => {
+    const record = support.seedReadyNodeDesktop("worker-desktop-abandon");
+    const proof = nodeProof(record.nodeDeviceId!);
+    const transport = pendingTransport({ proof, isProofCurrent: () => true });
+    const streamed = fakeBroker();
+    const registry = createDesktopSessionRegistry();
+    const carrier = createWorkerNodeDesktopCarrier({
+      store: { get: () => record },
+      desktopRegistry: registry,
+    });
+    const controller = new AbortController();
+    const requester = {
+      connId: "desktop-panel-client",
+      signal: controller.signal,
+      isCurrent: () => !controller.signal.aborted,
+    };
+    carrier.bindRuntime({ transport: transport.transport, streamBroker: streamed.broker });
+    await registry.activate({ sourceKey: record.environmentId, ownerEpoch: record.ownerEpoch });
+    const closeKeeper = vi.fn();
+    const keeper = registry.attachObserver(record.environmentId, {
+      ownerEpoch: record.ownerEpoch,
+      control: true,
+      close: closeKeeper,
+    });
+    expect(keeper).toBeDefined();
+    try {
+      for (let index = 0; index < 20; index += 1) {
+        const pending = carrier.observe({ record, control: true, requester });
+        await support.waitForFast(() => expect(transport.invoke).toHaveBeenCalledTimes(index + 1));
+        const stream = streamed.attachNext();
+        const observed = await pending;
+        expect(await observeBridge.releaseDesktopObserverToken(observed.wsPath, requester)).toBe(
+          true,
+        );
+        expect(stream.destroyed).toBe(true);
+        expect(await observeBridge.releaseDesktopObserverToken(observed.wsPath, requester)).toBe(
+          false,
+        );
+        expect(closeKeeper).not.toHaveBeenCalled();
+      }
+      expect(controller.signal.aborted).toBe(false);
+      expect(streamed.streams.every((stream) => stream.destroyed)).toBe(true);
+    } finally {
+      controller.abort();
+      keeper?.release();
+      await carrier.stopAll();
+      await registry.stopAll();
+    }
+  });
+
   it("observes an exact durable node desktop without SSH and preauthenticates it", async () => {
     const mint = vi.spyOn(observeBridge, "mintDesktopObserverToken");
     const client = { invalidated: false };

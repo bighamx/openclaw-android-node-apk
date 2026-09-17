@@ -6014,6 +6014,30 @@ public struct DesktopObserveResult: Codable, Sendable {
     }
 }
 
+public struct DesktopReleaseParams: Codable, Sendable {
+    public let wspath: String
+
+    public init(
+        wspath: String)
+    {
+        self.wspath = wspath
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case wspath = "wsPath"
+    }
+}
+
+public struct DesktopReleaseResult: Codable, Sendable {
+    public let released: Bool
+
+    public init(
+        released: Bool)
+    {
+        self.released = released
+    }
+}
+
 public struct DevicePairApproveParams: Codable, Sendable {
     public let requestid: String
 

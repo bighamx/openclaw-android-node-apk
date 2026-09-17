@@ -3,6 +3,10 @@ import path from "node:path";
 import { expect, it } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { makeUserMessage } from "../../../test/helpers/user-message.js";
+import {
+  getSessionMcpRuntimeManagerForTesting,
+  peekSessionMcpRuntime,
+} from "../../agents/agent-bundle-mcp-manager-api.js";
 import { waitForSessionMaintenance } from "../../agents/session-maintenance/coordinator.js";
 import { createSessionMaintenanceFollowup } from "../../agents/session-maintenance/run.js";
 import { SessionManager } from "../../agents/sessions/session-manager.js";
@@ -20,7 +24,10 @@ import {
   timestampOptsFromConfig,
 } from "../../gateway/server-methods/agent-timestamp.js";
 import { createAbortError } from "../../infra/abort-signal.js";
-import { onInternalDiagnosticEvent } from "../../infra/diagnostic-events.js";
+import {
+  onInternalDiagnosticEvent,
+  waitForDiagnosticEventsDrained,
+} from "../../infra/diagnostic-events.js";
 import { clearMemoryPluginState, registerMemoryCapability } from "../../plugins/memory-state.js";
 import { beginSessionWorkAdmission } from "../../sessions/session-lifecycle-admission.js";
 import { extractTextFromChatContent } from "../../shared/chat-content.js";
@@ -46,6 +53,9 @@ it.each(["completed", "interrupted"] as const)(
       const human = "Reply only FOREGROUND_READY. Preserve ünicode 🦞.\nThis is the human request.";
       const requests: ModelRequest[] = [];
       const runtimeBudgets: number[] = [];
+      const privateSessionIds = new Set<string>();
+      let missingPrivateSessionId = false;
+      let completeFirstPrivateResponse: (() => void) | undefined;
       const stopDiagnostics = onInternalDiagnosticEvent((event) => {
         if (
           event.type === "model.call.started" &&
@@ -53,6 +63,11 @@ it.each(["completed", "interrupted"] as const)(
           event.contextTokenBudget !== undefined
         ) {
           runtimeBudgets.push(event.contextTokenBudget);
+          if (event.sessionId) {
+            privateSessionIds.add(event.sessionId);
+          } else {
+            missingPrivateSessionId = true;
+          }
         }
       });
       const server = createServer((request, response) => {
@@ -71,38 +86,47 @@ it.each(["completed", "interrupted"] as const)(
           ).endsWith(human);
           response.writeHead(200, { "content-type": "text/event-stream", connection: "close" });
           response.flushHeaders();
+          const completeResponse = () => {
+            response.write(
+              `data: ${JSON.stringify({
+                id: "private-memory-fixture",
+                object: "chat.completion.chunk",
+                created: 1,
+                model: "test-model",
+                choices: [
+                  {
+                    index: 0,
+                    delta: {
+                      role: "assistant",
+                      content: isHuman ? "FOREGROUND_READY" : "NO_REPLY",
+                    },
+                    finish_reason: null,
+                  },
+                ],
+              })}\n\n`,
+            );
+            response.write(
+              `data: ${JSON.stringify({
+                id: "private-memory-fixture",
+                object: "chat.completion.chunk",
+                created: 1,
+                model: "test-model",
+                choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+                usage: { prompt_tokens: 21_000, completion_tokens: 2, total_tokens: 21_002 },
+              })}\n\n`,
+            );
+            response.end("data: [DONE]\n\n");
+          };
           if (!isHuman) {
+            if (requests.length === 1 && outcome === "completed") {
+              completeFirstPrivateResponse = completeResponse;
+            }
             entered.resolve();
-            if (outcome === "interrupted" && requests.length === 1) {
+            if (requests.length === 1) {
               return;
             }
           }
-          response.write(
-            `data: ${JSON.stringify({
-              id: "private-memory-fixture",
-              object: "chat.completion.chunk",
-              created: 1,
-              model: "test-model",
-              choices: [
-                {
-                  index: 0,
-                  delta: { role: "assistant", content: isHuman ? "FOREGROUND_READY" : "NO_REPLY" },
-                  finish_reason: null,
-                },
-              ],
-            })}\n\n`,
-          );
-          response.write(
-            `data: ${JSON.stringify({
-              id: "private-memory-fixture",
-              object: "chat.completion.chunk",
-              created: 1,
-              model: "test-model",
-              choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-              usage: { prompt_tokens: 21_000, completion_tokens: 2, total_tokens: 21_002 },
-            })}\n\n`,
-          );
-          response.end("data: [DONE]\n\n");
+          completeResponse();
         });
       });
       await new Promise<void>((resolve) => {
@@ -257,14 +281,35 @@ it.each(["completed", "interrupted"] as const)(
             throw new Error("Memory run ended before reaching inference");
           }),
         ]);
+        await waitForDiagnosticEventsDrained();
+        expect(missingPrivateSessionId).toBe(false);
+        const firstPrivateSessionIds = [...privateSessionIds];
+        expect(firstPrivateSessionIds.length).toBeGreaterThan(0);
+        for (const sessionId of firstPrivateSessionIds) {
+          expect(peekSessionMcpRuntime({ sessionId }) !== undefined).toBe(true);
+        }
         if (outcome === "interrupted") {
           interrupted.abort(new Error("next human turn"));
+        } else {
+          if (!completeFirstPrivateResponse) {
+            throw new Error("Private response was not held before completion");
+          }
+          completeFirstPrivateResponse();
+          completeFirstPrivateResponse = undefined;
         }
         expect((await flush).outcome).toBe(outcome === "interrupted" ? "failed" : "completed");
         admission.release();
         admission = undefined;
         expect(requests).toHaveLength(1);
         expect(runtimeBudgets).toEqual([128_000]);
+        for (const sessionId of firstPrivateSessionIds) {
+          expect
+            .soft(
+              peekSessionMcpRuntime({ sessionId }) === undefined,
+              "completed private memory run must retire its acquired MCP runtime",
+            )
+            .toBe(true);
+        }
         expect.soft(await loadTranscriptEvents(scope)).toEqual(original);
         if (outcome === "interrupted") {
           expect.soft(loadSessionEntry(scope)?.memoryFlush).toBeUndefined();
@@ -329,11 +374,31 @@ it.each(["completed", "interrupted"] as const)(
         );
         expect(prefix).toBeDefined();
         expect(nextUser).toBe(`${prefix}${human}`);
+        await waitForDiagnosticEventsDrained();
+        expect.soft(missingPrivateSessionId).toBe(false);
+        for (const sessionId of privateSessionIds) {
+          if (!firstPrivateSessionIds.includes(sessionId)) {
+            expect
+              .soft(
+                peekSessionMcpRuntime({ sessionId }) === undefined,
+                "later private memory run must retire before the human turn returns",
+              )
+              .toBe(true);
+          }
+        }
       } finally {
+        completeFirstPrivateResponse?.();
         interrupted.abort(createAbortError("fixture cleanup"));
         await flush?.catch(() => undefined);
         admission?.release();
         await waitForSessionMaintenance(scope.sessionKey);
+        // Retire fixture-owned leftovers after work settles, including failed setup or assertions.
+        const mcpManager = getSessionMcpRuntimeManagerForTesting();
+        for (const sessionId of mcpManager.listSessionIds()) {
+          if (mcpManager.peekSession({ sessionId })?.workspaceDir === state.workspaceDir) {
+            await mcpManager.disposeSession(sessionId);
+          }
+        }
         clearMemoryPluginState();
         clearRuntimeConfigSnapshot();
         stopDiagnostics();

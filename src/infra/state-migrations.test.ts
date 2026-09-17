@@ -1120,7 +1120,7 @@ describe("state migrations", () => {
         const ids = result.stepReceipts.map((receipt) => receipt.id);
         const workshopIndex = ids.indexOf("skill-workshop");
         expect(workshopIndex).toBeGreaterThan(ids.indexOf("workspace-state"));
-        expect(workshopIndex).toBeLessThan(ids.indexOf("channel-pairing"));
+        expect(workshopIndex).toBeLessThan(ids.indexOf("plugin-doctor-state"));
         expect(result.stepReceipts[workshopIndex]).toMatchObject({
           outcome: "skipped",
           changes: [],
@@ -3458,19 +3458,19 @@ describe("state migrations", () => {
     expect(rows).toEqual([
       {
         queue_name: "outbound",
-        id: "outbound-1",
-        status: "pending",
-        channel: "telegram",
-        target: "123",
-        retry_count: 2,
-      },
-      {
-        queue_name: "outbound",
         id: "outbound-failed",
         status: "failed",
         channel: null,
         target: null,
         retry_count: 3,
+      },
+      {
+        queue_name: "outbound-prepared-v1",
+        id: "outbound-1",
+        status: "pending",
+        channel: "telegram",
+        target: "123",
+        retry_count: 2,
       },
       {
         queue_name: "session",

@@ -86,7 +86,11 @@ it
   let inventoryBytes = 0;
   let packBytes = 0;
   let boundedExitObserved = false;
+  let historyInventoryAllowsMissingObjects = false;
   const runCommand: CommandRunner = async (argv, options) => {
+    if (argv.includes("rev-list") && argv.includes(candidateSha)) {
+      historyInventoryAllowsMissingObjects = argv.includes("--missing=allow-any");
+    }
     if (failure === "legacy-git" && argv.includes("--no-lazy-fetch") && argv.includes("version")) {
       return { code: 129, stdout: "", stderr: "unknown option: --no-lazy-fetch" };
     }
@@ -139,6 +143,7 @@ it
     installedRoot: install,
     step: step(source),
   });
+  expect(historyInventoryAllowsMissingObjects).toBe(true);
   if (overflow || oversized) {
     expect(transfer).toBeUndefined();
     if (overflow) {

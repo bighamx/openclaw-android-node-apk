@@ -19,6 +19,7 @@ import {
 } from "../../test/helpers/temp-dir.js";
 import { withPluginRuntimeRegistryScope } from "../plugins/runtime/gateway-request-scope.js";
 import { AsyncWorkScope } from "../shared/async-work-scope.js";
+import { startCatalogRecoveryMcpServer } from "./agent-bundle-mcp-catalog-recovery.test-support.js";
 import { createCombinedSessionMcpRuntime } from "./agent-bundle-mcp-combined.js";
 import { completeDeferredSessionMcpRuntimeRetirement } from "./agent-bundle-mcp-manager-api.js";
 import {
@@ -6273,163 +6274,9 @@ process.stdin.on("end", () => {
     "keeps catalog recovery single-flight while another server is recycled",
     { timeout: 15_000 },
     async () => {
-      const startServer = async (label: string) => {
-        let sessionGeneration = 0;
-        let listCount = 0;
-        let activeLists = 0;
-        let maxActiveLists = 0;
-        let hangCalls = true;
-        const pendingLists: Array<{
-          id: string | number;
-          response: http.ServerResponse;
-          sessionId: string;
-        }> = [];
-        const server = http.createServer((request, response) => {
-          if (request.method === "GET") {
-            response.writeHead(405).end();
-            return;
-          }
-          if (request.method === "DELETE") {
-            response.writeHead(204).end();
-            return;
-          }
-          if (request.method !== "POST") {
-            response.writeHead(405).end();
-            return;
-          }
-          let body = "";
-          request.setEncoding("utf8");
-          request.on("data", (chunk) => {
-            body += chunk;
-          });
-          request.on("end", () => {
-            const message = JSON.parse(body) as {
-              id: string | number;
-              method: string;
-              params?: { protocolVersion?: string };
-            };
-            if (message.method === "initialize") {
-              sessionGeneration += 1;
-              const sessionId = `${label}-${sessionGeneration}`;
-              response.setHeader("content-type", "application/json");
-              response.setHeader("mcp-session-id", sessionId);
-              response.writeHead(200).end(
-                JSON.stringify({
-                  jsonrpc: "2.0",
-                  id: message.id,
-                  result: {
-                    protocolVersion: message.params?.protocolVersion ?? "2025-03-26",
-                    capabilities: { tools: {} },
-                    serverInfo: { name: label, version: "1.0.0" },
-                  },
-                }),
-              );
-              return;
-            }
-            if (message.method === "notifications/initialized") {
-              response.writeHead(202).end();
-              return;
-            }
-            const rawSessionId = request.headers["mcp-session-id"];
-            const sessionId = typeof rawSessionId === "string" ? rawSessionId : "missing";
-            if (message.method === "tools/call") {
-              if (hangCalls) {
-                return;
-              }
-              response.setHeader("content-type", "application/json");
-              response.setHeader("mcp-session-id", sessionId);
-              response.writeHead(200).end(
-                JSON.stringify({
-                  jsonrpc: "2.0",
-                  id: message.id,
-                  result: {
-                    content: [],
-                    structuredContent: { revision: sessionId },
-                  },
-                }),
-              );
-              return;
-            }
-            if (message.method === "tools/list") {
-              listCount += 1;
-              if (listCount === 1) {
-                response.setHeader("content-type", "application/json");
-                response.setHeader("mcp-session-id", sessionId);
-                response.writeHead(200).end(
-                  JSON.stringify({
-                    jsonrpc: "2.0",
-                    id: message.id,
-                    result: {
-                      tools: [
-                        {
-                          name: "probe",
-                          inputSchema: { type: "object" },
-                          outputSchema: {
-                            type: "object",
-                            properties: { revision: { const: sessionId } },
-                            required: ["revision"],
-                          },
-                        },
-                      ],
-                    },
-                  }),
-                );
-                return;
-              }
-              activeLists += 1;
-              maxActiveLists = Math.max(maxActiveLists, activeLists);
-              pendingLists.push({ id: message.id, response, sessionId });
-            }
-          });
-        });
-        await new Promise<void>((resolve) => {
-          server.listen(0, "127.0.0.1", resolve);
-        });
-        const address = server.address() as { port: number };
-        return {
-          url: `http://127.0.0.1:${address.port}/mcp`,
-          activeLists: () => activeLists,
-          maxActiveLists: () => maxActiveLists,
-          allowCalls: () => {
-            hangCalls = false;
-          },
-          releaseLists: () => {
-            for (const pending of pendingLists.splice(0)) {
-              pending.response.setHeader("content-type", "application/json");
-              pending.response.setHeader("mcp-session-id", pending.sessionId);
-              pending.response.writeHead(200).end(
-                JSON.stringify({
-                  jsonrpc: "2.0",
-                  id: pending.id,
-                  result: {
-                    tools: [
-                      {
-                        name: "probe",
-                        inputSchema: { type: "object" },
-                        outputSchema: {
-                          type: "object",
-                          properties: { revision: { const: pending.sessionId } },
-                          required: ["revision"],
-                        },
-                      },
-                    ],
-                  },
-                }),
-              );
-              activeLists -= 1;
-            }
-          },
-          close: async () => {
-            server.closeAllConnections();
-            await new Promise<void>((resolve) => {
-              server.close(() => resolve());
-            });
-          },
-        };
-      };
-
-      const recovering = await startServer("recovering");
-      const trigger = await startServer("trigger");
+      const realSetTimeout = setTimeout;
+      const recovering = await startCatalogRecoveryMcpServer("recovering");
+      const trigger = await startCatalogRecoveryMcpServer("trigger");
       testing.setBundleMcpCatalogListTimeoutMsForTest(4_000);
       const runtime = createSessionMcpRuntime({
         sessionId: "session-catalog-single-flight",
@@ -6451,47 +6298,46 @@ process.stdin.on("end", () => {
           },
         },
       });
-      const timeOutServer = async (serverName: string) => {
+      const timeOutServer = async (serverName: "recovering" | "trigger") => {
+        const server = serverName === "recovering" ? recovering : trigger;
         for (let attempt = 0; attempt < 3; attempt += 1) {
-          await expect(runtime.callTool(serverName, "probe", {})).rejects.toThrow();
+          const received = server.nextCall();
+          const timedOut = expect(runtime.callTool(serverName, "probe", {})).rejects.toThrow();
+          await received;
+          await vi.advanceTimersByTimeAsync(50);
+          await timedOut;
         }
       };
 
       try {
+        // Expire intentional hangs without racing healthy HTTP calls against wall time.
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
         const initialCatalog = await runtime.getCatalog();
         expect(initialCatalog.tools, JSON.stringify(initialCatalog)).toHaveLength(2);
         await timeOutServer("recovering");
         await runtime.getCatalog();
-        await waitForPredicate(
-          () => recovering.activeLists() === 1,
-          "recovering server catalog request",
-          LIST_TOOLS_SERVER_LOG_TIMEOUT_MS,
-        );
+        await recovering.recoveryListStarted;
 
         await timeOutServer("trigger");
         await runtime.getCatalog();
-        await Promise.race([
-          waitForPredicate(
-            () => recovering.maxActiveLists() > 1,
-            "overlapping catalog request",
-            500,
-          ).catch(() => undefined),
-          new Promise<void>((resolve) => {
-            setTimeout(resolve, 500);
-          }),
-        ]);
+        await trigger.recoveryListStarted;
+        await new Promise<void>((resolve) => {
+          realSetTimeout(resolve, 500);
+        });
         expect(recovering.maxActiveLists()).toBe(1);
 
         recovering.allowCalls();
         trigger.allowCalls();
         recovering.releaseLists();
         trigger.releaseLists();
-        await waitForPredicate(
-          () => recovering.activeLists() === 0 && trigger.activeLists() === 0,
-          "catalog requests to complete",
-          LIST_TOOLS_SERVER_LOG_TIMEOUT_MS,
+        const publishedCatalog = await vi.waitFor(
+          () => {
+            const current = expectDefined(runtime.peekCatalog(), "published catalog");
+            expect(current.diagnostics ?? []).toEqual([]);
+            return current;
+          },
+          { timeout: LIST_TOOLS_SERVER_LOG_TIMEOUT_MS },
         );
-        const publishedCatalog = expectDefined(runtime.peekCatalog(), "published catalog");
         expect(publishedCatalog.tools.map((tool) => `${tool.serverName}:${tool.toolName}`)).toEqual(
           ["recovering:probe", "trigger:probe"],
         );
@@ -6499,6 +6345,7 @@ process.stdin.on("end", () => {
           structuredContent: { revision: expect.stringMatching(/^recovering-/) },
         });
       } finally {
+        vi.useRealTimers();
         recovering.releaseLists();
         trigger.releaseLists();
         await runtime.dispose();

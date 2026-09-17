@@ -279,6 +279,7 @@ export function createNodeDesktopService(params: {
           requester: request.requester,
           attachment,
           preauth,
+          onAbandon: () => stopActiveStream(active),
         });
         active.unclaimedTimer = setTimeout(
           () => {

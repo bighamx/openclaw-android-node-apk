@@ -5,6 +5,7 @@ import type { ModelsListResult } from "../../../packages/gateway-protocol/src/sc
 import { withTestTimeout } from "../../../test/helpers/promise.js";
 import { createOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { disconnectGatewayClient, startGatewayWithClient } from "../test-helpers.e2e.js";
+import { observeCatalogWorkerTasks } from "./models-auth-catalog.test-support.js";
 
 it.each([
   { withSibling: false, getterBacked: false },
@@ -25,6 +26,7 @@ it.each([
         OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1",
       },
     });
+    const catalogWork = observeCatalogWorkerTasks();
     const provider = "freshness-fixture";
     const sibling = "z-failing-fixture";
     const providers = withSibling ? [provider, sibling] : [provider];
@@ -162,11 +164,15 @@ it.each([
           ["original"],
         ]);
         expect(requests).toBe(initialRequests + 1);
+        const renewalCompleted = catalogWork.nextCompletion();
         failSibling = withSibling;
         hold = false;
         for (const response of held.splice(0)) {
           reply(response);
         }
+        // The provider response still has to cross the real worker boundary. Wait for
+        // that work, then separately verify publication through passive reads.
+        await withTestTimeout(renewalCompleted, 3_000, "catalog worker did not complete renewal");
         await expect
           .poll(async () => (await list()).models.map((row) => row.id))
           .toEqual(["newly-published", "original"]);
@@ -201,6 +207,7 @@ it.each([
         await server.close();
       }
     } finally {
+      catalogWork.close();
       endpoint.closeAllConnections();
       await new Promise<void>((resolve) => {
         endpoint.close(() => resolve());

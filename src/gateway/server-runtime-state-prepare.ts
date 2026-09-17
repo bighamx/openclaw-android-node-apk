@@ -580,6 +580,8 @@ export async function prepareGatewayKernelState(params: {
     createHttpTransportOptions,
     transportBridge,
     connectionWork: connectionState.connectionWork,
+    getSessionRowProjection: connectionState.getSessionRowProjection,
+    attachSessionRowProjection: connectionState.attachSessionRowProjection,
     clients,
     mentionInbox,
     broadcast,
