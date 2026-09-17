@@ -903,16 +903,15 @@ export const sendHandlers: GatewayRequestHandlers = {
       client,
       requestedOrigin: request.conversationReadOrigin,
     });
-    const { assertScheduledReadCurrent, assertScheduledWriteCurrent, agentRuntimeAuthority } =
-      createMessageActionRuntimeAuthority({
-        client,
-        context,
-        respond,
-        sessionMutationCommitGuard,
-        action: request.action,
-        authorization: trustedContext.messageActionAuthorization,
-      });
-    const assertDirectAdapterHandoff = agentRuntimeAuthority.commitGuard;
+    const messageAuthority = createMessageActionRuntimeAuthority({
+      client,
+      context,
+      respond,
+      sessionMutationCommitGuard,
+      request,
+      authorization: trustedContext.messageActionAuthorization,
+    });
+    const assertDirectAdapterHandoff = messageAuthority.agentRuntimeAuthority.commitGuard;
     const onPlatformSendDispatch = assertDirectAdapterHandoff
       ? async () => assertDirectAdapterHandoff()
       : undefined;
@@ -923,15 +922,15 @@ export const sendHandlers: GatewayRequestHandlers = {
       respond,
       conversationReadOrigin,
       requestChannel: request.channel,
-      bindingAccountIds: [request.accountId, request.params.accountId],
+      bindingAccountIds: [messageAuthority.routeAccountId, request.params.accountId],
       routeAccountIds: (binding) => [
-        request.accountId,
+        messageAuthority.routeAccountId,
         request.params.accountId,
         binding?.reservedRoute?.accountId,
       ],
       conflictMessage: "message.action accountId does not match params.accountId",
-      authorize: agentRuntimeAuthority.hasActive,
-      replayResults: assertScheduledReadCurrent === undefined,
+      authorize: messageAuthority.agentRuntimeAuthority.hasActive,
+      replayResults: messageAuthority.assertReadCurrent === undefined,
       resolveChannel: async (requestChannel) => {
         const resolved = await resolveRequestedChannel({
           requestChannel,
@@ -971,7 +970,7 @@ export const sendHandlers: GatewayRequestHandlers = {
       work: async ({ cfg, channel, plugin, canonicalAction, accountId, dedupeKey, authorize }) => {
         try {
           const completed = await withChannelReadAuthority(
-            request.action === "download-file" || assertScheduledReadCurrent
+            request.action === "download-file" || messageAuthority.assertReadCurrent
               ? assertDirectAdapterHandoff
               : undefined,
             async () => {
@@ -1143,7 +1142,7 @@ export const sendHandlers: GatewayRequestHandlers = {
                   : {}),
               };
               let payload: unknown;
-              if (canonicalAction || assertScheduledWriteCurrent) {
+              if (canonicalAction || messageAuthority.assertScheduledWriteCurrent) {
                 const { runMessageAction } =
                   await import("../../infra/outbound/message-action-runner.js");
                 const result = await runMessageAction({

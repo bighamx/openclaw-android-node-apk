@@ -1,11 +1,17 @@
 import { isDeepStrictEqual } from "node:util";
 import { isRuntimeToolAllowed } from "../../agents/tool-policy-match.js";
+import { resolveCronJobConfigRevision } from "../config-revision.js";
 import { cloneCronRuntimeAuthority, type CronRuntimeAuthority } from "../runtime-authority.js";
 import {
   createTrustedCronScheduledToolPolicy,
+  normalizeCronScheduledToolCallerOrigin,
   resolveCronScheduledToolPolicy,
   type CronScheduledToolPolicy,
 } from "../scheduled-tool-policy.js";
+import {
+  normalizeCronToolsAllowProvenance,
+  resolveCronAuthenticatedChannelRequester,
+} from "../tools-allow-provenance.js";
 import { cronJobUsesToolRuntime } from "../tools-allow.js";
 import type {
   CronStoredJob,
@@ -24,12 +30,25 @@ export function resolveCronJobMessageActionAuthorityInputs(job: CronStoredJob) {
   });
   if (
     !cronJobUsesToolRuntime(job) ||
-    policy?.mode !== "trusted" ||
+    !policy ||
     !isRuntimeToolAllowed("message", job.payload.toolsAllow)
   ) {
     return undefined;
   }
-  return { policy };
+  const channelRequester = resolveCronAuthenticatedChannelRequester(job);
+  return {
+    policy,
+    ...(policy.mode === "account"
+      ? {
+          callerOrigin: normalizeCronScheduledToolCallerOrigin(
+            job.toolsAllowProvenance?.callerOrigin,
+          ),
+          ...(channelRequester
+            ? { channelRequester, executableRevision: resolveCronRequesterExecutionRevision(job) }
+            : {}),
+        }
+      : {}),
+  };
 }
 
 export function cronJobMessageActionAuthorityInputsEqual(
@@ -40,6 +59,89 @@ export function cronJobMessageActionAuthorityInputsEqual(
     resolveCronJobMessageActionAuthorityInputs(previous),
     resolveCronJobMessageActionAuthorityInputs(next),
   );
+}
+
+/** Binds native requester authority to executable inputs using the canonical storage projection. */
+function resolveCronRequesterExecutionRevision(job: CronStoredJob): string {
+  const {
+    description: _description,
+    displayName: _displayName,
+    createdActor: _createdActor,
+    toolsAllowProvenance: _toolsAllowProvenance,
+    ...executableJob
+  } = job;
+  return resolveCronJobConfigRevision(executableJob);
+}
+
+/** Rebinds or clears native requester facts after the complete authored mutation is known. */
+export function reconcileCronChannelRequesterAuthority(params: {
+  job: CronStoredJob;
+  previousJob?: CronStoredJob;
+  toolsAllowProvenance?: CronToolsAllowProvenance;
+  /** An explicit executable resave may refresh identity without changing the definition. */
+  reauthorize?: boolean;
+}): void {
+  const { job, previousJob } = params;
+  if (
+    !job.toolsAllowProvenance?.channelRequester &&
+    !previousJob?.toolsAllowProvenance?.channelRequester &&
+    !params.toolsAllowProvenance?.channelRequester
+  ) {
+    return;
+  }
+  const captured = normalizeCronToolsAllowProvenance(params.toolsAllowProvenance);
+  const current = normalizeCronToolsAllowProvenance(job.toolsAllowProvenance);
+  const previous = normalizeCronToolsAllowProvenance(previousJob?.toolsAllowProvenance);
+  const unchangedCap =
+    previousJob !== undefined &&
+    isDeepStrictEqual(previousJob.payload.toolsAllow, job.payload.toolsAllow) &&
+    (previousJob.payload.toolsAllowIsDefault === true) ===
+      (job.payload.toolsAllowIsDefault === true);
+  const fullSurface =
+    current?.source === "final-executable-surface"
+      ? current
+      : unchangedCap && previous?.source === "final-executable-surface"
+        ? previous
+        : undefined;
+
+  const executionUnchanged =
+    previousJob !== undefined &&
+    resolveCronRequesterExecutionRevision(previousJob) ===
+      resolveCronRequesterExecutionRevision(job) &&
+    isDeepStrictEqual(previousJob.state.triggerState, job.state.triggerState);
+  const acceptsCapture = !executionUnchanged || params.reauthorize === true;
+  let channelRequester =
+    cronJobUsesToolRuntime(job) && acceptsCapture
+      ? resolveCronAuthenticatedChannelRequester({ ...job, toolsAllowProvenance: captured })
+      : undefined;
+  if (
+    !channelRequester &&
+    (!acceptsCapture || params.toolsAllowProvenance?.channelRequester === undefined) &&
+    previousJob &&
+    cronJobUsesToolRuntime(job) &&
+    executionUnchanged
+  ) {
+    channelRequester = resolveCronAuthenticatedChannelRequester({
+      ...job,
+      toolsAllowProvenance: previous,
+    });
+  }
+
+  if (fullSurface) {
+    const { channelRequester: _previousRequester, ...provenance } = fullSurface;
+    job.toolsAllowProvenance = {
+      ...provenance,
+      ...(channelRequester ? { channelRequester } : {}),
+    };
+  } else if (channelRequester) {
+    job.toolsAllowProvenance = {
+      version: 1,
+      source: "authenticated-requester",
+      channelRequester,
+    };
+  } else {
+    delete job.toolsAllowProvenance;
+  }
 }
 
 export function consumeRuntimeAuthorityMutationOptions(
@@ -154,7 +256,8 @@ function reconcileToolsAllowProvenance(params: {
     return;
   }
   if (
-    params.job.payload.toolsAllowIsDefault === true &&
+    cronJobUsesToolRuntime(params.job) &&
+    params.job.payload.toolsAllow !== undefined &&
     params.toolsAllowProvenance?.version === 1 &&
     params.toolsAllowProvenance.source === "final-executable-surface"
   ) {

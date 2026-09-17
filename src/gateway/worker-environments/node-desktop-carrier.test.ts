@@ -108,6 +108,45 @@ describe("worker node desktop carrier", () => {
   support.setupWorkerEnvironmentServiceSuite();
   afterEach(() => vi.restoreAllMocks());
 
+  it("releases abandoned observer slots when requesting connections close", async () => {
+    const record = support.seedReadyNodeDesktop("worker-desktop-cancel-churn");
+    const proof = nodeProof(record.nodeDeviceId!);
+    const transport = pendingTransport({ proof, isProofCurrent: () => true });
+    const streamed = fakeBroker();
+    const registry = createDesktopSessionRegistry();
+    const carrier = createWorkerNodeDesktopCarrier({
+      store: { get: () => record },
+      desktopRegistry: registry,
+    });
+    carrier.bindRuntime({ transport: transport.transport, streamBroker: streamed.broker });
+    try {
+      for (let index = 0; index < 8; index += 1) {
+        const controller = new AbortController();
+        const observing = carrier.observe({
+          record,
+          control: false,
+          requester: {
+            signal: controller.signal,
+            isCurrent: () => !controller.signal.aborted,
+          },
+        });
+        await support.waitForFast(() => expect(transport.invoke).toHaveBeenCalledTimes(index + 1));
+        streamed.attachNext();
+        await observing;
+        controller.abort();
+      }
+      await support.waitForFast(() =>
+        expect(streamed.streams.filter((stream) => !stream.destroyed)).toHaveLength(0),
+      );
+      const reopened = carrier.observe({ record, control: false });
+      await support.waitForFast(() => expect(transport.invoke).toHaveBeenCalledTimes(9));
+      streamed.attachNext();
+      await expect(reopened).resolves.toMatchObject({ transport: "rfb" });
+    } finally {
+      await carrier.stopAll();
+    }
+  });
+
   it("observes an exact durable node desktop without SSH and preauthenticates it", async () => {
     const mint = vi.spyOn(observeBridge, "mintDesktopObserverToken");
     const client = { invalidated: false };

@@ -1,4 +1,5 @@
 // Agent scope tests cover which per-agent fields may flatten into runtime defaults.
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
 import { migratePersistedImplicitMainRoster } from "../config/legacy.roster.js";
@@ -198,7 +199,7 @@ describe("agent roster resolution", () => {
       },
     } satisfies OpenClawConfig;
 
-    expect(resolveDefaultAgentDir(config)).toBe("/tmp/openclaw-beta-agent");
+    expect(resolveDefaultAgentDir(config)).toBe(path.resolve("/tmp/openclaw-beta-agent"));
   });
 
   it("preserves legacy default ownership for non-explicit CLI operations", () => {
@@ -397,8 +398,8 @@ describe("agent roster resolution", () => {
 
     expect(cfg.agents?.entries?.ops?.default).toBeUndefined();
     expect(cfg.agents?.entries?.ops?.workspace).toBeUndefined();
-    expect(resolveAgentWorkspaceDir(cfg, "ops")).toBe("/srv/ops");
-    expect(resolveAgentWorkspaceDir(cfg, "research")).toBe("/srv/ops/research");
+    expect(resolveAgentWorkspaceDir(cfg, "ops")).toBe(path.resolve("/srv/ops"));
+    expect(resolveAgentWorkspaceDir(cfg, "research")).toBe(path.resolve("/srv/ops/research"));
   });
 
   it("keeps a raw legacy marker owner on the inherited workspace", () => {
@@ -409,8 +410,8 @@ describe("agent roster resolution", () => {
       },
     };
 
-    expect(resolveAgentWorkspaceDir(cfg, "ops")).toBe("/srv/ops");
-    expect(resolveAgentWorkspaceDir(cfg, "research")).toBe("/srv/ops/research");
+    expect(resolveAgentWorkspaceDir(cfg, "ops")).toBe(path.resolve("/srv/ops"));
+    expect(resolveAgentWorkspaceDir(cfg, "research")).toBe(path.resolve("/srv/ops/research"));
   });
 
   it("keeps the implicit default workspace inside an overridden state directory", () => {
@@ -421,7 +422,7 @@ describe("agent roster resolution", () => {
         HOME: "/home/operator",
         OPENCLAW_STATE_DIR: stateDir,
       }),
-    ).toBe(`${stateDir}/workspace`);
+    ).toBe(path.resolve(stateDir, "workspace"));
   });
 
   it("offers a non-throwing diagnostic lookup for malformed rosters", () => {

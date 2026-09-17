@@ -126,6 +126,11 @@ export async function preflightUpdateCommandSchemas(params: {
         managedServiceRootRedirect,
         legacyConfigPlan: params.legacyConfigPlan,
       });
+      for (const service of admission.services.values()) {
+        if (service.serviceUpdateVerdict?.kind === "unavailable") {
+          preflightNotes.push(service.serviceUpdateVerdict.message);
+        }
+      }
       const target =
         updateInstallKind === "git"
           ? await inspectGitDryRunTargetSchemaVersions({
@@ -167,7 +172,7 @@ export async function preflightUpdateCommandSchemas(params: {
           !canResolveRegistryVersionForPackageTarget(params.packageInstallSpec)
         ) {
           preflightNotes.push(
-            "Configured plugin availability will be checked against the staged package before rehearsal or activation; this preview does not stage the target.",
+            "Configured plugin availability will be checked against the staged package before update checks or activation; this preview does not stage the target.",
           );
         } else {
           const { preflightConfiguredNpmPluginTargets } =

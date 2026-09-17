@@ -55,16 +55,8 @@ const {
   runGatewayUpdatePreflightMock:
     vi.fn<typeof import("./update-runner.js").runGatewayUpdatePreflight>(),
   scheduleGatewaySigusr1RestartMock: vi.fn(() => ({ scheduled: true })),
-  startManagedServiceUpdateHandoffMock: vi.fn<
-    typeof import("./update-managed-service-handoff.js").startManagedServiceUpdateHandoff
-  >(async () => ({
-    status: "started" as const,
-    pid: 12345,
-    command: "openclaw update --yes --channel beta",
-    logPath: "/tmp/openclaw-handoff.log",
-    handoffId: "auto-handoff-id",
-    installRoot: "/opt/openclaw",
-  })),
+  startManagedServiceUpdateHandoffMock:
+    vi.fn<typeof import("./update-managed-service-handoff.js").startManagedServiceUpdateHandoff>(),
   transferManagedServiceUpdateHandoffMock: vi.fn<
     typeof import("./update-managed-service-handoff.js").transferManagedServiceUpdateHandoff
   >(async () => true),
@@ -176,6 +168,7 @@ type PersistedUpdateCheckState = {
 describe("update-startup", () => {
   let tempDir: string;
   let testState: OpenClawTestState;
+  let handoffStarted: ReturnType<typeof createDeferred<void>>;
   let triageResult: Extract<
     Awaited<ReturnType<typeof runUpdateFailureTriageMock>>,
     { status: "completed" }
@@ -187,9 +180,9 @@ describe("update-startup", () => {
   let runCommandWithTimeout: (typeof import("../process/exec.js"))["runCommandWithTimeout"];
   let runGatewayUpdateCheckOwner: (typeof import("./update-startup.js"))["runGatewayUpdateCheck"];
   let createGatewayUpdateCheck: (typeof import("./update-startup.js"))["createGatewayUpdateCheck"];
-  let getUpdateAvailable: (typeof import("./update-startup.js"))["getUpdateAvailable"];
+  let getUpdateAvailable: (typeof import("./update-status-state.js"))["getUpdateAvailable"];
   let getUpdateEffectiveChannel: (typeof import("./update-startup.js"))["getUpdateEffectiveChannel"];
-  let getUpdateSchedule: (typeof import("./update-startup.js"))["getUpdateSchedule"];
+  let getUpdateSchedule: (typeof import("./update-status-state.js"))["getUpdateSchedule"];
   let refreshGatewayUpdateStatus: (typeof import("./update-startup.js"))["refreshGatewayUpdateStatus"];
   let resetUpdateAvailableStateForTest: (typeof import("./update-startup.js"))["resetUpdateAvailableStateForTest"];
   let loaded = false;
@@ -268,20 +261,18 @@ describe("update-startup", () => {
       ({
         runGatewayUpdateCheck: runGatewayUpdateCheckOwner,
         createGatewayUpdateCheck,
-        getUpdateAvailable,
         getUpdateEffectiveChannel,
-        getUpdateSchedule,
         refreshGatewayUpdateStatus,
         resetUpdateAvailableStateForTest,
       } = await import("./update-startup.js"));
+      ({ getUpdateAvailable, getUpdateSchedule } = await import("./update-status-state.js"));
       loaded = true;
     }
     vi.mocked(resolveOpenClawPackageRoot).mockClear();
     vi.mocked(checkUpdateStatus).mockClear();
     checkTelemetryUpdateMock.mockReset().mockResolvedValue(null);
     vi.mocked(resolveNpmChannelTag).mockClear();
-    vi.mocked(runCommandWithTimeout).mockReset();
-    vi.mocked(runCommandWithTimeout).mockResolvedValue({
+    vi.mocked(runCommandWithTimeout).mockReset().mockResolvedValue({
       stdout: "",
       stderr: "",
       code: 0,
@@ -300,13 +291,17 @@ describe("update-startup", () => {
     startManagedServiceUpdateHandoffMock.mockClear();
     transferManagedServiceUpdateHandoffMock.mockReset().mockResolvedValue(true);
     cancelManagedServiceUpdateHandoffMock.mockReset().mockResolvedValue("restored-in-process");
-    startManagedServiceUpdateHandoffMock.mockResolvedValue({
-      status: "started",
-      pid: 12345,
-      command: "openclaw update --yes --channel beta",
-      logPath: "/tmp/openclaw-handoff.log",
-      handoffId: "auto-handoff-id",
-      installRoot: "/opt/openclaw",
+    handoffStarted = createDeferred();
+    startManagedServiceUpdateHandoffMock.mockImplementation(async () => {
+      handoffStarted.resolve();
+      return {
+        status: "started",
+        pid: 12345,
+        command: "openclaw update --yes --channel beta",
+        logPath: "/tmp/openclaw-handoff.log",
+        handoffId: "auto-handoff-id",
+        installRoot: "/opt/openclaw",
+      };
     });
     resetUpdateAvailableStateForTest();
     createTestUpdateCheck({ cfg: {}, log: { info: vi.fn() }, isNixMode: false });
@@ -1339,6 +1334,7 @@ describe("update-startup", () => {
       onUpdateRunCreated,
     });
     await vi.advanceTimersByTimeAsync(60_000);
+    await handoffStarted.promise;
 
     const [handoffParams] = startManagedServiceUpdateHandoffMock.mock.calls[0] ?? [];
     const run = getUpdateRun(handoffParams!.meta!.runId!);

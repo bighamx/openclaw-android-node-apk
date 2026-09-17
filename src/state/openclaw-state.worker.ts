@@ -14,6 +14,7 @@ import { loadMutableCronStoreInWorker } from "../cron/store/load.worker.js";
 import { executeCronStoreSaveCommand } from "../cron/store/save.worker.js";
 import { readDeferredPluginMigrations } from "../infra/deferred-plugin-migrations.js";
 import { countFailedDeliveryQueueEntriesInDatabase } from "../infra/delivery-queue-sqlite.kernel.js";
+import { executePromotionCommand } from "../infra/promotions-feed.worker.js";
 import { executeSessionDeliveryCommand } from "../infra/session-delivery-queue.worker.js";
 import { createSqliteAuditRecordKernel } from "../infra/sqlite-audit-record.kernel.js";
 import {
@@ -161,6 +162,13 @@ function createSharedStateWorkerBackend(
     execute(command) {
       if (closed) {
         throw new Error("Shared-state worker is closed");
+      }
+      if (command.type === "promotions.markNotified" || command.type === "promotions.recordClaim") {
+        return executePromotionCommand(
+          command,
+          { path: context.databasePath, env: getSqliteWorkerStateContext().environment },
+          open,
+        );
       }
       if (command.type === "doctor.databaseBloat") {
         return readSqliteDatabaseBloat({

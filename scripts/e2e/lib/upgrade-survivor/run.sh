@@ -853,7 +853,7 @@ NODE
     "${OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_MANIFEST_SHA256:-}" \
     "$fixture_root" \
     plugin_registry_pid \
-    "${registry_args[@]}"
+    ${registry_args[@]+"${registry_args[@]}"}
 }
 
 seed_legacy_runtime_deps_symlink() {

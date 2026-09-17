@@ -643,7 +643,7 @@ public struct AgentSummary: Codable, Sendable {
     public let id: String
     public let utilitymodel: String?
     public let status: String?
-    public let admissionrefusal: [String: AnyCodable]?
+    public let admissionrefusal: AnyCodable?
     public let kind: AgentKind?
     public let createdvia: AnyCodable?
     public let creatoragentid: AnyCodable?
@@ -663,7 +663,7 @@ public struct AgentSummary: Codable, Sendable {
         id: String,
         utilitymodel: String? = nil,
         status: String? = nil,
-        admissionrefusal: [String: AnyCodable]? = nil,
+        admissionrefusal: AnyCodable? = nil,
         kind: AgentKind? = nil,
         createdvia: AnyCodable? = nil,
         creatoragentid: AnyCodable? = nil,

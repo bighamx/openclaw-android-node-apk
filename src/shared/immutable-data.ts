@@ -34,10 +34,30 @@ export function isDeeplyFrozenPlainData(value: unknown): boolean {
       return false;
     }
     inspected.add(candidate);
+    let firstChild: object | undefined;
+    let moreChildren: object[] | undefined;
     for (const key of Reflect.ownKeys(candidate)) {
       const descriptor = Object.getOwnPropertyDescriptor(candidate, key)!;
-      if (!("value" in descriptor) || !visit(descriptor.value)) {
+      if (!("value" in descriptor) || typeof descriptor.value === "function") {
         return false;
+      }
+      if (descriptor.value && typeof descriptor.value === "object") {
+        if (firstChild === undefined) {
+          firstChild = descriptor.value;
+        } else {
+          (moreChildren ??= []).push(descriptor.value);
+        }
+      }
+    }
+    // Opaque members disprove the container before any child graph needs inspection.
+    if (firstChild && !visit(firstChild)) {
+      return false;
+    }
+    if (moreChildren) {
+      for (const child of moreChildren) {
+        if (!visit(child)) {
+          return false;
+        }
       }
     }
     return true;
