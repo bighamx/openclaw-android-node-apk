@@ -55,7 +55,10 @@ import { coreGatewayHandlers } from "./server-methods/core-handlers.js";
 import { authenticatedProfileUnavailableError } from "./server-methods/gateway-client-identity.js";
 import { prepareGatewayRequestHandler } from "./server-methods/lazy-core-handlers.js";
 import { isTargetedNonSafeGatewayRestartRequest } from "./server-methods/restart-request.js";
-import { withSessionMutationCommitGuard } from "./server-methods/session-mutation-guards.js";
+import {
+  bindGatewayRequestHandlerMutationAuthority,
+  withSessionMutationCommitGuard,
+} from "./server-methods/session-mutation-guards.js";
 import type {
   GatewayRequestContext,
   GatewayRequestHandler,
@@ -66,7 +69,7 @@ import type {
 import type { GatewayRequestEntry } from "./server-request-entry.js";
 import type { GatewayRpcDiagnostics } from "./server/ws-connection/request-diagnostics.js";
 import { sessionMutationTargetFields } from "./session-method-policy.js";
-import { getSessionRowProjection } from "./session-row-projection-access.js";
+import { retainSessionListForegroundWork } from "./session-projection-work.js";
 import { resolveDirectIncognitoTargets } from "./session-sharing-target-input.js";
 import {
   resolveSessionMutationAuthorization,
@@ -322,12 +325,6 @@ export async function authorizeGatewayRequestPreDispatch(params: {
         ),
       };
     }
-    const projection =
-      params.method === "sessions.describe" ? getSessionRowProjection(params.context) : undefined;
-    if (projection?.needsMaterialization) {
-      await projection.ensureMaterialized();
-      continue;
-    }
     const preparedSessionMutation = withCanonicalSessionValidationDeferral(() =>
       resolveSessionMutationAuthorization({
         client: params.client ?? null,
@@ -485,6 +482,7 @@ export async function runWithGatewayRequestEnvelope<T>(
     if (postAdmissionRateLimitError) {
       return await options.reject(postAdmissionRateLimitError);
     }
+    const releaseForegroundWork = retainSessionListForegroundWork();
     try {
       const pluginRegistry =
         (options.methodRegistry.pluginRegistry as PluginRegistry | undefined) ??
@@ -513,6 +511,8 @@ export async function runWithGatewayRequestEnvelope<T>(
         return await options.reject(staleInstall.error);
       }
       throw error;
+    } finally {
+      releaseForegroundWork();
     }
   }
   if (!rootWorkAdmission) {
@@ -549,6 +549,7 @@ export async function handleGatewayRequest(
       }
     : opts.sessionMutationCommitGuard;
   const entry = opts.requestEntry ?? context.requestEntryLifetime?.enter(opts);
+  const releaseForegroundWork = retainSessionListForegroundWork();
   try {
     entry?.assertOpen();
     // Prefer the caller-attached registry when it owns the requested method so plugin dispatch
@@ -587,18 +588,22 @@ export async function handleGatewayRequest(
     );
     const invokeHandler = async () => {
       const preparedHandler = await prepareGatewayRequestHandler(handler, entry);
-      const handlerOptions = {
-        req,
-        params: (req.params ?? {}) as Record<string, unknown>,
-        client,
-        isWebchatConnect,
-        respond,
-        context,
-        signal,
-        ...(hasCurrentClientAuthority ? { hasCurrentClientAuthority } : {}),
-        sessionMutationCommitGuard,
-        sessionMutationAuthorization,
-      };
+      const handlerOptions = bindGatewayRequestHandlerMutationAuthority(
+        opts,
+        {
+          req,
+          params: (req.params ?? {}) as Record<string, unknown>,
+          client,
+          isWebchatConnect,
+          respond,
+          context,
+          signal,
+          ...(hasCurrentClientAuthority ? { hasCurrentClientAuthority } : {}),
+          sessionMutationCommitGuard,
+          sessionMutationAuthorization,
+        },
+        profileBinding,
+      );
       sessionMutationCommitGuard?.();
       entry?.assertOpen();
       if (signal?.aborted) {
@@ -621,6 +626,7 @@ export async function handleGatewayRequest(
       reject: (error) => respond(false, undefined, error),
     });
   } finally {
+    releaseForegroundWork();
     // Transport/import owners retain failures through their response and logging paths.
     if (!opts.requestEntry) {
       entry?.release();

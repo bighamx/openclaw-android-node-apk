@@ -16,6 +16,7 @@ type CapturedRevocation = {
   owner: RevocationOwner;
   state: RevocationState;
   isCurrent: CurrentCaller;
+  isRevocationCurrent: CurrentCaller;
 };
 
 const owners = new WeakMap<object, RevocationOwner>();
@@ -73,12 +74,12 @@ export function captureGatewayDeviceRevocation(
   }
   // A live connection remains in the Gateway's ordinary invalidation index.
   // After disconnect, only an owned request or continuation may use this capture.
-  const isCurrent = () =>
+  const isRevocationCurrent = () =>
     !owner.closed &&
     !state.revoked &&
-    (state.references > 0 || connectionSignal?.aborted === false) &&
-    hasCurrentClientAuthority();
-  const capture = { owner, state, isCurrent };
+    (state.references > 0 || connectionSignal?.aborted === false);
+  const isCurrent = () => isRevocationCurrent() && hasCurrentClientAuthority();
+  const capture = { owner, state, isCurrent, isRevocationCurrent };
   captures.set(isCurrent, capture);
   return { isCurrent, release: releaseHold(capture) };
 }
@@ -93,6 +94,13 @@ export function bindGatewayDeviceRevocation<T extends () => unknown>(
     captures.set(guard, capture);
   }
   return guard;
+}
+
+/** Read only owner-held revocation/lifetime facts, without invoking the caller authority callback. */
+export function readGatewayDeviceRevocationGuard(
+  guard: (() => unknown) | undefined,
+): CurrentCaller | undefined {
+  return guard ? captures.get(guard)?.isRevocationCurrent : undefined;
 }
 
 /** Transfer a hold on the original captured state, never recapture a later device/session. */

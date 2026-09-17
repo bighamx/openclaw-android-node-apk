@@ -630,8 +630,7 @@ img.chat-avatar.user {
   color: var(--muted);
 }
 
-.chat-avatar.other,
-.chat-avatar--forwarded {
+.chat-avatar.other {
   background: var(--secondary);
   color: var(--muted);
 }
@@ -886,6 +885,12 @@ img.chat-avatar {
 :root[data-theme-mode="light"] .chat-bubble:not(:where(.chat-bubble--tool-shell)):hover {
   border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* Forwarded cards share the user's quiet edge in both themes and on hover. */
+:root .chat-group.assistant.chat-group--forwarded .chat-bubble {
+  border-color: transparent;
+  box-shadow: none;
 }
 
 /* User bubbles have different styling */

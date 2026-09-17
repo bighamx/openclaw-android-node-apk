@@ -86,8 +86,15 @@ export function createSlackLookupClient(token: string, options: SlackLookupClien
   return new WebClient(token, resolveSlackLookupClientOptions(options));
 }
 
-export function createSlackWriteClient(token: string, options: WebClientOptions = {}) {
-  return new WebClient(token, resolveSlackWriteClientOptions(options));
+export function createSlackWriteClient(
+  token: string,
+  options: WebClientOptions = {},
+  assertDirectAdapterHandoff?: () => void,
+) {
+  return new WebClient(
+    token,
+    resolveSlackWriteClientOptions(options, undefined, assertDirectAdapterHandoff),
+  );
 }
 
 export function createSlackTokenCacheKey(token: string): string {

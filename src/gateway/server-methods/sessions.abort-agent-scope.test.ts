@@ -677,7 +677,7 @@ describe("sessions.abort agent scope", () => {
   ])(
     "applies MCP stop ownership (clearQueued=$clearQueued, global=$globalScope)",
     async ({ clearQueued, globalScope }) => {
-      const { getOrCreateSessionMcpRuntime } =
+      const { getOrCreateSessionMcpRuntime, unopenedMcpConfig } =
         await import("../../agents/agent-bundle-mcp-manager.test-support.js");
       const { getSessionMcpRuntimeManagerForTesting } =
         await import("../../agents/agent-bundle-mcp-manager-api.js");
@@ -693,7 +693,7 @@ describe("sessions.abort agent scope", () => {
           sessionId: "idle-mcp",
           sessionKey,
           workspaceDir: "/workspace",
-          cfg: { mcp: { servers: {} } },
+          cfg: unopenedMcpConfig,
           manifestRegistry: { plugins: [] },
         });
         await callSessions(

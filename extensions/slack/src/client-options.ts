@@ -130,6 +130,24 @@ function applySlackApiUrlAndProxyOptions(
   }
 }
 
+function applySlackWriteAuthority(
+  options: WebClientOptions,
+  dispatcher: SlackProxyDispatcher | undefined,
+  assertDirectAdapterHandoff: (() => void) | undefined,
+): void {
+  if (!assertDirectAdapterHandoff) {
+    return;
+  }
+  const slackFetch = options.fetch ?? buildSlackFetch(dispatcher);
+  if (!slackFetch) {
+    throw new Error("Slack write fetch is unavailable for scoped delivery.");
+  }
+  options.fetch = (input, init) => {
+    assertDirectAdapterHandoff();
+    return slackFetch(input, init);
+  };
+}
+
 export function resolveSlackWebClientOptions(
   options: WebClientOptions = {},
   dispatcher = resolveSlackProxyDispatcher(),
@@ -155,9 +173,11 @@ export function resolveSlackReadClientOptions(
 export function resolveSlackWriteClientOptions(
   options: WebClientOptions = {},
   dispatcher = resolveSlackProxyDispatcher(),
+  assertDirectAdapterHandoff?: () => void,
 ): WebClientOptions {
   const resolved: WebClientOptions = Object.assign({}, options);
   applySlackApiUrlAndProxyOptions(resolved, dispatcher);
+  applySlackWriteAuthority(resolved, dispatcher, assertDirectAdapterHandoff);
   resolved.retryConfig ??= SLACK_WRITE_RETRY_OPTIONS;
   // A caller's nonzero SDK retry policy already owns rate-limit recovery.
   if (resolved.rejectRateLimitedCalls !== true && resolved.retryConfig.retries === 0) {

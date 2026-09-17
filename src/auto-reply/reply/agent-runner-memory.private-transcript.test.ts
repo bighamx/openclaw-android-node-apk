@@ -71,12 +71,42 @@ it.each(["completed", "interrupted"] as const)(
         }
       });
       const server = createServer((request, response) => {
+        if (request.url === "/mcp" && request.method !== "POST") {
+          response.writeHead(request.method === "DELETE" ? 200 : 405).end();
+          return;
+        }
         let body = "";
         request.setEncoding("utf8");
         request.on("data", (chunk: string) => {
           body += chunk;
         });
         request.on("end", () => {
+          // Memory preparation reads the MCP catalog before inference. Keep a real
+          // server owned by the run without adding tools to its model request.
+          if (request.url === "/mcp") {
+            const message = JSON.parse(body) as {
+              id?: number;
+              method: string;
+              params?: { protocolVersion?: string };
+            };
+            let result;
+            if (message.method === "initialize") {
+              result = {
+                protocolVersion: message.params?.protocolVersion,
+                capabilities: { tools: {} },
+                serverInfo: { name: "memory-lifetime", version: "1" },
+              };
+            } else if (message.method === "tools/list") {
+              result = { tools: [] };
+            }
+            if (!result) {
+              response.writeHead(202).end();
+              return;
+            }
+            response.writeHead(200, { "content-type": "application/json" });
+            response.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
+            return;
+          }
           const modelRequest = JSON.parse(body) as ModelRequest;
           requests.push(modelRequest);
           const isHuman = text(
@@ -152,6 +182,11 @@ it.each(["completed", "interrupted"] as const)(
         },
         session: { store: scope.storePath },
         tools: { profile: "coding" },
+        mcp: {
+          servers: {
+            fixture: { transport: "streamable-http", url: `http://127.0.0.1:${address.port}/mcp` },
+          },
+        },
         models: {
           providers: {
             "test-provider": {

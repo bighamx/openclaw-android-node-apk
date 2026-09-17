@@ -11,6 +11,7 @@ import type { CronStoreSaveWorkerOperations } from "../cron/store/save-worker.ty
 import type { DeferredPluginMigration } from "../infra/deferred-plugin-migrations.js";
 import type { DeliveryQueueWorkerOperations } from "../infra/delivery-queue.worker-contract.js";
 import type { PreparedPromotionClaim } from "../infra/promotions-feed.kernel.js";
+import type { WebPushWorkerOperations } from "../infra/push-web-store.worker-contract.js";
 import type { SessionDeliveryWorkerOperations } from "../infra/session-delivery-queue.worker-contract.js";
 import type { PreparedSqliteAuditRecord } from "../infra/sqlite-audit-record.kernel.js";
 import type { SqliteFileGeneration } from "../infra/sqlite-file-generation.js";
@@ -35,7 +36,8 @@ import type { OpenClawStateLeaseIdentity } from "./openclaw-state-lease-store.js
 import type { UserPreferenceWorkerOperations } from "./user-preferences.types.js";
 
 /** Commands share one physical shared-state actor; bindings belong to commands, not open input. */
-export type OpenClawStateWorkerOperations = NativeHookRelayStoreWorkerOperations &
+export type OpenClawStateWorkerOperations = WebPushWorkerOperations &
+  NativeHookRelayStoreWorkerOperations &
   HostedCatalogSnapshotWorkerOperations &
   PluginStateWorkerOperations &
   UserPreferenceWorkerOperations &

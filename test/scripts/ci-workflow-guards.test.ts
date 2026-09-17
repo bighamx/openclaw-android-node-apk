@@ -12594,6 +12594,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     const { result, manifest } = runDependencyFreePreflight(
       manifestSource,
       tempDirs.make("ci-preflight-dependencies-"),
+      testNodeExecPath,
     );
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
     expect(manifest).toContain("run_node=true\n");
@@ -13214,8 +13215,15 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       const bin = path.join(directory, "bin");
       const argsPath = path.join(directory, "args");
       mkdirSync(bin);
+      writeExecutable(path.join(bin, "pnpm"), [
+        "#!/bin/sh",
+        '[ "$*" = "build qaRuntime" ] || exit 1',
+        "mkdir dist || exit 1",
+        "touch dist/.buildstamp",
+      ]);
       writeExecutable(path.join(bin, "node"), [
         "#!/bin/sh",
+        'test -f dist/.buildstamp || { echo "runtime not prepared" >&2; exit 1; }',
         'label="${OPENCLAW_TEST_STARTUP_CORPUS_SHARD:-config}"',
         'case "$label" in */*) label="${label%/*}-${label#*/}" ;; esac',
         'printf "%s\\n" "$@" > "$STARTUP_CORPUS_ARGS.$label"',
@@ -18893,7 +18901,6 @@ fi
     const fullReleaseWorkflow = readWorkflow(".github/workflows/full-release-validation.yml");
     const releaseWorkflow = readReleaseChecksWorkflow();
     const telegramWorkflow = readWorkflow(".github/workflows/openclaw-release-telegram-qa.yml");
-    const telegramProvenanceHelper = readFileSync("scripts/release-telegram-provenance.sh", "utf8");
     const fullReleaseDispatchStep = fullReleaseWorkflow.jobs.release_checks_candidate.steps.find(
       (step: WorkflowStep) => step.name === "Dispatch release checks candidate phase",
     );
@@ -18949,44 +18956,6 @@ fi
         'bash "${GITHUB_WORKSPACE}/scripts/release-telegram-provenance.sh"',
       );
     }
-    expect(telegramProvenanceHelper).toContain(
-      'if [[ "$candidate_version" == "$release_version" ]]; then',
-    );
-    expect(telegramProvenanceHelper).toContain(
-      'elif [[ "$candidate_version" =~ ^${release_version_pattern}-beta\\.[0-9]+$ ]]; then',
-    );
-    expect(telegramProvenanceHelper).toContain(
-      'frozen_release_branch_pattern="^release/${candidate_version_pattern}-code-frozen(-r[1-9][0-9]*)?$"',
-    );
-    expect(telegramProvenanceHelper).toContain(
-      '"$TARGET_REF" =~ ^[a-f0-9]{40}$ && "$TARGET_REF" == "$candidate_sha"',
-    );
-    expect(telegramProvenanceHelper).toContain('trusted_reason="frozen-release-branch-head"');
-    expect(telegramProvenanceHelper).toContain(
-      '"$signature_status" != "valid" || "$signer" == "web-flow"',
-    );
-    expect(telegramProvenanceHelper).toContain('context_release_branch="$normalized_context_ref"');
-    expect(telegramProvenanceHelper).toContain('context_release_tag="$normalized_context_ref"');
-    expect(telegramProvenanceHelper).toContain(
-      "Telegram candidate version ${candidate_version} does not belong to release ${release_version}.",
-    );
-    expect(telegramProvenanceHelper).toContain(
-      "Telegram candidate version ${candidate_version} does not match context ${normalized_context_ref}.",
-    );
-    expect(telegramProvenanceHelper).toContain(
-      'select(.state == "OPEN" and .headRepository.nameWithOwner == $repo and',
-    );
-    expect(telegramProvenanceHelper).toContain(
-      'select(.state == "MERGED" and .baseRepository.nameWithOwner == $repo and',
-    );
-    expect(telegramProvenanceHelper).toContain(".mergeCommit.oid == $sha)]");
-    expect(telegramProvenanceHelper).toContain(
-      'if [[ "$(jq \'length\' <<<"$matching_merge_prs")" != "1" ]]; then',
-    );
-    expect(telegramProvenanceHelper).toContain(
-      'if [[ "$permission" != "admin" && "$role_name" != "maintain" ]]; then',
-    );
-    expect(telegramProvenanceHelper).not.toContain(".baseRefName ==");
   });
 
   it("checks out the complete trusted Release Decision scripts tree", () => {

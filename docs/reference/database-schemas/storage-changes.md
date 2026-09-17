@@ -51,6 +51,32 @@ retain the accepted snapshot. Marketplace refresh awaits persistence before clea
 its catalog cache and applying the result to the Gateway. Feed verification, expired
 snapshot visibility, install authority, and the stored representation are unchanged.
 
+Web Push subscription reads, VAPID identity, approval-delivery receipts, recovery,
+and expired-target cleanup run in the shared-state worker. Normal paired browser
+mutations also run there with authority retained by the WebSocket request owner.
+The worker resolves current profile bindings on its transaction connection, while
+host admission checks retained client, scope, request, and shared-auth state.
+Selected-account mismatches keep the original error and execution-phase details.
+
+Opaque request callbacks retain the native mutation kernels required by the tagged
+SDK contract. Their full callback runs at the native write boundary. This family
+is selected before storage begins; worker failures never redirect to native SQL.
+Its remaining migration belongs to the actual in-process resolver, session, and
+run authority producers. Accepted ordinary RPCs keep their reconnect behavior.
+
+Gateway handlers and notification senders await storage results; receipt preparation
+returns the committed target IDs before final recipient and approval checks. A private
+FIFO scope orders subscription mutations with the final subscription read, synchronous
+policy checks, and send start. The scope ends before awaiting provider completion;
+slow network delivery does not block registration. The scope uses the existing worker
+request and byte limits for its separate bounded waiting interval and joins shared-state close.
+Expired-target cleanup still compares the sent registration, and concurrent VAPID
+initialization returns the first committed identity. Read-only identity lookup does
+not create missing state. Existing tables, additive schema preparation, Doctor
+imports, retention, and notification payloads are unchanged. Pairing, profile,
+user-preference, and visibility checks outside transaction admission retain their
+separate synchronous owners.
+
 Asynchronous mutable cron-store loads run in the shared-state worker, including
 the existing retired-job deletion and runtime-authority repairs. The connection-bound
 load kernel preserves their separate transactions, partition keys, and fingerprints.
@@ -212,6 +238,14 @@ Only pending reads coalesce; completed results are not cached. Physical integrit
 verification remains with full registry restoration and Doctor, while known
 database failures and quarantine still refuse summary reads.
 
+Offline `status --json --all` checks for existing built-in memory data through
+memory-core's retrieval worker before constructing a memory manager. The check
+retains current and shipped table recognition, missing-store behavior, and
+best-effort read failures without creating or migrating a database. Custom memory
+slots and explicitly configured memory retain their existing selection paths.
+This moves only the presence check; memory-manager diagnostics keep their own
+lifecycle and execution contracts.
+
 Gateway, embedded, and TUI session lists use resident materialized rows and the
 subagent registry's owner-maintained memory snapshot. Each durable session store
 is hydrated when first admitted, replaced, or reintroduced; departing stores lose
@@ -225,6 +259,16 @@ projection readiness, selection, authorization, and presentation use the current
 caller identity in one synchronous boundary.
 Registry replacement and restoration replace its snapshot, while named writes
 patch it. Storage repair and retention remain with their existing owners.
+
+Gateway `session.members.list` and `session.members.listEvidence` read full
+membership rows through the existing session-transcript read worker. Both methods
+recheck the exact session instance and current management rights after the read
+settles. Member ordering, actor evidence, and missing-database behavior are
+unchanged. Incognito membership remains with its process-local native owner;
+the synchronous session-store facade retains its existing compatibility contract.
+Target resolution, profile and creator catalogs, public-share metadata, projection
+refreshes, and membership writes retain their existing execution paths. This cut
+moves the member-row query, not every database read performed by these RPCs.
 
 Gateway user-preference RPCs and Talk appearance reads resolve merged profile IDs
 and access preferences in the shared-state worker. Preference writes keep profile
@@ -317,6 +361,15 @@ backup-based planning fallback. Health metadata remains best-effort; the file an
 health row are not one atomic transaction. Synchronous config readers and writers
 keep their existing APIs; config parsing, validation, and plugin preparation retain
 their own execution paths.
+
+The native Gateway host supplies snapshot preparation through its registered
+config owner. Those reads prepare deferred migration and plugin metadata with the
+existing shared-state actor. Each read captures one exact owner before awaiting
+preparation and rejects its result if that owner closes; failures never select a
+replacement or switch readers. Direct servers and standalone config readers keep
+their existing execution path unless their host explicitly supplies this operation.
+Missing-file defaults still load plugin metadata only when those defaults need it.
+The operation changes no schema, persisted representation, or publication authority.
 
 SQLite worker transport preserves complete result values. Results within the
 64 MiB inline reply budget keep their existing reply path; larger results are

@@ -3119,6 +3119,11 @@ function runReleaseChecksShellStep(
   workdir = tempDirs.make("release-checks-shell-step-"),
 ) {
   const step = workflowStep(workflowJob(RELEASE_CHECKS_WORKFLOW, "resolve_target"), stepName);
+  mkdirSync(join(workdir, "workflow", "scripts"), { recursive: true });
+  copyFileSync(
+    "scripts/release-context-contains.sh",
+    join(workdir, "workflow", "scripts", "release-context-contains.sh"),
+  );
   const outputPath = resolve(workdir, "github-output");
   writeFileSync(outputPath, "", "utf8");
   const result = spawnSync("bash", ["-c", step.run ?? ""], {
@@ -3126,6 +3131,7 @@ function runReleaseChecksShellStep(
     encoding: "utf8",
     env: {
       ...env,
+      GITHUB_WORKSPACE: workdir,
       GITHUB_OUTPUT: outputPath,
       PATH: process.env.PATH,
     },
@@ -4180,6 +4186,10 @@ case "$2" in
     printf '%s\\n' "$MOCK_QUALIFIED_RUN"
     exit 0
     ;;
+  */actions/runs/"\${MOCK_QUALIFIED_RUN_ID:-}")
+    printf '%s\\n' "$MOCK_QUALIFIED_RUN"
+    exit 0
+    ;;
   */actions/artifacts/555)
     printf '%s\\n' "$MOCK_QUALIFIED_ARTIFACT"
     exit 0
@@ -4318,6 +4328,7 @@ globalThis.fetch = async (url) => {
     NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
     MOCK_QUALIFIED_ARCHIVE: archivePath,
     MOCK_QUALIFIED_ARTIFACT: JSON.stringify(artifactMetadata),
+    MOCK_QUALIFIED_RUN_ID: runId,
     MOCK_QUALIFIED_RUN: JSON.stringify({
       id: Number(runId),
       run_attempt: 1,
@@ -9970,6 +9981,9 @@ describe("package artifact reuse", () => {
     expect(workflow).toContain(
       "command: OPENCLAW_LIVE_APNS_REACHABILITY=1 OPENCLAW_LIVE_SESSION_EVENT_WAKE=1 node .release-harness/scripts/test-live-shard.mjs native-live-src-infra",
     );
+    expect(workflow).toContain(
+      "command: OPENCLAW_LIVE_CODEX_NODE_EXEC_TIMEOUT=1 node .release-harness/scripts/test-live-shard.mjs native-live-test",
+    );
     expect(workflow).toContain("suite_id: native-live-src-gateway-profiles-anthropic-smoke");
     expect(workflow).toContain("OPENCLAW_LIVE_GATEWAY_SETUP_TIMEOUT_MS=300000");
     expect(workflow).toContain("suite_id: native-live-src-gateway-profiles-anthropic-opus");
@@ -12016,12 +12030,9 @@ printf '%s\\n' "$DEEPSEEK_API_KEY" "$DEEPINFRA_API_KEY"`,
     expect(eligibility.env?.TRUSTED_REPOSITORY_URL).toBe(
       "https://github.com/${{ github.repository }}.git",
     );
-    expect(eligibility.run).toContain('context_repo="$(mktemp -d)"');
-    expect(eligibility.run).toContain("git init --bare --quiet");
-    expect(eligibility.run).toContain("--filter=blob:none");
-    expect(eligibility.run).toContain("FETCH_HEAD^{commit}");
-    expect(eligibility.run).not.toContain("git checkout");
-    expect(eligibility.run).not.toContain("git worktree");
+    expect(resolveStepNames.indexOf("Checkout trusted workflow helper")).toBeLessThan(
+      resolveStepNames.indexOf("Validate trusted QA tooling eligibility"),
+    );
 
     for (const contextRef of [
       "release/2026.8.1",
@@ -12037,8 +12048,9 @@ printf '%s\\n' "$DEEPSEEK_API_KEY" "$DEEPINFRA_API_KEY"`,
         TARGET_REF: targetSha,
       });
       expect(result.status, `${contextRef}: ${result.stderr}`).toBe(0);
-      expect(output, contextRef).toContain(
-        `normalized_ref=${contextRef.replace(/^refs\/(heads|tags)\//u, "")}\n`,
+      const normalizedRef = contextRef.replace(/^refs\/(heads|tags)\//u, "");
+      expect(output, contextRef).toBe(
+        `fetch_ref=refs/${normalizedRef.startsWith("v") ? "tags" : "heads"}/${normalizedRef}\n`,
       );
     }
 
@@ -12095,9 +12107,7 @@ printf '%s\\n' "$DEEPSEEK_API_KEY" "$DEEPINFRA_API_KEY"`,
       const { output, result } = runReleaseChecksShellStep(
         "Validate trusted QA tooling eligibility",
         {
-          CONTEXT_KIND: contextKind,
           CONTEXT_FETCH_REF: fetchRef,
-          CONTEXT_REF: fetchRef.replace(/^refs\/(heads|tags)\//u, ""),
           TARGET_REF: targetRef,
           TRUSTED_REPOSITORY_URL: fixture.repoUrl,
         },

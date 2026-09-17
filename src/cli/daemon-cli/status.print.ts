@@ -43,13 +43,7 @@ import {
   renderPortDiagnosticsForCli,
   resolvePortListeningAddresses,
 } from "./status.gather.js";
-
-function formatCliVersionLine(cli: DaemonStatus["cli"]): string | null {
-  if (!cli) {
-    return null;
-  }
-  return cli.entrypoint ? `${cli.version} (${shortenHomePath(cli.entrypoint)})` : cli.version;
-}
+import { printDaemonStatusVersions } from "./status.print.version.js";
 
 function formatConnectionLine(
   connection: NonNullable<DaemonStatus["connections"]>["established"][number],
@@ -63,6 +57,15 @@ function formatConnectionLine(
     ? ` cmd=${shortenHomePath(connection.commandLine)}`
     : "";
   return `${pid}${ppid}${direction}${command}${address}${commandLine}`;
+}
+
+function formatProbeEventLoop(
+  eventLoop: NonNullable<NonNullable<DaemonStatus["rpc"]>["eventLoop"]>,
+) {
+  const state = eventLoop.degraded ? "degraded" : "ok";
+  return `${state} max=${Math.round(eventLoop.delayMaxMs)}ms p99=${Math.round(
+    eventLoop.delayP99Ms,
+  )}ms util=${eventLoop.utilization} cpu=${eventLoop.cpuCoreRatio}`;
 }
 
 export function printDaemonStatus(status: DaemonStatus, opts: { json: boolean; deep?: boolean }) {
@@ -245,27 +248,12 @@ export function printDaemonStatus(status: DaemonStatus, opts: { json: boolean; d
     spacer();
   }
 
-  const gatewayVersion = rpc?.server?.version?.trim() || status.gateway?.version?.trim();
-  const cliVersionLine = formatCliVersionLine(status.cli);
-  if (gatewayVersion) {
-    if (cliVersionLine) {
-      defaultRuntime.log(`${label("CLI version:")} ${infoText(cliVersionLine)}`);
-    }
-    defaultRuntime.log(`${label("Gateway version:")} ${infoText(gatewayVersion)}`);
-    if (status.cli?.version && status.cli.version !== gatewayVersion) {
-      defaultRuntime.error(
-        warnText(
-          `Warning: this OpenClaw command is version ${status.cli.version}, but the running Gateway is version ${gatewayVersion}.`,
-        ),
-      );
-      defaultRuntime.error(
-        warnText(
-          "Check `openclaw --version`, `which openclaw`, and `openclaw gateway status --deep`; if this mismatch is unexpected, update PATH so `openclaw` points to the version you want, or reinstall the Gateway service from that same OpenClaw install.",
-        ),
-      );
-    }
-    spacer();
-  }
+  printDaemonStatusVersions(
+    status,
+    { label, infoText, warnText },
+    installBlock ??
+      `Compare the service entrypoint with \`which openclaw\`, then reinstall the service from the install you want with \`${reinstallCommand}\`.`,
+  );
 
   const runtimeLine = formatRuntimeStatus(
     service.inspectionReason ? { ...service.runtime, detail: undefined } : service.runtime,
@@ -309,7 +297,13 @@ export function printDaemonStatus(status: DaemonStatus, opts: { json: boolean; d
     // port-conflict diagnostics below, so it keeps the warm-up hint (as does unknown health
     // from shallow status). A wedged gateway that owns the port is reported as healthy ===
     // true with no stale gateway PIDs, so it is steered by the first branch.
-    if (status.health?.healthy === true && status.health.staleGatewayPids.length === 0) {
+    if (rpc.timedOut && rpc.gatewayReached) {
+      defaultRuntime.log(
+        warnText(
+          "Gateway accepted the connection, but the read probe timed out. Inspect event-loop load and retry before treating the service as unreachable.",
+        ),
+      );
+    } else if (status.health?.healthy === true && status.health.staleGatewayPids.length === 0) {
       defaultRuntime.log(
         warnText(
           "Gateway process is running and owns the gateway port, so this is not a warm-up delay. Check the probe credentials/config, or restart the gateway and inspect its logs if it stays unresponsive.",
@@ -326,7 +320,19 @@ export function printDaemonStatus(status: DaemonStatus, opts: { json: boolean; d
     if (rpc.ok) {
       defaultRuntime.log(`${label(probeLabel)} ${okText("ok")}`);
     } else {
-      defaultRuntime.error(`${label(probeLabel)} ${errorText("failed")}`);
+      const timeoutStatus = rpc.gatewayReached
+        ? rpc.eventLoop?.degraded
+          ? "timed out under event-loop load"
+          : "timed out after reaching Gateway"
+        : "timed out before reaching Gateway";
+      defaultRuntime.error(
+        `${label(probeLabel)} ${rpc.timedOut ? warnText(timeoutStatus) : errorText("failed")}`,
+      );
+      if (rpc.timedOut && rpc.eventLoop) {
+        defaultRuntime.error(
+          `${label("Gateway event loop:")} ${warnText(formatProbeEventLoop(rpc.eventLoop))}`,
+        );
+      }
       if (rpc.authWarning) {
         defaultRuntime.error(`${label("Probe auth:")} ${warnText(rpc.authWarning)}`);
       }

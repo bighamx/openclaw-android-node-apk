@@ -5,7 +5,7 @@ import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { getOrCreateSessionMcpRuntime } from "../../agents/agent-bundle-mcp-manager.test-support.js";
+import * as mcpFixture from "../../agents/agent-bundle-mcp-manager.test-support.js";
 import { testing as sessionMcpTesting } from "../../agents/agent-bundle-mcp-runtime.js";
 import * as bootstrapCache from "../../agents/bootstrap-cache.js";
 import {
@@ -5402,12 +5402,10 @@ describe("initSessionState preserves behavior overrides across /new and /reset",
     const storePath = await createStorePath("openclaw-stale-runtime-dispose-");
     const sessionKey = "agent:main:telegram:dm:runtime-stale-user";
     const existingSessionId = "stale-runtime-session";
-    const cfg = {
-      session: {
-        store: storePath,
-        reset: { mode: "idle", idleMinutes: 1 },
-      },
-    } as OpenClawConfig;
+    const cfg: OpenClawConfig = {
+      ...mcpFixture.unopenedMcpConfig,
+      session: { store: storePath, reset: { mode: "idle", idleMinutes: 1 } },
+    };
 
     await writeSessionStoreFast(storePath, {
       [sessionKey]: {
@@ -5416,7 +5414,7 @@ describe("initSessionState preserves behavior overrides across /new and /reset",
       },
     });
 
-    await getOrCreateSessionMcpRuntime({
+    await mcpFixture.getOrCreateSessionMcpRuntime({
       sessionId: existingSessionId,
       sessionKey,
       workspaceDir: path.dirname(storePath),

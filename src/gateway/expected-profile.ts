@@ -37,16 +37,11 @@ export function createExpectedProfileBinding(
     return undefined;
   }
   let invoked = false;
-  const currentError = () => {
-    try {
-      const profileId = client?.authenticatedUserProfile?.profileId;
-      // Only the authenticated side follows merges. A selection must never silently
-      // move to another account because its former ID now aliases that account.
-      if (profileId && readUserProfileIdentity(profileId)?.profileId === expectedProfileId) {
-        return undefined;
-      }
-    } catch {
-      // Unavailable canonical identity cannot prove the selected account.
+  const resolvedProfileError = (profileId: string | undefined) => {
+    // Only the authenticated side follows merges. A selection must never silently
+    // move to another account because its former ID now aliases that account.
+    if (profileId === expectedProfileId) {
+      return undefined;
     }
     return errorShape(
       ErrorCodes.INVALID_REQUEST,
@@ -59,9 +54,26 @@ export function createExpectedProfileBinding(
       },
     );
   };
+  const currentError = () => {
+    let resolvedProfileId: string | undefined;
+    try {
+      const profileId = client?.authenticatedUserProfile?.profileId;
+      resolvedProfileId = profileId ? readUserProfileIdentity(profileId)?.profileId : undefined;
+    } catch {
+      // Unavailable canonical identity cannot prove the selected account.
+    }
+    return resolvedProfileError(resolvedProfileId);
+  };
   return {
     assertCurrent: () => {
       const error = currentError();
+      if (error) {
+        throw new ExpectedProfileMismatchError(error);
+      }
+    },
+    /** Compare a profile resolved by the storage owner on its transaction connection. */
+    assertMatchesResolvedProfile: (profileId: string | undefined) => {
+      const error = resolvedProfileError(profileId);
       if (error) {
         throw new ExpectedProfileMismatchError(error);
       }

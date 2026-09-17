@@ -1726,7 +1726,6 @@ src/agents/embedded-agent-runner/run/incomplete-turn-resolution.ts	3
 src/agents/embedded-agent-runner/run/llm-idle-timeout.ts	3
 src/agents/embedded-agent-runner/run/message-tool-terminal.ts	1
 src/agents/embedded-agent-runner/run/message-transform-stream-wrapper.ts	3
-src/agents/embedded-agent-runner/run/payloads.ts	2
 src/agents/embedded-agent-runner/run/prompt-image-metadata.ts	4
 src/agents/embedded-agent-runner/run/recovery-message-action-capability.ts	1
 src/agents/embedded-agent-runner/run/run-attempt-result.ts	1
@@ -1854,7 +1853,7 @@ src/agents/session-placement-admission.ts	1
 src/agents/session-raw-append-message.ts	2
 src/agents/session-suspension.ts	1
 src/agents/session-tool-result-guard.ts	23
-src/agents/session-transcript-repair.ts	7
+src/agents/session-transcript-repair.ts	6
 src/agents/sessions/agent-session-base.ts	3
 src/agents/sessions/agent-session-extensions.ts	1
 src/agents/sessions/agent-session-models.ts	2
@@ -1888,7 +1887,7 @@ src/agents/subagents/announce/subagent-announce-delivery-retry.ts	2
 src/agents/subagents/announce/subagent-announce-delivery.runtime.ts	1
 src/agents/subagents/announce/subagent-announce-delivery.ts	1
 src/agents/subagents/announce/subagent-announce-origin.ts	2
-src/agents/subagents/announce/subagent-announce-output.ts	8
+src/agents/subagents/announce/subagent-announce-output.ts	7
 src/agents/subagents/completion/subagent-completion-admission.store.ts	2
 src/agents/subagents/registry/subagent-recovery-state.ts	1
 src/agents/subagents/registry/subagent-registry-lifecycle-delivery.ts	2
@@ -2411,7 +2410,6 @@ src/commands/setup.ts	1
 src/commands/status-all/channels.ts	2
 src/commands/status-all/gateway.ts	1
 src/commands/status.scan.bootstrap-shared.ts	1
-src/commands/status.scan.shared.ts	1
 src/commands/system-agent-with-inference.ts	2
 src/commands/tasks-json.ts	2
 src/commands/tasks.ts	2
@@ -3485,7 +3483,6 @@ src/transcripts/store-export-ownership.ts	2
 src/transcripts/store-sqlite.ts	2
 src/tts/openai-compatible-speech-provider.ts	1
 src/tts/status-config.ts	1
-src/tts/tts-auto-mode.ts	2
 src/tts/tts-config.ts	5
 src/tts/tts-core.ts	1
 src/tts/tts-payload.ts	2
