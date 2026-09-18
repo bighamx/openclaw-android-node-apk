@@ -227,7 +227,7 @@ extensions/codex/src/migration/session-binding-sidecars.ts	5
 extensions/codex/src/migration/source-files.ts	1
 extensions/codex/src/session-catalog-listing.ts	3
 extensions/codex/src/session-catalog-node-continue.ts	1
-extensions/codex/src/session-catalog-parsing.ts	8
+extensions/codex/src/session-catalog-parsing.ts	7
 extensions/codex/src/session-catalog-transcript-item.ts	1
 extensions/codex/src/session-catalog.ts	2
 extensions/codex/src/session-cli.ts	1
@@ -729,7 +729,7 @@ extensions/memory-core/src/session-backfill.ts	1
 extensions/memory-core/src/session-ingestion.ts	2
 extensions/memory-core/src/session-reset-recall-metadata.ts	3
 extensions/memory-core/src/short-term-promotion-apply.ts	4
-extensions/memory-core/src/short-term-promotion-memory-write.ts	4
+extensions/memory-core/src/short-term-promotion-memory-write.ts	2
 extensions/memory-core/src/short-term-promotion-record.ts	1
 extensions/memory-core/src/short-term-promotion-rehydrate.ts	1
 extensions/memory-core/src/short-term-promotion-utils.ts	4
@@ -1182,7 +1182,7 @@ extensions/telegram/src/channel-actions.ts	1
 extensions/telegram/src/client-fetch.ts	5
 extensions/telegram/src/doctor-contract.ts	3
 extensions/telegram/src/doctor.ts	12
-extensions/telegram/src/fetch.ts	13
+extensions/telegram/src/fetch.ts	12
 extensions/telegram/src/forum-service-message.ts	1
 extensions/telegram/src/group-config-helpers.ts	1
 extensions/telegram/src/group-history-window.ts	1
@@ -1376,7 +1376,7 @@ extensions/zalouser/src/text-styles-inline.ts	1
 extensions/zalouser/src/text-styles-ranges.ts	1
 extensions/zalouser/src/text-styles-source.ts	1
 extensions/zalouser/src/tool.ts	1
-extensions/zalouser/src/zalo-js.ts	19
+extensions/zalouser/src/zalo-js.ts	17
 extensions/zalouser/src/zca-client.ts	2
 packages/acp-core/src/runtime/errors.ts	6
 packages/acp-core/src/runtime/session-identity.ts	2
@@ -1628,7 +1628,7 @@ src/agents/code-mode-runtime.ts	2
 src/agents/code-mode-script-syntax.ts	1
 src/agents/code-mode-worker.ts	2
 src/agents/code-mode.ts	2
-src/agents/code-mode.worker.ts	7
+src/agents/code-mode.worker.ts	6
 src/agents/codex-mcp-config.ts	1
 src/agents/command/attempt-execution.helpers.ts	7
 src/agents/command/attempt-execution.ts	1
@@ -2327,7 +2327,7 @@ src/commands/doctor-session-incognito-key-repair-state.ts	8
 src/commands/doctor-session-incognito-key-repair.ts	4
 src/commands/doctor-session-snapshots.ts	5
 src/commands/doctor-session-sqlite-compact.ts	1
-src/commands/doctor-session-sqlite-migration-run.ts	6
+src/commands/doctor-session-sqlite-migration-run.ts	4
 src/commands/doctor-session-sqlite-readers.ts	5
 src/commands/doctor-session-sqlite-recover-report.ts	1
 src/commands/doctor-session-state-providers.ts	3
@@ -2515,7 +2515,7 @@ src/config/sessions/transcript-recent-window.ts	1
 src/config/sessions/transcript-replay.ts	1
 src/config/sessions/transcript-stream.ts	1
 src/config/sessions/transcript-tree.ts	3
-src/config/sessions/transcript.ts	15
+src/config/sessions/transcript.ts	14
 src/config/sessions/types.ts	1
 src/config/state-dir-dotenv.ts	1
 src/config/talk.ts	1
@@ -2642,8 +2642,7 @@ src/gateway/node-pairing-ssh-verify.ts	1
 src/gateway/node-registry-private.ts	1
 src/gateway/node-registry.ts	4
 src/gateway/openai-agent-run-usage.ts	1
-src/gateway/openai-http.ts	27
-src/gateway/openresponses-http.ts	3
+src/gateway/openai-http.ts	22
 src/gateway/operator-approval-snapshot.ts	4
 src/gateway/operator-approval-store.ts	8
 src/gateway/operator-scopes.ts	1
@@ -3559,7 +3558,7 @@ ui/src/app/native-web-chrome.ts	2
 ui/src/app/overlays.ts	1
 ui/src/app/question-prompt.ts	2
 ui/src/app/server-prefs-state.ts	14
-ui/src/app/server-prefs.ts	15
+ui/src/app/server-prefs.ts	10
 ui/src/app/settings.ts	9
 ui/src/app/stale-chunk-reload.ts	1
 ui/src/app/startup-settings.ts	1

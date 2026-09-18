@@ -55,7 +55,15 @@
   overflow: hidden;
   background: transparent !important;
   border: none !important;
+  border-radius: var(--radius-lg);
   box-shadow: none !important;
+}
+
+@supports (corner-shape: superellipse(1.5)) {
+  .chat.chat {
+    border-radius: calc(14px * var(--openclaw-corner-radius-scale));
+    corner-shape: superellipse(1.5);
+  }
 }
 
 /* Chat thread - scrollable middle section, transparent */
@@ -149,6 +157,11 @@
   align-items: flex-start;
   padding-bottom: var(--chat-turn-gap);
   margin-inline: 4px 16px;
+}
+
+/* Both sides share the content edge inside the trailing avatar gutter. */
+.chat-group:where(:not(.user), .chat-group--peer) {
+  padding-inline-end: var(--chat-avatar-gutter);
 }
 
 /* User messages on right */

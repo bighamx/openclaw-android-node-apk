@@ -2114,6 +2114,7 @@ describe("scripts/lib/ci-node-test-plan.mts", () => {
       "src/commands/doctor-session-sqlite.shared-orphan.test.ts",
       "src/commands/doctor-session-sqlite.shared-store.test.ts",
       "src/commands/doctor-session-state-providers.test.ts",
+      "src/commands/doctor-session-title-repair.test.ts",
       "src/commands/doctor-session-transcript-headers.test.ts",
       "src/commands/doctor-session-transcript-labels.test.ts",
       "src/commands/doctor-session-transcripts.incident.test.ts",
@@ -3244,6 +3245,7 @@ describe("scripts/lib/ci-node-test-plan.mts", () => {
     const core = createGatewayCoreVitestConfig({});
     const server = createGatewayServerVitestConfig({});
     const methods = createGatewayMethodsVitestConfig({});
+    expect(methods.test?.pool).toBe("forks");
     expect(worker.test?.pool).toBe("forks");
     expect(core.test?.isolate).toBe(true);
     for (const shared of [worker, server, methods]) {

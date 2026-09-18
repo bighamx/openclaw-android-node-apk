@@ -1,5 +1,7 @@
 // These consumers need the host-owned SQLite broker, which runs in forked processes.
 export const databaseWorkerCoreTestFiles = [
+  "src/agents/tools/message-tool.internal-source-reply.integration.test.ts",
+  "src/media/store.cleanup.test.ts",
   "src/state/agent-provenance.test.ts",
   "src/commands/agents.commands.list.worker.test.ts",
   "src/state/openclaw-agent-worker-store.test.ts",
@@ -17,6 +19,15 @@ export const databaseWorkerCoreTestFiles = [
   "src/plugins/conversation-binding.worker.test.ts",
   "src/plugins/conversation-binding.sqlite.test.ts",
   "src/state/backup-run-records.test.ts",
+  "src/tasks/task-registry.async-restore.test.ts",
+  "src/tasks/task-registry-flow-sync.test.ts",
+  "src/tasks/task-registry.restore-ownership.test.ts",
+  "src/agents/agent-harness-completion-delivery.test.ts",
+  "src/agents/embedded-agent-runner/context-engine-maintenance.lifecycle.test.ts",
+  "src/agents/subagents/registry/subagent-registry-recovery-acceptance.test.ts",
+  "src/agents/subagents/registry/subagent-registry-task-replacement.test.ts",
+  "src/tasks/task-registry-session-index.test.ts",
+  "src/tasks/task-registry.store.test.ts",
   "src/claws/provenance-runtime-read.async.test.ts",
   "src/projects/project-registry.test.ts",
   "src/commands/doctor-project-clone-shape.test.ts",
@@ -70,6 +81,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/plugins/plugin-metadata-state-worker.test.ts",
   "src/plugins/official-external-plugin-catalog-snapshot-store.worker.test.ts",
   "src/plugins/official-external-plugin-catalog.test.ts",
+  "src/infra/device-pairing.test.ts",
   "src/infra/session-cost-usage-metadata.test.ts",
   "src/plugins/installed-plugin-index-records.test.ts",
   "src/acp/runtime/session-meta-doctor.test.ts",
@@ -118,6 +130,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/plugin-state/plugin-state-store.retention.test.ts",
   "src/plugin-state/plugin-state-store.runtime.test.ts",
   "src/plugin-state/plugin-state-store.schema.test.ts",
+  "test/e2e/qa-lab/runtime/gateway-tls-pinning.test.ts",
   "src/plugin-state/plugin-state-worker.test.ts",
   "src/agents/tools/cron-tool.output-contract.test.ts",
   "src/plugins/services.cron.test.ts",
@@ -128,6 +141,7 @@ const databaseWorkerCoreTestFileSet = new Set(databaseWorkerCoreTestFiles);
 
 // Preserve watch admission for consumers previously inferred into fast lanes.
 export const databaseWorkerCoreFormerFastKinds = new Map([
+  ["src/infra/device-pairing.test.ts", "unitFast"],
   ["src/logging/diagnostic-stuck-session-recovery.runtime.test.ts", "unitFast"],
   ["src/flows/search-setup.test.ts", "unitFastIsolated"],
   ["src/security/audit-config-symlink.test.ts", "unitFastIsolated"],

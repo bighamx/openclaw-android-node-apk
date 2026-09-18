@@ -24,12 +24,28 @@ and publishes the result. Avoid exposing a generic SQL callback to application
 code or adding an asynchronous wrapper around an existing asynchronous facade.
 The plugin KV API already has asynchronous methods over its SQLite owner.
 
+Managed outgoing image metadata lookups and cleanup inventories read through the
+shared-state worker, retaining their writable, creating database-open behavior.
+Typed columns, ordering, cleanup claims, and original-media references are unchanged.
+Downloads retain ticket or owner authorization and current transcript membership;
+verified descriptors and post-render thumbnail checks remain in place. Inserts, message-commit
+promotion, cleanup claim/deletion transactions, Doctor imports, and native session
+metadata reads keep their existing owners and remain separate worker migrations.
+
 Explicit promotion notice and claim annotations execute in the shared-state
 worker. The CLI awaits their best-effort completion before reporting results;
 storage failures still do not fail a promotion claim. Notice recording retains
 its read-only preflight and atomic sorted slug union, preserving the other feed
 fields. Empty notices leave absent databases absent, and already-recorded notices
 do not open a writer. Claim upserts, stored formats, and retention are unchanged.
+
+Update-check telemetry reads its cached response and retained session-creation
+count through the shared-state worker. Successful responses use the existing
+machine-state transaction, which preserves a newer persisted response. The CLI
+awaits preview reads, and Gateway maintenance joins accepted checks through
+persistence before shutdown retires shared state. Consent, payload fields,
+request policy, cache periods, and the bounded in-memory retry state are unchanged.
+Cold CLI plugin-inventory preparation remains with the plugin metadata owner.
 
 Plugin conversation standing approvals load and upsert in the shared-state worker.
 Core publishes an always-allow grant only after durable completion, serializes cache

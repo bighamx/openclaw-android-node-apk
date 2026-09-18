@@ -3,7 +3,6 @@ import { performance } from "node:perf_hooks";
 import { isDeepStrictEqual } from "node:util";
 import { listAgentIds, withAgentRosterFactsBatch } from "../agents/agent-scope-config.js";
 import { registerPreparedModelRuntimePublicationListener } from "../agents/prepared-model-runtime.publication-events.js";
-import { buildSubagentSessionListReadIndex } from "../agents/subagents/registry/subagent-registry-read.js";
 import { resolveSessionParentSessionKey } from "../channels/plugins/session-conversation.js";
 import {
   loadCombinedSessionStoreForGatewayCore,
@@ -17,15 +16,12 @@ import {
 import type { SessionStoreTarget } from "../config/sessions/targets.js";
 import type { InternalSessionEntry as SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { buildProjectedAgentRunIndex } from "../infra/agent-run-registry.js";
 import { isIncognitoSessionKey, parseAgentSessionKey } from "../routing/session-key.js";
-import { isAcpSessionKey } from "../sessions/session-key-utils.js";
 import {
   onSessionIdentityMutation,
   onSessionLifecycleEvent,
 } from "../sessions/session-lifecycle-events.js";
 import { sessionChanges, type SessionRowChange } from "../sessions/session-row-changes.js";
-import { onInternalSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import { readOpenClawAgentDatabaseIdentity } from "../state/openclaw-agent-db-identity.js";
 import { withOpenClawAgentDatabaseReadOnly } from "../state/openclaw-agent-db-readonly.js";
 import { listOpenIncognitoAgentDatabases } from "../state/openclaw-agent-db.js";
@@ -35,18 +31,18 @@ import {
 } from "../state/openclaw-agent-db.paths.js";
 import { retainUserProfileCatalog } from "../state/user-profile-list.js";
 import { readSessionRowFacts } from "./server-methods/session-placement-read-projection.js";
-import { compareSessionEntryPairs } from "./session-list-order.js";
 import { yieldSessionListWork } from "./session-projection-work.js";
+import { withPreparedSessionRows, type SessionRowReadView } from "./session-row-prepared-read.js";
 import { createSessionRowProjectionBackfill } from "./session-row-projection-backfill.js";
+import { createSessionRowProjectionContext } from "./session-row-projection-context.js";
 import {
   readResidentSessionRow,
   readSessionRowEntry,
 } from "./session-row-projection-materialize.js";
 import * as records from "./session-row-projection-record.js";
+import { createSessionRowProjectionTranscriptUpdates } from "./session-row-projection-transcript.js";
 import { prepareSessionRowScopes } from "./session-row-scope.js";
 import { resolveStoredSessionKeyForAgentStore } from "./session-store-key.js";
-import { buildSessionListRowMetadataContext } from "./session-utils-projection.js";
-import { resolveDeletedAgentIdFromSessionKey } from "./session-utils-store.js";
 
 /** Committed publications own invalidation; each admitted physical store is hydrated once. */
 export async function createSessionRowProjection(params: {
@@ -74,13 +70,11 @@ export async function createSessionRowProjection(params: {
   let topologyDirty = true,
     catalogDirty = params.getModelCatalog ? Symbol("catalog") : undefined,
     disposed = false;
-  let epoch = 0,
-    preparedEpoch = -1;
+  let epoch = 0;
   let materializedCount = 0;
   let scope: ReturnType<typeof prepareSessionRowScopes>;
   let pending: Promise<void> | undefined;
-  let context = buildSessionListRowMetadataContext({ now: Date.now() });
-  const subagentInputs = context.subagentRuns.inputs;
+  const metadata = createSessionRowProjectionContext();
   const backfill = createSessionRowProjectionBackfill({
     ready: ensureMaterialized,
     read: (id) => rows.get(id),
@@ -101,23 +95,11 @@ export async function createSessionRowProjection(params: {
       }
     },
   });
-  function dependents(row: records.Row) {
-    return new Set(records.references(row).flatMap((ref) => Array.from(byParent.get(ref) ?? [])));
-  }
-  function related(row: records.Row) {
-    for (const id of dependents(row)) {
-      dirty.add(id);
-    }
-    for (const parent of row.parents) {
-      for (const id of byKey.get(parent) ?? []) {
-        dirty.add(id);
-      }
-    }
-  }
   function remove(id: string) {
+    transcriptUpdates.remove(id);
     const row = rows.get(id);
     if (row) {
-      related(row);
+      records.markRelated(row, indexes, dirty);
       records.index(row, indexes, true);
       rows.delete(id);
     }
@@ -127,6 +109,9 @@ export async function createSessionRowProjection(params: {
   function put(row: records.Row) {
     const previous = rows.get(records.identity(row));
     if (previous) {
+      if (previous.generation !== row.generation) {
+        transcriptUpdates.remove(records.identity(row));
+      }
       records.index(previous, indexes, true);
     }
     rows.set(records.identity(row), row);
@@ -142,7 +127,7 @@ export async function createSessionRowProjection(params: {
       [
         storedEntry.parentSessionKey ?? resolveSessionParentSessionKey(row.key),
         storedEntry.spawnedBy,
-        ...(context.subagentRunsByChildSessionKey.get(row.key) ?? []).map(
+        ...(metadata.current.subagentRunsByChildSessionKey.get(row.key) ?? []).map(
           (run) => run.controllerSessionKey || run.requesterSessionKey,
         ),
       ].flatMap((key) =>
@@ -153,7 +138,7 @@ export async function createSessionRowProjection(params: {
     );
     const changed = !isDeepStrictEqual([storedEntry, parents], [row.storedEntry, row.parents]);
     if (changed) {
-      related(row);
+      records.markRelated(row, indexes, dirty);
     }
     const generation =
       !row.entry ||
@@ -176,15 +161,15 @@ export async function createSessionRowProjection(params: {
     };
     put(next);
     if (changed) {
-      related(next);
+      records.markRelated(next, indexes, dirty);
     }
     return next;
   }
-  function inScope(row: records.Row, query: records.Query) {
+  function inScope(row: records.Row, query: records.Query, logicalOwnerOnly = false) {
     return (
       (!query.agentId ||
         row.agentId === query.agentId ||
-        row.storeTarget.agentId === query.agentId) &&
+        (!logicalOwnerOnly && row.storeTarget.agentId === query.agentId)) &&
       (!query.storePath ||
         (scope?.physicalPaths(query.storePath, query.agentId) ?? [query.storePath]).includes(
           row.storeTarget.storePath,
@@ -302,12 +287,6 @@ export async function createSessionRowProjection(params: {
       const id = records.identity(fields);
       admitted.add(id);
       if (!rows.has(id) || replaced.has(target.storeTarget.storePath)) {
-        if (replaced.has(target.storeTarget.storePath) && isAcpSessionKey(fields.key)) {
-          // Retain partial ACP-key migration at physical admission, never on a clean read.
-          resolveDeletedAgentIdFromSessionKey(cfg, fields.key, entry, {
-            acpMetadataSessionKey: fields.key,
-          });
-        }
         remove(id);
         acquireEntry(records.create(fields), entry);
         dirty.add(id);
@@ -329,10 +308,8 @@ export async function createSessionRowProjection(params: {
   }
   function mark(change: SessionRowChange) {
     epoch++;
+    metadata.invalidate(change);
     if ("all" in change) {
-      if (change.scope === "profiles") {
-        context.userProfileIdentityById.clear();
-      }
       topologyDirty ||= change.scope === "stores" || change.scope === "config";
       if (params.getModelCatalog && (change.scope === "catalog" || change.scope === "config")) {
         catalogDirty = Symbol("catalog");
@@ -341,13 +318,15 @@ export async function createSessionRowProjection(params: {
         dirty.add(records.identity(row));
         backfill.enqueue(records.identity(row), change);
       }
+    } else if (change.scope === "automation") {
+      records.markAutomation(matching({ key: change.sessionKey }), change.agentId, dirty);
     } else {
       const query = { ...change, key: change.sessionKey };
       const exact = matching(query);
       const found = new Set([...exact, ...matching(query, "id")]);
       for (const previous of found) {
         dirty.add(records.identity(previous));
-        related(previous);
+        records.markRelated(previous, indexes, dirty);
         const row = inOwnerContext(() => {
           const entry = readSessionRowEntry(previous);
           return records.changesRowStructure(previous, entry)
@@ -387,24 +366,11 @@ export async function createSessionRowProjection(params: {
       /* Dirty keys retain failed background work for the next reader. */
     });
   }
-  function prepare() {
-    if (preparedEpoch === epoch) {
-      return;
-    }
-    context = buildSessionListRowMetadataContext({
-      now: Date.now(),
-      subagentRuns: buildSubagentSessionListReadIndex(),
-      userProfileIdentityById: context.userProfileIdentityById,
-    });
-    context.projectedAgentRuns = buildProjectedAgentRunIndex();
-    Object.assign(subagentInputs, context.subagentRuns.inputs);
-    preparedEpoch = epoch;
-  }
   function materialize(row: records.Row, configuredAgentIds = new Set(listAgentIds(cfg))) {
     if (!row.entry) {
       return false;
     }
-    const links = [...dependents(row)].flatMap((child) => {
+    const links = [...records.dependents(row, byParent)].flatMap((child) => {
       let value = rows.get(child);
       if (value && dirty.has(child)) {
         value = acquireEntry(value, readSessionRowEntry(value));
@@ -413,13 +379,15 @@ export async function createSessionRowProjection(params: {
         ? [{ key: value.key, entry: value.entry }]
         : [];
     });
+    // Keyed child refreshes reorder the parent index; presentation must stay stable.
+    links.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     const prepared = readResidentSessionRow({
       row: { ...row, entry: row.entry },
       cfg,
       modelCatalog,
       configuredAgentIds,
-      context,
-      subagentInputs,
+      context: metadata.current,
+      subagentInputs: metadata.subagentInputs,
       gatewayContext: params.context,
       links,
       readSourceEntry: (key) => {
@@ -443,7 +411,7 @@ export async function createSessionRowProjection(params: {
       return;
     }
     const started = performance.now();
-    prepare();
+    metadata.prepare(epoch);
     const configuredAgentIds = new Set(listAgentIds(cfg));
     for (const [offset, id] of ids.entries()) {
       if (offset > 0 && performance.now() - started >= 12) {
@@ -503,15 +471,32 @@ export async function createSessionRowProjection(params: {
         },
       ));
   }
+  const transcriptUpdates = createSessionRowProjectionTranscriptUpdates({
+    matching,
+    mark,
+    read: (id) => rows.get(id),
+    refresh(id) {
+      epoch++;
+      dirty.add(id);
+      backfill.enqueue(id);
+      void ensureMaterialized().catch(() => {});
+    },
+  });
   const stop = [
     retainUserProfileCatalog(),
     sessionChanges.subscribe(mark),
     onSessionLifecycleEvent(mark),
-    registerPreparedModelRuntimePublicationListener(() => mark({ all: true, scope: "catalog" })),
-    onInternalSessionTranscriptUpdate((update) => {
-      if (update.target) {
-        mark(update.target);
+    registerPreparedModelRuntimePublicationListener((event) => {
+      // An incomplete catalog read still needs the next publication to recover its rows.
+      if (
+        (event.phase === "catalog-published" || event.phase === "catalog-failed") &&
+        event.modelFactsChanged === false &&
+        modelCatalog !== undefined &&
+        (!(modelCatalog instanceof Map) || ![...modelCatalog.values()].includes(undefined))
+      ) {
+        return;
       }
+      mark({ all: true, scope: "catalog" });
     }),
     onSessionIdentityMutation((mutation) => {
       for (const key of mutation.previous.sessionKeys) {
@@ -519,7 +504,7 @@ export async function createSessionRowProjection(params: {
           if (mutation.previous.sessionId && row.entry?.sessionId !== mutation.previous.sessionId) {
             continue;
           }
-          related(row);
+          records.markRelated(row, indexes, dirty);
           if ("current" in mutation && mutation.current.sessionKeys.includes(row.key)) {
             put({
               ...row,
@@ -561,7 +546,7 @@ export async function createSessionRowProjection(params: {
       }
       let row = lookup(query);
       if (row && isIncognitoSessionKey(row.key)) {
-        prepare();
+        metadata.prepare(epoch);
         materialize(row);
       } else if (row && dirty.has(records.identity(row))) {
         // Keyed reads refresh only their owner; unrelated bulk work never gates a response.
@@ -576,6 +561,7 @@ export async function createSessionRowProjection(params: {
     });
   function dispose() {
     disposed = true;
+    transcriptUpdates.dispose();
     backfill.dispose();
     for (const unsubscribe of stop) {
       unsubscribe();
@@ -609,33 +595,45 @@ export async function createSessionRowProjection(params: {
           }
         }
       }
-      const candidates = parent ? [...children].map((id) => rows.get(id)) : matching(query);
-      return withAgentRosterFactsBatch(cfg, () =>
-        candidates
+      return withAgentRosterFactsBatch(cfg, () => {
+        const sessionIdOrKey = query.sessionIdOrKey;
+        let keys: Set<string> | undefined;
+        if (sessionIdOrKey) {
+          // Broad publications can change IDs before the resident index has caught up.
+          for (const id of dirty) {
+            const row = rows.get(id);
+            if (row && inScope(row, query, true)) {
+              acquireEntry(row, readSessionRowEntry(row));
+            }
+          }
+          const indexed = { ...query, key: sessionIdOrKey };
+          keys = new Set([...matching(indexed, "id"), ...matching(indexed)].map((row) => row.key));
+        }
+        // Keep every physical competitor; federation precedes ID and visibility filtering.
+        const candidates = keys
+          ? [...keys].flatMap((key) => matching({ ...query, key }))
+          : parent
+            ? [...children].map((id) => rows.get(id))
+            : matching(query);
+        const selected = candidates
           .map((row) =>
-            row && dirty.has(records.identity(row))
+            row && !sessionIdOrKey && dirty.has(records.identity(row))
               ? acquireEntry(row, readSessionRowEntry(row))
               : row,
           )
           .filter(records.hasEntry)
-          .filter((row) => inScope(row, query) && (!query.agentId || row.agentId === query.agentId))
-          .toSorted((a, b) =>
-            compareSessionEntryPairs([a.key, a.entry], [b.key, b.entry], query.sortBy),
-          ),
-      );
+          .filter((row) => inScope(row, query, true));
+        return records.sort(selected, query.sortBy);
+      });
     });
   }
-  const present = (
-    record: NonNullable<ReturnType<typeof describe>>,
-    options: records.SnapshotOptions = {},
-  ) => records.present(record, context, options);
   await inOwnerContext(refreshBatch).catch((error: unknown) => {
     dispose();
     throw error;
   });
   void ensureMaterialized().catch(() => {});
   backfill.start();
-  return {
+  const projection = {
     capture(query: records.Lookup) {
       if (!disposed && topologyDirty) {
         inOwnerContext(topology);
@@ -658,7 +656,14 @@ export async function createSessionRowProjection(params: {
       return row?.entry?.sessionId === query.sessionId ? [row] : [];
     },
     describe,
-    present,
+    present: (record: records.MaterializedRow, options?: records.SnapshotOptions) =>
+      records.present(record, metadata.current, options),
+    withPreparedExactRows<T>(
+      queries: (config: OpenClawConfig) => readonly records.Lookup[],
+      consume: (read: SessionRowReadView) => T,
+    ): ReturnType<typeof withPreparedSessionRows<T>> {
+      return withPreparedSessionRows(projection, () => !disposed, queries, consume);
+    },
     ensureMaterialized,
     get materializedCount() {
       return materializedCount;
@@ -674,9 +679,9 @@ export async function createSessionRowProjection(params: {
         inOwnerContext(topology);
       }
       if (!disposed) {
-        prepare();
+        metadata.prepare(epoch);
       }
-      return { cfg, modelCatalog, rowContext: context, scope: scope.select };
+      return { cfg, modelCatalog, rowContext: metadata.current, scope: scope.select };
     },
     isCurrent,
     selectEntries,
@@ -684,11 +689,15 @@ export async function createSessionRowProjection(params: {
     snapshot(query: records.Lookup, options: records.SnapshotOptions = {}) {
       const record = describe(query);
       return record
-        ? { row: present(record, options), lifecycleRunId: record.entry.lifecycleRunId }
+        ? {
+            row: records.present(record, metadata.current, options),
+            lifecycleRunId: record.entry.lifecycleRunId,
+          }
         : { row: null };
     },
     dispose,
   };
+  return projection;
 }
 
 export type SessionRowProjection = Awaited<ReturnType<typeof createSessionRowProjection>>;

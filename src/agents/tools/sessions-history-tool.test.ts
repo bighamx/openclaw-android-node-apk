@@ -7,6 +7,10 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { Value } from "typebox/value";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  ChatHistoryParamsSchema,
+  ChatPendingInputsPageSchema,
+} from "../../../packages/gateway-protocol/src/schema/logs-chat.js";
+import {
   applySessionStoreProjection,
   replaceSessionEntrySync,
 } from "../../config/sessions/session-accessor.js";
@@ -144,6 +148,9 @@ describe("sessions_history redaction", () => {
     );
 
     expect(tool.outputSchema).toBeDefined();
+    expect(Value.Check(tool.parameters, { sessionKey: "main", limit: 1000 })).toBe(true);
+    expect(Value.Check(tool.parameters, { sessionKey: "main", limit: 1001 })).toBe(false);
+    expect(Value.Check(ChatHistoryParamsSchema, { sessionKey: "main", limit: 1001 })).toBe(false);
     expect(Value.Check(tool.outputSchema!, result.details)).toBe(true);
     expect(result.details).not.toHaveProperty("sessionLinkRule");
     expect(linkedResult.details).toHaveProperty("sessionLinkRule", SESSION_LINK_RULE);
@@ -151,8 +158,24 @@ describe("sessions_history redaction", () => {
     expect(
       Value.Check(tool.outputSchema!, { status: "forbidden", error: "hidden", extra: true }),
     ).toBe(false);
+    const pendingInputs = {
+      items: [
+        {
+          id: "pending-1",
+          runId: "run-1",
+          message: { role: "user", content: "next" },
+          acceptedAt: 1,
+          state: "queued",
+        },
+      ],
+      total: 1,
+    };
+    expect(Value.Check(ChatPendingInputsPageSchema, pendingInputs)).toBe(true);
+    expect(Value.Check(tool.outputSchema!, { ...readHistoryDetails(result), pendingInputs })).toBe(
+      true,
+    );
     expect(compactToolOutputHint(tool.outputSchema)).toBe(
-      '{ bytes: number; contentRedacted: boolean; contentTruncated: boolean; droppedMessages: boolean; messages: Array<unknown>; sessionKey: string; truncated: boolean; hasMore?: boolean; nextOffset?: number; offset?: number; pendingInputs?: { items: Array<{ acceptedAt: number; id: string; message: unknown; state: "queued" | "cancelled" | "interrupted" }>; total: number; nextBefore?: number }; sessionLinkRule?: string; totalMessages?: number } | { error: string; status: "error" | "forbidden" }',
+      '{ bytes: number; contentRedacted: boolean; contentTruncated: boolean; droppedMessages: boolean; messages: Array<unknown>; sessionKey: string; truncated: boolean; hasMore?: boolean; nextOffset?: number; offset?: number; pendingInputs?: { items: Array<{ acceptedAt: number; id: string; message: unknown; state: "queued" | "cancelled" | "interrupted"; runId?: string }>; total: number; nextBefore?: number }; sessionLinkRule?: string; totalMessages?: number } | { error: string; status: "error" | "forbidden" }',
     );
   });
 

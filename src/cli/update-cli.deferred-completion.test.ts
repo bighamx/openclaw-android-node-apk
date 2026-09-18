@@ -217,7 +217,17 @@ describe("update-cli child-owned deferred completion", () => {
 
       if (writes) {
         expect(replaceConfigFile).toHaveBeenCalledExactlyOnceWith({ nextConfig: config });
-        expect(mutateConfigFileWithRetry).toHaveBeenCalledWith({ mutate: expect.any(Function) });
+        expect(mutateConfigFileWithRetry).toHaveBeenCalledExactlyOnceWith({
+          mutate: expect.any(Function),
+          writeOptions: {
+            assertCurrent: mode === "finalize" ? expect.any(Function) : undefined,
+          },
+        });
+        if (mode === "finalize") {
+          expect(
+            vi.mocked(mutateConfigFileWithRetry).mock.calls[0]?.[0].writeOptions?.assertCurrent,
+          ).toThrow("Update operation ownership has closed.");
+        }
       } else {
         expect(replaceConfigFile).not.toHaveBeenCalled();
       }
@@ -365,6 +375,7 @@ describe("update-cli child-owned deferred completion", () => {
   });
 
   it("uses the Windows parent process start time for old post-core parents", async () => {
+    const parentStartedAtMs = Date.now() - 1_000;
     const preUpdateConfig = stableWhatsAppConfig();
     const postDoctorConfig = stableConfig();
     await setupPostCoreConfigFixture({ preUpdateConfig, postDoctorConfig });
@@ -373,7 +384,7 @@ describe("update-cli child-owned deferred completion", () => {
       expect(file).toBe("powershell.exe");
       expect(commandArgs).toContain("-NonInteractive");
       return {
-        stdout: new Date(Date.now() - 1_000).toISOString(),
+        stdout: new Date(parentStartedAtMs).toISOString(),
         stderr: "",
       };
     });

@@ -24,9 +24,20 @@ import {
   createActiveWorkSnapshot,
   createSignaledStart,
   expectRestartCloseCall,
+  originalPlatformDescriptor,
+  setPlatform,
+  shutdownBudgetCases,
 } from "./run-loop.test-support.js";
 
 const closeLogTempDirs = useAutoCleanupTempDirTracker(afterEach);
+
+vi.mock("node:fs/promises", async (original) => {
+  const actual = await original<typeof import("node:fs/promises")>();
+  // Foreground fixtures must not inherit the CI runner's systemd service or filesystem timing.
+  const readFile = (...args: Parameters<typeof actual.readFile>) =>
+    args[0] === "/proc/self/cgroup" ? Promise.resolve("0::/\n") : actual.readFile(...args);
+  return { ...actual, readFile, default: { ...actual, readFile } };
+});
 
 const systemctl = vi.fn(async () => ({
   code: 0,
@@ -313,17 +324,6 @@ vi.mock("./shutdown-hard-exit.js", () => ({
 
 const LOOP_SIGNALS = ["SIGTERM", "SIGINT", "SIGUSR1"] as const;
 type LoopSignal = (typeof LOOP_SIGNALS)[number];
-const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
-
-function setPlatform(platform: string) {
-  if (!originalPlatformDescriptor) {
-    return;
-  }
-  Object.defineProperty(process, "platform", {
-    ...originalPlatformDescriptor,
-    value: platform,
-  });
-}
 
 function removeNewSignalListeners(signal: LoopSignal, existing: Set<(...args: unknown[]) => void>) {
   for (const listener of process.listeners(signal)) {
@@ -489,6 +489,7 @@ let supervisorEnvSnapshot: ReturnType<typeof captureEnv> | undefined;
 
 beforeEach(async () => {
   vi.useRealTimers();
+  setPlatform("linux");
   systemctl.mockReset().mockResolvedValue({
     code: 0,
     stdout: "LoadState=loaded\nTimeoutStopUSec=5min 30s",
@@ -1674,23 +1675,7 @@ describe("runGatewayLoop", () => {
     });
   });
 
-  it.each<{
-    signal: "SIGTERM" | "SIGUSR1";
-    honorsAbort: boolean;
-    supervisor: "systemd" | "launchd" | "foreground";
-    waitMs?: number;
-    installedStopMs?: number;
-  }>([
-    { signal: "SIGTERM", honorsAbort: false, supervisor: "systemd", installedStopMs: 90_000 },
-    { signal: "SIGTERM", honorsAbort: false, supervisor: "systemd" },
-    { signal: "SIGTERM", honorsAbort: false, supervisor: "foreground" },
-    { signal: "SIGTERM", honorsAbort: true, supervisor: "systemd" },
-    { signal: "SIGUSR1", honorsAbort: false, supervisor: "systemd" },
-    { signal: "SIGTERM", honorsAbort: false, supervisor: "launchd" },
-    { signal: "SIGUSR1", honorsAbort: false, supervisor: "launchd" },
-    { signal: "SIGUSR1", honorsAbort: false, supervisor: "systemd", waitMs: 0 },
-    { signal: "SIGUSR1", honorsAbort: false, supervisor: "systemd", waitMs: 600_000 },
-  ])(
+  it.each(shutdownBudgetCases)(
     "bounds $supervisor $signal cleanup when a long provider call honors abort=$honorsAbort (wait=$waitMs, installedStop=$installedStopMs)",
     async ({ signal, honorsAbort, supervisor, waitMs, installedStopMs }) => {
       vi.clearAllMocks();
@@ -1703,8 +1688,11 @@ describe("runGatewayLoop", () => {
         .match(/^SuccessExitStatus=(.+)$/m)?.[1]
         ?.split(" ")
         .map(Number);
-      if (supervisor === "systemd") {
+      if (supervisor === "systemd" || supervisor === "external-systemd") {
         process.env.OPENCLAW_SYSTEMD_UNIT = "openclaw-gateway.service";
+        if (supervisor === "external-systemd") {
+          process.env.OPENCLAW_SUPERVISOR_MODE = "external";
+        }
         setPlatform("linux");
       } else if (supervisor === "launchd") {
         process.env.OPENCLAW_LAUNCHD_LABEL = "ai.openclaw.gateway";
@@ -2994,13 +2982,14 @@ describe("runGatewayLoop", () => {
     await withIsolatedSignals(async ({ captureSignal }) => {
       const closeFirst = createCloseMock();
       const closeThird = createCloseMock();
+      const { start: firstStart, started } = createSignaledStart(closeFirst);
       const { runtime, exited } = createRuntimeWithExitSignal();
       let resolveThirdStart: (() => void) | null = null;
       const startedThird = new Promise<void>((resolve) => {
         resolveThirdStart = resolve;
       });
       const start = vi.fn();
-      start.mockResolvedValueOnce(createGatewayServer(closeFirst));
+      start.mockImplementationOnce(firstStart);
       start.mockRejectedValueOnce(new Error("restart startup failed"));
       start.mockImplementationOnce(async () => {
         resolveThirdStart?.();
@@ -3008,17 +2997,15 @@ describe("runGatewayLoop", () => {
       });
 
       const { runGatewayLoop } = await import("./run-loop.js");
-      void runGatewayLoop({
+      const loop = runGatewayLoop({
         start: start as unknown as Parameters<typeof runGatewayLoop>[0]["start"],
         runtime: runtime as unknown as Parameters<typeof runGatewayLoop>[0]["runtime"],
       });
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
-      const sigusr1 = captureSignal("SIGUSR1");
-      const sigterm = captureSignal("SIGTERM");
-
+      let stop: (() => void) | undefined;
       try {
+        await Promise.race([waitForStart(started), loop]);
+        stop = captureSignal("SIGTERM");
+        const sigusr1 = captureSignal("SIGUSR1");
         sigusr1();
         await waitForLoopCondition(
           () =>
@@ -3046,8 +3033,8 @@ describe("runGatewayLoop", () => {
         expect(reloadTaskRuntimeStateFromStore).toHaveBeenCalledTimes(2);
         expect(acquireGatewayLock).toHaveBeenCalledTimes(3);
       } finally {
-        sigterm();
-        await expect(exited).resolves.toBe(0);
+        stop?.();
+        await Promise.race([expect(exited).resolves.toBe(0), loop]);
       }
     });
   });
@@ -3056,7 +3043,7 @@ describe("runGatewayLoop", () => {
     vi.clearAllMocks();
     reloadTaskRuntimeStateFromStore.mockReset();
     reloadTaskRuntimeStateFromStore
-      .mockImplementationOnce(() => {
+      .mockImplementationOnce(async () => {
         throw new Error("task-flow registry restore failed");
       })
       .mockImplementationOnce(() => {
@@ -3072,6 +3059,7 @@ describe("runGatewayLoop", () => {
       await withIsolatedSignals(async ({ captureSignal }) => {
         const closeFirst = createCloseMock();
         const closeSecond = createCloseMock();
+        const { start: firstStart, started } = createSignaledStart(closeFirst);
         const { runtime, exited } = createRuntimeWithExitSignal();
         let resolveSecondStart: (() => void) | null = null;
         const startedSecond = new Promise<void>((resolve) => {
@@ -3079,25 +3067,22 @@ describe("runGatewayLoop", () => {
         });
         const start = vi
           .fn()
-          .mockResolvedValueOnce(createGatewayServer(closeFirst))
+          .mockImplementationOnce(firstStart)
           .mockImplementationOnce(async () => {
             resolveSecondStart?.();
             return createGatewayServer(closeSecond);
           });
 
         const { runGatewayLoop } = await import("./run-loop.js");
-        void runGatewayLoop({
+        const loop = runGatewayLoop({
           start: start as unknown as Parameters<typeof runGatewayLoop>[0]["start"],
           runtime: runtime as unknown as Parameters<typeof runGatewayLoop>[0]["runtime"],
         });
-        await waitForLoopCondition(
-          () => start.mock.calls.length === 1,
-          "expected initial gateway start",
-        );
-        const sigusr1 = captureSignal("SIGUSR1");
-        const sigterm = captureSignal("SIGTERM");
-
+        let stop: (() => void) | undefined;
         try {
+          await Promise.race([waitForStart(started), loop]);
+          stop = captureSignal("SIGTERM");
+          const sigusr1 = captureSignal("SIGUSR1");
           sigusr1();
           await waitForLoopCondition(
             () =>
@@ -3134,8 +3119,8 @@ describe("runGatewayLoop", () => {
           expect(start).toHaveBeenCalledTimes(2);
           expect(runtime.exit).not.toHaveBeenCalled();
         } finally {
-          sigterm();
-          await expect(exited).resolves.toBe(0);
+          stop?.();
+          await Promise.race([expect(exited).resolves.toBe(0), loop]);
         }
 
         expect(closeSecond).toHaveBeenCalledWith({

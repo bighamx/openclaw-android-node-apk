@@ -6,11 +6,9 @@ import {
   renderComposerMenu,
   renderComposerMenuOption,
 } from "../../../components/composer-menu.ts";
-import { icons } from "../../../components/icons.ts";
 import { t } from "../../../i18n/index.ts";
 import type { HumanMention } from "../../../lib/chat/chat-types.ts";
 import { MAX_HUMAN_MENTIONS, updateHumanMentions } from "../../../lib/chat/human-mentions.ts";
-import "../../../styles/chat/reply-preview.css";
 import "../../../styles/chat/mention-menu.css";
 import { renderChatAuthorAvatar } from "./chat-author-avatar.ts";
 import { paneDomId } from "./chat-composer-dom.ts";
@@ -340,27 +338,4 @@ export class HumanMentionMenu {
       </div>`,
     });
   }
-}
-
-export function renderSelectedHumanMentions(
-  text: string,
-  mentions: readonly HumanMention[] | undefined,
-  onRemove: () => void,
-) {
-  if (!mentions?.length) {
-    return nothing;
-  }
-  const names = mentions.map((mention) => text.slice(mention.start, mention.end)).join(", ");
-  return html`<div class="chat-reply-preview" role="status">
-    <span class="chat-reply-preview__icon" aria-hidden="true">${icons.users}</span>
-    <span class="chat-reply-preview__text">${t("chat.mentions.selected", { names })}</span>
-    <button
-      type="button"
-      class="chat-reply-preview__dismiss"
-      aria-label=${t("chat.mentions.remove")}
-      @click=${onRemove}
-    >
-      ${icons.x}
-    </button>
-  </div>`;
 }
