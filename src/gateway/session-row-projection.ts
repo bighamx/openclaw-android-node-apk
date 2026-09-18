@@ -36,12 +36,17 @@ import { withPreparedSessionRows, type SessionRowReadView } from "./session-row-
 import { createSessionRowProjectionBackfill } from "./session-row-projection-backfill.js";
 import { createSessionRowProjectionContext } from "./session-row-projection-context.js";
 import {
+  createSessionRowMaterializationBatch,
   readResidentSessionRow,
   readSessionRowEntry,
 } from "./session-row-projection-materialize.js";
 import * as records from "./session-row-projection-record.js";
 import { createSessionRowProjectionTranscriptUpdates } from "./session-row-projection-transcript.js";
-import { prepareSessionRowScopes } from "./session-row-scope.js";
+import {
+  matchesSessionRowScope,
+  prepareSessionRowScopes,
+  selectMatchingSessionRows,
+} from "./session-row-scope.js";
 import { resolveStoredSessionKeyForAgentStore } from "./session-store-key.js";
 
 /** Committed publications own invalidation; each admitted physical store is hydrated once. */
@@ -165,32 +170,8 @@ export async function createSessionRowProjection(params: {
     }
     return next;
   }
-  function inScope(row: records.Row, query: records.Query, logicalOwnerOnly = false) {
-    return (
-      (!query.agentId ||
-        row.agentId === query.agentId ||
-        (!logicalOwnerOnly && row.storeTarget.agentId === query.agentId)) &&
-      (!query.storePath ||
-        (scope?.physicalPaths(query.storePath, query.agentId) ?? [query.storePath]).includes(
-          row.storeTarget.storePath,
-        ))
-    );
-  }
   function matching(query: records.Query, kind = "key") {
-    const candidates = query.key
-      ? byKey.get(`${kind}:${query.key}`)
-      : query.storePath
-        ? new Set(
-            (scope?.physicalPaths(query.storePath, query.agentId) ?? [query.storePath]).flatMap(
-              (path) => Array.from(byStore.get(path) ?? []),
-            ),
-          )
-        : query.agentId
-          ? byAgent.get(query.agentId)
-          : rows.keys();
-    return [...(candidates ?? [])]
-      .map((id) => rows.get(id))
-      .filter((row): row is records.Row => row !== undefined && inScope(row, query));
+    return selectMatchingSessionRows({ rows, indexes, scope }, query, kind);
   }
   function lookup(query: records.Lookup) {
     if (disposed) {
@@ -350,7 +331,10 @@ export async function createSessionRowProjection(params: {
             agentId,
             storeTarget: source.target,
           });
-          if (!inScope(row, change) || (!change.storePath && agentId !== source.agentId)) {
+          if (
+            !matchesSessionRowScope(row, change, scope) ||
+            (!change.storePath && agentId !== source.agentId)
+          ) {
             continue;
           }
           put(row);
@@ -366,7 +350,11 @@ export async function createSessionRowProjection(params: {
       /* Dirty keys retain failed background work for the next reader. */
     });
   }
-  function materialize(row: records.Row, configuredAgentIds = new Set(listAgentIds(cfg))) {
+  function materialize(
+    row: records.Row,
+    configuredAgentIds = new Set(listAgentIds(cfg)),
+    readRow = readResidentSessionRow,
+  ) {
     if (!row.entry) {
       return false;
     }
@@ -381,7 +369,7 @@ export async function createSessionRowProjection(params: {
     });
     // Keyed child refreshes reorder the parent index; presentation must stay stable.
     links.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-    const prepared = readResidentSessionRow({
+    const prepared = readRow({
       row: { ...row, entry: row.entry },
       cfg,
       modelCatalog,
@@ -413,6 +401,7 @@ export async function createSessionRowProjection(params: {
     const started = performance.now();
     metadata.prepare(epoch);
     const configuredAgentIds = new Set(listAgentIds(cfg));
+    const readRow = createSessionRowMaterializationBatch();
     for (const [offset, id] of ids.entries()) {
       if (offset > 0 && performance.now() - started >= 12) {
         break;
@@ -420,8 +409,16 @@ export async function createSessionRowProjection(params: {
       const current = rows.get(id),
         revision = epoch;
       const row = current && acquireEntry(current, readSessionRowEntry(current));
-      if (row && materialize(row, configuredAgentIds) && epoch === revision && !catalogDirty) {
+      if (
+        row &&
+        materialize(row, configuredAgentIds, readRow) &&
+        epoch === revision &&
+        !catalogDirty
+      ) {
         dirty.delete(id);
+      }
+      if (epoch !== revision) {
+        break;
       }
     }
   }
@@ -438,7 +435,17 @@ export async function createSessionRowProjection(params: {
       modelCatalog = next;
       catalogDirty = undefined;
     }
-    withAgentRosterFactsBatch(cfg, () => refresh([...dirty].slice(0, 64)));
+    withAgentRosterFactsBatch(cfg, () => {
+      // Refresh can change dirty membership; snapshot only the next batch before consuming it.
+      const ids: string[] = [];
+      for (const id of dirty) {
+        ids.push(id);
+        if (ids.length === 64) {
+          break;
+        }
+      }
+      refresh(ids);
+    });
   }
   async function drain() {
     for (;;) {
@@ -602,7 +609,7 @@ export async function createSessionRowProjection(params: {
           // Broad publications can change IDs before the resident index has caught up.
           for (const id of dirty) {
             const row = rows.get(id);
-            if (row && inScope(row, query, true)) {
+            if (row && matchesSessionRowScope(row, query, scope, true)) {
               acquireEntry(row, readSessionRowEntry(row));
             }
           }
@@ -622,7 +629,7 @@ export async function createSessionRowProjection(params: {
               : row,
           )
           .filter(records.hasEntry)
-          .filter((row) => inScope(row, query, true));
+          .filter((row) => matchesSessionRowScope(row, query, scope, true));
         return records.sort(selected, query.sortBy);
       });
     });

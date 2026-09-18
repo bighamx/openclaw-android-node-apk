@@ -69,6 +69,14 @@ export function createCatalogAttemptReporter(
     providers?: readonly string[],
     kind?: PreparedModelCatalogAcquisitionKind,
   ) => void;
+  createFailureHandler: (
+    providers: readonly string[],
+    beforeProviderFailure: (providerIds?: readonly string[]) => void,
+  ) => (
+    error: unknown,
+    providerIds?: readonly string[],
+    kind?: PreparedModelCatalogAcquisitionKind,
+  ) => void;
   withRefreshStatus: (catalog: ModelCatalogSnapshot) => ModelCatalogSnapshot;
 } {
   // Compatible reloads share live status; replacement sources start without the old error.
@@ -78,6 +86,27 @@ export function createCatalogAttemptReporter(
       : { source, failedProviders: { provider: new Set(), native: new Set() } };
   let pendingProviders: readonly string[] = [];
   let pendingKind: PreparedModelCatalogAcquisitionKind = "provider";
+  const failed = (
+    error: unknown,
+    providers: readonly string[] = pendingProviders,
+    kind: PreparedModelCatalogAcquisitionKind = pendingKind,
+    beforePublish?: () => void,
+  ) => {
+    if (isCurrent() && !(error instanceof PreparedModelRuntimePublicationSupersededError)) {
+      beforePublish?.();
+      const attemptError = toStringifiedError(error);
+      for (const provider of providers.length ? providers : [undefined]) {
+        attempt.failedProviders[kind].add(provider);
+      }
+      pendingProviders = [];
+      owner.catalogAttempt = attempt;
+      notifyPreparedModelRuntimePublication({
+        phase: "catalog-failed",
+        error: attemptError,
+        modelFactsChanged: false,
+      });
+    }
+  };
   return {
     started: (providers, kind = "provider") => {
       pendingProviders = providers;
@@ -124,20 +153,21 @@ export function createCatalogAttemptReporter(
       owner.catalogAttempt = attempt;
       notifyPreparedModelCatalogPublication(publication);
     },
-    failed: (error, providers = pendingProviders, kind = pendingKind) => {
-      if (isCurrent() && !(error instanceof PreparedModelRuntimePublicationSupersededError)) {
-        const attemptError = toStringifiedError(error);
-        for (const provider of providers.length ? providers : [undefined]) {
-          attempt.failedProviders[kind].add(provider);
+    failed,
+    createFailureHandler: (providers, beforeProviderFailure) => {
+      let settled = false;
+      return (error, providerIds, kind) => {
+        if (settled) {
+          return;
         }
-        pendingProviders = [];
-        owner.catalogAttempt = attempt;
-        notifyPreparedModelRuntimePublication({
-          phase: "catalog-failed",
-          error: attemptError,
-          modelFactsChanged: false,
-        });
-      }
+        settled = true;
+        failed(
+          error,
+          kind === "provider" ? (providerIds ?? providers) : providerIds,
+          kind,
+          kind === "provider" ? () => beforeProviderFailure(providerIds) : undefined,
+        );
+      };
     },
   };
 }

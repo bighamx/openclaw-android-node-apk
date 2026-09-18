@@ -9,6 +9,7 @@ import { LEGACY_IMPLICIT_AGENT_ID, normalizeAgentId } from "../routing/session-k
 import { SESSIONS_LIST_OWNER_LIMIT } from "../shared/session-list-limits.js";
 import { runSynchronousWork, type SynchronousWork } from "../shared/synchronous-work.js";
 import { gatewayClientSessionCreator } from "./server-methods/gateway-client-identity.js";
+import { createVisibleActiveSessionRunProjector } from "./server-methods/session-active-runs.js";
 import { resolveGatewayModelSelectionPolicy } from "./server-methods/session-model-selection-policy.js";
 import type { GatewayClient, GatewayRequestContext } from "./server-methods/types.js";
 import { readPreparedGatewayModelCatalogMetadata } from "./server-model-catalog-view.js";
@@ -195,25 +196,30 @@ export function prepareSessionRowSelection(
   const winners = new Map<string, RecordRow>();
   const keyFor = (row: RecordRow) =>
     sentinel(row.key) && opts.activeOnly ? JSON.stringify([row.key, row.agentId]) : row.key;
-  for (const row of rows.toSorted(
-    (a, b) =>
-      selectedScope.paths.get(a.storeTarget.storePath)! -
-      selectedScope.paths.get(b.storeTarget.storePath)!,
-  )) {
+  for (const row of rows) {
     const key = keyFor(row);
-    if (winners.has(key) && !sentinel(row.key)) {
+    const previous = winners.get(key);
+    if (previous && !sentinel(row.key)) {
       throw canonicalSessionKeyMigrationRequiredError(
         `duplicate rows resolve to canonical session key ${row.key}`,
       );
     }
-    if (!winners.has(key)) {
+    // Equal precedence retains the first resident row, as a stable sort would.
+    if (
+      !previous ||
+      selectedScope.paths.get(row.storeTarget.storePath)! <
+        selectedScope.paths.get(previous.storeTarget.storePath)!
+    ) {
       winners.set(key, row);
     }
   }
-  const entries: SessionEntryPair[] = rows.flatMap((row) => {
+  const entries: SessionEntryPair[] = [];
+  for (const row of rows) {
     const key = keyFor(row);
-    return winners.get(key) === row ? [[key, row.entry]] : [];
-  });
+    if (winners.get(key) === row) {
+      entries.push([key, row.entry]);
+    }
+  }
   return {
     cfg,
     opts,
@@ -271,7 +277,17 @@ export async function listProjectedSessions(params: {
   let syncCpu = diagnostics?.startSyncCpu();
   try {
     diagnostics?.mark("storeLoad");
-    const presentation = prepareProjectedSessionPresentation(projection, client, now, context);
+    const presentation = prepareProjectedSessionPresentation(
+      projection,
+      client,
+      now,
+      context
+        ? createVisibleActiveSessionRunProjector(
+            context,
+            projection.state.rowContext.projectedAgentRuns,
+          )
+        : undefined,
+    );
     const prepared = prepareSessionRowSelection(projection, opts, {
       now,
       rowContext: presentation.rowContext,

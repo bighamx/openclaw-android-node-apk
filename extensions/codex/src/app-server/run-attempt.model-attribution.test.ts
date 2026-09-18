@@ -168,7 +168,7 @@ describe("registered Codex harness model attribution", () => {
                 method: "turn/completed",
                 params: {
                   threadId: "native-thread",
-                  turn: { id: "turn-1", status: "interrupted" },
+                  turn: { id: "turn-1", status: "interrupted", items: [] },
                 },
               }),
             );

@@ -3,7 +3,6 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { expectDefined } from "@openclaw/normalization-core";
 import { Value } from "typebox/value";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -15,13 +14,17 @@ import {
   replaceSessionEntrySync,
 } from "../../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { callGateway as gatewayCall } from "../../gateway/call.js";
 import { createSessionVisibilityChecker } from "../../plugin-sdk/session-visibility.js";
 import { deleteTestEnvValue, setTestEnvValue } from "../../test-utils/env.js";
 import { describeSessionLinkRule } from "../tool-description-presets.js";
 import { compactToolOutputHint } from "../tool-schema-hints.js";
+import {
+  type CallGatewayRequest,
+  readHistoryDetails,
+  readMessageId,
+  requireGatewayRequest,
+} from "./sessions-history-tool.test-support.js";
 
-type CallGatewayRequest = Parameters<typeof gatewayCall>[0];
 type HistoryMessage = {
   role: string;
   content: string;
@@ -85,17 +88,6 @@ function createHistoryToolWithMessage(content: unknown, sessionLinkBase?: string
   });
 }
 
-function readHistoryDetails(result: { details: unknown }) {
-  return result.details as Record<string, unknown>;
-}
-
-function requireGatewayRequest(requests: CallGatewayRequest[], method: string): CallGatewayRequest {
-  return expectDefined(
-    requests.find((request) => request.method === method),
-    `${method} request test invariant`,
-  );
-}
-
 function readMessageSeq(message: unknown): number | undefined {
   if (!message || typeof message !== "object" || Array.isArray(message)) {
     return undefined;
@@ -106,18 +98,6 @@ function readMessageSeq(message: unknown): number | undefined {
   }
   const seq = (meta as Record<string, unknown>).seq;
   return typeof seq === "number" ? seq : undefined;
-}
-
-function readMessageId(message: unknown): string | undefined {
-  if (!message || typeof message !== "object" || Array.isArray(message)) {
-    return undefined;
-  }
-  const meta = (message as Record<string, unknown>)["__openclaw"];
-  if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
-    return undefined;
-  }
-  const id = (meta as Record<string, unknown>).id;
-  return typeof id === "string" ? id : undefined;
 }
 
 describe("sessions_history redaction", () => {

@@ -73,6 +73,8 @@ const SKILLS_WATCH_DEBOUNCE_MS = 250;
 // opening its own, so open file descriptors scale with distinct directories
 // rather than with agent count.
 const pathWatchers = new Map<string, SkillsPathWatchState>();
+// Retired roots leave pathWatchers before their asynchronous native closes settle.
+const pendingWatcherCloses = new Set<Promise<void>>();
 let nativeWatchCapacityFailed = false;
 // Watch targets each workspace is currently subscribed to, used to reconcile
 // subscriptions and to detect watch-target changes across calls.
@@ -88,6 +90,7 @@ const workspaceWatchLastEnsuredAt = new Map<string, number>();
 // Session turns re-ensure their workspace; entries older than this are treated
 // as abandoned subscriptions and evicted by the next ensure call.
 const SKILLS_WORKSPACE_WATCH_IDLE_TTL_MS = 60 * 60_000;
+const MAX_SKILLS_WORKSPACE_WATCH_STATES = 128;
 
 setSkillsChangeListenerErrorHandler((err) => {
   log.warn(`skills change listener failed: ${String(err)}`);
@@ -577,20 +580,25 @@ function createSkillsPathWatcher(target: WatchTarget): SkillsPathWatchState {
   return state;
 }
 
-async function teardownSkillsPathWatcher(state: SkillsPathWatchState): Promise<void> {
+function teardownSkillsPathWatcher(state: SkillsPathWatchState): Promise<void> {
   clearTimeout(state.timer);
-  try {
-    const wasClosed = state.watcher.closed;
-    const closing = state.watcher.close();
-    if (!wasClosed) {
-      // Chokidar removes listeners before pending scans settle. Their late errors
-      // belong to the retired watcher and must not become unhandled events.
-      state.watcher.on("error", () => {});
+  const closing = (async () => {
+    try {
+      const wasClosed = state.watcher.closed;
+      const closed = state.watcher.close();
+      if (!wasClosed) {
+        // Chokidar removes listeners before pending scans settle. Their late errors
+        // belong to the retired watcher and must not become unhandled events.
+        state.watcher.on("error", () => {});
+      }
+      await closed;
+    } catch {
+      // Closing watchers is best effort, including during replacement and shutdown.
     }
-    await closing;
-  } catch {
-    // Closing watchers is best effort, including during replacement and shutdown.
-  }
+  })();
+  pendingWatcherCloses.add(closing);
+  void closing.then(() => pendingWatcherCloses.delete(closing));
+  return closing;
 }
 
 function subscribeWorkspaceToPath(workspaceDir: string, watchTarget: WatchTarget): void {
@@ -655,12 +663,18 @@ function disposeWorkspaceWatchState(
   clearSkillsSnapshotVersionForWorkspace(workspaceDir);
 }
 
-function evictIdleWorkspaceWatchStates(now: number): void {
+function evictWorkspaceWatchStates(now: number): void {
   const cutoff = now - SKILLS_WORKSPACE_WATCH_IDLE_TTL_MS;
   for (const [workspaceDir, lastEnsuredAt] of workspaceWatchLastEnsuredAt) {
     if (lastEnsuredAt < cutoff) {
       disposeWorkspaceWatchState(workspaceDir);
     }
+  }
+  for (const watcherKey of workspaceWatchLastEnsuredAt.keys()) {
+    if (workspaceWatchLastEnsuredAt.size <= MAX_SKILLS_WORKSPACE_WATCH_STATES) {
+      break;
+    }
+    disposeWorkspaceWatchState(watcherKey);
   }
 }
 
@@ -687,17 +701,19 @@ export function ensureSkillsWatcher(params: {
 
   if (!watchEnabled) {
     disposeWorkspaceWatchState(watcherKey, previousTargets);
-    evictIdleWorkspaceWatchStates(now);
+    evictWorkspaceWatchStates(now);
     return;
   }
 
+  // Map order breaks equal-clock ties and promotes reuse without adding a generation.
+  workspaceWatchLastEnsuredAt.delete(watcherKey);
   workspaceWatchLastEnsuredAt.set(watcherKey, now);
+  evictWorkspaceWatchStates(now);
   if (nativeWatchCapacityFailed) {
     // Both skill caches use this version. Rebuild at the existing preparation
     // boundary while native observation is unavailable, without reopening watches.
     workspaceWatchTargetCache.delete(watcherKey);
     bumpSkillsSnapshotVersion({ workspaceDir, reason: "watch" });
-    evictIdleWorkspaceWatchStates(now);
     return;
   }
   const watchTargets = resolveWatchTargets(
@@ -721,7 +737,6 @@ export function ensureSkillsWatcher(params: {
     (watchTarget) => (pathWatchers.get(watchTarget.path)?.depth ?? -1) >= watchTarget.depth,
   );
   if (targetsUnchanged && watcherDepthsCoverTargets) {
-    evictIdleWorkspaceWatchStates(now);
     return;
   }
   const nextTargetKeys = new Set(watchTargets.map((target) => target.path));
@@ -744,7 +759,6 @@ export function ensureSkillsWatcher(params: {
       changedPath: watchTargets.map((target) => target.path).join("|"),
     });
   }
-  evictIdleWorkspaceWatchStates(now);
 }
 
 export async function closeSkillsWatchers(resetState = false): Promise<void> {
@@ -758,5 +772,8 @@ export async function closeSkillsWatchers(resetState = false): Promise<void> {
   workspaceWatchOwnerDirs.clear();
   workspaceWatchTargetCache.clear();
   workspaceWatchLastEnsuredAt.clear();
-  await Promise.all(active.map(teardownSkillsPathWatcher));
+  for (const state of active) {
+    void teardownSkillsPathWatcher(state);
+  }
+  await Promise.all(pendingWatcherCloses);
 }

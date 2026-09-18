@@ -1,4 +1,3 @@
-// Workspace skill loader tests cover source merging, metadata, filtering, and precedence.
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -13,6 +12,8 @@ import type {
   PluginManifestRecord,
   PluginManifestRegistry,
 } from "../../plugins/manifest-registry.js";
+// Workspace skill loader tests cover source merging, metadata, filtering, and precedence.
+import { buildPluginMetadataProviderFacts } from "../../plugins/plugin-metadata-provider-facts.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.js";
 import { buildDeclaredProviderOwnerIndex } from "../../plugins/provider-owner-index.js";
 import { setActiveDegradedSecretOwners } from "../../secrets/runtime-degraded-state.js";
@@ -356,6 +357,8 @@ function createWorkspacePluginMetadataSnapshot(params: {
     setupProviders: new Map(),
     commandAliases: new Map(),
     contracts: new Map(),
+    providerAuthContributions: buildPluginMetadataProviderFacts(params.manifestRegistry.plugins)
+      .providerAuthContributions,
     modelIdNormalizationPolicies: new Map(),
   };
   const index: PluginMetadataSnapshot["index"] = {

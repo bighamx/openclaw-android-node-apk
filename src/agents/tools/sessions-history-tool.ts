@@ -292,17 +292,16 @@ function capSessionsHistoryAroundMessage(
 
   let start = anchorIndex;
   let end = anchorIndex + 1;
-  let cappedItems = items.slice(start, end);
-  let bytes = jsonUtf8Bytes(cappedItems);
+  let bytes = jsonUtf8Bytes([items[anchorIndex]]);
   let canGrowOlder = start > 0;
   let canGrowNewer = end < items.length;
   while (canGrowOlder || canGrowNewer) {
     if (canGrowOlder) {
-      const candidate = items.slice(start - 1, end);
-      const candidateBytes = jsonUtf8Bytes(candidate);
+      // Singleton arrays preserve JSON's array-element encoding; replacing one
+      // bracket with a comma gives the exact growth of this nonempty window.
+      const candidateBytes = bytes + jsonUtf8Bytes([items[start - 1]]) - 1;
       if (candidateBytes <= maxBytes) {
         start -= 1;
-        cappedItems = candidate;
         bytes = candidateBytes;
       } else {
         canGrowOlder = false;
@@ -311,11 +310,9 @@ function capSessionsHistoryAroundMessage(
     canGrowOlder &&= start > 0;
 
     if (canGrowNewer) {
-      const candidate = items.slice(start, end + 1);
-      const candidateBytes = jsonUtf8Bytes(candidate);
+      const candidateBytes = bytes + jsonUtf8Bytes([items[end]]) - 1;
       if (candidateBytes <= maxBytes) {
         end += 1;
-        cappedItems = candidate;
         bytes = candidateBytes;
       } else {
         canGrowNewer = false;
@@ -323,7 +320,7 @@ function capSessionsHistoryAroundMessage(
     }
     canGrowNewer &&= end < items.length;
   }
-  return { items: cappedItems, bytes };
+  return { items: items.slice(start, end), bytes };
 }
 
 function buildSessionsHistoryOmittedPlaceholder(source: unknown): Record<string, unknown> {

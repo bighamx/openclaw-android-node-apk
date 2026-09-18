@@ -25,10 +25,7 @@ import {
   preparedProviderCatalogCredentials,
   preparedProviderCatalogSource,
 } from "./prepared-model-runtime.catalog-source.js";
-import {
-  assertPreparedModelRuntimeInputCurrent,
-  PreparedModelRuntimePublicationSupersededError,
-} from "./prepared-model-runtime.errors.js";
+import { assertPreparedModelRuntimeInputCurrent } from "./prepared-model-runtime.errors.js";
 import {
   fingerprintPreparedRuntimeFacts,
   preparedModelInventoryKey,
@@ -347,6 +344,13 @@ export function createFullModelCatalogAccess(params: {
     // Discovery is read-only. Holding the directory build queue here would block an auth
     // replacement and every picker waiting for its static publication.
     let failedNativeProviders: readonly string[] | undefined;
+    const fail = attempt.createFailureHandler(providers, (providerIds) => {
+      if (published.inventory) {
+        inventory = expirePreparedModelCatalogProviders(published.inventory, providerIds);
+        params.inventoryOwner.catalogInventory = inventory;
+        published.inventory = inventory;
+      }
+    });
     const promise = (async () => {
       await using _ = {
         [Symbol.asyncDispose]: retainPreparedPluginGeneration(params.pluginGeneration),
@@ -363,7 +367,14 @@ export function createFullModelCatalogAccess(params: {
             runtimeModels,
             providerExpiries,
             configuredProviderModelIds,
-          } = await worker.loadCatalog(providerIds);
+          } = await worker.loadCatalog(
+            providerIds,
+            (providerIds ?? providers).some((provider) =>
+              published.inventory?.providers.has(provider),
+            )
+              ? (error) => fail(error, providerIds, "provider")
+              : undefined,
+          );
           assertCurrent();
           const scope = new Set(
             (
@@ -491,19 +502,7 @@ export function createFullModelCatalogAccess(params: {
             attempt.published(providerIds, "provider", publishCatalog());
           }
         }).catch((error: unknown) => {
-          if (previous) {
-            inventory = previous.inventory;
-          }
-          if (
-            params.isCurrent() &&
-            inventory &&
-            !(error instanceof PreparedModelRuntimePublicationSupersededError)
-          ) {
-            // A failed provider cannot retire a sibling's fresh deadline or an unattempted scope.
-            inventory = expirePreparedModelCatalogProviders(inventory, providerIds);
-            params.inventoryOwner.catalogInventory = inventory;
-            published.inventory = inventory;
-          }
+          fail(error, providerIds, "provider");
           throw error;
         });
       }
@@ -624,7 +623,7 @@ export function createFullModelCatalogAccess(params: {
           currentConfiguredRuntimeModels = previous.configuredRuntimeModels;
           nativeCatalogAcquired = previous.nativeCatalogAcquired;
         }
-        attempt.failed(error, failedNativeProviders, failedNativeProviders ? "native" : undefined);
+        fail(error, failedNativeProviders, failedNativeProviders ? "native" : undefined);
         if (published.catalog) {
           attempt.withRefreshStatus(published.catalog);
         }

@@ -846,7 +846,7 @@ async function runSharedClientRestartTest(
   ]);
   readyClient.notify({
     method: "turn/completed",
-    params: { threadId: "thread-existing", turn: { id: "turn-1", status: "completed" } },
+    params: { threadId: "thread-existing", turn: { id: "turn-1", status: "completed", items: [] } },
   });
   const result = await run;
   return { result, requests, client: readyClient.client };
@@ -5926,7 +5926,7 @@ describe("runCodexAppServerAttempt", () => {
                 params: {
                   threadId: "thread-existing",
                   turnId: "compact-turn",
-                  turn: { id: "compact-turn", status: "completed" },
+                  turn: { id: "compact-turn", status: "completed", items: [] },
                 },
               });
             });
@@ -6012,7 +6012,7 @@ describe("runCodexAppServerAttempt", () => {
       method: "turn/completed",
       params: {
         threadId: "thread-existing",
-        turn: { id: "stale-turn", status: "completed" },
+        turn: { id: "stale-turn", status: "completed", items: [] },
       },
     });
     expect(harness.requests.map((request) => request.method)).not.toContain("turn/start");
@@ -6030,7 +6030,7 @@ describe("runCodexAppServerAttempt", () => {
       method: "turn/completed",
       params: {
         threadId: "thread-existing",
-        turn: { id: "compact-turn", status: "completed" },
+        turn: { id: "compact-turn", status: "completed", items: [] },
       },
     });
     await harness.waitForMethod("turn/start");
@@ -6511,7 +6511,6 @@ describe("runCodexAppServerAttempt", () => {
     vi.spyOn(userInputBridge, "createCodexUserInputBridge").mockReturnValue({
       handleRequest: vi.fn(),
       handleElicitationRequest: ordinaryHandler,
-      handleNotification: vi.fn(),
       cancelPending: vi.fn(),
     });
     const harness = createStartedThreadHarness();
@@ -6553,13 +6552,11 @@ describe("runCodexAppServerAttempt", () => {
       tool: mcpItem.tool,
       arguments: mcpItem.arguments,
     });
-    expect(ordinaryHandler).toHaveBeenCalledWith({ id: "ordinary-1", params });
-    const approvalOrder = approvalSpy.mock.invocationCallOrder.at(0);
-    const ordinaryOrder = ordinaryHandler.mock.invocationCallOrder.at(0);
-    if (approvalOrder === undefined || ordinaryOrder === undefined) {
-      throw new Error("expected both elicitation handlers to run");
-    }
-    expect(approvalOrder).toBeLessThan(ordinaryOrder);
+    expect(ordinaryHandler).toHaveBeenCalledWith(
+      { id: "ordinary-1", method: "mcpServer/elicitation/request", params },
+      expect.any(AbortSignal),
+    );
+    expect(approvalSpy).toHaveBeenCalledBefore(ordinaryHandler);
 
     await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
     await run;

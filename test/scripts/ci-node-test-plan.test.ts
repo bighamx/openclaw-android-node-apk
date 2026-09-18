@@ -605,6 +605,37 @@ describe("scripts/lib/ci-node-test-plan.mts", () => {
     ]);
   });
 
+  it("selects the core root budget guard alongside changed messaging test owners", () => {
+    const guard = "test/scripts/tsgo-core-test-shards.test.ts";
+    const changed = "src/infra/outbound/outbound-send-service.accepted-outcomes.test.ts";
+    const shards = expectDefined(createChangedNodeTestShards([changed]), "core test plan");
+    const targets = shards.flatMap((shard) =>
+      (shard.targets ?? []).concat(
+        (shard.groups ?? []).flatMap((group) => group.includePatterns ?? []),
+      ),
+    );
+    expect(targets).toContain(changed);
+    expect(targets.filter((target) => target === guard)).toEqual([guard]);
+    for (const changedPath of [
+      "src/auto-reply/reply/new.test.tsx",
+      "src/infra/outbound/new.test.ts",
+      "test/tsconfig/tsconfig.core.test.messaging.json",
+    ]) {
+      expect(resolvePolicyTestTargets([changedPath]), changedPath).toContain(guard);
+      expect(isPolicyTestOwnedPath(changedPath), changedPath).toBe(false);
+    }
+    for (const changedPath of [
+      "src/infra/outbound/message.ts",
+      "src/infra/outbound/message.test-support.ts",
+      "src/agents/new.test.tsx",
+      "ui/src/pages/new.test.ts",
+      "packages/example/new.test.tsx",
+      "extensions/example/new.test.ts",
+    ]) {
+      expect(resolvePolicyTestTargets([changedPath]), changedPath).not.toContain(guard);
+    }
+  });
+
   it("selects provisioning for extracted sources without replacing their test owners", () => {
     const provision = "test/scripts/pr-worktree-provision.test.ts";
     const manifest = "scripts/pr-lib/wrapper-components.txt";
@@ -1579,12 +1610,13 @@ describe("scripts/lib/ci-node-test-plan.mts", () => {
         expect(shard.planConcurrency).toBe(1);
         expect(exclusiveCount).toBe(0);
         expect(shard.requiresDist).toBe(false);
+        expect(shard.env).toStrictEqual(originalHybridJob.env);
         for (const original of originalHybridJob.groups) {
           const retained = expectDefined(
             shard.groups.find((group) => group.shard_name === original.shard_name),
             "retained ordinary group",
           );
-          if (originalHybridJob.planConcurrency === 2) {
+          if (usesTwoWorkerPacking(originalHybridJob)) {
             expect(retained).toEqual({
               ...original,
               env: { OPENCLAW_VITEST_MAX_WORKERS: "2", ...original.env },
@@ -3910,7 +3942,7 @@ describe("scripts/lib/ci-node-test-plan.mts", () => {
       const inheritedGroupsFor = (admission: typeof before) =>
         new Map(
           admission.flatMap((job) =>
-            job.planConcurrency === 2
+            usesTwoWorkerPacking(job)
               ? job.groups
                   .filter((group) => group.env?.OPENCLAW_VITEST_MAX_WORKERS === undefined)
                   .map((group): [string, Group] => [group.shard_name, group])
@@ -3929,9 +3961,10 @@ describe("scripts/lib/ci-node-test-plan.mts", () => {
           entry.groups.some((candidate) => candidate.shard_name === group.shard_name),
         );
         if (original && job?.planConcurrency === 1) {
-          const env = expectDefined(group.env, "materialized serial worker cap");
-          expect(env.OPENCLAW_VITEST_MAX_WORKERS).toBe("2");
-          const { OPENCLAW_VITEST_MAX_WORKERS: _workers, ...otherEnv } = env;
+          expect(
+            group.env?.OPENCLAW_VITEST_MAX_WORKERS ?? job.env?.OPENCLAW_VITEST_MAX_WORKERS,
+          ).toBe("2");
+          const { OPENCLAW_VITEST_MAX_WORKERS: _workers, ...otherEnv } = group.env ?? {};
           expect(otherEnv).toEqual(original.env ?? {});
           return original.env;
         }
@@ -4041,6 +4074,19 @@ describe("scripts/lib/ci-node-test-plan.mts", () => {
         expectTimingFamilies(promoted, beforeInherited);
         expect(policies(promoted, beforeInherited)).toEqual(policies(before, beforeInherited));
         expect(recipient.groups.map((group) => group.timing_key)).toEqual(keys);
+        recipient.env = { ...recipient.env, OPENCLAW_VITEST_MAX_WORKERS: "2" };
+        for (const group of recipient.groups) {
+          const original = beforeInherited.get(group.shard_name);
+          if (original) {
+            group.env = original.env;
+          }
+        }
+        expectTimingFamilies(promoted, beforeInherited);
+        expect(policies(promoted, beforeInherited)).toEqual(policies(before, beforeInherited));
+        delete recipient.env.OPENCLAW_VITEST_MAX_WORKERS;
+        for (const group of recipient.groups) {
+          group.env = { OPENCLAW_VITEST_MAX_WORKERS: "2", ...group.env };
+        }
         const hosted = expectDefined(
           recipient.groups.find(
             (group) => group.timing_key && beforeInherited.has(group.shard_name),

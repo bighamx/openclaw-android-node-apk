@@ -576,7 +576,9 @@ function findNextParagraphBreak(
     if (index - startIndex < minCharsFromStart) {
       continue;
     }
-    if (!isSafeFenceBreak(fenceSpans, index)) {
+    const fence = findFenceSpanAt(fenceSpans, index);
+    if (fence) {
+      re.lastIndex = fence.end;
       continue;
     }
     return { index, length: match[0].length };

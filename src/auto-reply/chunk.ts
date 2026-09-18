@@ -270,8 +270,8 @@ export function chunkByParagraph(
   };
 
   for (const [index, part] of parts.entries()) {
-    const paragraph = part.replace(/\s+$/g, "");
-    if (!paragraph.trim()) {
+    const paragraph = part.trimEnd();
+    if (!paragraph) {
       continue;
     }
     pushParagraph(paragraph, separators[index - 1]);

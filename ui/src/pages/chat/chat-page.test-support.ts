@@ -18,7 +18,7 @@ export function createChatPageSessions(
   return sessions;
 }
 
-export function setNavigationContext(page: ChatPage) {
+export function createChatPageNavigationContext() {
   const navigate = vi.fn();
   const replace = vi.fn();
   const patch = vi.fn(async () => null);
@@ -47,8 +47,13 @@ export function setNavigationContext(page: ChatPage) {
     agentSelection: { state: agentSelectionState, set: setAgent },
     chatAttachmentHandoff,
   } as unknown as ApplicationContext;
-  (page as unknown as { context: ApplicationContext }).context = context;
   return { chatAttachmentHandoff, context, navigate, replace, setAgent, patch };
+}
+
+export function setNavigationContext(page: ChatPage) {
+  const navigation = createChatPageNavigationContext();
+  (page as unknown as { context: ApplicationContext }).context = navigation.context;
+  return navigation;
 }
 
 export function setViewerPresenceContext(page: ChatPage) {
@@ -94,4 +99,29 @@ export function setViewerPresenceContext(page: ChatPage) {
     sessions: createChatPageSessions(navigation.context.gateway),
   });
   return { ...navigation, request };
+}
+
+export function createSessionTitleSource() {
+  const listeners = new Set<() => void>();
+  const state: {
+    result: { sessions: Array<{ key: string; displayName?: string }> } | null;
+  } = { result: null };
+  return {
+    sessions: {
+      ...createChatPageSessions(),
+      state,
+      presentation: state,
+      subscribe(listener: () => void) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    },
+    listeners,
+    publish(key: string, displayName: string) {
+      state.result = { sessions: [{ key, displayName }] };
+      for (const listener of listeners) {
+        listener();
+      }
+    },
+  };
 }

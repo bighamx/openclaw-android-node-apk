@@ -496,6 +496,7 @@ describe("gateway chat metadata lifecycle", () => {
         routeVariants: [],
       },
       configuredRuntimeModels: [],
+      findConfiguredRuntimeModel: () => undefined,
       inlineProviderModels: [],
       createStores: () => {
         throw new Error("metadata must not create live model stores");
