@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -9,9 +7,16 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { PROTOCOL_VERSION } from "../../packages/gateway-protocol/src/version.ts";
-import { hasErrnoCode } from "../../src/infra/errno.ts";
 import { writeJsonAtomic } from "../../src/infra/json-files.ts";
 import { stopChild, stopGatewayGracefully } from "./gateway-bench-child.ts";
+import {
+  assertSeparatePaths,
+  hashFile,
+  hashInstall,
+  installedPackageSchema,
+  prepareInstalledPackage,
+  verifyInstalledDependencyParity,
+} from "./gateway-bench-installed-package.ts";
 import { getFreePort } from "./gateway-bench-probes.ts";
 import {
   BASE_GATEWAY_BENCH_CONFIG,
@@ -25,39 +30,15 @@ import {
 } from "./gateway-bench-runtime.ts";
 import { createGatewayWsClient } from "./gateway-ws-client.ts";
 import { inspectManagedProcessGroup, runManagedCommand } from "./managed-child-process.mts";
-import {
-  LEGACY_PACKAGE_INSTALL_GUARD_RELATIVE_PATH,
-  PACKAGE_LIFECYCLE_PENDING_RELATIVE_PATH,
-} from "./package-lifecycle-marker.mjs";
 
-const sha = z.string().regex(/^[0-9a-f]{40}$/u);
-const digest = z.string().regex(/^[0-9a-f]{64}$/u);
-const inputSchema = z.object({
-  sourceSha: sha,
-  toolingSha: sha,
-  tarball: z.string().min(1),
-  candidate: z
-    .object({
-      name: z.literal("openclaw"),
-      packageSourceSha: sha,
-      version: z.string().min(1),
-      sha256: digest,
-    })
-    .passthrough(),
-  installRoot: z.string().min(1),
-  stateRoot: z.string().min(1),
-  runtime: z.object({ version: z.string().regex(/^v\d+\.\d+\.\d+$/u), sha256: digest }),
-  artifact: z.object({
-    id: z.number().int().positive(),
-    runId: z.number().int().positive(),
-    runAttempt: z.number().int().positive(),
-    workflowSha: sha,
-    digest: z.string().regex(/^sha256:[0-9a-f]{64}$/u),
-  }),
+const inputSchema = installedPackageSchema.extend({
+  comparison: installedPackageSchema.optional(),
 });
 
 const sampleSchema = z.object({
   index: z.number().int().nonnegative(),
+  arm: z.enum(["baseline", "candidate"]).optional(),
+  armIndex: z.number().int().nonnegative().optional(),
   phase: z.enum(["fresh", "established"]),
   outcome: z.enum(["not-run", "running", "passed", "failed"]),
   observations: z.record(z.string(), z.unknown()),
@@ -69,7 +50,7 @@ const sampleSchema = z.object({
 const checkpointSchema = z
   .object({
     outcome: z.enum(["pending", "running", "cohort-passed", "failed"]),
-    samples: z.array(sampleSchema).length(9),
+    samples: z.array(sampleSchema).min(9).max(18),
   })
   .passthrough();
 type Sample = z.infer<typeof sampleSchema>;
@@ -78,55 +59,72 @@ const FRESH_TIMEOUT_MS = 180_000;
 const RESTART_TIMEOUT_MS = 60_000;
 const STOP_TIMEOUT_MS = 60_000;
 
-function plannedSamples(): Sample[] {
-  return Array.from({ length: 9 }, (_, index) => ({
-    index,
-    phase: index === 0 ? "fresh" : "established",
-    outcome: "not-run",
-    observations: {},
-    errors: [],
-    stdout: "",
-    stderr: "",
-  }));
-}
-
-async function hashFile(file: string) {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(file)) {
-    hash.update(chunk);
-  }
-  return hash.digest("hex");
-}
-
-async function hashInstall(root: string) {
-  const hash = createHash("sha256");
-  let files = 0;
-  async function visit(directory: string) {
-    for (const entry of (await fs.readdir(directory, { withFileTypes: true })).toSorted((a, b) =>
-      a.name.localeCompare(b.name, "en"),
-    )) {
-      const full = path.join(directory, entry.name);
-      const relative = path.relative(root, full).replaceAll(path.sep, "/");
-      if (entry.isSymbolicLink()) {
-        hash.update(JSON.stringify([relative, "link", await fs.readlink(full)]) + "\n");
-      } else if (entry.isDirectory()) {
-        await visit(full);
-      } else if (entry.isFile()) {
-        hash.update(JSON.stringify([relative, "file", await hashFile(full)]) + "\n");
-        files += 1;
-      } else {
-        throw new Error(`Unsupported installed entry: ${relative}`);
-      }
+function plannedSamples(comparison = false): Sample[] {
+  const samples: Sample[] = [];
+  for (let armIndex = 0; armIndex < 9; armIndex += 1) {
+    const order = comparison
+      ? armIndex > 0 && armIndex % 2 === 0
+        ? ["candidate", "baseline"]
+        : ["baseline", "candidate"]
+      : [undefined];
+    for (const arm of order) {
+      samples.push(
+        sampleSchema.parse({
+          index: samples.length,
+          ...(comparison ? { arm, armIndex } : {}),
+          phase: armIndex === 0 ? "fresh" : "established",
+          outcome: "not-run",
+          observations: {},
+          errors: [],
+          stdout: "",
+          stderr: "",
+        }),
+      );
     }
   }
-  await visit(root);
-  return { sha256: hash.digest("hex"), files };
+  return samples;
+}
+
+function summarizeComparison(samples: Sample[]) {
+  const completion = z.object({ completedAtMs: z.number().nonnegative() });
+  const rows = samples
+    .filter((sample) => sample.phase === "established")
+    .map((sample) => ({
+      arm: sample.arm,
+      armIndex: sample.armIndex,
+      readyMs: z.number().nonnegative().parse(sample.readyMs),
+      statusCompletedAtMs: completion.parse(sample.observations.status).completedAtMs,
+      healthCompletedAtMs: completion.parse(sample.observations.health).completedAtMs,
+    }));
+  const baseline = rows.filter((row) => row.arm === "baseline");
+  const candidate = rows.filter((row) => row.arm === "candidate");
+  const summarize = (values: typeof rows) => ({
+    readyMs: summarizeNumbers(values.map((value) => value.readyMs)),
+    statusCompletedAtMs: summarizeNumbers(values.map((value) => value.statusCompletedAtMs)),
+    healthCompletedAtMs: summarizeNumbers(values.map((value) => value.healthCompletedAtMs)),
+  });
+  const differences = baseline.map((left) => {
+    const right = candidate.find((row) => row.armIndex === left.armIndex);
+    assert.ok(right, "Established comparison pair is incomplete");
+    return {
+      arm: right.arm,
+      armIndex: right.armIndex,
+      readyMs: right.readyMs - left.readyMs,
+      statusCompletedAtMs: right.statusCompletedAtMs - left.statusCompletedAtMs,
+      healthCompletedAtMs: right.healthCompletedAtMs - left.healthCompletedAtMs,
+    };
+  });
+  return {
+    baseline: summarize(baseline),
+    candidate: summarize(candidate),
+    candidateMinusBaseline: summarize(differences),
+  };
 }
 
 function observe(sample: Sample, name: string, value: unknown) {
   sample.observations[name] = value;
   console.log(
-    `[gateway-startup-observation] ${JSON.stringify({ index: sample.index, phase: sample.phase, name, value })}`,
+    `[gateway-startup-observation] ${JSON.stringify({ index: sample.index, phase: sample.phase, arm: sample.arm, armIndex: sample.armIndex, name, value })}`,
   );
 }
 
@@ -318,14 +316,14 @@ type InstalledOptions = { inputPath: string; outputPath: string; child: boolean;
 export async function runInstalledGatewayBenchmark(options: InstalledOptions): Promise<number> {
   const output = path.resolve(options.outputPath);
   const inputPath = path.resolve(options.inputPath);
+  const input = inputSchema.parse(JSON.parse(await fs.readFile(inputPath, "utf8")));
+  const plan = plannedSamples(input.comparison !== undefined);
   if (!options.child) {
     await fs.mkdir(path.dirname(output), { recursive: true });
     // A retained failed attempt is immutable; callers choose a fresh artifact path.
-    await fs.writeFile(
-      output,
-      JSON.stringify({ outcome: "pending", inputPath, samples: plannedSamples() }),
-      { flag: "wx" },
-    );
+    await fs.writeFile(output, JSON.stringify({ outcome: "pending", inputPath, samples: plan }), {
+      flag: "wx",
+    });
     let beforeCleanup: ReturnType<typeof inspectManagedProcessGroup> | undefined;
     let exitCode: number | undefined;
     let error: string | undefined;
@@ -336,7 +334,7 @@ export async function runInstalledGatewayBenchmark(options: InstalledOptions): P
         shell: false,
         requireProcessTreeExit: process.platform !== "win32",
         stdio: ["ignore", "pipe", "pipe"],
-        timeoutMs: 30 * 60_000,
+        timeoutMs: (input.comparison ? 60 : 30) * 60_000,
         onReady(child) {
           child.stdout?.pipe(process.stdout, { end: false });
           child.stderr?.pipe(process.stderr, { end: false });
@@ -375,23 +373,28 @@ export async function runInstalledGatewayBenchmark(options: InstalledOptions): P
       exitCode === 0 &&
       beforeCleanup === "dead" &&
       report.outcome === "cohort-passed" &&
+      report.samples.length === plan.length &&
       report.samples.every(
         (sample, index) =>
           sample.index === index &&
-          sample.phase === (index === 0 ? "fresh" : "established") &&
+          sample.phase === plan[index]?.phase &&
+          sample.arm === plan[index]?.arm &&
+          sample.armIndex === plan[index]?.armIndex &&
           sample.outcome === "passed" &&
           sample.readyMs !== undefined,
       );
     const finalReport = {
       ...report,
       outcome: passed ? "passed" : "failed",
-      establishedReadySummary: passed
-        ? summarizeNumbers(
-            report.samples
-              .slice(1)
-              .flatMap((sample) => (sample.readyMs === undefined ? [] : [sample.readyMs])),
-          )
-        : null,
+      establishedReadySummary:
+        passed && !input.comparison
+          ? summarizeNumbers(
+              report.samples
+                .slice(1)
+                .flatMap((sample) => (sample.readyMs === undefined ? [] : [sample.readyMs])),
+            )
+          : null,
+      comparisonSummary: passed && input.comparison ? summarizeComparison(report.samples) : null,
     };
     outerSettlement.outcome = finalReport.outcome;
     await writeJsonAtomic(`${output}.outer.json`, outerSettlement);
@@ -399,63 +402,33 @@ export async function runInstalledGatewayBenchmark(options: InstalledOptions): P
     return passed ? 0 : 1;
   }
 
-  const input = inputSchema.parse(JSON.parse(await fs.readFile(inputPath, "utf8")));
-  assert.equal(process.version, input.runtime.version, "Benchmark runtime changed");
-  assert.equal(
-    await hashFile(process.execPath),
-    input.runtime.sha256,
-    "Benchmark executable changed",
-  );
-  const candidate = input.candidate;
-  assert.equal(
-    candidate.packageSourceSha,
-    input.sourceSha,
-    "Package source differs from requested source",
-  );
-  assert.equal(await hashFile(input.tarball), candidate.sha256, "Package tarball changed");
-  const installRoot = await fs.realpath(input.installRoot);
-  const packageRoot = path.join(installRoot, "node_modules", "openclaw");
-  const entry = path.join(packageRoot, "openclaw.mjs");
-  const buildInfo = JSON.parse(
-    await fs.readFile(path.join(packageRoot, "dist", "build-info.json"), "utf8"),
-  );
-  const packageJson = JSON.parse(await fs.readFile(path.join(packageRoot, "package.json"), "utf8"));
-  assert.equal(buildInfo.commit, input.sourceSha, "Installed package source changed");
-  assert.equal(packageJson.name, "openclaw");
-  assert.equal(packageJson.version, candidate.version);
-  for (const marker of [
-    PACKAGE_LIFECYCLE_PENDING_RELATIVE_PATH,
-    LEGACY_PACKAGE_INSTALL_GUARD_RELATIVE_PATH,
-  ]) {
-    assert.equal(
-      await fs.lstat(path.join(packageRoot, marker)).then(
-        () => true,
-        (error: unknown) => {
-          if (hasErrnoCode(error, "ENOENT")) {
-            return false;
-          }
-          throw error;
-        },
-      ),
-      false,
-      `Installed lifecycle has not settled: ${marker}`,
-    );
+  const baseline = await prepareInstalledPackage(input);
+  const comparison = input.comparison ? await prepareInstalledPackage(input.comparison) : undefined;
+  const targets = comparison ? [baseline, comparison] : [baseline];
+  if (comparison) {
+    assert.equal(comparison.input.toolingSha, input.toolingSha, "Comparison tooling differs");
+    assert.deepEqual(comparison.input.runtime, input.runtime, "Comparison runtime differs");
+    for (const left of [baseline.installRoot, baseline.root]) {
+      for (const right of [comparison.installRoot, comparison.root]) {
+        assertSeparatePaths(left, right);
+        assertSeparatePaths(right, left);
+      }
+    }
   }
-  const root = path.resolve(input.stateRoot);
-  const relativeState = path.relative(installRoot, root);
-  assert.ok(
-    relativeState === ".." ||
-      relativeState.startsWith(`..${path.sep}`) ||
-      path.isAbsolute(relativeState),
-    "Synthetic state must be outside the immutable installation",
-  );
-  await fs.mkdir(root);
-  await fs.mkdir(path.join(root, "temp"));
-  const config = writeGatewayBenchConfig(root, BASE_GATEWAY_BENCH_CONFIG, {});
+  const dependencyParity = comparison
+    ? await verifyInstalledDependencyParity(baseline, comparison)
+    : undefined;
+  const configs = new Map<string, string>();
+  for (const target of targets) {
+    await fs.mkdir(target.root);
+    await fs.mkdir(path.join(target.root, "temp"));
+    configs.set(target.root, writeGatewayBenchConfig(target.root, BASE_GATEWAY_BENCH_CONFIG, {}));
+  }
   const harnessFiles = [
     process.argv[1]!,
     ...[
       "gateway-bench-installed.ts",
+      "gateway-bench-installed-package.ts",
       "gateway-bench-stop-preload.mjs",
       "gateway-bench-child.ts",
       "gateway-bench-runtime.ts",
@@ -470,12 +443,14 @@ export async function runInstalledGatewayBenchmark(options: InstalledOptions): P
     Object.fromEntries(
       await Promise.all(harnessFiles.map(async (file) => [file, await hashFile(file)])),
     );
-  const samples = plannedSamples();
+  const samples = plan;
   const report = {
     artifactKind: "installed-package",
     outcome: "running",
     input,
-    buildInfo,
+    buildInfo: baseline.buildInfo,
+    comparison,
+    dependencyParity,
     runtime: {
       executable: process.execPath,
       version: process.version,
@@ -495,7 +470,9 @@ export async function runInstalledGatewayBenchmark(options: InstalledOptions): P
     },
     limitations: [
       "Fresh means new synthetic state, not a cold filesystem",
-      "One immutable install; first sample is separate from eight retained-state restarts",
+      comparison
+        ? "Two immutable installs; separate state/cache; fresh A,B then eight alternating restart pairs"
+        : "One immutable install; first sample is separate from eight retained-state restarts",
       "A dedicated runner is a new baseline, not a causal comparison to desktop measurements",
       "No synchronous process sampling or startup profiling; the stop-only preload is retained",
       "RPC success is recorded separately from plugin availability and degraded diagnostic facts",
@@ -505,7 +482,7 @@ export async function runInstalledGatewayBenchmark(options: InstalledOptions): P
       restartMs: RESTART_TIMEOUT_MS,
       shutdownMs: STOP_TIMEOUT_MS,
     },
-    before: await hashInstall(installRoot),
+    before: baseline.before,
     harnessHashes: await hashHarness(),
     inputSha256: await hashFile(inputPath),
     after: undefined as Awaited<ReturnType<typeof hashInstall>> | undefined,
@@ -518,12 +495,16 @@ export async function runInstalledGatewayBenchmark(options: InstalledOptions): P
   try {
     for (const sample of samples) {
       sample.outcome = "running";
-      sample.observations.stateRoot = root;
+      const target = sample.arm === "candidate" ? comparison : baseline;
+      assert.ok(target, "Planned sample has no installation");
+      const config = configs.get(target.root);
+      assert.ok(config, "Prepared installation has no config");
+      sample.observations.stateRoot = target.root;
       await save();
-      const outcome = await runSample({ sample, entry, installRoot, root, config });
+      const outcome = await runSample({ sample, ...target, config });
       await save();
       console.log(
-        `[gateway-startup-bench] installed ${sample.phase} ${sample.index}: ${sample.outcome} ready=${sample.readyMs ?? "missing"}ms`,
+        `[gateway-startup-bench] installed ${sample.arm ?? "single"} ${sample.phase} ${sample.index}: ${sample.outcome} ready=${sample.readyMs ?? "missing"}ms`,
       );
       if (outcome !== "passed") {
         break;
@@ -539,17 +520,20 @@ export async function runInstalledGatewayBenchmark(options: InstalledOptions): P
     }
   } finally {
     try {
-      report.after = await hashInstall(installRoot);
-      assert.deepEqual(report.after, report.before, "Installed tree changed during measurement");
+      for (const target of targets) {
+        target.after = await hashInstall(target.installRoot);
+        assert.deepEqual(target.after, target.before, "Installed tree changed during measurement");
+        assert.equal(
+          await hashFile(target.input.tarball),
+          target.input.candidate.sha256,
+          "Package tarball changed during measurement",
+        );
+      }
+      report.after = baseline.after;
       assert.equal(
         await hashFile(process.execPath),
         input.runtime.sha256,
         "Runtime changed during measurement",
-      );
-      assert.equal(
-        await hashFile(input.tarball),
-        candidate.sha256,
-        "Package tarball changed during measurement",
       );
       assert.deepEqual(
         await hashHarness(),

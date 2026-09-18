@@ -33,12 +33,14 @@ import {
 import {
   type PreparedModelRuntimeCatalogAccess,
   expirePreparedModelCatalogProviders,
+  listExpiredPreparedModelCatalogProviders,
   filterPreparedProviderCatalog,
   mergePreparedProviderCatalog,
   isPreparedModelCatalogFull,
   markPreparedModelCatalogFull,
   mergePreparedNativeCatalog,
   prepareModelCatalogPublication,
+  retainPreparedModelCatalogPublication,
 } from "./prepared-model-runtime.full-catalog.js";
 import { retainPreparedPluginGeneration } from "./prepared-model-runtime.plugin-lifetime.js";
 import {
@@ -258,6 +260,7 @@ export function createFullModelCatalogAccess(params: {
   const publishCatalog = () => {
     assertCurrent();
     const previous = published;
+    fullCatalog = retainPreparedModelCatalogPublication(fullCatalog, published.catalog);
     published = capturePublication();
     params.inventoryOwner.catalogInventory = inventory;
     return { previous, current: published };
@@ -266,10 +269,7 @@ export function createFullModelCatalogAccess(params: {
     if (pending || !inventory) {
       return;
     }
-    const now = Date.now();
-    const providerIds = [...inventory.providers]
-      .filter(([, { expiresAt }]) => expiresAt !== undefined && expiresAt <= now)
-      .map(([provider]) => provider);
+    const providerIds = listExpiredPreparedModelCatalogProviders(inventory, Date.now());
     if (!providerIds.length) {
       return;
     }

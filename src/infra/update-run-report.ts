@@ -167,6 +167,7 @@ export function renderUpdateRunReport(
     doctorHint?: string | null;
     nextAction?: string;
     currentHealth?: UpdateRunReportHealth;
+    mode?: UpdateRunResult["mode"] | "package";
   } = {},
 ): UpdateRunReport {
   const reconciled = isAcknowledgedAbandonedUpdateRun(run);
@@ -212,6 +213,9 @@ export function renderUpdateRunReport(
   }
   headline = bounded(headline, 500);
   const lines: string[] = [];
+  if (opts.mode && opts.mode !== "unknown") {
+    lines.push(`Update mode: ${opts.mode}`);
+  }
   for (const step of run.steps) {
     if (step.snapshotCapacity) {
       lines.push(formatUpdateSnapshotCapacity(step.snapshotCapacity));

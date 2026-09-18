@@ -25,13 +25,18 @@ import { createBackgroundTasksProps } from "./components/chat-background-tasks.t
 import { createSessionWorkspaceProps } from "./components/chat-session-workspace.ts";
 import {
   closeSlot,
+  ensureSidebarConversation,
   isSidebarSlotVisible,
   normalizeSidebarLayout,
   openDashboardPresentation,
   openSlot,
   promoteSidebarPanel,
   setSidebarDock,
+  setSidebarExpanded,
+  setSidebarOpen,
+  toggleSidebarPanelExpanded,
   sidebarMainPanel,
+  sidebarActivePanel,
   type SidebarLayout,
 } from "./sidebar-layout.ts";
 
@@ -288,7 +293,9 @@ describe("dashboard default activation and personal layout persistence", () => {
     expect(h.saved()?.dashboardPresentationOverride).toBe("split");
     expect(h.state.sidebarLayout.dashboardPresentationOverride).toBe("split");
     h.revisit();
-    expectPresentation(h.state.sidebarLayout, false);
+    expect(sidebarMainPanel(h.state.sidebarLayout)?.slot).toBe("dashboard");
+    expect(h.state.sidebarLayout.expanded).toBe(false);
+    expect(isSidebarSlotVisible(h.state.sidebarLayout, "workspace")).toBe(true);
   });
 
   it.each([
@@ -597,6 +604,100 @@ describe("dashboard default activation and personal layout persistence", () => {
     expect(reopenedAgain.saved()?.dashboardPresentationOverride).toBe("expanded");
   });
 
+  it.each(
+    ([undefined, "conversation", "dashboard"] as const).flatMap((mainPanelId) =>
+      (["companion", "workspace"] as const).flatMap((sidePanel) =>
+        ([null, "split"] as const).map((dashboardPresentationOverride) => ({
+          mainPanelId,
+          sidePanel,
+          dashboardPresentationOverride,
+        })),
+      ),
+    ),
+  )(
+    "restores $sidePanel with main $mainPanelId and override $dashboardPresentationOverride",
+    ({ mainPanelId, sidePanel, dashboardPresentationOverride }) => {
+      const split = openDashboardPresentation({ columns: [] }, "split");
+      const savedLayout = normalizeSidebarLayout({
+        ...setSidebarDock(
+          openSlot(
+            mainPanelId
+              ? promoteSidebarPanel(ensureSidebarConversation(split), mainPanelId)
+              : split,
+            sidePanel,
+          ),
+          "left",
+        ),
+        dashboardPresentationOverride,
+      });
+      const row = session({
+        boardPresentation: dashboardPresentationOverride === null ? "split" : "expanded",
+      });
+      const h = createDashboardHarness({ savedLayout, row });
+      h.sync();
+      expect(sidebarMainPanel(h.state.sidebarLayout)?.slot).toBe(mainPanelId);
+      expect(sidebarActivePanel(h.state.sidebarLayout)?.slot).toBe(sidePanel);
+      h.revisit();
+      expect(h.state.sidebarLayout).toEqual(savedLayout);
+      expect(h.saved()).toEqual(savedLayout);
+
+      const reopened = createDashboardHarness({ savedLayout: h.saved(), row });
+      reopened.sync();
+      expect(reopened.state.sidebarLayout).toEqual(savedLayout);
+      expect(reopened.saved()).toEqual(savedLayout);
+    },
+  );
+
+  it.each(["closed side", "focused Chat", "focused Side chat"] as const)(
+    "restores a retained Dashboard without disturbing %s",
+    (view) => {
+      const split = openSlot(openDashboardPresentation({ columns: [] }, "split"), "companion");
+      const savedLayout = normalizeSidebarLayout({
+        ...(view === "closed side"
+          ? setSidebarOpen(split, false)
+          : view === "focused Chat"
+            ? setSidebarExpanded(ensureSidebarConversation(split), true)
+            : toggleSidebarPanelExpanded(split, "companion")),
+        dashboardPresentationOverride: null,
+      });
+      const h = createDashboardHarness({ savedLayout });
+      h.sync();
+      expect(h.state.sidebarLayout).toEqual(savedLayout);
+      expect(isSidebarSlotVisible(h.state.sidebarLayout, "dashboard")).toBe(false);
+      h.revisit();
+      expect(h.state.sidebarLayout).toEqual(savedLayout);
+      const reopened = createDashboardHarness({ savedLayout: h.saved() });
+      reopened.sync();
+      expect(reopened.state.sidebarLayout).toEqual(savedLayout);
+      expect(reopened.saved()).toEqual(savedLayout);
+    },
+  );
+
+  it.each(["shared default", "expanded link", "tool command"] as const)(
+    "reveals Dashboard over an inactive retained tab for an explicit %s",
+    (activation) => {
+      const savedLayout = normalizeSidebarLayout({
+        ...openSlot(openDashboardPresentation({ columns: [] }, "split"), "workspace"),
+        dashboardPresentationOverride: null,
+      });
+      const h = createDashboardHarness({
+        savedLayout,
+        row: session({ boardPresentation: activation === "shared default" ? "expanded" : "split" }),
+        expandedLink: activation === "expanded link",
+      });
+      h.sync();
+      if (activation === "tool command") {
+        h.pane.handleBoardCommand({
+          sessionKey: key,
+          command: { kind: "set_chat_dock", dock: "right" },
+        });
+      }
+      expect(isSidebarSlotVisible(h.state.sidebarLayout, "dashboard")).toBe(true);
+      expectPresentation(h.state.sidebarLayout, activation !== "tool command");
+      expect(h.saved()).toEqual(savedLayout);
+    },
+  );
+
   it("opens a marked personal layout without waiting for shared metadata", () => {
     const savedLayout = {
       ...openDashboardPresentation({ columns: [] }, "split"),
@@ -681,6 +782,7 @@ describe("dashboard shared default in the real header Layout menu", () => {
     "read only",
     "restricted viewer",
     "not shown",
+    "inactive side tab",
     "fullscreen other panel",
     "disconnected",
     "missing session id",
@@ -701,6 +803,13 @@ describe("dashboard shared default in the real header Layout menu", () => {
     );
     if (reason === "not shown") {
       h.state.sidebarLayout = closeSlot(h.state.sidebarLayout, "dashboard");
+    }
+    if (reason === "inactive side tab") {
+      h.state.sidebarLayout = openSlot(
+        openDashboardPresentation({ columns: [] }, "split"),
+        "companion",
+      );
+      h.publishRow(session({ boardPresentation: "expanded" }));
     }
     if (reason === "fullscreen other panel") {
       h.state.sidebarLayout = {

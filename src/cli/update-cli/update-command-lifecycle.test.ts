@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
@@ -198,9 +199,10 @@ vi.mock("./update-command-post-core.js", async (importOriginal) => ({
   }),
   resolvePostCoreUpdateStartedAtMs: vi.fn(async () => 1_000),
   writePostCorePluginUpdateResultFile: vi.fn(async () => undefined),
+  writePostCoreUpdateFailureFile: vi.fn(async () => undefined),
 }));
 
-import { readPackageVersion, tryWriteCompletionCache } from "./shared.js";
+import { readPackageVersion, resolveUpdateRoot, tryWriteCompletionCache } from "./shared.js";
 import { convergeUpdatePlugins } from "./update-command-convergence.js";
 import { updateFinalizeCommand } from "./update-command-finalize.js";
 import {
@@ -212,6 +214,7 @@ import {
   continuePostCoreUpdateInFreshProcess,
   postCoreUpdateParentOwnsCompletion,
   writePostCorePluginUpdateResultFile,
+  writePostCoreUpdateFailureFile,
 } from "./update-command-post-core.js";
 import { resumePostCoreUpdate } from "./update-command-resume.js";
 
@@ -236,7 +239,7 @@ describe("update plugin lifecycle lease boundaries", () => {
     vi.unstubAllEnvs();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Ordering-only fixtures own an absent private state root; never probe a
     // shared host path while real recovery admission is running.
     mocks.databasePath = path.join(dirs.make("update-lease-order-"), "state", "openclaw.sqlite");
@@ -251,6 +254,11 @@ describe("update plugin lifecycle lease boundaries", () => {
     mocks.interactive = false;
     mocks.triage.mockReset().mockResolvedValue({ status: "completed", hint: "fixture" });
     mocks.maintenance.mockReset().mockResolvedValue(undefined);
+    vi.mocked(writePostCorePluginUpdateResultFile).mockReset().mockResolvedValue(undefined);
+    vi.mocked(writePostCoreUpdateFailureFile).mockReset().mockResolvedValue(undefined);
+    const root = dirs.make("update-lease-package-");
+    await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ name: "openclaw" }));
+    vi.mocked(resolveUpdateRoot).mockResolvedValue(root);
     vi.mocked(readPackageVersion).mockResolvedValue(VERSION);
     vi.mocked(continuePostCoreUpdateInFreshProcess).mockImplementation(async () => {
       record("target-convergence");
@@ -294,7 +302,8 @@ describe("update plugin lifecycle lease boundaries", () => {
         const body = vi
           .mocked(defaultRuntime.log)
           .mock.calls.map(([value]) => String(value))
-          .join("\n");
+          .find((value) => value.startsWith("# OpenClaw update failure report"));
+        expect(body).toBeDefined();
         expect(body).toContain("Reason code: doctor-failed");
         expect(body).toContain("Update mode: package");
         expect(body).toContain("Update target: 2026.9.4");
@@ -565,6 +574,60 @@ describe("update plugin lifecycle lease boundaries", () => {
           mocks.events.indexOf("complete:false"),
         );
       }
+    },
+  );
+
+  it.each(["success", "doctor", "plugins"])(
+    "restores legacy post-core service custody before publishing %s",
+    async (phase) => {
+      const failure = new Error(`Synthetic ${phase} failure`);
+      const finish = vi.fn(async () => {
+        record("restore-service");
+      });
+      mocks.maintenance.mockImplementationOnce(async () => {
+        record("park-service");
+        return {
+          run: <T>(operation: () => T): T => operation(),
+          releaseState: async () => {
+            record("release-state");
+          },
+          finish,
+          release: async () => {
+            record("release-custody");
+          },
+        };
+      });
+      vi.mocked(postCoreUpdateParentOwnsCompletion).mockResolvedValueOnce(false);
+      vi.stubEnv("OPENCLAW_UPDATE_POST_CORE_RESULT_PATH", "/fixture/post-core-result.json");
+      const publish = async () => {
+        expect(finish).toHaveBeenCalledOnce();
+        record("publish");
+      };
+      vi.mocked(writePostCorePluginUpdateResultFile).mockImplementationOnce(publish);
+      vi.mocked(writePostCoreUpdateFailureFile).mockImplementationOnce(publish);
+      if (phase === "doctor") {
+        vi.mocked(runUpdateFinalizationDoctorInFreshProcess).mockRejectedValueOnce(failure);
+      } else if (phase === "plugins") {
+        vi.mocked(updatePluginsAfterCoreUpdate).mockRejectedValueOnce(failure);
+      }
+      const run = resumePostCoreUpdate({
+        root: "/tmp/openclaw",
+        channel: "stable",
+        opts: { yes: true },
+        timeoutMs: 1_000,
+      });
+      if (phase === "success") {
+        await run;
+      } else {
+        await expect(run).rejects.toBe(failure);
+      }
+      expect(finish).toHaveBeenCalledOnce();
+      expect(mocks.events.indexOf("release-state:false")).toBeGreaterThan(
+        mocks.events.indexOf("park-service:false"),
+      );
+      expect(mocks.events.indexOf("publish:false")).toBeGreaterThan(
+        mocks.events.indexOf("restore-service:false"),
+      );
     },
   );
 

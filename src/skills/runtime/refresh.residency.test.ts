@@ -86,6 +86,9 @@ describe("skills watcher residency", () => {
         name: "residency-proof",
         description: "Original instructions",
       });
+      if (repair) {
+        await fs.writeFile(path.join(skillDir, "SKILL.md"), "invalid skill frontmatter\n");
+      }
       const params = {
         workspaceDir: fixture.workspaceDir,
         executionWorkspaceDir: first.executionWorkspaceDir,
@@ -93,22 +96,17 @@ describe("skills watcher residency", () => {
         skillFilter: ["residency-proof"],
       };
       const initial = await resolveReusableWorkspaceSkillSnapshot(params);
-      expect(initial.snapshot.prompt).toContain("Original instructions");
+      if (repair) {
+        expect(initial.snapshot.skills).toEqual([]);
+      } else {
+        expect(initial.snapshot.prompt).toContain("Original instructions");
+      }
       for (let index = 1; index <= 128; index += 1) {
         await ensureExecutionRoot(index);
       }
       expect(first.watcher.closed).toBe(true);
-      let cached = initial.snapshot;
+      const cached = initial.snapshot;
       if (repair) {
-        await fs.writeFile(path.join(skillDir, "SKILL.md"), "invalid skill frontmatter\n");
-        cached = (
-          await resolveReusableWorkspaceSkillSnapshot({
-            ...params,
-            existingSnapshot: cached,
-            watch: false,
-          })
-        ).snapshot;
-        expect(cached.skills).toEqual([]);
         await writeSkill({
           dir: skillDir,
           name: "residency-proof",
@@ -125,16 +123,16 @@ describe("skills watcher residency", () => {
         ).toBe(cached);
       }
 
-      // No native events: acquisition itself must invalidate the first consumed snapshot.
+      // No native events: acquisition must reconcile before the first snapshot is consumed.
       const refreshed = await resolveReusableWorkspaceSkillSnapshot({
         ...params,
         existingSnapshot: cached,
       });
-      expect(refreshed.shouldRefresh).toBe(true);
+      expect(refreshed.shouldRefresh).toBe(repair);
       if (repair) {
         expect(refreshed.snapshot.prompt).toContain("Repaired instructions");
       } else {
-        expect(refreshed.snapshot.prompt).toBe(initial.snapshot.prompt);
+        expect(refreshed.snapshot).toBe(initial.snapshot);
       }
       expect(
         watchForSkillRoot(path.join(first.executionWorkspaceDir, "skills")).watcher.closed,

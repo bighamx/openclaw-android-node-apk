@@ -178,8 +178,7 @@ export class CronStreamOutput {
     }
     const accepted = truncateUtf8Prefix(chunk, remaining);
     const truncatedTail = accepted !== chunk;
-    const truncatedTailContinuesLine =
-      truncatedTail && !chunk.slice(accepted.length).endsWith("\n");
+    const truncatedTailContinuesLine = truncatedTail && !chunk.endsWith("\n");
     const acceptedBytes = Buffer.byteLength(accepted, "utf8");
     if (acceptedBytes === 0 && chunk.length > 0) {
       this.droppedChunkTail[channel] = chunk.endsWith("\n") ? "clean" : "midline";
@@ -213,16 +212,13 @@ export class CronStreamOutput {
   }
 
   async drainBufferedOutput(generation: number): Promise<void> {
-    const buffered = this.bufferedOutput.filter((entry) => entry.generation === generation);
-    this.bufferedOutput = this.bufferedOutput.filter((entry) => entry.generation !== generation);
-    this.bufferedOutputBytes = this.bufferedOutput.reduce(
-      (total, entry) => total + Buffer.byteLength(entry.chunk, "utf8"),
-      0,
-    );
-    const overflowed = this.outputOverflowGenerations.delete(generation);
     if (generation !== this.params.getGeneration()) {
       return;
     }
+    const buffered = this.bufferedOutput;
+    this.bufferedOutput = [];
+    this.bufferedOutputBytes = 0;
+    const overflowed = this.outputOverflowGenerations.delete(generation);
     for (const entry of buffered) {
       if (!this.params.isDesiredRunning()) {
         this.interruptedOutput.push(entry);

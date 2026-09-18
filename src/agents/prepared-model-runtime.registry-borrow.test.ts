@@ -5,19 +5,24 @@ import {
   getPreparedModelRuntimeMocks,
   resetPreparedModelRuntimeHarness,
 } from "./prepared-model-runtime.test-harness.js";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../test/helpers/promise.js";
+import { PluginInstance } from "../plugins/plugin-instance.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { isPluginRegistryRetired } from "../plugins/registry-lifecycle.js";
+import { createPluginRecord } from "../plugins/status.test-helpers.js";
 import {
   createOpenClawTestState,
   type OpenClawTestState,
 } from "../test-utils/openclaw-test-state.js";
 import {
+  acquireAgentRunPreparedModelRuntime,
   acquirePublishedPreparedModelRuntime,
+  markPreparedModelRuntimeSnapshotsStale,
   prepareModelRuntimeSnapshot,
   refreshPreparedModelRuntimeSnapshots,
 } from "./prepared-model-runtime.js";
+import * as runtimePlugins from "./runtime-plugins.js";
 
 const mocks = getPreparedModelRuntimeMocks();
 let state: OpenClawTestState;
@@ -34,6 +39,9 @@ afterEach(async ({ task }) => {
 async function acquireConfiguredRegistryBorrower() {
   mocks.configuredAgentIds = ["default"];
   const registry = createEmptyPluginRegistry();
+  const record = createPluginRecord({ id: "prepared-registry-borrow" });
+  registry.plugins.push(record);
+  const instance = new PluginInstance(record.id, { record, registry });
   mocks.loadAgentRuntimePluginRegistryHandle.mockReturnValue(registry);
   const config = {};
   const input = {
@@ -49,12 +57,60 @@ async function acquireConfiguredRegistryBorrower() {
   });
   const borrower = await acquirePublishedPreparedModelRuntime(input);
   await borrower.snapshot.loadFullModelCatalog?.();
-  return { registry, config, input, borrower };
+  return { registry, config, input, borrower, instance };
 }
 
 describe("prepared registry construction borrows", () => {
+  it("retains selected inbound resources until a cancelled initial run inspection settles", async () => {
+    const { registry, input, borrower, instance } = await acquireConfiguredRegistryBorrower();
+    const inspecting = createDeferred();
+    const finishInspection = createDeferred();
+    const acquire = runtimePlugins.acquireAgentRuntimePluginRegistry;
+    mocks.loadAgentRuntimePluginRegistryHandle.mockReturnValueOnce(createEmptyPluginRegistry());
+    const inspection = vi
+      .spyOn(runtimePlugins, "acquireAgentRuntimePluginRegistry")
+      .mockImplementationOnce(async (...args) => {
+        const acquired = await acquire(...args);
+        inspecting.resolve();
+        await finishInspection.promise;
+        return acquired;
+      });
+    const pending = acquireAgentRunPreparedModelRuntime(
+      {
+        ...input,
+        runtimePluginSelections: [{ provider: "custom", modelId: "selected", runtime: "openclaw" }],
+      },
+      { catalogMode: "static", pluginGeneration: borrower.pluginGeneration },
+    );
+    const settled = Promise.allSettled([pending]);
+    try {
+      await Promise.race([
+        inspecting.promise,
+        pending.then(() => {
+          throw new Error("Initial run skipped inspection acquisition");
+        }),
+      ]);
+      markPreparedModelRuntimeSnapshotsStale("configuration replaced during run admission");
+      await borrower[Symbol.asyncDispose]();
+      expect(isPluginRegistryRetired(registry)).toBe(false);
+      expect(() => instance.reserveReplacement()()).toThrow("active retained work");
+      finishInspection.resolve();
+      await expect(pending).rejects.toThrow("superseded");
+      expect(isPluginRegistryRetired(registry)).toBe(true);
+    } finally {
+      finishInspection.resolve();
+      const [outcome] = await settled;
+      if (outcome.status === "fulfilled") {
+        await outcome.value[Symbol.asyncDispose]();
+      }
+      await borrower[Symbol.asyncDispose]();
+      inspection.mockRestore();
+    }
+  });
+
   it("keeps a cached registry alive while its configured replacement is preparing", async () => {
-    const { registry, config, input, borrower } = await acquireConfiguredRegistryBorrower();
+    const { registry, config, input, borrower, instance } =
+      await acquireConfiguredRegistryBorrower();
     const preparing = createDeferred();
     const finishPreparation = createDeferred();
     mocks.prepareStaticCatalog.mockImplementationOnce(async () => {
@@ -75,12 +131,15 @@ describe("prepared registry construction borrows", () => {
         }),
       ]);
       await borrower[Symbol.asyncDispose]();
+      // The build still uses this registry after the final admitted caller releases it.
+      expect(() => instance.reserveReplacement()()).toThrow("active retained work");
       finishPreparation.resolve();
       await replacement;
       const published = await prepareModelRuntimeSnapshot(input);
       expect(published).not.toBe(borrower.snapshot);
       expect(published.pluginRegistry).toBe(registry);
       expect(published.config).toBe(config);
+      instance.reserveReplacement()();
     } finally {
       finishPreparation.resolve();
       await Promise.allSettled([borrower[Symbol.asyncDispose](), settled]);

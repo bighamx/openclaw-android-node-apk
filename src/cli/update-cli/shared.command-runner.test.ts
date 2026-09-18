@@ -10,6 +10,7 @@ import {
   resolveGlobalManager,
   resolveUpdateRoot,
   runUpdateStep,
+  UpdatePreMutationError,
 } from "./shared.js";
 
 const runCommandWithTimeout = vi.hoisted(() => vi.fn());
@@ -141,18 +142,93 @@ describe("update CLI shared helpers", () => {
       stderr: "not owned",
     });
 
-    await expect(
-      resolveGlobalManager({
-        root: "/shared/lib/node_modules/openclaw",
+    const owner = resolveGlobalManager({
+      root: "/shared/lib/node_modules/openclaw",
+      installKind: "package",
+      timeoutMs: 1_000,
+    });
+    await expect(owner).rejects.toBeInstanceOf(UpdatePreMutationError);
+    await expect(owner).rejects.toMatchObject({
+      name: "UpdatePreMutationError",
+      reason: expect.stringMatching(/^(unmanaged-package-install|container-image-install)$/),
+      failureFacts: [
+        {
+          check: "installation-inspection",
+          code: "installation-unclassified",
+          message: expect.stringMatching(/Installation ownership[\s\S]*retry openclaw update/),
+        },
+      ],
+    });
+    for (const detail of [
+      "Root: /shared/lib/node_modules/openclaw",
+      "Git metadata: absent or unreadable",
+      "node_modules layout: package under node_modules",
+      "local node_modules absent or unreadable",
+      "package.json name: missing or unreadable",
+      "Service unit target: not inspected",
+      "Inspected package-manager owners:",
+      "npm root -g",
+      "pnpm root -g",
+      "prefix -g",
+      "No package changes or Gateway restart were attempted.",
+    ]) {
+      await expect(owner).rejects.toMatchObject({ message: expect.stringContaining(detail) });
+    }
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "guides Homebrew-managed installations to use brew upgrade",
+    async () => {
+      await expect(
+        resolveGlobalManager({
+          root: "/opt/homebrew/Cellar/openclaw-cli/2026.9.2/libexec/lib/node_modules/openclaw",
+          installKind: "package",
+          timeoutMs: 1_000,
+        }),
+      ).rejects.toMatchObject({
+        name: "UpdatePreMutationError",
+        reason: "unmanaged-package-install",
+        message:
+          "This OpenClaw installation is managed by Homebrew. To update OpenClaw, run:\n\n  brew upgrade openclaw-cli\n\nThen restart the gateway:\n\n  openclaw gateway restart",
+      });
+    },
+  );
+
+  it("does not treat global npm packages under HOMEBREW_PREFIX as Homebrew formula installs", async () => {
+    const originalPrefix = process.env.HOMEBREW_PREFIX;
+    process.env.HOMEBREW_PREFIX = "/opt/homebrew-custom";
+    runCommandWithTimeout.mockResolvedValue({
+      ...successfulCommandResult,
+      code: 1,
+      stderr: "not owned",
+    });
+
+    try {
+      const owner = resolveGlobalManager({
+        root: "/opt/homebrew-custom/lib/node_modules/openclaw",
         installKind: "package",
         timeoutMs: 1_000,
-      }),
-    ).rejects.toMatchObject({
-      name: "UpdatePreMutationError",
-      message: expect.stringMatching(
-        /No package changes or Gateway restart were attempted\.[\s\S]*Inspected:[\s\S]*\/shared\/lib\/node_modules\/openclaw[\s\S]*npm root -g[\s\S]*pnpm root -g[\s\S]*prefix -g/,
-      ),
-    });
+      });
+      await expect(owner).rejects.toBeInstanceOf(UpdatePreMutationError);
+      await expect(owner).rejects.toMatchObject({
+        name: "UpdatePreMutationError",
+        message: expect.stringContaining("Root: /opt/homebrew-custom/lib/node_modules/openclaw"),
+        failureFacts: [
+          expect.objectContaining({
+            check: "installation-inspection",
+            code: "installation-unclassified",
+          }),
+        ],
+      });
+      await expect(owner).rejects.toMatchObject({
+        message: expect.stringContaining("No package changes or Gateway restart were attempted."),
+      });
+      await expect(owner).rejects.not.toMatchObject({
+        message: expect.stringContaining("managed by Homebrew"),
+      });
+    } finally {
+      process.env.HOMEBREW_PREFIX = originalPrefix;
+    }
   });
 
   it("publishes a successful fresh clone only after the clone completes", async () => {

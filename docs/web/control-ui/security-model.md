@@ -60,6 +60,10 @@ When gateway auth is configured, the Control UI avatar endpoint requires the sam
 
 If you disable gateway auth (not recommended on shared hosts), the avatar route also becomes unauthenticated, in line with the rest of the gateway.
 
+Concurrent profile-photo requests can share a Gravatar lookup. Each HTTP request
+keeps its own timeout and disconnect lifecycle, so one expired or disconnected
+request does not interrupt another client loading the same photo.
+
 ## Assistant media route auth
 
 Local image previews follow the chat's filesystem permissions. Project chats use
@@ -67,6 +71,11 @@ their session workspace, including managed worktrees. Full Access, or disabled
 workspace-only filesystem protection, also permits image previews outside that
 workspace. An explicit session permission mode takes precedence over the agent's
 filesystem setting.
+
+Assistant `MEDIA:` attachments in local project chats resolve relative paths
+inside the session workspace, including managed worktrees. Absolute paths in
+that workspace are staged for delivery under the same file-access checks.
+Selecting a project does not grant access to sibling worktrees.
 
 Sessions dispatched to a cloud worker cannot read Gateway-local file paths,
 even with Full Access. Dispatch also revokes pending local previews and downloads.

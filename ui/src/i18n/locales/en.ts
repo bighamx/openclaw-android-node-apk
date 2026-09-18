@@ -2387,6 +2387,7 @@ export const en: TranslationMap & {
   cloudWorkersPage: {},
   portalsPage: {},
   modelSetup: {
+    discovery: {},
     missingAuth: "No provider credential is configured for this model. Set it up in Model Setup.",
     commandHint: "Try /models or /help.",
     heading: "Connect a verified AI model",

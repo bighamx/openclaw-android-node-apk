@@ -318,18 +318,30 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
           key: activationKey,
           expanded: this.dashboardExpanded,
         };
+        const presentation =
+          savedLayout?.dashboardPresentationOverride ?? row?.boardPresentation ?? "split";
+        const savedPresentation =
+          savedLayout &&
+          (sidebarDashboardPresentation(savedLayout) ??
+            (savedLayout.columns.some((column) =>
+              column.panels.some((panel) => panel.slot === "dashboard"),
+            )
+              ? "split"
+              : undefined));
         if (this.dashboardExpanded) {
           this.showDashboard(true);
-        } else if (savedLayout && savedLayout.dashboardPresentationOverride === undefined) {
+        } else if (
+          savedLayout &&
+          (savedLayout.dashboardPresentationOverride === undefined ||
+            savedPresentation === presentation)
+        ) {
+          // Reapplying an unchanged default must not replace the saved side tab.
+          // A retained but hidden Dashboard is split, even when another panel is focused.
+          // Legacy layouts also retain their complete presentation without provenance.
           this.commitSidebarLayout(this.restorePaneSidebarLayout(savedLayout), { persist: false });
         } else {
-          this.showDashboard(
-            (savedLayout?.dashboardPresentationOverride ?? row?.boardPresentation ?? "split") ===
-              "expanded",
-          );
+          this.showDashboard(presentation === "expanded");
         }
-        // Unmarked legacy layouts retain their complete saved presentation. They
-        // cannot tell us whether an old open was inherited or chosen by a person.
       }
     }
     if (sessionKey && board.provider.hasLoadedSnapshot) {

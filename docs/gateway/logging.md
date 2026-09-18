@@ -45,7 +45,7 @@ The Control UI Logs tab tails this file via the gateway (`logs.tail`). The CLI d
 openclaw logs --follow
 ```
 
-If a tail read observes that the active file has disappeared, the Control UI clears its previous records and follows the recreated file. Missing files still return an empty tail; filesystem read errors remain visible.
+If a tail read observes that the active file has disappeared, the Control UI clears its previous records and follows the recreated file. Missing files still return an empty tail. Filesystem read errors, including a log path that points to a directory, remain visible while the Control UI keeps the last successfully read records as stale data.
 
 ### Verbose vs. log levels
 
@@ -239,6 +239,12 @@ includes process/thread identity, the request trace, and row counts:
 The latter two distinguish selected rows refreshed during this request from
 selected rows already resident when it began. Dirty counts describe pending
 owner work at the start of the request.
+
+The `modelCatalog` phase includes waiting for projection readiness. In-flight
+catalog renewals no longer block lists or descriptions once a catalog is loaded:
+reads use the current catalog while its replacement loads in the background, then
+rows refresh with the new catalog. Startup still waits for the first catalog.
+Renewals that retain identical catalog content do not dirty resident rows.
 
 Transcript-only row refreshes use a one-second window per resident session: the
 first notification refreshes promptly, and further notifications collapse into a

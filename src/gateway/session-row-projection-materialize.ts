@@ -31,6 +31,7 @@ export function readResidentSessionRow(
     context: SessionListRowContext;
     subagentInputs: SessionListRowContext["subagentRuns"]["inputs"];
     gatewayContext: Parameters<typeof readSessionRowFacts>[0]["context"];
+    placementFactsReader?: Parameters<typeof readSessionRowFacts>[0]["placementFactsReader"];
     links: SessionChildLink[];
     readSourceEntry: (key: string) => records.Row["storedEntry"];
   },
@@ -89,16 +90,19 @@ export function readResidentSessionRow(
       activitySummaryEnabledByAgent.set(row.agentId, activitySummaryEnabled);
     }
   }
+  const facts = readSessionRowFacts({
+    cfg,
+    target: row,
+    entry: row.entry,
+    context: params.gatewayContext,
+    placementFactsReader: params.placementFactsReader,
+    activitySummaryEnabled,
+  });
   return {
     materialized,
     fallbackModel: presentation.activeModel,
-    facts: readSessionRowFacts({
-      cfg,
-      target: row,
-      entry: row.entry,
-      context: params.gatewayContext,
-      activitySummaryEnabled,
-    }),
+    facts,
+    hasBoard: facts.hasBoard,
     membership: new Set(
       listSessionMembers({ ...row.storeTarget, sessionKey: row.key }).map(
         (member) => member.identityId,

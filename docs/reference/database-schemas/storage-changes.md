@@ -181,6 +181,17 @@ Reads use the existing-only worker path and do not create a missing database.
 Public event helpers and exports await durable completion. Cursor eviction,
 namespace-wide append ordering, sibling row budgets, and rollback remain unchanged.
 
+Matrix's live sync cache loads and persists through the shared-state worker. The
+client factory awaits the loaded cursor and clean-shutdown facts before publishing
+the client, so startup's replay decision sees the previous completed shutdown.
+The SDK's synchronous cursor getter stays memory-only. Complete cache reads, writes,
+and deletion serialize by storage root within the process. Chunk writes still publish
+metadata before deleting the previous generation; deletion, flush, and quiescence
+join the same persistence owner. Cache-load failures remain visible on persistence,
+and the existing version, namespaces, digest validation, debounce, and host floor
+are unchanged. Account credentials, storage-root selection and initial metadata
+writes retain their separate owners.
+
 Reef registration binding reads, reservations, finalization, release, and setup-session
 persistence use the shared-state worker. Reservation mutations compare the current
 row before writing; a conflict rereads ownership before retrying. The CLI, setup
@@ -246,6 +257,14 @@ provider or plugin runtime ownership. Kernels and their transaction callbacks
 remain synchronous. The asynchronous task and flow read facade runs these read
 kernels in the shared-state worker.
 
+Synchronous task creation and managed-flow worker creation share one create/reuse
+operation. Each adapter keeps its selection order and transaction boundaries.
+Filling a missing delivery origin commits before optional metadata changes; that
+later stage rereads the selected task and revalidates its parent flow and backing.
+Run-scoped native transitions retain their initial ordered task selection, reread
+each exact identity, and finish its publication before processing the next sibling.
+Equivalent terminal updates still repair linked flows and publish observations.
+
 Routine status reads stream task audit metadata through the same shared worker
 and return fixed-size history aggregates plus candidates for live reconciliation.
 They do not decode retained task payloads or restore delivery-state maps. Reads
@@ -286,6 +305,13 @@ Target resolution, profile and creator catalogs, public-share metadata, projecti
 refreshes, and membership writes retain their existing execution paths. This cut
 moves the member-row query, not every database read performed by these RPCs.
 
+Watched upstream-session discovery runs its existing single-query snapshot and
+row decoding in the shared-state worker. The monitor awaits that snapshot and
+checks its stop signal before using it. Catalog grouping, duplicate-watcher
+suppression, ambiguous-agent filtering, and best-effort failures stay unchanged.
+Single-link reads and their immediately guarded writes retain their synchronous
+owner until their complete freshness and mutation boundary moves together.
+
 Gateway user-preference RPCs and Talk appearance reads resolve merged profile IDs
 and access preferences in the shared-state worker. Preference writes keep profile
 resolution, quota validation, and mutation in one synchronous write transaction;
@@ -300,6 +326,18 @@ opening, with Gateway schema authority delegated by its live coordinator owner.
 Classified database errors survive transport, and canonical close joins worker
 operations and native cleanup. Cold registry restoration and runtime-configuration
 preparation still retain their existing main-thread behavior.
+
+Dynamic model resolution awaits persisted auth-profile reads. Agent-local and
+legacy shared credentials use the isolated read-only child, so reads can coexist
+with the agent database's memory publication worker. Captured source-exclusion
+scopes read through their owned private snapshot. Relocated shared credentials
+and selected personal accounts use the canonical shared-state worker. Missing
+stores remain missing. Bounded transfer frames preserve complete credential
+rows without an aggregate size limit. Reader cleanup settles before the result
+reaches model preparation; host-owned overlays and migration checks retain
+captured persisted facts and revalidate after cleanup. A recorded refusal on an unreadable inherited agent store
+does not hide healthy local credentials; selected-store failures still propagate.
+Credential mutations and synchronous SDK readers retain their existing owners.
 
 Model-context reads and session transcript preparation use the session-transcript
 worker with separate bounded queues. Background preparation cannot occupy the
@@ -386,6 +424,19 @@ replacement or switch readers. Direct servers and standalone config readers keep
 their existing execution path unless their host explicitly supplies this operation.
 Missing-file defaults still load plugin metadata only when those defaults need it.
 The operation changes no schema, persisted representation, or publication authority.
+
+Meeting transcript identity, descriptor, notes, summary, and utterance reads use
+the shared-state worker. Typed commands call the existing synchronous query
+kernels, preserve complete stored results and library error fields, and retain
+first-use schema creation. Compound enumeration, matching, and library reads
+use one deferred read snapshot, keeping their queries coherent while capture
+writes still run on the parent connection. Schema creation finishes before the
+read transaction, and domain errors are translated after it settles. Canonical
+close drains these reads before closing their worker connection. Chronological
+list reads still use the parent process because their SQL date function observes
+its current timezone. Streamed reads, export snapshots, and capture writes retain
+their existing owners until their snapshot and write-drainage lifecycles move
+together.
 
 SQLite worker transport preserves complete result values. Results within the
 64 MiB inline reply budget keep their existing reply path; larger results are
@@ -671,6 +722,13 @@ existing-only admission, and all stages of a prune use the captured database
 context. The cold hook CLI retains its separate read-only locator worker.
 
 ### Preserve the data and concurrency contracts
+
+Doctor's local device-token inventory executes in the shared-state worker. The
+detector awaits its result and preserves role ordering, malformed-row omission,
+and best-effort diagnostic behavior. Lint keeps this read in its private active
+state view and joins worker cleanup before retiring that snapshot; source-path
+legacy-file checks retain their separate environment. Device identity, pairing
+reads, and client token operations retain their existing owners.
 
 An adapter must make these contracts explicit and verify them against a real
 database:

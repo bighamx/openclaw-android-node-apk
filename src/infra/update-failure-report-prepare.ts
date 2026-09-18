@@ -21,6 +21,7 @@ import {
 } from "./update-failure-facts-format.js";
 import { normalizeUpdateFailureFacts } from "./update-failure-facts.js";
 import { projectPublicUpdateFailureIdentifiers } from "./update-failure-public-identifiers.js";
+import { updatePreflightDetailMessage } from "./update-preflight-details.js";
 import {
   LEGACY_UPDATE_RUN_ADVISORY,
   LEGACY_UPDATE_RUN_EXPIRED_REASON,
@@ -214,8 +215,22 @@ function resolveRecoveryOutcome(
 ): string {
   const { result } = input;
   if (result.recovery?.serviceRestartSafe === true) {
+    const version = redactPublicSupportVersion(result.recovery.version);
+    const restored = result.recovery.packageRollbackVerified === true;
+    if (result.recovery.service === "healthy") {
+      return `${restored ? "package rollback verified; " : ""}Gateway serving ${version}; health verified`;
+    }
+    const packageOutcome = restored
+      ? `package rollback verified (${version})`
+      : "runtime files verified";
+    const reason = sanitizeReportField(result.recovery.reason ?? "not-recorded", context, 96);
+    const nextCommand =
+      "Run `openclaw gateway status --deep` to check the serving version and readiness.";
     if (result.recovery.service === "failed") {
-      return "runtime files verified; Gateway restart failed. Run `openclaw gateway status --deep` before restarting manually.";
+      return `${packageOutcome}; Gateway health failed (${reason}). ${nextCommand}`;
+    }
+    if (restored) {
+      return `${packageOutcome}; Gateway health unverified (${reason}). ${nextCommand}`;
     }
     return "verified safe to restart";
   }
@@ -289,7 +304,11 @@ async function renderBoundedDiagnostics(
             ...(await projectPublicUpdateFailureIdentifiers(fact)),
             ...(fact.affectedKey ? { affectedKey: sanitizeFactConfigKey(fact.affectedKey) } : {}),
             ...(fact.message
-              ? { message: redactPublicSupportDiagnosticLine(fact.message, context) }
+              ? {
+                  message:
+                    updatePreflightDetailMessage(fact.code) ??
+                    redactPublicSupportDiagnosticLine(fact.message, context),
+                }
               : {}),
           }),
         ),

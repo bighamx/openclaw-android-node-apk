@@ -19,11 +19,8 @@ import {
 import { resolvePreparedProviderStaticConfigs } from "../plugins/provider-discovery.js";
 import type { ProviderRuntimeModel } from "../plugins/provider-runtime-model.types.js";
 import { getPluginRegistryInspectionResources } from "../plugins/registry-inspection-resources.js";
-import {
-  capturePluginLifecycleAuthority,
-  capturePluginRegistryLifecycleEpoch,
-} from "../plugins/registry-lifecycle.js";
-import { disposePluginRegistryInstances } from "../plugins/runtime.js";
+import { capturePluginLifecycleAuthority } from "../plugins/registry-lifecycle.js";
+import type { PluginRegistry } from "../plugins/registry-types.js";
 import { withPluginRuntimeGenerationScope } from "../plugins/runtime/generation-scope.js";
 import { resolveRuntimeSyntheticAuthProviderRefs } from "../plugins/synthetic-auth.runtime.js";
 import { prepareAmbientAgentCredentialsForDiscovery } from "./agent-auth-discovery.js";
@@ -86,6 +83,7 @@ import type {
   PreparedModelRuntimeInput,
   PreparedModelRuntimePluginGeneration,
 } from "./prepared-model-runtime.types.js";
+import { releaseRuntimePluginWork, retainRuntimePluginWork } from "./runtime-plugin-work.js";
 import { AuthStorage } from "./sessions/auth-storage.js";
 
 type PreparedConfiguredRegistryGroup = {
@@ -163,9 +161,25 @@ export async function prepareWorkspaceBuildGroup(
     reusablePluginGeneration?.preferBuiltPluginArtifacts ??
     options.preferBuiltPluginArtifacts === true;
   options.registryResources?.retainGeneration(reusablePluginGeneration);
+  const retainedRegistries = new Set<PluginRegistry>();
+  await using registryBorrows = new AsyncDisposableStack();
   const preparingRegistries = prepareWorkspacePluginRegistries(
     input,
     pluginMetadataSnapshot,
+    (registry) => {
+      // Initial run admission can inspect a new selection before its caller holds
+      // a generation lease. Borrow the selected source before that async load.
+      if (!retainedRegistries.has(registry)) {
+        retainedRegistries.add(registry);
+        const release = retainPreparedPluginRegistry(registry);
+        if (release) {
+          let releaseWork = () => {};
+          // Record physical cleanup before replacement admission can refuse this build's work.
+          registryBorrows.defer(() => releaseRuntimePluginWork(release, releaseWork));
+          releaseWork = retainRuntimePluginWork([registry]);
+        }
+      }
+    },
     loadInboundPluginRegistry,
     preferBuiltPluginArtifacts,
     reusablePluginGeneration,
@@ -176,13 +190,6 @@ export async function prepareWorkspaceBuildGroup(
   );
   const { inboundPluginRegistry, runtimePluginRegistry, primaryRegistry } =
     preparingRegistries instanceof Promise ? await preparingRegistries : preparingRegistries;
-  await using registryBorrows = new AsyncDisposableStack();
-  for (const registry of new Set([runtimePluginRegistry, inboundPluginRegistry])) {
-    const release = registry && retainPreparedPluginRegistry(registry);
-    if (release) {
-      registryBorrows.defer(release);
-    }
-  }
   const reuseRuntimeFacts =
     reusablePluginGeneration && runtimePluginRegistry === reusablePluginGeneration.pluginRegistry;
   const resources = primaryRegistry && getPluginRegistryInspectionResources(primaryRegistry);
@@ -525,15 +532,7 @@ export async function prepareWorkspaceBuildGroup(
     }
     return outcome.value;
   } catch (error) {
-    const cleanup = preparedGeneration
-      ? [discardPreparedPluginGeneration(preparedGeneration)]
-      : [...new Set([runtimePluginRegistry, inboundPluginRegistry])].flatMap((registry) =>
-          registry &&
-          !getPluginRegistryInspectionResources(registry) &&
-          !capturePluginRegistryLifecycleEpoch(registry)
-            ? [disposePluginRegistryInstances(registry)]
-            : [],
-        );
+    const cleanup = preparedGeneration ? [discardPreparedPluginGeneration(preparedGeneration)] : [];
     const results = await Promise.allSettled(cleanup);
     const failures = results.flatMap((result) =>
       result.status === "rejected" ? [result.reason] : [],

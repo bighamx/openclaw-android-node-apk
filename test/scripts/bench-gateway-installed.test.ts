@@ -13,7 +13,10 @@ const require = createRequire(import.meta.url);
 const sourceSha = "1".repeat(40);
 const hash = (bytes: Buffer | string) => createHash("sha256").update(bytes).digest("hex");
 
-async function fixture(mode: "healthy" | "rpc-error" | "lingering" | "hold-health" = "healthy") {
+async function fixture(
+  mode: "healthy" | "rpc-error" | "lingering" | "hold-health" = "healthy",
+  commit = sourceSha,
+) {
   const root = tempDirs.make("openclaw-installed-benchmark-");
   const installRoot = path.join(root, "install");
   const packageRoot = path.join(installRoot, "node_modules", "openclaw");
@@ -22,10 +25,7 @@ async function fixture(mode: "healthy" | "rpc-error" | "lingering" | "hold-healt
     path.join(packageRoot, "package.json"),
     JSON.stringify({ name: "openclaw", version: "1.0.0" }),
   );
-  await fs.writeFile(
-    path.join(packageRoot, "dist", "build-info.json"),
-    JSON.stringify({ commit: sourceSha }),
-  );
+  await fs.writeFile(path.join(packageRoot, "dist", "build-info.json"), JSON.stringify({ commit }));
   const events = path.join(root, "events.jsonl");
   await fs.writeFile(
     path.join(packageRoot, "openclaw.mjs"),
@@ -79,20 +79,45 @@ if (process.argv.includes("--descendant")) {
 `,
   );
   const tarball = path.join(root, "fixture.tgz");
-  await fs.writeFile(tarball, "synthetic package identity; installation is fixture-owned");
+  await fs.writeFile(tarball, `synthetic package ${commit}; installation is fixture-owned`);
+  await fs.writeFile(
+    path.join(installRoot, "package-lock.json"),
+    JSON.stringify({
+      name: "install",
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        "": { dependencies: { openclaw: "file:../fixture.tgz" } },
+        "node_modules/openclaw": {
+          version: "1.0.0",
+          resolved: "file:../fixture.tgz",
+          integrity: `sha512-${createHash("sha512")
+            .update(await fs.readFile(tarball))
+            .digest("base64")}`,
+        },
+        "node_modules/fixture-dependency": {
+          version: "1.0.0",
+          resolved: "https://registry.npmjs.org/fixture-dependency/-/fixture-dependency-1.0.0.tgz",
+          integrity: "sha512-synthetic-dependency",
+          optional: true,
+          os: ["win32"],
+        },
+      },
+    }),
+  );
   const input = path.join(root, "input.json");
   const stateRoot = path.join(root, "state");
   await fs.writeFile(
     input,
     JSON.stringify({
-      sourceSha,
+      sourceSha: commit,
       toolingSha: sourceSha,
       tarball,
       installRoot,
       stateRoot,
       candidate: {
         name: "openclaw",
-        packageSourceSha: sourceSha,
+        packageSourceSha: commit,
         version: "1.0.0",
         sha256: hash(await fs.readFile(tarball)),
       },
@@ -108,6 +133,19 @@ if (process.argv.includes("--descendant")) {
   );
   const output = path.join(root, "report.json");
   return { root, packageRoot, input, output, stateRoot, events };
+}
+
+async function comparisonFixture(mode: Parameters<typeof fixture>[0] = "healthy") {
+  const baseline = await fixture();
+  const candidate = await fixture(mode, "3".repeat(40));
+  await fs.writeFile(
+    baseline.input,
+    JSON.stringify({
+      ...JSON.parse(await fs.readFile(baseline.input, "utf8")),
+      comparison: JSON.parse(await fs.readFile(candidate.input, "utf8")),
+    }),
+  );
+  return { baseline, candidate };
 }
 
 async function runFixture(
@@ -139,6 +177,99 @@ async function runFixture(
 }
 
 describe("installed Gateway startup benchmark entry", () => {
+  it("compares alternating pairs with independent retained state and complete first requests", async ({
+    signal,
+  }) => {
+    const { baseline, candidate } = await comparisonFixture();
+    const result = await runFixture(baseline, signal);
+    const report = JSON.parse(await fs.readFile(baseline.output, "utf8"));
+    expect(result.status, JSON.stringify({ result, report })).toBe(0);
+    expect(report.outcome).toBe("passed");
+    expect(report.samples.map((sample: { arm: string }) => sample.arm)).toEqual([
+      "baseline",
+      "candidate",
+      "baseline",
+      "candidate",
+      "candidate",
+      "baseline",
+      "baseline",
+      "candidate",
+      "candidate",
+      "baseline",
+      "baseline",
+      "candidate",
+      "candidate",
+      "baseline",
+      "baseline",
+      "candidate",
+      "candidate",
+      "baseline",
+    ]);
+    expect(report.after).toEqual(report.before);
+    expect(report.comparison.after).toEqual(report.comparison.before);
+    expect(report.dependencyParity.packages).toBe(3);
+    expect(report.establishedReadySummary).toBeNull();
+    for (const [arm, target] of [
+      ["baseline", baseline],
+      ["candidate", candidate],
+    ] as const) {
+      const samples = report.samples.filter((sample: { arm: string }) => sample.arm === arm);
+      expect(samples.map((sample: { armIndex: number }) => sample.armIndex)).toEqual([
+        0, 1, 2, 3, 4, 5, 6, 7, 8,
+      ]);
+      const events = (await fs.readFile(target.events, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(events.filter((event) => event.type === "start").map((event) => event.index)).toEqual([
+        0, 1, 2, 3, 4, 5, 6, 7, 8,
+      ]);
+      expect(
+        new Set(events.filter((event) => event.type === "start").map((event) => event.home)),
+      ).toEqual(new Set([target.stateRoot]));
+      expect(events.filter((event) => event.type === "stop")).toHaveLength(9);
+      for (const sample of samples) {
+        expect(sample).toMatchObject({
+          outcome: "passed",
+          errors: [],
+          observations: {
+            status: { response: { ok: true } },
+            health: { response: { ok: true } },
+            shutdown: { acknowledgment: { accepted: true } },
+          },
+        });
+      }
+    }
+    expect(report.outerSettlement).toMatchObject({
+      beforeCleanup: "dead",
+      joined: true,
+      exitCode: 0,
+    });
+  });
+
+  it.for(["version", "integrity", "optional"])(
+    "refuses dependency %s drift before either package starts",
+    async (field, { signal }) => {
+      const { baseline, candidate } = await comparisonFixture();
+      const lockPath = path.join(candidate.packageRoot, "..", "..", "package-lock.json");
+      const lock = JSON.parse(await fs.readFile(lockPath, "utf8"));
+      lock.packages["node_modules/fixture-dependency"][field] =
+        field === "optional" ? false : "changed";
+      await fs.writeFile(lockPath, JSON.stringify(lock));
+      const result = await runFixture(baseline, signal);
+      expect(result.status, result.stderr).toBe(1);
+      expect(result.stderr).toContain("Installed dependency records differ");
+      const report = JSON.parse(await fs.readFile(baseline.output, "utf8"));
+      expect(report.samples).toHaveLength(18);
+      expect(
+        report.samples.every((sample: { outcome: string }) => sample.outcome === "not-run"),
+      ).toBe(true);
+      for (const target of [baseline, candidate]) {
+        await expect(fs.access(target.events)).rejects.toMatchObject({ code: "ENOENT" });
+      }
+    },
+  );
+
   it("retains nine real launches, first RPCs and acknowledged exits in one state directory", async ({
     signal,
   }) => {
@@ -215,10 +346,10 @@ describe("installed Gateway startup benchmark entry", () => {
     expect(report.establishedReadySummary).toBeNull();
   });
 
-  it("retains active diagnostics and joins descendants when canceled during the first health request", async ({
+  it("retains the active comparison arm and joins descendants when canceled during candidate health", async ({
     signal,
   }) => {
-    const target = await fixture("hold-health");
+    const { baseline: target } = await comparisonFixture("hold-health");
     const cancellation = new AbortController();
     let observedHealthWait = false;
     const result = await runFixture(
@@ -250,27 +381,31 @@ describe("installed Gateway startup benchmark entry", () => {
     expect(observations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          index: 0,
+          index: 1,
+          arm: "candidate",
           phase: "fresh",
           name: "readyz",
           value: expect.objectContaining({ status: 200 }),
         }),
         expect.objectContaining({
-          index: 0,
+          index: 1,
+          arm: "candidate",
           name: "status",
           value: expect.objectContaining({ response: expect.objectContaining({ ok: true }) }),
         }),
       ]),
     );
-    const launch = observations.find((observation) => observation.name === "launch");
-    expect(launch).toBeDefined();
-    expect(isProcessAlive(launch.value.pid)).toBe(false);
-    expect(isProcessAlive(launch.value.controllerPid)).toBe(false);
+    const launches = observations.filter((observation) => observation.name === "launch");
+    expect(launches.map((launch) => launch.arm)).toEqual(["baseline", "candidate"]);
+    for (const launch of launches) {
+      expect(isProcessAlive(launch.value.pid)).toBe(false);
+      expect(isProcessAlive(launch.value.controllerPid)).toBe(false);
+    }
     const report = JSON.parse(await fs.readFile(target.output, "utf8"));
     expect(report.outcome).not.toBe("passed");
     expect(report.establishedReadySummary).toBeNull();
     expect(
-      report.samples.slice(1).every((sample: { outcome: string }) => sample.outcome === "not-run"),
+      report.samples.slice(2).every((sample: { outcome: string }) => sample.outcome === "not-run"),
     ).toBe(true);
   });
 

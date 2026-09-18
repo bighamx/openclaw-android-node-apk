@@ -2,12 +2,10 @@ import { isDeepStrictEqual } from "node:util";
 import { toStringifiedError } from "@openclaw/normalization-core/error-coercion";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import type { ModelCatalogSnapshot } from "./model-catalog.types.js";
-import type { PreparedModelRuntimeCatalogFacts } from "./prepared-model-runtime.catalog-contract.js";
 import { PreparedModelRuntimePublicationSupersededError } from "./prepared-model-runtime.errors.js";
 import type {
   PreparedModelCatalogAcquisitionKind,
   PreparedModelCatalogAttempt,
-  PreparedModelCatalogInventory,
   PreparedModelRuntimeOwner,
 } from "./prepared-model-runtime.types.js";
 
@@ -17,36 +15,27 @@ type PreparedModelRuntimePublicationEvent =
   | { phase: "invalidated" | "published" }
   | { phase: "failed"; error: Error }
   // Only the catalog commit owner can prove that model facts stayed unchanged.
-  | { phase: "catalog-published"; modelFactsChanged?: boolean }
+  | {
+      phase: "catalog-published";
+      modelFactsChanged?: boolean;
+      refreshStatusChanged?: boolean;
+    }
   | { phase: "catalog-failed"; error: Error; modelFactsChanged?: boolean };
 
 type CatalogPublication = {
   catalog: ModelCatalogSnapshot | undefined;
-  runtimeModels: PreparedModelCatalogInventory["runtimeModels"] | undefined;
-  configuredRuntimeModels: PreparedModelRuntimeCatalogFacts["configuredRuntimeModels"];
 };
 type CatalogPublicationChange = { previous: CatalogPublication; current: CatalogPublication };
-
-// Include route and runtime facts as well as logical rows; attempt status is not model metadata.
-function modelFacts(publication: CatalogPublication) {
-  return [
-    publication.catalog?.entries,
-    publication.catalog?.routeVariants,
-    publication.catalog?.staticEntries,
-    publication.runtimeModels,
-    publication.configuredRuntimeModels,
-  ];
-}
 
 /** Reports model changes only after the catalog owner commits its complete publication. */
 export function notifyPreparedModelCatalogPublication(
   change: CatalogPublicationChange | undefined,
+  refreshStatusChanged = false,
 ): void {
   notifyPreparedModelRuntimePublication({
     phase: "catalog-published",
-    modelFactsChanged:
-      change !== undefined &&
-      !isDeepStrictEqual(modelFacts(change.previous), modelFacts(change.current)),
+    modelFactsChanged: change !== undefined && change.previous.catalog !== change.current.catalog,
+    ...(refreshStatusChanged ? { refreshStatusChanged: true } : {}),
   });
 }
 
@@ -107,14 +96,12 @@ export function createCatalogAttemptReporter(
       });
     }
   };
+  const hasFailedProviders = () =>
+    attempt.failedProviders.provider.size > 0 || attempt.failedProviders.native.size > 0;
   return {
     started: (providers, kind = "provider") => {
       pendingProviders = providers;
       pendingKind = kind;
-      notifyPreparedModelRuntimePublication({
-        phase: "catalog-published",
-        modelFactsChanged: false,
-      });
     },
     withRefreshStatus: (catalog) => {
       // Provider renewal does not retry a failed native inventory.
@@ -131,14 +118,14 @@ export function createCatalogAttemptReporter(
         enumerable: true,
         configurable: true,
         get: () =>
-          attempt.failedProviders.provider.size > 0 ||
-          attempt.failedProviders.native.size > 0 ||
+          hasFailedProviders() ||
           catalog.providerOutcomes?.some((outcome) => outcome.status !== "ready") ||
           undefined,
       });
       return catalog;
     },
     published: (providers, kind, publication) => {
+      const previouslyFailed = hasFailedProviders();
       const acquisitionKind = kind ?? "provider";
       pendingProviders = providers
         ? pendingProviders.filter((provider) => !providers.includes(provider))
@@ -151,7 +138,7 @@ export function createCatalogAttemptReporter(
         attempt.failedProviders[acquisitionKind].clear();
       }
       owner.catalogAttempt = attempt;
-      notifyPreparedModelCatalogPublication(publication);
+      notifyPreparedModelCatalogPublication(publication, previouslyFailed !== hasFailedProviders());
     },
     failed,
     createFailureHandler: (providers, beforeProviderFailure) => {

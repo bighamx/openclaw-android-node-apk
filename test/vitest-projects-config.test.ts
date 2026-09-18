@@ -88,6 +88,7 @@ const scopedGatewayMethodsIsolatedTestFiles = [
   "server-methods/sessions.send-yield-resume.test.ts",
   "server-methods/system-agent-nested-inference.integration.test.ts",
   "server-methods/system-agent-setup-control-ui.test.ts",
+  "server-methods/transcripts.test.ts",
   "server-methods/users-preferences.test.ts",
   "server-methods/usage.test.ts",
   "server-methods/usage.sessions-usage.test.ts",
@@ -698,6 +699,15 @@ describe("projects vitest config", () => {
   it.each([
     "src/wizard/setup.inference-recovery.integration.test.ts",
     "src/plugins/loader.trust-diagnostics.test.ts",
+    "src/agents/embedded-agent-runner/model.test.ts",
+    "src/agents/embedded-agent-runner/model.forward-compat.test.ts",
+    "src/agents/embedded-agent-runner/model.generation-scope.test.ts",
+    "src/agents/embedded-agent-runner/model.skip-agent-discovery-hooks.test.ts",
+    "src/agents/embedded-agent-runner/run/model-setup.ownership.test.ts",
+    "src/agents/embedded-agent-runner/run/model-setup.selected-model.test.ts",
+    "src/agents/embedded-agent-runner/run/runtime-preparation.thinking.test.ts",
+    "src/agents/tools-effective-inventory.cold-provider.test.ts",
+    "src/tts/tts-summary.static-catalog.test.ts",
   ])("routes host-owned SQLite caller %s through the infra process", (file) => {
     const project = "test/vitest/vitest.infra.config.ts";
     const testConfig = requireTestConfig(createInfraVitestConfig({}));

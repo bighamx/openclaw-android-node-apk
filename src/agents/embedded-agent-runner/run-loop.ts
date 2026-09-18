@@ -89,6 +89,7 @@ export async function runPreparedEmbeddedLoop(
     "runtime",
     () =>
       prepareEmbeddedRunRuntime({
+        assertCurrent: input.laneController.throwIfAborted,
         runParams: params,
         sessionAdmission: input.sessionAdmission,
         provider,
@@ -406,9 +407,7 @@ export async function runPreparedEmbeddedLoop(
       }
       startupStagesEmitted = dispatch.startupStagesEmitted;
       const { dispatchedAttempt, runtimePlan } = dispatch;
-      failoverRetryController.setTransientRetryBudget(
-        dispatchedAttempt.rawAttempt.providerRetryMaxRetries,
-      );
+      failoverRetryController.observeAttempt(dispatchedAttempt.rawAttempt);
       attemptCarryover.apply(refresh.applyDeliveryState(dispatchedAttempt.rawAttempt));
       const normalization = {
         runInput: admittedRunInput,
