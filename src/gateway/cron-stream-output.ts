@@ -473,20 +473,24 @@ export class CronStreamOutput {
     const capped = truncateCronStreamBatch(candidate, maxBatchBytes);
     this.batch = capped;
     this.batchHasLines = true;
-    clearTimer(this.quietTimer);
-    this.quietTimer = undefined;
-    const epoch = ++this.quietEpoch;
+    ++this.quietEpoch;
     if (capped !== candidate || Buffer.byteLength(capped, "utf8") >= maxBatchBytes) {
+      clearTimer(this.quietTimer);
+      this.quietTimer = undefined;
       const batch = this.takeOpenBatch();
       if (batch !== undefined) {
         await this.handleClosedBatch(batch, generation);
       }
       return true;
     }
-    this.quietTimer = setTimeout(() => {
-      void this.closeQuietBatch(generation, epoch);
-    }, batchMs);
-    this.quietTimer.unref?.();
+    if (this.quietTimer) {
+      this.quietTimer.refresh();
+    } else {
+      this.quietTimer = setTimeout(() => {
+        void this.closeQuietBatch(generation, this.quietEpoch);
+      }, batchMs);
+      this.quietTimer.unref?.();
+    }
     return true;
   }
 

@@ -1,11 +1,10 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { normalizeDeliveryContext } from "../utils/delivery-context.shared.js";
-import { isTaskFlowCancellationPending } from "./task-cancellation-state.js";
-import { isTerminalTaskFlow } from "./task-flow-registry.types.js";
 import {
   getTaskFlowById,
   updateFlowRecordByIdExpectedRevision,
 } from "./task-flow-runtime-internal.js";
+import { buildManagedFlowCancellationPatch } from "./task-initial-flow.rules.js";
 import { clearTaskActivity, flushTaskActivity } from "./task-registry-activity.js";
 import { ensureLinkedTaskFlowRegistryReady } from "./task-registry-flow-link.js";
 import { listTasksForFlowId } from "./task-registry-query.js";
@@ -32,6 +31,7 @@ import {
   addRelatedSessionKeyIndex,
   deleteRelatedSessionKeyIndex,
   rebuildRunIdIndex,
+  recordTaskRegistryProjectionWrite,
 } from "./task-registry.process-state.js";
 import { tryPersistTaskDeliveryStateUpsert, tryPersistTaskUpsert } from "./task-registry.store.js";
 import {
@@ -46,46 +46,26 @@ function syncManagedFlowCancellationFromTask(task: TaskRecord): void {
     return;
   }
   let flow = getTaskFlowById(flowId);
-  if (
-    !flow ||
-    flow.syncMode !== "managed" ||
-    flow.cancelRequestedAt == null ||
-    isTerminalTaskFlow(flow)
-  ) {
-    return;
-  }
-  if (listTasksForFlowId(flowId).some(isTaskFlowCancellationPending)) {
-    return;
-  }
-  const endedAt = task.endedAt ?? task.lastEventAt ?? Date.now();
+  const now = Date.now();
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    const patch = buildManagedFlowCancellationPatch(
+      task,
+      flow,
+      () => listTasksForFlowId(flowId),
+      now,
+    );
+    if (!flow || !patch) {
+      return;
+    }
     const result = updateFlowRecordByIdExpectedRevision({
       flowId,
       expectedRevision: flow.revision,
-      patch: {
-        status: "cancelled",
-        blockedTaskId: null,
-        blockedSummary: null,
-        waitJson: null,
-        endedAt,
-        updatedAt: endedAt,
-      },
+      patch,
     });
     if (result.applied || result.reason === "not_found") {
       return;
     }
     flow = result.current;
-    if (
-      !flow ||
-      flow.syncMode !== "managed" ||
-      flow.cancelRequestedAt == null ||
-      isTerminalTaskFlow(flow)
-    ) {
-      return;
-    }
-    if (listTasksForFlowId(flowId).some(isTaskFlowCancellationPending)) {
-      return;
-    }
   }
 }
 
@@ -133,6 +113,7 @@ export function publishTaskRecordUpdate(
   const parentFlowIndexChanged = current.parentFlowId?.trim() !== next.parentFlowId?.trim();
   if (persisted) {
     tasks.set(taskId, next);
+    recordTaskRegistryProjectionWrite("task", taskId);
     bumpTaskRegistryRevision();
     if (becomesTerminal) {
       clearTaskActivity(taskId);
@@ -192,6 +173,7 @@ export function upsertTaskDeliveryState(state: TaskDeliveryState): TaskDeliveryS
           : cloneTaskDeliveryState({ taskId: state.taskId });
       }
       taskDeliveryStates.set(state.taskId, next);
+      recordTaskRegistryProjectionWrite("delivery", state.taskId);
       bumpTaskRegistryRevision();
       return cloneTaskDeliveryState(next);
     },

@@ -9,6 +9,7 @@ import type {
 } from "../config/io.health-state.types.js";
 import type { CronStoreWorkerOperations } from "../cron/store/load-worker.types.js";
 import type { CronStoreSaveWorkerOperations } from "../cron/store/save-worker.types.js";
+import type { FleetRegistryWriteOperations } from "../fleet/registry.types.js";
 import type {
   ManagedImageRecord,
   ManagedImageRecordEntry,
@@ -38,6 +39,7 @@ import type {
 } from "../sessions/session-state-events.kernel.js";
 import type { SessionUpstreamLink } from "../sessions/session-upstream-links.kernel.js";
 import type { DeviceAuthEntry } from "../shared/device-auth.js";
+import type { SkillProposalEvent, SkillProposalRecord } from "../skills/workshop/types.js";
 import type { TaskRegistryWorkerOperations } from "../tasks/task-registry.worker-contract.js";
 import type { TranscriptReadOperations } from "../transcripts/store-worker-contract.js";
 import type { AgentProvenance } from "./agent-provenance.types.js";
@@ -54,6 +56,7 @@ export type OpenClawStateWorkerOperations = WebPushWorkerOperations &
   UserPreferenceWorkerOperations &
   CronStoreWorkerOperations &
   CronStoreSaveWorkerOperations &
+  FleetRegistryWriteOperations &
   SessionDeliveryWorkerOperations &
   DeliveryQueueWorkerOperations &
   TranscriptReadOperations &
@@ -102,6 +105,15 @@ export type OpenClawStateWorkerOperations = WebPushWorkerOperations &
     "projects.resolveRefreshOwner": {
       input: { project: ProjectRegistryIdentity; lease: OpenClawStateLeaseIdentity };
       output: ProjectRegistryRecord | undefined;
+    };
+    "doctor.workshopMigrationRecords.read": {
+      input: { includeEvents: boolean };
+      output:
+        | {
+            records: Array<{ record: SkillProposalRecord; ownerAgentId: string | null }>;
+            appliedEvents: SkillProposalEvent[];
+          }
+        | undefined;
     };
     "modelCatalog.remote.read": {
       input: { artifactPreservingReadOnly: boolean };

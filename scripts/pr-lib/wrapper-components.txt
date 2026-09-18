@@ -288,6 +288,7 @@ src/commands/doctor/shared/legacy-config-migrations.runtime.skills.ts
 src/commands/doctor/shared/legacy-config-migrations.runtime.system-agent.ts
 src/commands/doctor/shared/legacy-config-migrations.runtime.tier-eval.ts
 src/commands/doctor/shared/legacy-config-migrations.runtime.tool-names.ts
+src/commands/doctor/shared/legacy-config-migrations.runtime.tool-policy-conflicts.ts
 src/commands/doctor/shared/legacy-config-migrations.runtime.ts
 src/commands/doctor/shared/legacy-config-migrations.runtime.tts.ts
 src/commands/doctor/shared/legacy-config-migrations.ts
@@ -298,6 +299,7 @@ src/commands/doctor/shared/legacy-models-add-metadata.ts
 src/commands/doctor/shared/legacy-runtime-model-policy.ts
 src/commands/doctor/shared/legacy-runtime-model-providers.ts
 src/commands/doctor/shared/legacy-tool-name-migration.ts
+src/commands/doctor/shared/legacy-tool-policy-scopes.ts
 src/commands/doctor/shared/legacy-web-tools-migrate.ts
 src/compat/legacy-names.ts
 src/config/agent-dirs.ts
@@ -399,6 +401,7 @@ src/config/plugins-allowlist.ts
 src/config/provider-policy.ts
 src/config/recovery-policy.ts
 src/config/redact-argv.ts
+src/config/redact-sentinel.ts
 src/config/redact-snapshot.raw.ts
 src/config/redact-snapshot.secret-ref.ts
 src/config/redact-snapshot.ts
@@ -633,6 +636,7 @@ src/infra/prototype-keys.ts
 src/infra/regular-file.ts
 src/infra/replace-file.ts
 src/infra/runtime-process-entrypoints.ts
+src/infra/runtime-process-url.ts
 src/infra/runtime-worker-url.ts
 src/infra/safe-cwd.ts
 src/infra/sealed-runtime-registry.ts
@@ -1021,6 +1025,7 @@ src/sessions/session-diff.runtime.ts
 src/sessions/session-key-utils.ts
 src/sessions/session-row-changes.ts
 src/shared/assistant-error-format.ts
+src/shared/async-work-scope.ts
 src/shared/avatar-limits.ts
 src/shared/avatar-policy.ts
 src/shared/dedupe-by-key.ts
@@ -1102,6 +1107,8 @@ src/state/openclaw-state-lease-store.ts
 src/state/openclaw-state-lease-worker-owner.ts
 src/state/openclaw-state-lease.ts
 src/state/openclaw-state-ownership.ts
+src/state/openclaw-state-read-scope.ts
+src/state/openclaw-state-read-worker.ts
 src/state/openclaw-state-schema-compatibility.ts
 src/state/openclaw-state-schema-publication.ts
 src/state/openclaw-state-schema.sql

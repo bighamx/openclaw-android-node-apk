@@ -41,7 +41,10 @@ import {
   isCompletedRequesterDeliveryBlocked,
 } from "../registry/subagent-delivery-state.js";
 import { SUBAGENT_ENDED_REASON_KILLED } from "../registry/subagent-lifecycle-events.js";
-import { resolveSubagentTaskTerminalStatus } from "../registry/subagent-registry-completion.js";
+import {
+  resolveFinalizedSubagentTaskState,
+  resolveSubagentTaskTerminalStatus,
+} from "../registry/subagent-registry-completion.js";
 import {
   clearSubagentPendingDelivery,
   loadPendingFinalDeliveryPayload,
@@ -565,11 +568,19 @@ export function settleRequesterCompletionBatch(params: {
             checkedOmittedIds.add(id);
           }
         }
+        // Decoding restores restart defaults, not the active process's cleanup ownership.
+        subagent.cleanupHandled = expected.cleanupHandled;
+        // An exact requester receipt can arrive after expiry transferred this result to its wake.
+        const acknowledgeExpiredDelivery =
+          params.outcome.delivered &&
+          subagent.delivery?.status === "suspended" &&
+          subagent.delivery.suspendedReason === "expiry";
         let mutation: CompletionMutation = { subagent };
         if (
           subagent.pauseReason !== "sessions_yield" &&
           subagent.expectsCompletionMessage === true &&
-          ["pending", "in_progress"].includes(subagent.delivery?.status ?? "pending")
+          (["pending", "in_progress"].includes(subagent.delivery?.status ?? "pending") ||
+            acknowledgeExpiredDelivery)
         ) {
           if (params.outcome.delivered) {
             const task = readTaskRecord(database.db, taskId ?? "");
@@ -590,6 +601,18 @@ export function settleRequesterCompletionBatch(params: {
               lastDropReason: undefined,
             });
             clearSubagentPendingDelivery(subagent);
+            if (acknowledgeExpiredDelivery) {
+              const finalized = resolveFinalizedSubagentTaskState(subagent);
+              if (!finalized || finalized.status !== task.status) {
+                throw changedOwner();
+              }
+              // Restore the execution/result verdict, not an unconditional success.
+              Object.assign(task, {
+                error: finalized.error,
+                terminalOutcome: finalized.terminalOutcome ?? undefined,
+                terminalSummary: finalized.terminalSummary ?? undefined,
+              });
+            }
             Object.assign(task, { deliveryStatus: "delivered", lastEventAt: now });
             mutation.task = task;
           } else {

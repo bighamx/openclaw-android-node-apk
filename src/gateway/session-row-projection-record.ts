@@ -22,6 +22,8 @@ export type Row = {
   entry?: SessionEntry;
   materialized?: ReturnType<typeof rowProjection.materializeSessionRow>;
   materializedSequence?: number;
+  profileRevision?: number;
+  subagentRevision?: number;
   lastMessagePreview?: string;
   fallbackModel?: ReturnType<
     typeof rowProjection.readSessionRowInputs
@@ -51,12 +53,15 @@ export const identity = (row: RowTarget) =>
   `${row.agentId}\0${row.storeTarget.storePath}\0${row.key}`;
 export const physical = (storePath: string, key: string) => `physical:${storePath}\0${key}`;
 const logical = (agentId: string, key: string) => `logical:${agentId}\0${key}`;
-const references = (row: RowTarget) => [
-  logical(row.agentId, row.key),
-  physical(row.storeTarget.storePath, row.key),
-];
 export function dependents(row: Row, byParent: ReadonlyMap<string, Set<string>>) {
-  return new Set(references(row).flatMap((ref) => Array.from(byParent.get(ref) ?? [])));
+  const children = new Set(byParent.get(logical(row.agentId, row.key)));
+  const physicalChildren = byParent.get(physical(row.storeTarget.storePath, row.key));
+  if (physicalChildren) {
+    for (const id of physicalChildren) {
+      children.add(id);
+    }
+  }
+  return children;
 }
 export function markRelated(
   row: Row,
@@ -164,6 +169,28 @@ export function present(
   return row;
 }
 
+function updateIndex(
+  map: Map<string, Set<string>>,
+  key: string | undefined,
+  id: string,
+  deleting: boolean,
+) {
+  if (!key) {
+    return;
+  }
+  const values = map.get(key);
+  if (deleting) {
+    values?.delete(id);
+    if (values?.size === 0) {
+      map.delete(key);
+    }
+  } else if (values) {
+    values.add(id);
+  } else {
+    map.set(key, new Set([id]));
+  }
+}
+
 export function index(
   row: Row,
   indexes: {
@@ -176,27 +203,14 @@ export function index(
 ) {
   const { byStore, byAgent, byKey, byParent } = indexes;
   const id = identity(row);
-  for (const [map, keys] of [
-    [byStore, [row.storeTarget.storePath]],
-    [byAgent, [row.agentId]],
-    [byKey, [`key:${row.key}`, row.entry && `id:${row.entry.sessionId}`, ...references(row)]],
-    [byParent, row.parents],
-  ] satisfies [Map<string, Set<string>>, Iterable<string | undefined>][]) {
-    for (const key of keys) {
-      if (key) {
-        const values = map.get(key) ?? new Set<string>();
-        if (deleting) {
-          values.delete(id);
-        } else {
-          values.add(id);
-        }
-        if (values.size) {
-          map.set(key, values);
-        } else {
-          map.delete(key);
-        }
-      }
-    }
+  updateIndex(byStore, row.storeTarget.storePath, id, deleting);
+  updateIndex(byAgent, row.agentId, id, deleting);
+  updateIndex(byKey, `key:${row.key}`, id, deleting);
+  updateIndex(byKey, row.entry && `id:${row.entry.sessionId}`, id, deleting);
+  updateIndex(byKey, logical(row.agentId, row.key), id, deleting);
+  updateIndex(byKey, physical(row.storeTarget.storePath, row.key), id, deleting);
+  for (const parent of row.parents) {
+    updateIndex(byParent, parent, id, deleting);
   }
 }
 
@@ -249,6 +263,29 @@ export function dematerialize(row: Row): Row {
   };
 }
 
+export function readSessionRowParents(
+  row: Row,
+  storedEntry: SessionEntry,
+  cfg: Inputs["cfg"],
+  context: SessionListRowContext,
+) {
+  const parents = new Set<string>();
+  const addParent = (key: string | null | undefined) => {
+    if (key && key !== row.key) {
+      parents.add(parentReference(cfg, key, row.agentId, row.storeTarget.storePath));
+    }
+  };
+  addParent(storedEntry.parentSessionKey ?? resolveSessionParentSessionKey(row.key));
+  addParent(storedEntry.spawnedBy);
+  const runs = context.subagentRunsByChildSessionKey.get(row.key);
+  if (runs) {
+    for (const run of runs) {
+      addParent(run.controllerSessionKey || run.requesterSessionKey);
+    }
+  }
+  return parents;
+}
+
 export function acquireSessionRowEntry(params: {
   row: Row;
   storedEntry: SessionEntry | undefined;
@@ -265,19 +302,7 @@ export function acquireSessionRowEntry(params: {
     return undefined;
   }
   const entry = projectGatewaySessionEntry(cfg, storedEntry);
-  const parents = new Set(
-    [
-      storedEntry.parentSessionKey ?? resolveSessionParentSessionKey(row.key),
-      storedEntry.spawnedBy,
-      ...(context.subagentRunsByChildSessionKey.get(row.key) ?? []).map(
-        (run) => run.controllerSessionKey || run.requesterSessionKey,
-      ),
-    ].flatMap((key) =>
-      key && key !== row.key
-        ? [parentReference(cfg, key, row.agentId, row.storeTarget.storePath)]
-        : [],
-    ),
-  );
+  const parents = readSessionRowParents(row, storedEntry, cfg, context);
   const changed = !isDeepStrictEqual([storedEntry, parents], [row.storedEntry, row.parents]);
   if (changed) {
     params.markRelated(row);

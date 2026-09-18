@@ -7,12 +7,22 @@ import {
 import { executeNativeHookRelayMutation } from "../agents/harness/native-hook-relay-store.worker.js";
 import { readClawInstallSchemaVersionRows } from "../claws/provenance-runtime-read.kernel.js";
 import { readSqliteDatabaseBloat } from "../commands/doctor-db-bloat.read.js";
+import { readWorkshopMigrationRecordsInDatabase } from "../commands/doctor-skill-workshop-read.kernel.js";
 import {
   patchConfigHealthEntryInDatabase,
   readConfigHealthSnapshotInDatabase,
 } from "../config/io.health-state.kernel.js";
 import { loadMutableCronStoreInWorker } from "../cron/store/load.worker.js";
 import { executeCronStoreSaveCommand } from "../cron/store/save.worker.js";
+import {
+  acquireFleetCellOperationInDatabase,
+  assertFleetCellOperationInDatabase,
+  deleteFleetCellInDatabase,
+  heartbeatFleetCellOperationInDatabase,
+  releaseFleetCellOperationInDatabase,
+  reserveFleetCellInDatabase,
+  updateFleetCellImageInDatabase,
+} from "../fleet/registry.kernel.js";
 import {
   readManagedImageRecordInDatabase,
   listManagedImageRecordEntriesInDatabase,
@@ -250,6 +260,12 @@ function createSharedStateWorkerBackend(
           open,
         );
       }
+      if (command.type === "doctor.workshopMigrationRecords.read") {
+        return withExistingOpenClawStateDatabaseArtifactPreservingReadOnly(
+          ({ db }) => readWorkshopMigrationRecordsInDatabase(db, command.input.includeEvents),
+          { path: context.databasePath, env: getSqliteWorkerStateContext().environment },
+        );
+      }
       if (command.type === "modelCatalog.remote.read") {
         const read = () =>
           readRemoteModelCatalog({
@@ -422,6 +438,50 @@ function createSharedStateWorkerBackend(
         path: context.databasePath,
         env: getSqliteWorkerStateContext().environment,
       };
+      if (
+        command.type === "fleet.cell.reserve" ||
+        command.type === "fleet.cell.updateImage" ||
+        command.type === "fleet.cell.delete" ||
+        command.type === "fleet.operation.acquire" ||
+        command.type === "fleet.operation.heartbeat" ||
+        command.type === "fleet.operation.release"
+      ) {
+        return runOpenClawStateWriteTransaction(({ db }) => {
+          switch (command.type) {
+            case "fleet.cell.reserve":
+              assertFleetCellOperationInDatabase(
+                db,
+                command.input.tenantId,
+                command.input.operationOwner,
+              );
+              return reserveFleetCellInDatabase(db, command.input);
+            case "fleet.cell.updateImage":
+              assertFleetCellOperationInDatabase(
+                db,
+                command.input.tenantId,
+                command.input.operationOwner,
+              );
+              return updateFleetCellImageInDatabase(
+                db,
+                command.input.tenantId,
+                command.input.image,
+              );
+            case "fleet.cell.delete":
+              assertFleetCellOperationInDatabase(
+                db,
+                command.input.tenantId,
+                command.input.operationOwner,
+              );
+              return deleteFleetCellInDatabase(db, command.input.tenantId);
+            case "fleet.operation.acquire":
+              return acquireFleetCellOperationInDatabase(db, command.input);
+            case "fleet.operation.heartbeat":
+              return heartbeatFleetCellOperationInDatabase(db, command.input);
+            case "fleet.operation.release":
+              return releaseFleetCellOperationInDatabase(db, command.input);
+          }
+        }, writeOptions);
+      }
       if (command.type === "agentProvenance.readBatch" || command.type === "agentProvenance.list") {
         ensureAgentProvenanceSchema(writeOptions);
         return command.type === "agentProvenance.readBatch"

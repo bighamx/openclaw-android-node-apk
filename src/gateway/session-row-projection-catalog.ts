@@ -15,7 +15,7 @@ export function createSessionRowProjectionCatalog(params: {
   const unsubscribe = registerPreparedModelRuntimePublicationListener((event) => {
     // An incomplete catalog read still needs the next publication to recover its rows.
     if (
-      (event.phase === "catalog-published" || event.phase === "catalog-failed") &&
+      event.phase !== "failed" &&
       event.modelFactsChanged === false &&
       modelCatalog !== undefined &&
       (!(modelCatalog instanceof Map) || ![...modelCatalog.values()].includes(undefined))
@@ -27,6 +27,9 @@ export function createSessionRowProjectionCatalog(params: {
   return {
     get current() {
       return modelCatalog;
+    },
+    get isRefreshing() {
+      return !disposed && pending !== undefined;
     },
     get needsInitialRead() {
       return Boolean(catalogDirty) && modelCatalog === undefined;

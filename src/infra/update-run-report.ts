@@ -297,14 +297,13 @@ export function renderUpdateRunReport(
   if (run.downtimeMs != null) {
     lines.push(`Gateway downtime: ${formatDurationPrecise(run.downtimeMs)}.`);
   }
-  const savedAction =
-    opts.nextAction ??
-    run.origin.nextAction ??
-    (run.status === "skipped" &&
+  const skipGuidance =
+    run.status === "skipped" &&
     run.reason &&
     Object.hasOwn(UPDATE_INSTALL_SKIP_GUIDANCE, run.reason)
       ? UPDATE_INSTALL_SKIP_GUIDANCE[run.reason]
-      : undefined);
+      : undefined;
+  const savedAction = opts.nextAction ?? run.origin.nextAction ?? skipGuidance;
   const nextAction =
     savedAction && currentHealth
       ? `${formatUpdateRunCurrentHealth(currentHealth)} ${
@@ -337,7 +336,10 @@ export function renderUpdateRunReport(
         : [
             ...new Set(
               [
-                opts.doctorHint ?? facts.doctorHint ?? run.origin.doctorHint,
+                // Install ownership refusals need the deployment workflow, not Doctor repair.
+                skipGuidance
+                  ? undefined
+                  : (opts.doctorHint ?? facts.doctorHint ?? run.origin.doctorHint),
                 ...recoveryHints(run, nextAction),
                 nextAction,
               ].filter((line): line is string => Boolean(line)),

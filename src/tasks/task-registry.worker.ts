@@ -13,8 +13,10 @@ import {
 import { withSharedStateWriteCoordinator } from "../state/openclaw-state-db-write-coordination.js";
 import { runOpenClawStateWriteTransaction } from "../state/openclaw-state-db.js";
 import { mapTaskFlowView } from "./task-domain-views.js";
-import { runManagedTaskInFlowInDatabase } from "./task-flow-managed-run-task.kernel.js";
-import type { RunTaskInFlowResult } from "./task-flow-managed-run-task.types.js";
+import {
+  runManagedTaskInFlowInDatabase,
+  type ManagedTaskInFlowReceipt,
+} from "./task-flow-managed-run-task.kernel.js";
 import { assertControllerId, normalizeRestoredFlowRecord } from "./task-flow-registry.records.js";
 import {
   bindTaskFlowRecord,
@@ -27,6 +29,7 @@ import {
   upsertTaskFlowRowInDatabase,
 } from "./task-flow-registry.store.kernel.js";
 import { isTerminalTaskFlow, type TaskFlowRecord } from "./task-flow-registry.types.js";
+import { executeTaskInitialMutation } from "./task-initial.worker.js";
 import { syncLiveTaskFlowInDatabase } from "./task-registry-live-flow.worker.js";
 import {
   restoreTaskRegistryInDatabase,
@@ -54,6 +57,16 @@ export function executeTaskRegistryCommand(
   options: OpenClawStateDatabaseOptions & { path: string },
   open: () => OpenClawStateDatabase,
 ): TaskRegistryWorkerOperations[keyof TaskRegistryWorkerOperations]["output"] {
+  if (
+    command.type === "tasks.createRecord" ||
+    command.type === "tasks.settleUnstarted" ||
+    command.type === "flows.createForTask" ||
+    command.type === "tasks.linkInitialFlow" ||
+    command.type === "flows.deleteUnlinkedForTask" ||
+    command.type === "flows.finalizeTaskCancellation"
+  ) {
+    return executeTaskInitialMutation(open(), command);
+  }
   const listFlows = (db: OpenClawStateDatabase["db"], ownerKey: string) =>
     listTaskFlowRecordsForOwnerReadInDatabase(db, ownerKey).map(normalizeRestoredFlowRecord);
   const ownedFlow = (flow: ReturnType<typeof readTaskFlowRecord>, ownerKey: string) =>
@@ -67,7 +80,7 @@ export function executeTaskRegistryCommand(
     return command.input.preserveSourceArtifacts ? withArtifactPreservingStateReads(read) : read();
   }
   if (command.type === "flows.runTask") {
-    let committed: RunTaskInFlowResult | undefined;
+    let committed: ManagedTaskInFlowReceipt | undefined;
     try {
       const database = open();
       return withSharedStateWriteCoordinator(

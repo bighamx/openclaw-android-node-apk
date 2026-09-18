@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewaySessionRow, SessionsPatchResult } from "../../api/types.ts";
 import { loadSettings, patchSettings } from "../../app/settings.ts";
+import type { BoardWidgetPageMenu } from "../../components/board/board-widget-cell-render.ts";
 import { t } from "../../i18n/index.ts";
 import type { BoardCommandEvent, BoardProvider } from "../../lib/board/provider.ts";
 import { sessionsResult } from "../../lib/sessions/session-capability.test-support.ts";
@@ -12,6 +13,7 @@ import { showToast } from "../../lib/toast.ts";
 import { createMockBoardProvider } from "../../test-helpers/board-provider.ts";
 import { gatewayHelloForMethods } from "../../test-helpers/gateway-methods.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
+import { ensureBoardViewElement } from "./board-session-surface.ts";
 import { createChatPaneRails } from "./chat-pane-rails.ts";
 import type { ResolvedBoardView } from "./chat-pane-shared.ts";
 import { sidebarRegionCallbacks } from "./chat-pane-sidebar-layout.ts";
@@ -51,6 +53,11 @@ vi.mock("../../components/board/board-view.ts", () => {
 });
 
 type DashboardPane = TestChatPane & {
+  visuallyPresented: boolean;
+  fullscreenBoardWidgetMenu: (
+    layout: SidebarLayout,
+    board?: ResolvedBoardView,
+  ) => BoardWidgetPageMenu | undefined;
   boardProvider: BoardProvider;
   routeFace: "chat" | "dashboard";
   dashboardExpanded: boolean;
@@ -66,6 +73,7 @@ type HeaderMenu = HTMLElement & { updateComplete: Promise<boolean> };
 
 const key = "agent:main:dashboard-defaults";
 const defaultAction = '[value="quick:layout:dashboard-default"]';
+const defaultStatus = '[data-menu-status="dashboard-default"]';
 
 function session(overrides: Partial<GatewaySessionRow> = {}): GatewaySessionRow {
   return {
@@ -243,6 +251,35 @@ afterEach(() => {
 });
 
 describe("dashboard default activation and personal layout persistence", () => {
+  it("relocates only the visible fullscreen widget when a replacement task menu exists", async () => {
+    await ensureBoardViewElement();
+    const { pane } = createDashboardHarness();
+    const board = { ...pane.resolveBoardView(), activeTabId: "research" };
+    const expanded = openDashboardPresentation({ columns: [] }, "expanded");
+    expect(pane.fullscreenBoardWidgetMenu(expanded, board)?.widget.name).toBe("source-map");
+    expect(
+      pane.fullscreenBoardWidgetMenu(openDashboardPresentation(expanded, "split"), board),
+    ).toBeUndefined();
+    expect(
+      pane.fullscreenBoardWidgetMenu(expanded, { ...board, activeTabId: "main" }),
+    ).toBeUndefined();
+    const narrow = {
+      ...board,
+      snapshot: {
+        ...board.snapshot,
+        widgets: board.snapshot.widgets.map((widget) =>
+          widget.name === "source-map" ? { ...widget, sizeW: 6 } : widget,
+        ),
+      },
+    };
+    expect(pane.fullscreenBoardWidgetMenu(expanded, narrow)).toBeUndefined();
+    pane.visuallyPresented = false;
+    expect(pane.fullscreenBoardWidgetMenu(expanded, board)).toBeUndefined();
+    pane.visuallyPresented = true;
+    pane.state.sessionsResult = null;
+    expect(pane.fullscreenBoardWidgetMenu(expanded, board)).toBeUndefined();
+  });
+
   it.each(["shared", "personal"] as const)(
     "opens the %s expanded preference through the registered keyboard handler",
     (kind) => {
@@ -494,6 +531,9 @@ describe("dashboard default activation and personal layout persistence", () => {
     h.revisit();
     expectPresentation(h.state.sidebarLayout, true);
     expect((await h.header()).querySelector(defaultAction)).toBeNull();
+    expect((await h.header()).querySelector(defaultStatus)?.textContent).toContain(
+      t("chat.sidePanel.currentViewIsDefault"),
+    );
     expect(h.saved()).toBeUndefined();
   });
 
@@ -772,13 +812,48 @@ describe("dashboard shared default in the real header Layout menu", () => {
         t("chat.sidePanel.useViewAsDefault"),
       );
       expect(menu.querySelector(defaultAction)?.hasAttribute("disabled")).toBe(false);
+      expect(menu.textContent).toContain(t("chat.sidePanel.defaultViewDescription"));
+      expect(menu.querySelector(defaultStatus)).toBeNull();
       expectPresentation(h.state.sidebarLayout, expanded);
     },
   );
 
   it.each([
-    "same",
+    "split",
+    "expanded",
     "builtin split",
+    "narrow",
+    "read only",
+    "restricted viewer",
+  ] as const)(
+    "identifies the matching shared default for %s without offering a write",
+    async (view) => {
+      const expanded = view === "expanded";
+      const h = createDashboardHarness({
+        scopes: view === "read only" ? ["operator.read"] : undefined,
+        row: session({
+          boardPresentation: view === "builtin split" ? undefined : expanded ? "expanded" : "split",
+          ...(view === "restricted viewer"
+            ? { visibility: "read-only", sharingRole: "viewer" }
+            : {}),
+        }),
+      });
+      h.sync();
+      h.pane.narrow = view === "narrow";
+      h.pane.paneWidth = h.pane.narrow ? 400 : 1400;
+      const menu = await h.header();
+      const status = menu.querySelector(defaultStatus);
+      expect(status?.getAttribute("role")).toBe("note");
+      expect(status?.textContent).toContain(t("chat.sidePanel.currentViewIsDefault"));
+      expect(status?.textContent).toContain(t("chat.sidePanel.defaultViewDescription"));
+      expect(menu.querySelector(defaultAction)).toBeNull();
+      select(menu, "quick:layout:dashboard-default");
+      expect(h.request.mock.calls.some(([method]) => method === "sessions.patch")).toBe(false);
+      expectPresentation(h.state.sidebarLayout, expanded);
+    },
+  );
+
+  it.each([
     "read only",
     "restricted viewer",
     "not shown",
@@ -790,17 +865,14 @@ describe("dashboard shared default in the real header Layout menu", () => {
     const h = createDashboardHarness({
       scopes: reason === "read only" ? ["operator.read"] : undefined,
       row: session({
-        boardPresentation: reason === "builtin split" ? undefined : "split",
+        boardPresentation: "split",
         ...(reason === "restricted viewer"
           ? { visibility: "read-only", sharingRole: "viewer" }
           : {}),
         ...(reason === "missing session id" ? { sessionId: undefined } : {}),
       }),
     });
-    h.state.sidebarLayout = openDashboardPresentation(
-      h.state.sidebarLayout,
-      reason === "same" || reason === "builtin split" ? "split" : "expanded",
-    );
+    h.state.sidebarLayout = openDashboardPresentation(h.state.sidebarLayout, "expanded");
     if (reason === "not shown") {
       h.state.sidebarLayout = closeSlot(h.state.sidebarLayout, "dashboard");
     }
@@ -822,6 +894,7 @@ describe("dashboard shared default in the real header Layout menu", () => {
     }
     const menu = await h.header();
     expect(menu.querySelector(defaultAction)).toBeNull();
+    expect(menu.querySelector(defaultStatus)).toBeNull();
   });
 
   it("saves through the session capability, disables duplicate clicks, and acknowledges without rearranging", async () => {
@@ -875,7 +948,13 @@ describe("dashboard shared default in the real header Layout menu", () => {
     expect(h.sessions.state.result?.sessions[0]?.boardPresentation).toBe("expanded");
     expect(h.state.sidebarLayout).toEqual(layout);
     expect(h.saved()).toEqual(persisted);
-    expect((await h.header()).querySelector(defaultAction)).toBeNull();
+    menu = await h.header();
+    expect(menu.querySelector(defaultAction)).toBeNull();
+    expect(menu.querySelector(defaultStatus)?.textContent).toContain(
+      t("chat.sidePanel.currentViewIsDefault"),
+    );
+    select(menu, "quick:layout:dashboard-default");
+    expect(patch).toHaveBeenCalledTimes(1);
     expect(showToast).toHaveBeenCalledWith({
       message: t("chat.sidePanel.defaultSaved"),
       anchor: h.pane,
