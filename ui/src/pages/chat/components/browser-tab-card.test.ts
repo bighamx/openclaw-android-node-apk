@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { projectToolResultDetails } from "../../../../../src/gateway/chat-display-projection.canvas.js";
 import { createDeferred } from "../../../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../../../api/gateway.ts";
-import type { RouteId } from "../../../app-route-paths.ts";
 import type { ApplicationContext } from "../../../app/context.ts";
 import type { ApplicationGatewaySnapshot } from "../../../app/gateway.ts";
 import type { BrowserTabTarget } from "../../../components/browser/browser-target.ts";
@@ -61,7 +60,7 @@ function gatewayContext(
         return () => listeners.delete(listener);
       },
     },
-  } as unknown as ApplicationContext<RouteId>;
+  } as unknown as ApplicationContext;
   const fetchMock = vi.fn<typeof fetch>().mockImplementation(
     async () =>
       ({
@@ -88,7 +87,7 @@ function container() {
 }
 
 async function card(
-  context: ApplicationContext<RouteId>,
+  context: ApplicationContext,
   latest = true,
   tab: BrowserTabTarget = { target: "host", profile: "managed", targetId: "tab-1" },
 ) {

@@ -715,7 +715,7 @@ describe("projects vitest config", () => {
     const testConfig = requireTestConfig(createInfraVitestConfig({}));
     expect(buildVitestRunPlans([file]).map((plan) => plan.config)).toEqual([project]);
     expect(testConfig.include).toContain(file);
-    expect(testConfig.pool).toBe("forks");
+    expect(testConfig.pool).toBe(diagnosticForksPool);
     expect(rootVitestProjects).toContain(project);
     expect(fullSuiteVitestShards.flatMap((shard) => shard.projects ?? [])).toContain(project);
   });

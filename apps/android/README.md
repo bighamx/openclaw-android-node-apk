@@ -24,6 +24,15 @@ OpenClaw Android is the officially released Google Play app. It connects to an O
 
 Long-press a row on the **Threads** page and choose **Color**, then select a swatch or **Default** to clear it. The eight colors are red, blue, green, yellow, purple, orange, pink, and cyan. Colored sessions show a narrow leading stripe in the sidebar and Threads page, plus a colored ring around the agent avatar in the open chat header. Unset colors add no indicator. Colors sync through the Gateway and remain visible in the local session cache while offline.
 
+## Image previews in Chat
+
+Tap an image to open the full image. Pinch to zoom up to 4× and drag to pan;
+double-tap the image for 2.5× zoom or to reset. The bottom controls zoom out,
+show the current percentage (tap to reset), and zoom in. Close with **X**,
+Android Back, or a stationary tap on empty background. Image taps, drags,
+and two-finger gestures do not dismiss the preview. Rotation or recreation
+refits the image rather than restoring offsets from the old viewport.
+
 ## Completed work in Chat
 
 In the app's own conversation, agent main sessions, and dashboard conversations,
@@ -33,6 +42,15 @@ and attachments remain visible. Failures without a later answer stay visible;
 earlier tool failures remain available in expanded work. Active work stays expanded,
 including a run continued by a steering message. Channel conversations retain
 their full transcript.
+
+## Message information
+
+Tap the subdued timestamp under an assistant message to see its recorded model,
+token counts, cache reads/writes, and estimated cost when the Gateway supplies them.
+These are facts for that message's model call, not totals for the whole run.
+Missing and zero-valued details are omitted; messages without details keep a plain
+timestamp. The existing offline transcript cache retains these facts. Android does
+not infer a historical context percentage from the current session's model limit.
 
 ## Review changes
 

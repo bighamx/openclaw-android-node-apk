@@ -253,9 +253,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.DateFormat
 import java.time.Instant
-import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.abs
@@ -1766,6 +1764,7 @@ private fun ChatMessageList(
                         live = false,
                         content = visibleContent(item.message).filter { it.toolActivity == null },
                         timestampMs = item.message.timestampMs,
+                        metadata = chatMessageMetadata(item.message),
                         onReplyMessage = onReplyMessage,
                         sessionActionsEnabled = sessionActionsEnabled,
                         onRewindMessage = onRewindMessage,
@@ -2123,6 +2122,7 @@ internal fun ChatBubble(
   sourcePreviewConfig: GatewaySourcePreviewConfig? = null,
   loadSourceFavicon: suspend (GatewaySourcePreviewConfig, String) -> GatewayLoadedImage? = { _, _ -> null },
   senderLabel: String? = null,
+  metadata: List<Pair<String, String>> = emptyList(),
   disclosure: @Composable () -> Unit = {},
 ) {
   val normalizedRole = role.trim().lowercase(Locale.US)
@@ -2285,10 +2285,9 @@ internal fun ChatBubble(
       )
     }
     timestampMs?.let {
-      Text(
-        text = formatChatTimestamp(it),
-        style = ClawTheme.type.caption.copy(fontSize = 11.5.sp, lineHeight = 14.sp, fontWeight = FontWeight.Normal),
-        color = ClawTheme.colors.textSubtle,
+      ChatMessageTimestamp(
+        timestampMs = it,
+        metadata = if (normalizedRole == "assistant" && !live) metadata else emptyList(),
         modifier = Modifier.align(if (isUser) Alignment.End else Alignment.Start),
       )
     }
@@ -4925,5 +4924,3 @@ internal fun chatThinkingOptionLabel(
     }
   return localizedUppercase(localizedLabel.take(1), languageTag) + localizedLabel.drop(1)
 }
-
-private fun formatChatTimestamp(timestampMs: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT, Locale.getDefault()).format(Date(timestampMs))

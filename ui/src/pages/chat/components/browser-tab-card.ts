@@ -2,7 +2,6 @@ import { consume } from "@lit/context";
 import { css, html, nothing, unsafeCSS } from "lit";
 import { property, state } from "lit/decorators.js";
 import type { ControlUiLinkPreview } from "../../../../../src/gateway/control-ui-contract.js";
-import type { RouteId } from "../../../app-route-paths.ts";
 import { applicationContext, type ApplicationContext } from "../../../app/context.ts";
 import { resolveControlUiAuthToken } from "../../../app/control-ui-auth.ts";
 import { isBrowserPanelAvailable } from "../../../app/panel-availability.ts";
@@ -26,7 +25,7 @@ import sessionMenuStyles from "../../../styles/session-menu.css?inline";
 class OpenClawBrowserTabCard extends OpenClawLitElement {
   @consume({ context: applicationContext, subscribe: true })
   @property({ attribute: false })
-  context?: ApplicationContext<RouteId>;
+  context?: ApplicationContext;
   @property({ attribute: false }) preview?: Extract<ToolPreview, { kind: "browser-tab" }>;
   @property({ attribute: false }) revision?: string;
   @property({ type: Boolean }) latest = false;

@@ -158,15 +158,34 @@ and stale save receipts use a negative marker that cannot match a current revisi
 Public save signatures and return values are unchanged. Service mutations with
 commit guards, one-use authority capture, or caller preconditions retain their
 synchronous call-through to the native kernels; their worker admission remains
-separate work. Receipt-coupled transaction hooks, Doctor metadata callbacks, synchronous diagnostic reads, and read-only
-inspection retain their current owners and execution paths.
+separate work. Receipt-coupled transaction hooks, Doctor metadata callbacks, and synchronous diagnostic reads
+retain their current owners and execution paths.
+
+Read-only Cron inspection runs its native open, row decoding, and close in a
+bounded worker task. Ordinary cold reads and artifact-preserving cold reads keep
+all SQLite execution off the caller thread. Artifact preservation uses the
+existing snapshot owner. The parent owns staging before dispatch and waits for
+the source-copy child and reader worker to exit before retiring the staging token
+and removing copied bytes. Missing databases remain absent, legacy layouts
+are not migrated, and Doctor retains its existing schema checks and errors.
+An already-held exclusive source scope still prepares its private copy on the
+host: that native owner cannot delegate its drained source to another isolate.
+The host retains that exclusion and snapshot until the reader worker exits.
+Failed worker retirement or snapshot removal remains registered with the existing
+state lifecycle owner, so canonical cleanup can retry that same resource without
+replaying the read or releasing its pins prematurely.
+This branch retains synchronous snapshot coordination; it is not an entirely
+off-thread path.
 
 iMessage outbound receipt recovery reads the external Messages SQLite database
 through the shared worker broker. Its plugin owns the read-only GUID queries;
 each recovery operation retains its read-only connection through polling and
 joins worker cleanup before the send publishes its receipt. Numeric message IDs and the latest matching sent message keep their existing recovery
-rules, including the five-second polling deadline. This does not migrate
-iMessage's startup watermark or conversation-binding queries.
+rules, including the five-second polling deadline. The same plugin-owned worker
+reads iMessage's local startup watermark and finishes cleanup before the transport
+probe and watch subscription. Empty databases retain the pre-first-row cursor;
+unavailable databases retain the existing fallback. Conversation-binding queries
+remain separate migration work.
 
 iMessage persisted echo reads, writes, and failed-send cleanup use the plugin-state
 worker. Sends await provisional echo persistence before transport and cleanup
@@ -703,12 +722,21 @@ Writes carry the caller's current-authority assertion into the synchronous SQLit
 transaction. HTML widget capability actions and protected publication run in the store's immediate
 continuation after its authoritative read and current ticket, session, and grant checks.
 Database ownership is released before awaiting external work; no Promise handoff separates
-the final authorization from its use. SQLite execution remains synchronous inside the
-store, with existing revision, grant, and transaction semantics.
+the final authorization from its use. Board and progress-card writes capture their physical
+database and state environment before joining the canonical agent writer queue. Cold opens
+use its asynchronous integrity admission, and request authority is checked again before
+schema setup and mutation. A changed route, closed request, or revoked session cannot
+publish a queued write. SQLite kernels remain synchronous inside the store, with existing
+revision, grant, session-existence, and transaction semantics.
 
 MCP App pinning retains its existing source-interaction checks. A delayed adapter must
 revalidate that source authority at its actual write admission; checking view registration
 alone cannot replace the supported asynchronous interaction policy.
+The SQLite owner refreshes that policy after cold-open preparation while holding the
+destination writer admission. A revoked source downgrades the pin to read-only and removes
+its declared tools before the synchronous write. Request authority is checked again after
+the policy wait, so cancellation cannot persist even a downgraded pin. Retiring the admitted
+database during that wait refuses the operation without reopening it.
 
 Backup outcome recording and freshness reads expose asynchronous operations from
 the shared-state owner. Archive, SQLite snapshot, and Git backup commands await
@@ -902,8 +930,26 @@ its compare-and-set transaction remains synchronous on the admitted connection.
 Refresh completion and cleanup await persistence. Operations capture their resolved
 database path before admission, and refresh-lock release retains that path and its
 original environment when the caller's directory or environment changes. Doctor reports rejected
-pruning operations before continuing to the next agent. Read-only cache snapshots
-retain their existing synchronous owner and do not create missing databases.
+pruning operations before continuing to the next agent.
+
+Usage-cache decoding, report folding, transcript inventory, and refresh scanning
+run in the existing session-transcript worker. Foreground reports use a separate
+bounded worker lane; background refreshes use shared compute admission. Reports
+return compact results, and refreshes send prepared UTF-8 compare-and-set values
+to the existing host writer. Selected reports read only their requested cache
+keys, and refreshes decode only selected transcripts. Read-only operations do not
+create or register missing databases and retain the empty-cache fallback for
+transient SQLite failures. Refresh-lock status reads do not wait for the writer
+queue.
+
+The host retains refresh locks, current write authority, pricing context, and
+process-held incognito databases. Incognito transcript bytes stream to the worker
+through bounded frames; the worker never reopens the in-memory database sentinel.
+Cancellation and database closure join native worker work, accepted host effects,
+and refresh-lock cleanup before releasing custody. Atomic pruning retains all
+obsolete-row comparison bytes on the host until its transaction settles; bounded
+SQL batches do not impose an aggregate memory limit. Cache formats, schemas,
+retention, and update behavior are unchanged.
 
 Memory managers admit writes on their exact borrowed agent connection. Provider
 calls and source preparation run before admission; generated-cache and source

@@ -211,7 +211,7 @@ export async function listSessionBranches(
             snapshot = readSessionBranchSnapshot(database, expected);
           } else {
             const { runSessionBranchSummaryWorkerRequest } =
-              await import("./session-transcript-worker-runtime.js");
+              await import("./session-transcript-read-worker-runtime.js");
             assertCurrent();
             snapshot = await runSessionBranchSummaryWorkerRequest(
               {

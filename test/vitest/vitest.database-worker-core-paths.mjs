@@ -1,5 +1,8 @@
 // These consumers need the host-owned SQLite broker, which runs in forked processes.
 export const databaseWorkerCoreTestFiles = [
+  "src/channels/join-intro/report-channel-room-join.test.ts",
+  "src/plugin-sdk/ingress-effect-once.test.ts",
+  "src/plugin-sdk/persistent-dedupe.worker.test.ts",
   "src/audit/audit-events.test.ts",
   "src/audit/audit-event-store.message.test.ts",
   "src/audit/audit-event-writer.test.ts",
@@ -52,6 +55,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/cli/config-cli.integration.test.ts",
   "src/cli/config-cli.secrets.integration.test.ts",
   "src/cli/resume-cli.test.ts",
+  "src/cli/update-cli/update-command-config-fence.test.ts",
   "src/snapshot/git-backup.test.ts",
   "src/plugins/conversation-binding.test.ts",
   "src/plugins/conversation-binding.worker.test.ts",
@@ -172,6 +176,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/plugin-sdk/provider-auth.test.ts",
   "src/plugin-sdk/provider-auth-copilot-cache.test.ts",
   "src/plugins/doctor-contract-registry.load-paths.test.ts",
+  "src/skills/lifecycle/upload-store.test.ts",
   "src/state/openclaw-memory-write-admission.test.ts",
   "src/state/openclaw-state-db.test.ts",
   "src/state/openclaw-state-db-read-admission.test.ts",

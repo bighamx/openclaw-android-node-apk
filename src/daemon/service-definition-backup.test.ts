@@ -46,12 +46,19 @@ describe("service definition backup receipts", () => {
     "rejects an operator replacement with %s bytes before acknowledgement",
     async (bytes) => {
       const f = await fixture("win32");
+      const replacement = `${f.sourcePath}.operator`;
+      // Allocate before publication can free the original inode for reuse.
+      await fs.writeFile(replacement, f.original, { mode: 0o600 });
+      const originalFile = await fs.stat(f.sourcePath);
+      const operatorFile = await fs.stat(replacement);
+      expect([operatorFile.dev, operatorFile.ino]).not.toEqual([
+        originalFile.dev,
+        originalFile.ino,
+      ]);
       const acknowledge = f.capture.hooks.fileWritten;
       vi.spyOn(f.capture.hooks, "fileWritten").mockImplementationOnce(async (source, contents) => {
-        const replacement = `${source}.operator`;
-        await fs.copyFile(source, replacement);
-        if (bytes === "original") {
-          await fs.writeFile(replacement, f.original);
+        if (bytes === "candidate") {
+          await fs.writeFile(replacement, await fs.readFile(source));
         }
         await fs.rename(replacement, source);
         await acknowledge(source, contents);
@@ -734,8 +741,8 @@ describe("service definition backup receipts", () => {
   it("does not admit a new systemd drop-in after capture", async () => {
     const f = await fixture("linux");
     const dropIn = `${f.sourcePath}.d/operator.conf`;
-    await fs.mkdir(path.dirname(dropIn));
-    await fs.writeFile(dropIn, "[Service]\nNice=7\n");
+    await fs.mkdir(path.dirname(dropIn), { mode: 0o700 });
+    await fs.writeFile(dropIn, "[Service]\nNice=7\n", { mode: 0o600 });
     f.command.definitionPaths!.push(dropIn);
     await expect(f.install()).rejects.toThrow("different managed artifacts");
     expect(await fs.readFile(f.sourcePath)).toEqual(f.original);
