@@ -31,12 +31,7 @@ function observeCliExecution(task: TaskRecord): "queued" | "running" | undefined
     return undefined;
   }
   const agentId = context.agentId ?? parseAgentSessionKey(sessionKey)?.agentId;
-  const taskAgentId = resolveTaskAgentId({
-    explicitAgentId: task.agentId,
-    childSessionKey: task.childSessionKey,
-    ownerKey: task.ownerKey,
-    requesterSessionKey: task.requesterSessionKey,
-  });
+  const taskAgentId = resolveTaskAgentId(task);
   if (taskAgentId && (!agentId || normalizeAgentId(agentId) !== normalizeAgentId(taskAgentId))) {
     return undefined;
   }
@@ -53,7 +48,7 @@ export function getTaskExecutionObservation(
       ? "unknown"
       : isTerminalTaskStatus(task.status)
         ? "finished"
-        : task.status === "queued"
+        : task.status === "queued" && task.runtime !== "subagent"
           ? "queued"
           : undefined;
   if (fixedState) {
@@ -102,11 +97,14 @@ export function getTaskExecutionObservation(
       ? undefined
       : activity;
   const execution: NonNullable<TaskSummary["execution"]> = nativeExecution ?? {
-    // Missing transient events do not erase a live run; explicit waits and invalidations still win.
+    // An explicit unknown state must not be replaced with inferred liveness.
     state: currentActivity?.executionState ?? observeCliExecution(task) ?? "unknown",
     ...(currentActivity?.executionWait ? { wait: currentActivity.executionWait } : {}),
   };
-  if (execution.state === "running" && currentActivity?.executionWait) {
+  if (
+    execution.state === "running" &&
+    (currentActivity?.executionState || currentActivity?.executionWait)
+  ) {
     execution.state = currentActivity.executionState ?? "waiting";
     execution.wait = currentActivity.executionWait;
   }

@@ -78,11 +78,11 @@ function profileError(error: unknown) {
 export const usersHandlers: GatewayRequestHandlers = {
   ...usersAuthConnectHandlers,
   ...usersGitHubHandlers,
-  "users.list": ({ params, respond }) => {
+  "users.list": async ({ params, respond }) => {
     if (!assertValidParams(params, validateUsersListParams, "users.list", respond)) {
       return;
     }
-    respond(true, { profiles: listProfiles() });
+    respond(true, { profiles: await listProfiles() });
   },
   "users.self": async ({ client, params, respond }) => {
     if (!assertValidParams(params, validateUsersSelfParams, "users.self", respond)) {

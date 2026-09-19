@@ -118,6 +118,7 @@ import type {
 } from "./openclaw-state-worker-contract.js";
 import { readUserModelAuthProfile } from "./user-model-accounts.js";
 import { executeUserPreferenceCommand } from "./user-preferences.worker.js";
+import { executeUserProfileReadCommand } from "./user-profiles.worker.js";
 
 export function createSqliteWorkerBackend(
   _input: undefined,
@@ -353,6 +354,13 @@ function createSharedStateWorkerBackend(
       }
       if (command.type === "userPreferences.read" || command.type === "userPreferences.write") {
         return executeUserPreferenceCommand(command, {
+          database: open(),
+          path: context.databasePath,
+          env: getSqliteWorkerStateContext().environment,
+        });
+      }
+      if (command.type === "userProfiles.list" || command.type === "userProfiles.directory") {
+        return executeUserProfileReadCommand(command, {
           database: open(),
           path: context.databasePath,
           env: getSqliteWorkerStateContext().environment,

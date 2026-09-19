@@ -8,9 +8,13 @@ import {
   retainSnapshotWork,
 } from "../infra/sqlite-readonly-location-cleanup.js";
 import { prepareSqliteReadOnlyLocationFromOwnedDatabase } from "../infra/sqlite-readonly-location.js";
-import type { PreparedSqliteReadOnlyLocation } from "../infra/sqlite-readonly-location.types.js";
+import type {
+  AsyncPreparedSqliteReadOnlyLocation,
+  PreparedSqliteReadOnlyLocation,
+} from "../infra/sqlite-readonly-location.types.js";
 import {
   prepareSqliteReadOnlyLocation,
+  prepareSqliteReadOnlyLocationAsync,
   prepareSqliteReadOnlyLocationSync,
 } from "../infra/sqlite-snapshot-source.js";
 import { assertExistingDatabaseIdentity } from "../infra/sqlite-worker-identity.js";
@@ -37,7 +41,7 @@ import type {
 } from "./openclaw-state-db-contract.js";
 import {
   assertStateReadSchema,
-  openOpenClawStateReadConnection,
+  openOpenClawStateReadOnlyLocation,
   withOpenClawStateReadOnlyLocation,
 } from "./openclaw-state-db-read-connection.js";
 import { isExistingOpenClawStateSchema } from "./openclaw-state-db-schema-policy.js";
@@ -325,27 +329,6 @@ function withFreshOpenClawStateDatabaseReadOnly<T>(
   return withOpenClawStateReadOnlyLocation(operation, pathname, prepared ?? pathname);
 }
 
-function openOpenClawStateReadOnlyLocation(
-  pathname: string,
-  source: string | PreparedSqliteReadOnlyLocation,
-) {
-  const connection = openOpenClawStateReadConnection(pathname, source);
-  try {
-    assertStateReadSchema(connection.database.db, pathname);
-  } catch (error) {
-    try {
-      connection.close();
-    } catch (cleanupError) {
-      throwSqliteLifecycleErrors(
-        [error, cleanupError],
-        "Shared-state reader admission and cleanup failed.",
-      );
-    }
-    throw error;
-  }
-  return connection;
-}
-
 /** Keep streamed rows on one private reader while callers yield or close the shared writer. */
 export async function* iterateOpenClawStateDatabaseReadOnly<Row, Result>(
   source: OpenClawStateDatabase,
@@ -448,7 +431,7 @@ export function executeExistingOpenClawStateRead(
     const acceptanceErrors: unknown[] = [];
     let borrowed: ReturnType<typeof retainOpenClawStateDatabaseForIndependentRead>;
     let sourcePin: ReturnType<typeof acquireStateDatabaseHandleLease> | undefined;
-    let prepared: PreparedSqliteReadOnlyLocation | undefined;
+    let prepared: AsyncPreparedSqliteReadOnlyLocation | undefined;
     let expectedIdentity: string | undefined;
     let releasePreparedSource: (() => void) | undefined;
     const authority: OpenClawStateReadAuthority = {
@@ -571,7 +554,9 @@ export function executeExistingOpenClawStateRead(
       } else if (!snapshot && (preserveArtifacts || excluded || mutation)) {
         await transport.validateFresh(context, authority);
         authority.assertCurrent();
-        prepared = await prepareSqliteReadOnlyLocation(pathname, {
+        prepared = await (
+          excluded || mutation ? prepareSqliteReadOnlyLocation : prepareSqliteReadOnlyLocationAsync
+        )(pathname, {
           preserveSourceArtifacts: preserveArtifacts,
           signal: authority.signal,
         });
@@ -588,7 +573,13 @@ export function executeExistingOpenClawStateRead(
       }
       authority.assertCurrent();
       const outcome = await transport.read(
-        { context, location, checkFreshAdmission: !borrowed, expectedIdentity },
+        {
+          context,
+          location,
+          checkFreshAdmission: !borrowed,
+          expectedIdentity,
+          snapshotRoot: prepared?.cleanupRoot,
+        },
         authority,
       );
       const sourceAdmitted =

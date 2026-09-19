@@ -11,7 +11,6 @@ vi.mock("./node-sqlite.js", async (importOriginal) => {
   return {
     ...actual,
     openNodeSqliteDatabase: vi.fn(actual.openNodeSqliteDatabase),
-    requireNodeSqlite: vi.fn(actual.requireNodeSqlite),
   };
 });
 
@@ -70,13 +69,9 @@ async function inspectFailure(
     opened.push(database);
     return database;
   });
-  vi.mocked(sqlite.requireNodeSqlite).mockReturnValue({
-    ...actual.requireNodeSqlite(),
-    backup:
-      operation === "snapshot-backup"
-        ? vi.fn().mockRejectedValue(failure)
-        : actual.requireNodeSqlite().backup,
-  });
+  if (operation === "snapshot-backup") {
+    vi.spyOn(actual.requireNodeSqlite(), "backup").mockRejectedValue(failure);
+  }
   if (operation === "snapshot-copy") {
     const open = fs.openSync;
     vi.spyOn(fs, "openSync").mockImplementation((...args) => {

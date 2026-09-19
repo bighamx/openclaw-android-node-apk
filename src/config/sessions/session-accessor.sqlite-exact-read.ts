@@ -189,6 +189,19 @@ export function loadExactSessionEntryReadOnly(
   })[0];
 }
 
+/** Probe the selected store without rerouting an incognito-shaped key to ephemeral state. */
+export function loadExactSessionEntryFromStoreReadOnly(
+  scope: SessionEntryReadScope & { storePath: string },
+): ExactSessionEntry | undefined {
+  const options = toDatabaseOptions(resolveSqliteScope({ ...scope, sessionKey: "" }));
+  return loadExactSessionEntryCandidates({
+    readSource: { ...options, path: resolveOpenClawAgentSqlitePath(options) },
+    projection: scope.projection,
+    readOnly: true,
+    sessionKeys: [scope.sessionKey],
+  })[0];
+}
+
 /** Read requested keys through synchronous store/projection groups. */
 export type ExactSessionEntryBatchScope = Omit<SessionEntryReadScope, "sessionKey"> & {
   sessionKeys: readonly string[];
@@ -235,24 +248,28 @@ export function loadExactSessionEntryCandidatesReadOnlyBatch(
   const { groups, results } = groupExactSessionEntryReadRequests(scopes);
   for (const group of groups.values()) {
     try {
-      withOpenClawAgentDatabaseReadOnly((database) => {
-        // Admission failures affect this store; an invalid requested row must not
-        // suppress healthy logical targets after a warm handle was validated.
-        assertCanonicalSqliteSessionKeysCurrent(database);
-        const source = { agentId: database.agentId, path: database.path };
-        const grouped = readExactSessionEntryCandidatesInDatabase(
-          database,
-          group.requests.map((request) => request.sessionKeys),
-          group.projection,
-        );
-        for (const [ordinal, request] of group.requests.entries()) {
-          const result = grouped[ordinal]!;
-          results[request.index] = result;
-          if (result.ok) {
-            scopes[request.index]!.onReadSource?.(source);
-          }
-        }
-      }, group.options);
+      withOpenClawAgentDatabaseReadOnly(
+        (database) =>
+          readWithCanonicalSessionAdmission(database, () => {
+            // Admission failures affect this store; an invalid requested row must not
+            // suppress healthy logical targets after a warm handle was validated.
+            assertCanonicalSqliteSessionKeysCurrent(database);
+            const source = { agentId: database.agentId, path: database.path };
+            const grouped = readExactSessionEntryCandidatesInDatabase(
+              database,
+              group.requests.map((request) => request.sessionKeys),
+              group.projection,
+            );
+            for (const [ordinal, request] of group.requests.entries()) {
+              const result = grouped[ordinal]!;
+              results[request.index] = result;
+              if (result.ok) {
+                scopes[request.index]!.onReadSource?.(source);
+              }
+            }
+          }),
+        group.options,
+      );
     } catch (error) {
       for (const { index } of group.requests) {
         results[index] = err(error);

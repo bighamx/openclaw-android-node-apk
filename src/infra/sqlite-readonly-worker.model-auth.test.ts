@@ -1,8 +1,12 @@
 import fs from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { getRuntimeAuthProfileStoreMutationRevisionAtDatabasePath } from "../agents/auth-profiles/mutation-lineage.js";
+import { overlayRuntimeExternalOAuthProfiles } from "../agents/auth-profiles/oauth-shared.js";
 import * as authPathResolve from "../agents/auth-profiles/path-resolve.js";
+import { markAuthProfileSuccess } from "../agents/auth-profiles/profiles.js";
 import {
+  getRuntimeAuthProfileStoreMetadataRevision,
+  getRuntimeAuthProfileStoreSnapshotCore,
   getRuntimeAuthProfileStoreSnapshotRevisionAtDatabasePath,
   setRuntimeAuthProfileStoreSnapshot,
 } from "../agents/auth-profiles/runtime-snapshots.js";
@@ -11,7 +15,10 @@ import {
   resolveAuthProfileDatabasePath,
   writePersistedAuthProfileStoreRaw,
 } from "../agents/auth-profiles/sqlite.js";
-import { loadAuthProfileStoreForRuntimeAsync } from "../agents/auth-profiles/store-runtime.js";
+import {
+  loadAuthProfileStoreForRuntimeAsync,
+  loadAuthProfileStoreWithoutExternalProfiles,
+} from "../agents/auth-profiles/store-runtime.js";
 import { withAuthProfileStoreAgentDir } from "../agents/auth-profiles/store.js";
 import type { AuthProfileStore } from "../agents/auth-profiles/types.js";
 import { persistAuthProfileBatch } from "../agents/auth-profiles/upsert-with-lock.js";
@@ -47,7 +54,7 @@ function fixtureStore(key: string): AuthProfileStore {
   };
 }
 
-function modelResolver(state: OpenClawTestState) {
+function modelResolver(state: OpenClawTestState, options?: { automatic: boolean }) {
   const stores = createEmptyAgentDiscoveryStores();
   const metadataSnapshot = createPluginMetadataSnapshotFixture({
     plugins: [{ id: PROVIDER, providers: [PROVIDER] }],
@@ -66,7 +73,7 @@ function modelResolver(state: OpenClawTestState) {
     normalizeProviderResolvedModelWithPlugin: () => undefined,
     normalizeProviderTransportWithPlugin: () => undefined,
   };
-  return (authProfileId = PROFILE_ID) =>
+  return (authProfileId = options?.automatic ? undefined : PROFILE_ID) =>
     withPluginRuntimeGenerationScope({ metadataSnapshot }, () =>
       resolveModelAsync(
         PROVIDER,
@@ -209,6 +216,13 @@ describe("model resolution auth row snapshots", () => {
     async ({ change, cached, published }) => {
       await withOpenClawTestState({ label: "model-auth-concurrent-usage" }, async (state) => {
         const store = fixtureStore("fixture-original");
+        const fallbackProfileId = `${PROVIDER}:fallback`;
+        store.profiles[fallbackProfileId] = {
+          type: "token",
+          provider: PROVIDER,
+          token: "fixture-fallback",
+        };
+        store.order = { [PROVIDER]: [PROFILE_ID, fallbackProfileId] };
         await state.writeAuthProfiles(store);
         if (change === "unrelated-order") {
           await state.writeAuthProfiles(store, "other");
@@ -218,7 +232,7 @@ describe("model resolution auth row snapshots", () => {
           // Materialize the published view through its persistence owner before the race.
           await state.writeAuthProfiles(store);
         }
-        const resolve = modelResolver(state);
+        const resolve = modelResolver(state, { automatic: true });
         if (cached) {
           expect((await resolve()).model?.name).toBe(`${PROFILE_ID}:api_key`);
         }
@@ -255,7 +269,7 @@ describe("model resolution auth row snapshots", () => {
           ]);
           const updated: AuthProfileStore =
             change === "order" || change === "unrelated-order"
-              ? { ...store, order: { [PROVIDER]: [PROFILE_ID] } }
+              ? { ...store, order: { [PROVIDER]: [fallbackProfileId, PROFILE_ID] } }
               : {
                   ...store,
                   usageStats: {
@@ -268,13 +282,11 @@ describe("model resolution auth row snapshots", () => {
           const updatedAgent = change === "unrelated-order" ? "other" : "main";
           await state.writeAuthProfiles(updated, updatedAgent);
           resume.resolve();
-          if (change === "usage" || change === "unrelated-order") {
-            expect((await loading).model?.name).toBe(`${PROFILE_ID}:api_key`);
-          } else {
-            await expect(loading.then(() => "resolved")).rejects.toThrow(
-              "Auth profile store changed during its runtime read",
-            );
-          }
+          expect((await loading).model?.name).toBe(
+            change === "order" || change === "disabled"
+              ? `${fallbackProfileId}:token`
+              : `${PROFILE_ID}:api_key`,
+          );
           const current = await loadAuthProfileStoreForRuntimeAsync(state.agentDir(updatedAgent), {
             readOnly: true,
             externalCli: { mode: "none" },
@@ -288,6 +300,86 @@ describe("model resolution auth row snapshots", () => {
       });
     },
   );
+
+  it("preserves authoritative empty external auth during a successful inherited usage write", async () => {
+    await withOpenClawTestState(
+      { label: "model-auth-empty-external-publication" },
+      async (state) => {
+        const store = fixtureStore("fixture-original");
+        await persistAuthProfileBatch({
+          stateDir: state.stateDir,
+          profiles: [{ profileId: PROFILE_ID, credential: store.profiles[PROFILE_ID]! }],
+        });
+        for (const agentDir of [undefined, state.agentDir()]) {
+          setRuntimeAuthProfileStoreSnapshot(
+            overlayRuntimeExternalOAuthProfiles(
+              loadAuthProfileStoreWithoutExternalProfiles(agentDir),
+              [],
+              {
+                runtimeExternalProfileIdsAuthoritative: true,
+              },
+            ),
+            agentDir,
+          );
+        }
+        const before = getRuntimeAuthProfileStoreSnapshotCore(state.agentDir())!;
+        const revision = getRuntimeAuthProfileStoreMetadataRevision(state.agentDir());
+        const databasePath = resolveAuthProfileDatabasePath(state.agentDir());
+        const rowsRevision = getRuntimeAuthProfileStoreSnapshotRevisionAtDatabasePath(databasePath);
+        const entered = createDeferredCore();
+        const resume = createDeferredCore();
+        const prepare = sqliteRead.prepareAgentAuthProfileRowsRead;
+        const read = vi
+          .spyOn(sqliteRead, "prepareAgentAuthProfileRowsRead")
+          .mockImplementation((options) => {
+            const reader = prepare(options);
+            return options.databasePath === databasePath
+              ? {
+                  ...reader,
+                  read: async () => {
+                    const rows = await reader.read();
+                    entered.resolve();
+                    await resume.promise;
+                    return rows;
+                  },
+                }
+              : reader;
+          });
+        const loading = modelResolver(state)();
+        try {
+          await Promise.race([
+            entered.promise,
+            loading.then(() => {
+              throw new Error("Model resolution completed before the publication barrier");
+            }),
+          ]);
+          await markAuthProfileSuccess({
+            store: before,
+            provider: PROVIDER,
+            profileId: PROFILE_ID,
+            agentDir: state.agentDir(),
+          });
+          resume.resolve();
+          await expect(loading).resolves.toMatchObject({
+            model: { name: `${PROFILE_ID}:api_key` },
+          });
+          const published = getRuntimeAuthProfileStoreSnapshotCore(state.agentDir())!;
+          expect(published.profiles).toEqual(before.profiles);
+          expect(published.runtimeExternalProfileIds).toEqual([]);
+          expect(published.runtimeExternalProfileIdsAuthoritative).toBe(true);
+          expect(published.usageStats?.[PROFILE_ID]?.lastProbeAt).toEqual(expect.any(Number));
+          expect(getRuntimeAuthProfileStoreMetadataRevision(state.agentDir())).toBe(revision);
+          expect(
+            getRuntimeAuthProfileStoreSnapshotRevisionAtDatabasePath(databasePath),
+          ).toBeGreaterThan(rowsRevision);
+        } finally {
+          resume.resolve();
+          await Promise.allSettled([loading]);
+          read.mockRestore();
+        }
+      },
+    );
+  });
 
   it("reads unchanged credentials once across turns and observes published rotation and addition", async () => {
     await withOpenClawTestState({ label: "model-auth-row-snapshot" }, async (state) => {

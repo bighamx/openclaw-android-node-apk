@@ -315,7 +315,7 @@ export function retainQueuedAgentRunContext(
       if (outcome === "admitted") {
         context.lastActiveAt = Date.now();
       }
-      if (remaining === 0 && !hasLiveAgentRunContext(runId)) {
+      if (!hasLiveAgentRunContext(runId)) {
         bumpAgentRunIndexVersion(context);
       }
     }

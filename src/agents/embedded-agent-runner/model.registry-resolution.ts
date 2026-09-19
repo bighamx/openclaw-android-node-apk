@@ -3,8 +3,13 @@ import type { ModelRegistry as CoreModelRegistry } from "../../llm/model-registr
 import type { Model } from "../../llm/types.js";
 import type { PluginMetadataSnapshotOwnerMaps } from "../../plugins/plugin-metadata-snapshot.types.js";
 import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
-import { loadAuthProfileStoreForRuntimeAsync, resolveAuthProfileOrder } from "../auth-profiles.js";
+import {
+  loadAuthProfileStoreForRuntimeAsync,
+  resolveAuthProfileOrder,
+  waitForActiveOAuthRefreshes,
+} from "../auth-profiles.js";
 import { externalCliDiscoveryForProviderAuth } from "../auth-profiles/external-cli-discovery.js";
+import { AuthProfileRuntimeReadStaleError } from "../auth-profiles/runtime-persisted-rows.js";
 import { createSelectedAuthProfileUnavailableError } from "../auth-profiles/selection-error.js";
 import type { AuthProfileCredential } from "../auth-profiles/types.js";
 import { resolveAgentHarnessPolicy } from "../harness/policy.js";
@@ -180,7 +185,8 @@ export async function resolveDynamicModelAuthProfile(params: {
       authProfileMode: params.authProfileMode,
     };
   }
-  const store = await loadAuthProfileStoreForRuntimeAsync(params.agentDir, {
+  const agentDir = params.agentDir;
+  const readOptions = {
     readOnly: true,
     migrationProvider: params.provider,
     allowKeychainPrompt: false,
@@ -192,19 +198,32 @@ export async function resolveDynamicModelAuthProfile(params: {
       profileId: explicitProfileId,
       preferredProfile: params.preferredProfile,
     }),
+  };
+  const readStore = () => loadAuthProfileStoreForRuntimeAsync(agentDir, readOptions);
+  const providers = listOpenAIAuthProfileProvidersForAgentRuntime({
+    provider: params.provider,
+    config: params.cfg,
+  });
+  const store = await readStore().catch(async (error: unknown) => {
+    if (!(error instanceof AuthProfileRuntimeReadStaleError)) {
+      throw error;
+    }
+    // A refresh publishes its claim and settlement separately; join that owner before recapturing.
+    await Promise.all(
+      providers.map((provider) => waitForActiveOAuthRefreshes(provider, explicitProfileId)),
+    );
+    return readStore();
   });
   const profileId =
     explicitProfileId ??
-    listOpenAIAuthProfileProvidersForAgentRuntime({
-      provider: params.provider,
-      config: params.cfg,
-    }).flatMap((provider) =>
+    providers.flatMap((provider) =>
       resolveAuthProfileOrder({
         cfg: params.cfg,
         store,
         provider,
         preferredProfile: params.preferredProfile,
         forModel: params.modelId,
+        includePendingOAuthRefresh: true,
       }),
     )[0];
   if (!profileId) {

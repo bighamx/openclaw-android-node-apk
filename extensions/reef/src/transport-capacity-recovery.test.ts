@@ -4,7 +4,10 @@
 // mocked out. Covers shared-inbox survival, later-entry processing, recovery
 // once capacity frees, interrupted-delivery restart, and legacy marker
 // interpretation.
-import type { OpenKeyedStoreOptions } from "openclaw/plugin-sdk/plugin-state-runtime";
+import type {
+  OpenAsyncKeyedStoreOptions,
+  OpenKeyedStoreOptions,
+} from "openclaw/plugin-sdk/plugin-state-runtime";
 import {
   createPluginStateKeyedStoreForTests,
   createPluginStateSyncKeyedStoreForTests,
@@ -46,7 +49,7 @@ function reopenRuntime(stateDir: string) {
       ...options,
       env: { OPENCLAW_STATE_DIR: stateDir },
     });
-  runtime.state.openKeyedStore = <T>(options: OpenKeyedStoreOptions) =>
+  runtime.state.openKeyedStore = <T>(options: OpenAsyncKeyedStoreOptions) =>
     createPluginStateKeyedStoreForTests<T>("reef", {
       ...options,
       env: { OPENCLAW_STATE_DIR: stateDir },

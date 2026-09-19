@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync, StatementSync } from "node:sqlite";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import type {
+  OpenAsyncKeyedStoreOptions,
   OpenKeyedStoreOptions,
   PluginStateKeyedStore,
   PluginStateSyncKeyedStore,
@@ -15,7 +15,10 @@ import {
 } from "openclaw/plugin-sdk/plugin-state-test-runtime";
 import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { createPluginRuntimeMock } from "openclaw/plugin-sdk/plugin-test-runtime";
-import { closeOpenClawStateDatabaseAsync } from "openclaw/plugin-sdk/sqlite-runtime-testing";
+import {
+  closeOpenClawStateDatabaseAsync,
+  observeHostDataSql,
+} from "openclaw/plugin-sdk/sqlite-runtime-testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import reefChannelEntry from "../index.js";
 import {
@@ -66,7 +69,7 @@ function createRuntime(stateDir: string, registrationHost: "worker" | "legacy" =
       ...options,
       env: { OPENCLAW_STATE_DIR: stateDir },
     });
-  runtime.state.openKeyedStore = <T>(options: OpenKeyedStoreOptions) => {
+  runtime.state.openKeyedStore = <T>(options: OpenAsyncKeyedStoreOptions) => {
     const store = createPluginStateKeyedStoreForTests<T>("reef", {
       ...options,
       env: { OPENCLAW_STATE_DIR: stateDir },
@@ -311,13 +314,8 @@ describe("Reef SQLite state", () => {
     const runtime = createRuntime(stateDir);
     const keys = await generateAndStoreKeys(runtime);
     expect(await loadKeys(createRuntime(stateDir))).toEqual(keys);
-    const sql = [
-      vi.spyOn(DatabaseSync.prototype, "prepare"),
-      vi.spyOn(DatabaseSync.prototype, "exec"),
-      ...(["get", "all", "run", "iterate"] as const).map((method) =>
-        vi.spyOn(StatementSync.prototype, method),
-      ),
-    ];
+    const observation = observeHostDataSql({ OPENCLAW_STATE_DIR: stateDir });
+    const sql = observation.calls;
     await bindIdentity(runtime, "molty");
     await saveReefSetupSession(runtime, {
       session: "setup-secret",
@@ -469,7 +467,7 @@ describe("Reef SQLite state", () => {
       const runtime = createRuntime(stateDir);
       const failure = new Error("registration worker unavailable");
       const open = runtime.state.openKeyedStore;
-      runtime.state.openKeyedStore = <T>(options: OpenKeyedStoreOptions) => ({
+      runtime.state.openKeyedStore = <T>(options: OpenAsyncKeyedStoreOptions) => ({
         ...open<T>(options),
         [method]: async () => {
           throw failure;
@@ -692,13 +690,8 @@ describe("Reef SQLite state", () => {
     const reopened = openStores(createRuntime(stateDir), keys);
     await closeOpenClawStateDatabaseAsync();
     resetPluginStateStoreForTests();
-    const sql = [
-      vi.spyOn(DatabaseSync.prototype, "prepare"),
-      vi.spyOn(DatabaseSync.prototype, "exec"),
-      ...(["get", "all", "run", "iterate"] as const).map((method) =>
-        vi.spyOn(StatementSync.prototype, method),
-      ),
-    ];
+    const observation = observeHostDataSql({ OPENCLAW_STATE_DIR: stateDir });
+    const sql = observation.calls;
     await expect(reopened.reviews.lookupDecision(review.approvalDigest)).resolves.toEqual({
       approved: true,
     });
@@ -850,7 +843,7 @@ describe("Reef SQLite state", () => {
     const runtime = createRuntime(stateDir);
     const openKeyedStore = runtime.state.openKeyedStore;
     runtime.state.openKeyedStore = <T>(
-      options: OpenKeyedStoreOptions,
+      options: OpenAsyncKeyedStoreOptions,
     ): PluginStateKeyedStore<T> => {
       const store = openKeyedStore<T>(options);
       return options.namespace === REEF_DELIVERED_NAMESPACE
@@ -916,13 +909,8 @@ describe("Reef delivered markers", () => {
   }
 
   it("confirms delivered markers idempotently", async () => {
-    const sql = [
-      vi.spyOn(DatabaseSync.prototype, "prepare"),
-      vi.spyOn(DatabaseSync.prototype, "exec"),
-      ...(["get", "all", "run", "iterate"] as const).map((method) =>
-        vi.spyOn(StatementSync.prototype, method),
-      ),
-    ];
+    const observation = observeHostDataSql({ OPENCLAW_STATE_DIR: stateDir });
+    const sql = observation.calls;
     const delivered = new ReefDeliveredStore(createRuntime(stateDir));
     await expect(delivered.status("m1")).resolves.toBeUndefined();
     await expect(delivered.has("m1")).resolves.toBe(false);

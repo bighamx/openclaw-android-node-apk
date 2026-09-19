@@ -5,8 +5,9 @@ import type {
   PluginStatePreparedComparison,
 } from "./plugin-state-store.comparison.js";
 import type { PluginStateSequencedJournalParams } from "./plugin-state-store.journal.js";
-import type { PluginStateRegisterEntryParams } from "./plugin-state-store.kernel.js";
+import type { PluginStateMoveEntriesParams } from "./plugin-state-store.mutations.js";
 import type { PluginStateKeyRangeParams } from "./plugin-state-store.reads.js";
+import type { PluginStateRegisterEntryParams } from "./plugin-state-store.retention.js";
 import type {
   PluginStateCompareResult,
   PluginStateEntry,
@@ -28,6 +29,10 @@ export type PluginStateWorkerOperations = {
   "pluginState.entriesInKeyRange": {
     input: PluginStateKeyRangeParams;
     output: Result<PluginStateEntry<unknown>[], PluginStateWorkerFailure>;
+  };
+  "pluginState.moveEntries": {
+    input: PluginStateMoveEntriesParams;
+    output: Result<number, PluginStateWorkerFailure>;
   };
   "pluginState.observe": {
     input: Key;
@@ -75,6 +80,11 @@ export const pluginStateWorkerOperations = {
     operation: "entries",
     code: "PLUGIN_STATE_READ_FAILED",
     message: "Failed to list plugin state entries by key range.",
+  },
+  "pluginState.moveEntries": {
+    operation: "register",
+    code: "PLUGIN_STATE_WRITE_FAILED",
+    message: "Failed to move plugin state entries.",
   },
   "pluginState.observe": {
     operation: "lookup",

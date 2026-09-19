@@ -222,6 +222,8 @@ export type ReplyPayloadMetadata = {
   replyDispatcherNormalizationOwner?: object;
   /** The command owner produced this terminal reply without starting an agent run. */
   commandReply?: true;
+  /** A read-only status command exchange belongs in history, not model context. */
+  contextFreeCommand?: true;
   /** Host-owned acknowledgement after this final payload is confirmed delivered. */
   onFinalDeliverySuccess?: () => void;
   /** Host-projected monitoring final; notification policy already normalized its text. */

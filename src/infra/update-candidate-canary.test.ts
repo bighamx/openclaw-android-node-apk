@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
@@ -89,9 +90,8 @@ beforeEach(async () => {
       children.set(child.pid, child);
       childEnv = options.env;
       if (args.includes("gateway")) {
-        void fs.readFile(options.env.OPENCLAW_CONFIG_PATH!, "utf8").then((raw) => {
-          candidateConfig = JSON.parse(raw) as Record<string, unknown>;
-        });
+        const raw = readFileSync(options.env.OPENCLAW_CONFIG_PATH!, "utf8");
+        candidateConfig = JSON.parse(raw) as Record<string, unknown>;
       } else {
         completeCanaryCommand(child, args, () => ({
           pluginInventory,

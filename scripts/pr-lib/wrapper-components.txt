@@ -649,6 +649,7 @@ src/infra/shell-wrapper-resolution.ts
 src/infra/sqlite-audit-record-store.async.ts
 src/infra/sqlite-audit-record-store.ts
 src/infra/sqlite-audit-record.kernel.ts
+src/infra/sqlite-backup.ts
 src/infra/sqlite-busy-timeout.ts
 src/infra/sqlite-coordinator.ts
 src/infra/sqlite-error-diagnostics.ts
@@ -679,6 +680,7 @@ src/infra/sqlite-schema-sql.ts
 src/infra/sqlite-snapshot-policy.ts
 src/infra/sqlite-snapshot-single-flight.ts
 src/infra/sqlite-snapshot-source.ts
+src/infra/sqlite-snapshot-staging-owner.ts
 src/infra/sqlite-snapshot-staging.ts
 src/infra/sqlite-source-handle.ts
 src/infra/sqlite-strict.ts
@@ -695,6 +697,7 @@ src/infra/sqlite-worker-broker.ts
 src/infra/sqlite-worker-client.ts
 src/infra/sqlite-worker-contract.ts
 src/infra/sqlite-worker-identity.ts
+src/infra/sqlite-worker-lifecycle-preparation.ts
 src/infra/sqlite-worker-operation-admission.ts
 src/infra/sqlite-worker-store.ts
 src/infra/sqlite-worker-transfer.ts
@@ -735,6 +738,7 @@ src/infra/windows-install-roots.ts
 src/infra/windows-port-pids.ts
 src/infra/windows-private-directory.ts
 src/infra/windows-process-start.ts
+src/infra/worker-cpu.ts
 src/infra/worker-task-capacity.ts
 src/infra/worker-task-native-sections.ts
 src/infra/worker-task-pool.ts
@@ -947,6 +951,7 @@ src/plugins/provider-owner-index.ts
 src/plugins/provider-policy-owners.ts
 src/plugins/provider-policy-surface.ts
 src/plugins/provider-public-artifacts.ts
+src/plugins/provider-registry-index.ts
 src/plugins/provider-registry-selection.ts
 src/plugins/provider-registry-shared.ts
 src/plugins/provider-thinking-catalog.ts
@@ -961,6 +966,7 @@ src/plugins/runtime-degraded-state.ts
 src/plugins/runtime-state-key.ts
 src/plugins/runtime-state.ts
 src/plugins/runtime-workspace-state.ts
+src/plugins/runtime/execution-frame.ts
 src/plugins/runtime/gateway-request-scope.ts
 src/plugins/runtime/generation-scope.ts
 src/plugins/runtime/generation-state.ts

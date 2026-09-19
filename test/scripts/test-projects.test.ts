@@ -1198,6 +1198,8 @@ describe("scripts/test-projects changed-target routing", () => {
         "test/scripts/pr-crabbox-merge-bypass.test.ts",
         "test/scripts/release-ci-summary.test.ts",
         "test/scripts/release-tooling-identity.test.ts",
+        "test/scripts/security-review-event.test.ts",
+        "test/scripts/security-review-script.test.ts",
         "test/scripts/validate-release-publish-approval.test.ts",
       ],
     );
@@ -1383,6 +1385,8 @@ describe("scripts/test-projects changed-target routing", () => {
         "test/scripts/openclaw-npm-plugin-recovery-workflow.test.ts",
         "test/scripts/openclaw-npm-resume-run.test.ts",
         "test/scripts/release-candidate-checklist.test.ts",
+        "test/scripts/release-publish-preflight-evidence.test.ts",
+        "test/scripts/security-review-workflow.test.ts",
         "test/scripts/verify-stable-main-closeout.test.ts",
         "test/scripts/ci-workflow-guards.test.ts",
       ],
@@ -1421,6 +1425,7 @@ describe("scripts/test-projects changed-target routing", () => {
         "test/scripts/plugin-npm-extended-stable-workflow.test.ts",
         "test/scripts/release-beta-verifier.test.ts",
         "test/scripts/release-candidate-checklist.test.ts",
+        "test/scripts/release-clawhub-children.test.ts",
         "test/scripts/release-no-push-workflow.test.ts",
         "test/scripts/release-plan-producer.test.ts",
         "test/scripts/release-publish-draft.test.ts",
@@ -1508,14 +1513,35 @@ describe("scripts/test-projects changed-target routing", () => {
     );
   });
 
-  it("keeps security-sensitive guard workflow edits on guard workflow tests", () => {
+  it("keeps security review workflow edits on the automatic review owners", () => {
     expectChangedTargets(
-      [".github/workflows/security-sensitive-guard.yml"],
+      [".github/workflows/security-review.yml"],
       [
-        "test/scripts/security-sensitive-guard-workflow.test.ts",
+        "test/scripts/security-review-workflow.test.ts",
+        "test/scripts/security-review-event.test.ts",
+        "test/scripts/security-review-script.test.ts",
         "test/scripts/ci-workflow-guards.test.ts",
       ],
     );
+  });
+
+  it("keeps automatic review entry points and rollout changes on executable owner tests", () => {
+    expectChangedTargets(
+      ["scripts/github/security-review-event.mjs"],
+      ["test/scripts/security-review-event.test.ts"],
+    );
+    for (const reviewPath of [
+      "scripts/github/security-review.mjs",
+      "scripts/github/security-review-rollout.mjs",
+    ]) {
+      expectChangedTargets(
+        [reviewPath],
+        [
+          "test/scripts/security-review-script.test.ts",
+          "test/scripts/security-review-rollout.test.ts",
+        ],
+      );
+    }
   });
 
   it("keeps Crabbox and Testbox workflow edits on workflow regression tests", () => {
@@ -1741,7 +1767,7 @@ describe("scripts/test-projects changed-target routing", () => {
       ["scripts/github/dependency-guard.mjs"],
       [
         "test/scripts/dependency-guard-script.test.ts",
-        "test/scripts/dependency-guard-workflow.test.ts",
+        "test/scripts/security-review-workflow.test.ts",
       ],
     );
 
@@ -1749,9 +1775,10 @@ describe("scripts/test-projects changed-target routing", () => {
       ["scripts/github/guard-shared.mjs"],
       [
         "test/scripts/dependency-guard-script.test.ts",
-        "test/scripts/dependency-guard-workflow.test.ts",
+        "test/scripts/security-review-workflow.test.ts",
         "test/scripts/security-sensitive-guard-script.test.ts",
-        "test/scripts/security-sensitive-guard-workflow.test.ts",
+        "test/scripts/security-review-script.test.ts",
+        "test/scripts/security-review-event.test.ts",
       ],
     );
 
@@ -1764,7 +1791,7 @@ describe("scripts/test-projects changed-target routing", () => {
       ["scripts/github/security-sensitive-guard.mjs"],
       [
         "test/scripts/security-sensitive-guard-script.test.ts",
-        "test/scripts/security-sensitive-guard-workflow.test.ts",
+        "test/scripts/security-review-workflow.test.ts",
       ],
     );
 
@@ -3078,6 +3105,7 @@ describe("scripts/test-projects changed-target routing", () => {
           "test/scripts/ci-git-prerequisites.test.ts",
           "test/scripts/ios-release-plan.test.ts",
           "test/scripts/mac-native-fixtures.test.ts",
+          "test/scripts/plugin-npm-publication-readback.test.ts",
         ],
         watchMode: false,
       },

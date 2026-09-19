@@ -44,10 +44,7 @@ vi.mock("../../agents/agent-scope.js", () => ({
 
 vi.mock("../../skills/lifecycle/clawhub.js", () => ({
   installSkillFromClawHub: vi.fn(),
-  readClawHubSkillsLockfileStatusSync: vi.fn(() => ({ kind: "missing" })),
   readLocalSkillCardContentSync: vi.fn(),
-  resolveClawHubSkillStatusLinkSync: vi.fn(),
-  resolveLocalSkillCardStatusSync: vi.fn(),
   searchSkillsFromClawHub: vi.fn(),
   updateSkillsFromClawHub: vi.fn(),
 }));

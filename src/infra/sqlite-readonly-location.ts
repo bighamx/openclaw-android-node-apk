@@ -3,16 +3,10 @@ import fs, { type BigIntStats } from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { sameFileIdentity } from "./fs-safe-advanced.js";
-import {
-  openNodeSqliteDatabase,
-  requireNodeSqlite,
-  resolveSqliteFilesystemPath,
-} from "./node-sqlite.js";
+import { openNodeSqliteDatabase } from "./node-sqlite.js";
+import { backupNodeSqliteDatabase } from "./sqlite-backup.js";
 import { setSqliteBusyTimeout } from "./sqlite-busy-timeout.js";
-import {
-  markSqliteInspectionOperation,
-  withSqliteInspectionOperation,
-} from "./sqlite-error-diagnostics.js";
+import { withSqliteInspectionOperation } from "./sqlite-error-diagnostics.js";
 import { resolvePrivateSqliteSnapshotStagingRoot } from "./sqlite-private-directory.js";
 import {
   adoptPreparedLocation,
@@ -32,8 +26,9 @@ import {
   waitForSnapshotRetry,
 } from "./sqlite-snapshot-policy.js";
 import {
-  allocateSqliteSnapshotStagingDirectory,
+  createSqliteSnapshotStagingDirectory,
   createSqliteSnapshotStagingDirectorySync,
+  sqliteSnapshotStagingError,
 } from "./sqlite-snapshot-staging.js";
 import {
   withSqliteSourceHandle,
@@ -62,25 +57,6 @@ type SourceSidecars = {
 
 type SourceJournalMode = "empty" | "rollback" | "unknown" | "wal";
 export class SqliteSourceChangedError extends Error {}
-
-function sqliteSnapshotStagingError(tempDir: string, cause: unknown, allocation = false): unknown {
-  markSqliteInspectionOperation(cause, "snapshot");
-  for (let depth = 0, error = cause; depth < 8 && error instanceof Error; depth += 1) {
-    const { code, errcode, path: errorPath }: NodeJS.ErrnoException & { errcode?: unknown } = error;
-    // SQLite FULL and IOERR_WRITE/FSYNC/DIR_FSYNC identify destination writes.
-    if (
-      allocation ||
-      ["ENOSPC", "EDQUOT"].includes(code ?? "") ||
-      (typeof errcode === "number" && [13, 778, 1034, 1290].includes(errcode)) ||
-      `${errorPath ?? ""}${path.sep}`.startsWith(`${tempDir}${path.sep}`)
-    ) {
-      const message = `${cause instanceof Error ? cause.message : String(cause)}${typeof errcode === "number" ? ` (SQLite errcode=${errcode})` : ""}; snapshot staging root ${allocation ? tempDir : path.dirname(tempDir)}: free disk space/quota or set XDG_CACHE_HOME to a writable filesystem`;
-      return new Error(message, { cause });
-    }
-    error = error.cause;
-  }
-  return cause;
-}
 
 function statIfPresent(pathname: string): BigIntStats | undefined {
   try {
@@ -409,20 +385,6 @@ function createStableReadOnlyCopyInTempDirectory(
   }
 }
 
-export async function createSqliteSnapshotStagingDirectory(
-  stagingRoot = resolvePrivateSqliteSnapshotStagingRoot(),
-  allowLegacyWorker = false,
-  signal?: AbortSignal,
-): Promise<string> {
-  signal?.throwIfAborted();
-  try {
-    return await allocateSqliteSnapshotStagingDirectory(stagingRoot, allowLegacyWorker, signal);
-  } catch (error) {
-    signal?.throwIfAborted();
-    throw sqliteSnapshotStagingError(stagingRoot, error, true);
-  }
-}
-
 async function createStableReadOnlyCopy(
   pathname: string,
   journalMode: Exclude<SourceJournalMode, "unknown">,
@@ -446,7 +408,6 @@ export async function createOnlineReadOnlyBackup(
 ): Promise<PreparedSqliteReadOnlyLocation> {
   const tempDir = await createSqliteSnapshotStagingDirectory(stagingRoot, false, signal);
   const snapshotPath = path.join(tempDir, "database.sqlite.partial");
-  const sqlite = requireNodeSqlite();
   try {
     if (process.platform !== "win32") {
       fs.chmodSync(tempDir, 0o700);
@@ -459,7 +420,7 @@ export async function createOnlineReadOnlyBackup(
         `PRAGMA busy_timeout = ${SQLITE_SOURCE_READ_BUSY_TIMEOUT_MS}; PRAGMA trusted_schema = OFF; BEGIN;`,
       );
       source.prepare("PRAGMA schema_version;").get();
-      await retainSnapshotWork(sqlite.backup(source, resolveSqliteFilesystemPath(snapshotPath)));
+      await retainSnapshotWork(backupNodeSqliteDatabase(source, snapshotPath));
       source.exec("ROLLBACK;");
     } finally {
       if (source.isOpen) {
@@ -740,9 +701,7 @@ export async function prepareSqliteReadOnlyLocationFromOwnedDatabase(
       throw new Error("SQLite inspection requires an open owner outside a transaction");
     }
     const location = path.join(directory, "database.sqlite.partial");
-    await retainSnapshotWork(
-      requireNodeSqlite().backup(database, resolveSqliteFilesystemPath(location)),
-    );
+    await retainSnapshotWork(backupNodeSqliteDatabase(database, location));
     signal?.throwIfAborted();
     assertCurrent();
     return publishPreparedCopy(directory);

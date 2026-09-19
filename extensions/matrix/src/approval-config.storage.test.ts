@@ -1,6 +1,8 @@
-import { DatabaseSync, StatementSync } from "node:sqlite";
 import type { ChannelApprovalKind } from "openclaw/plugin-sdk/approval-handler-runtime";
-import { closeOpenClawStateDatabaseAsync } from "openclaw/plugin-sdk/sqlite-runtime-testing";
+import {
+  closeOpenClawStateDatabaseAsync,
+  observeHostDataSql,
+} from "openclaw/plugin-sdk/sqlite-runtime-testing";
 import { useAutoCleanupTempDirTracker } from "openclaw/plugin-sdk/test-env";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { unregisterMatrixApprovalReactionTarget } from "./approval-reactions.js";
@@ -68,15 +70,10 @@ const selectionCases = [
   },
 ];
 
-async function expectNoHostSql(label: string, run: () => void | Promise<void>) {
+async function expectNoHostSql(stateDir: string, label: string, run: () => void | Promise<void>) {
   await closeOpenClawStateDatabaseAsync();
-  const sql = [
-    vi.spyOn(DatabaseSync.prototype, "prepare"),
-    vi.spyOn(DatabaseSync.prototype, "exec"),
-    ...(["get", "all", "run", "iterate"] as const).map((method) =>
-      vi.spyOn(StatementSync.prototype, method),
-    ),
-  ];
+  const observation = observeHostDataSql({ ...process.env, OPENCLAW_STATE_DIR: stateDir });
+  const sql = observation.calls;
   try {
     await run();
     console.log(
@@ -88,7 +85,7 @@ async function expectNoHostSql(label: string, run: () => void | Promise<void>) {
       expect(spy).not.toHaveBeenCalled();
     }
   } finally {
-    sql.forEach((spy) => spy.mockRestore());
+    observation.restore();
   }
 }
 
@@ -147,7 +144,7 @@ describe("Matrix approval config boundaries", () => {
         if (!capability?.authorizeActorAction || !capability.getActionAvailabilityState) {
           throw new Error("Matrix approval capability is not registered");
         }
-        await expectNoHostSql(`${approvalKind}/${role}/${String(accountId)}`, () => {
+        await expectNoHostSql(stateDir, `${approvalKind}/${role}/${String(accountId)}`, () => {
           const context = { cfg, accountId, action: "approve" as const, approvalKind };
           expect(capability.getActionAvailabilityState?.(context)).toEqual({ kind: "enabled" });
           const expectedRole = approvalKind === "plugin" ? "owner" : "exec";
@@ -188,7 +185,7 @@ describe("Matrix approval config boundaries", () => {
         },
       };
       installMatrixTestRuntime({ stateDir, cfg });
-      await expectNoHostSql(`empty/wildcard ${entries.length}`, () => {
+      await expectNoHostSql(stateDir, `empty/wildcard ${entries.length}`, () => {
         for (const approvalKind of ["plugin", "exec", "system-agent"] as const) {
           expect(
             matrixPlugin.approvalCapability?.authorizeActorAction?.({
@@ -257,7 +254,7 @@ describe("Matrix approval config boundaries", () => {
           isDirectMessage: false,
           logVerboseMessage: () => {},
         });
-      await expectNoHostSql(`reaction/${approvalKind}`, async () => {
+      await expectNoHostSql(stateDir, `reaction/${approvalKind}`, async () => {
         await react("@intruder:example.org");
         expect(gateway.resolve).not.toHaveBeenCalled();
         expect(await store.lookup(key)).toEqual(record);

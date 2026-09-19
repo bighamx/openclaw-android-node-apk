@@ -24,19 +24,38 @@ and publishes the result. Avoid exposing a generic SQL callback to application
 code or adding an asynchronous wrapper around an existing asynchronous facade.
 The plugin KV API already has asynchronous methods over its SQLite owner.
 
-Shared-state operations that request host transaction or commit admission retain
-lifecycle coordinator custody before worker dispatch. Native host writers can
-then borrow that same owner while servicing the worker's grants, avoiding a
-coordinator wait that blocks the grant handler. A foreign coordinator owner is
-waited out asynchronously before dispatch, within the existing SQLite lock budget.
-Grant services reuse the physical worker owner's admitted path aliases, so native
-handles opened through symlinked directories reach the same service without new
-filesystem lookups.
-The waiting job retains its FIFO position and capacity reservation; cancellation
-or worker exit wakes the wait without replaying a dispatched write. Source
-authority and persisted transaction checks remain unchanged. Coordinator acquisition
-and release still perform control SQL on the host; this does not complete the migration of native
-state writers. Database schemas, retention, and update behavior are unchanged.
+Shared-state operations that request host transaction or commit admission acquire
+fresh lifecycle coordinator custody on their executing SQLite worker. A live
+parent-owned maintenance or native lease still delegates its existing custody.
+The waiting job keeps its FIFO position and capacity reservation. Native attempts
+use zero busy timeout and asynchronous backoff within the original captured lock
+budget; only acquisition retries. The host rechecks current authority during
+preparation, before native execution, and at the existing transaction and commit
+grants. Cancellation before native execution joins coordinator cleanup without
+replaying the command.
+
+Legacy native host writers service the same job's preparation and authority ports
+between short coordinator-lock attempts, including path aliases. This lets the
+worker finish while the host is inside a synchronous native caller. Successful
+worker execution releases its physical coordinator after native settlement and
+before result framing; the broker retains operation admission and transport
+credits through the complete result. Unsettled native work retains custody until
+worker exit. If native coordinator cleanup fails after the command settles, the
+same per-job port services bounded result frames while a native host writer waits.
+The broker receives the complete outcome, joins worker exit, and reports cleanup
+separately without discarding that outcome or replaying the write. Incomplete
+result delivery retains its existing unknown-outcome handling. Final publication
+and follower dispatch run after synchronous native wait servicing returns.
+Preparation refusals retain that port through terminal cleanup replies too.
+The shared-state owner retires the exact unavailable actor after its accepted
+callbacks finish, so the next call opens a usable actor without retrying the prior write.
+Nested callbacks return their completed outcomes while further commands on the
+failed actor refuse without waiting for the enclosing callback to close itself.
+Retirement cleanup failures retain canonical retry custody and report separately
+from the completed outcome.
+Native host writers, Gateway lifecycle ownership, and source-handle
+preparation retain their existing owners. Schemas, retention, and update behavior
+are unchanged.
 
 Managed outgoing image metadata lookups and cleanup inventories read through the
 shared-state worker, retaining their writable, creating database-open behavior.
@@ -45,6 +64,18 @@ Downloads retain ticket or owner authorization and current transcript membership
 verified descriptors and post-render thumbnail checks remain in place. Inserts, message-commit
 promotion, cleanup claim/deletion transactions, Doctor imports, and native session
 metadata reads keep their existing owners and remain separate worker migrations.
+
+Profile enumeration for user lists, session-member pickers, and human-mention
+directories runs in the same shared-state worker. Ordered profile metadata,
+tombstones, emails, and verified GitHub handles retain their existing query owner;
+avatar bytes are not part of enumeration. Mention directory preparation respects
+the existing profile-version invalidation, then evaluates current requester,
+session, and role policy and publishes the RPC response in one synchronous step.
+Prepared directory rows are descriptive
+facts, never permission or current alias authority. Project recents retain a narrow
+fresh canonical-profile and alias query for their disclosure scope. Profile
+mutations, avatar storage, identity merges, and final identity/permission lookups
+keep their existing native owners.
 
 Explicit promotion notice and claim annotations execute in the shared-state
 worker. The CLI awaits their best-effort completion before reporting results;
@@ -273,8 +304,8 @@ comparison fences, and transactions. Read-only clients retain artifact-preservin
 reads and never create missing state. Reconnect waits for accepted persistence,
 and client shutdown drains it before returning; supplied cancellation and owner
 guards are checked again at worker admission. Device identity creation and the
-compound pairing recovery transaction retain their existing owners. Host admission
-still uses the synchronous lifecycle coordinator; token-data SQL runs in the worker.
+compound pairing recovery transaction retain their existing owners. Fresh token
+mutations acquire and release lifecycle custody on the same worker as token-data SQL.
 One-shot calls initialize that actor during request preparation, before starting
 the RPC timeout, without reading or caching token facts.
 
@@ -414,10 +445,18 @@ physical identity is checked before and after the reader opens and on result
 acceptance. Its read pin exposes no database: ordinary fixed reads do not query,
 back up, join, or end that connection's transaction. Snapshot borrowing keeps its
 native-transaction refusal. Explicitly selected snapshots keep their original private source.
-Artifact-preserving, source-exclusion, and canonical-mutation reads keep their
-existing owner-provided preparation, including native snapshot token work.
-Generic native callbacks and prepared-location cleanup contracts are unchanged;
-this cut does not make those preparation paths free of main-thread SQLite work.
+Fixed worker reads that preserve artifacts from a closed source retain their
+private ownership tokens in one shared staging child, separate from copy and query
+workers. Each private query reader also holds a token read lease through its native
+close, so staging-child failure cannot remove bytes under an active query. Cleanup
+awaits token retirement before removing copied bytes; failed close and unacknowledged
+cleanup retain custody. Allocation uses the existing reclamation rules.
+After acknowledged staging-process exit, the same inspector and exclusive token
+locks reconcile retirement before a replacement session releases the retained bytes.
+Generic composite callbacks, source-exclusion and canonical-mutation preparation,
+and already-open native source backups retain their existing snapshot owner.
+These preparation paths can still execute main-thread SQLite. The published SDK
+preparation helpers also retain their synchronous `cleanup()` contract.
 A copied-state error is returned
 to that reader without becoming a confirmed failure of the live cache; native
 access and transaction owners retain their own version checks, failure latching,
@@ -599,10 +638,13 @@ rows. See [incremental canonical validation](/reference/database-schemas/agent-s
 for migration and rollback behavior. The companion retires with its writer's
 native close, disposal, or replacement, including eviction and update cleanup.
 Cold session search retains one read-only connection while synchronously listing
-entries and checking each entry's current visibility. The entry accessor closes
-that connection before transcript search, including on errors; inherited async
-callbacks fall back to ordinary fresh reads. This scope preserves the same
-per-read admission and committed-row checks without caching visibility decisions.
+entries and checking their current visibility. Unscoped role-filtered searches
+group exact metadata reads per physical store, retaining failures in the original
+key order. Each group uses the exact reader's cold-admission snapshot; warm groups
+retain ordinary committed reads. Incognito checks remain individual lookups.
+The entry accessor closes the connection before transcript search, including on
+errors; inherited async callbacks fall back to ordinary fresh reads. Prepared
+metadata stays within the synchronous request and never caches visibility decisions.
 Other cold readers outside the history worker, including
 extension-capable readers, remain one-shot; incognito reads retain their existing
 process-local owner.
@@ -869,6 +911,14 @@ writes recheck their generation, revision, and source predicates after waiting.
 Full reindex publication attaches, replaces, and detaches the completed shadow
 inside one synchronous admitted operation. Manager close drains accepted syncs
 through provider preparation and final writes before releasing the borrow.
+
+Workspace lease claims retain a comparison bound to the original physical state
+database and a unique owner identity. After worker settlement, failed acquisition
+replies and failed cleanup retain bounded in-memory receipts for conditional
+release before another writer enters. Recovery never replays the task, deletes a
+replacement lease, or redirects cleanup to another database. Live and unknown
+owners retain the existing stale-lock checks. Receipt expiry only discards local
+recovery metadata; stored lock fields, retention, and schema versions are unchanged.
 
 Native hook relay bridge persistence runs in the shared-state worker. Publication
 and renewal request the live host's current-registration check inside their write

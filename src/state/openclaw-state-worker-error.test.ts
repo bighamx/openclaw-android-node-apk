@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { SqliteCoordinatorError } from "../infra/sqlite-coordinator.js";
 import { SqliteSchemaVersionError } from "../infra/sqlite-user-version.js";
-import { decodeSqliteWorkerReplyError } from "../infra/sqlite-worker-broker-reply.js";
+import { receiveSqliteWorkerReply } from "../infra/sqlite-worker-broker-reply.js";
+import type { Job } from "../infra/sqlite-worker-broker.types.js";
 import {
   findStartupMaintenanceRequiredError,
   StartupMaintenanceRequiredError,
@@ -73,6 +74,7 @@ describe("shared-state worker error transport", () => {
   it.each([
     "OPENCLAW_STATE_LEASE_INVALID_INPUT",
     "OPENCLAW_STATE_LEASE_TIMEOUT",
+    "STATE_LEASE_BUSY",
     "OPENCLAW_STATE_LEASE_ABORTED",
     "OPENCLAW_STATE_LEASE_LOST",
     "OPENCLAW_STATE_LEASE_STORAGE_FAILED",
@@ -122,30 +124,55 @@ describe("shared-state worker error transport", () => {
     if (!payload) {
       throw new Error("Expected canonical payload");
     }
-    const failure = decodeSqliteWorkerReplyError(
+    const job: Job = {
+      request: {
+        type: "execute",
+        id: 1,
+        actor: 1,
+        input: new Uint8Array(),
+        stateContext: {
+          environment: { OPENCLAW_STATE_DIR: "/fixture" },
+          coordinatorRuntime: { directory: "/fixture/coordinator", keepAlive: false },
+        },
+      },
+      bytes: 0,
+      resolve: () => undefined,
+      reject: () => undefined,
+      detach: () => undefined,
+    };
+    let failure: unknown;
+    receiveSqliteWorkerReply(
       {
-        request: {
-          type: "execute",
-          id: 1,
-          actor: 1,
-          input: new Uint8Array(),
-          stateContext: {
-            environment: { OPENCLAW_STATE_DIR: "/fixture" },
-            coordinatorRuntime: { directory: "/fixture/coordinator", keepAlive: false },
+        current: job,
+        worker: {
+          postMessage: () => {
+            throw new Error("Unexpected native dispatch");
           },
         },
-        bytes: 0,
-        resolve: () => undefined,
-        reject: () => undefined,
-        detach: () => undefined,
       },
       {
-        name: "SqliteWorkerError",
-        message: "write outcome unknown",
-        code: "outcome-unknown",
-        sharedState: payload,
+        id: 1,
+        ok: false,
+        error: {
+          name: "SqliteWorkerError",
+          message: "write outcome unknown",
+          code: "outcome-unknown",
+          sharedState: payload,
+        },
+      },
+      {
+        fail(error) {
+          throw error;
+        },
+        finish(_job, error) {
+          failure = error;
+        },
+        dispatch() {},
       },
     );
+    if (!(failure instanceof Error)) {
+      throw new Error("Expected the broker to settle the original failure");
+    }
     expect(hydrateOpenClawStateWorkerError(failure)).toBe(failure);
     expect(failure).toMatchObject({ code: "outcome-unknown" });
     expect(findStartupMaintenanceRequiredError(failure)).toBeUndefined();

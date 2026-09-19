@@ -55,17 +55,25 @@ function setBranchSuggestionsOpen(target: EventTarget | null, open: boolean) {
   }
 }
 
-function moveActiveBranchSuggestion(target: HTMLElement, direction: 1 | -1): boolean {
+function handleBranchKeydown(target: HTMLElement, event: KeyboardEvent): boolean {
   const field = target.closest(".new-session-page__branch-field");
   const suggestions = [
-    ...(field?.querySelectorAll<HTMLElement>("[data-worktree-suggestion]") ?? []),
+    ...(field?.querySelectorAll<HTMLButtonElement>("[data-worktree-suggestion]") ?? []),
   ];
-  if (!field || suggestions.length === 0) {
+  if (suggestions.length === 0) {
     return false;
   }
   const activeIndex = suggestions.findIndex(
     (suggestion) => suggestion.getAttribute("aria-selected") === "true",
   );
+  if (event.key === "Enter" && !event.isComposing && activeIndex >= 0) {
+    suggestions[activeIndex]!.click();
+    return true;
+  }
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+    return false;
+  }
+  const direction = event.key === "ArrowDown" ? 1 : -1;
   const nextIndex =
     activeIndex < 0
       ? direction === 1
@@ -77,22 +85,6 @@ function moveActiveBranchSuggestion(target: HTMLElement, direction: 1 | -1): boo
   }
   target.setAttribute("aria-activedescendant", suggestions[nextIndex]!.id);
   setBranchSuggestionsOpen(target, true);
-  return true;
-}
-
-function acceptActiveBranchSuggestion(
-  target: HTMLElement,
-  onSelect: (branch: string) => void,
-): boolean {
-  const active = target
-    .closest(".new-session-page__branch-field")
-    ?.querySelector<HTMLElement>('[data-worktree-suggestion][aria-selected="true"]');
-  const branch = active?.dataset.worktreeSuggestion;
-  if (!branch) {
-    return false;
-  }
-  onSelect(branch);
-  setBranchSuggestionsOpen(target, false);
   return true;
 }
 
@@ -148,22 +140,7 @@ function renderWorktreeFields(params: {
     if (!(target instanceof HTMLElement)) {
       return;
     }
-    const isBaseRefInput = target.id === "new-session-worktree-base-ref";
-    if (
-      isBaseRefInput &&
-      (event.key === "ArrowDown" || event.key === "ArrowUp") &&
-      moveActiveBranchSuggestion(target, event.key === "ArrowDown" ? 1 : -1)
-    ) {
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    if (
-      isBaseRefInput &&
-      event.key === "Enter" &&
-      !event.isComposing &&
-      acceptActiveBranchSuggestion(target, params.onBaseRefInput)
-    ) {
+    if (handleBranchKeydown(target, event)) {
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -174,9 +151,10 @@ function renderWorktreeFields(params: {
       target.closest("wa-popover")?.removeAttribute("open");
       return;
     }
+    const popover = target.closest("wa-popover");
     const liveWorktreeName =
-      target.closest("wa-popover")?.querySelector<HTMLInputElement>("input[data-worktree-name]")
-        ?.value ?? params.worktreeName;
+      popover?.querySelector<HTMLInputElement>("input[data-worktree-name]")?.value ??
+      params.worktreeName;
     if (
       event.key !== "Enter" ||
       event.isComposing ||
@@ -186,7 +164,6 @@ function renderWorktreeFields(params: {
     }
     fieldDragging = false;
     event.preventDefault();
-    const popover = target.closest("wa-popover");
     if (popover) {
       const confirmAfterOuterHide = (hideEvent: Event) => {
         if (hideEvent.target !== popover) {

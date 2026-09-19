@@ -240,7 +240,7 @@ extensions/comfy/workflow-runtime.ts	2
 extensions/copilot-proxy/index.ts	1
 extensions/copilot/harness.ts	8
 extensions/copilot/src/attempt-config.ts	16
-extensions/copilot/src/attempt-execution.ts	4
+extensions/copilot/src/attempt-execution.ts	3
 extensions/copilot/src/attempt-finalize.ts	4
 extensions/copilot/src/attempt-prepare.ts	4
 extensions/copilot/src/attempt-transcript-journal.ts	24
@@ -253,7 +253,7 @@ extensions/copilot/src/provider-bridge.ts	1
 extensions/copilot/src/replay-shim.ts	3
 extensions/copilot/src/runtime.ts	1
 extensions/copilot/src/sdk-loader.ts	2
-extensions/copilot/src/tool-bridge.ts	6
+extensions/copilot/src/tool-bridge.ts	4
 extensions/copilot/src/workspace-bootstrap.ts	1
 extensions/crabbox/src/crabbox-worker-inspect.ts	3
 extensions/cua-computer/src/commands.ts	2
@@ -678,7 +678,7 @@ extensions/matrix/src/setup-config.ts	6
 extensions/matrix/src/setup-contract.ts	1
 extensions/matrix/src/setup-core.ts	5
 extensions/matrix/src/setup-dm-policy.ts	5
-extensions/matrix/src/test-runtime.ts	10
+extensions/matrix/src/test-runtime.ts	9
 extensions/matrix/src/tool-actions.ts	1
 extensions/mattermost/src/channel.ts	8
 extensions/mattermost/src/gateway-auth-bypass.ts	3
@@ -1142,7 +1142,7 @@ extensions/tavily/src/config.ts	1
 extensions/teams-meetings/src/transports/teams-meetings-urls.ts	1
 extensions/telegram/src/account-selection.ts	1
 extensions/telegram/src/account-throttler.ts	4
-extensions/telegram/src/action-runtime.ts	6
+extensions/telegram/src/action-runtime.ts	3
 extensions/telegram/src/api-fetch.ts	1
 extensions/telegram/src/approval-handler.runtime.ts	2
 extensions/telegram/src/audit-membership-runtime.ts	1
@@ -1184,7 +1184,7 @@ extensions/telegram/src/group-history-window.ts	1
 extensions/telegram/src/inline-buttons.ts	1
 extensions/telegram/src/interactive-fallback.ts	1
 extensions/telegram/src/lane-delivery-text-deliverer.ts	1
-extensions/telegram/src/message-cache.ts	10
+extensions/telegram/src/message-cache.ts	2
 extensions/telegram/src/miniapp/command.ts	1
 extensions/telegram/src/miniapp/init-data.ts	1
 extensions/telegram/src/miniapp/routes.ts	1
@@ -1983,7 +1983,7 @@ src/agents/workspace-legacy-state.ts	2
 src/agents/workspace-state-store.ts	1
 src/agents/workspace.ts	5
 src/agents/worktrees/git.ts	2
-src/agents/worktrees/registry.ts	11
+src/agents/worktrees/registry.ts	8
 src/agents/worktrees/run-lease.ts	1
 src/audit/execution-identity-admission.ts	3
 src/audit/execution-identity-context-build.ts	3
@@ -2629,7 +2629,7 @@ src/gateway/node-command-policy.ts	2
 src/gateway/node-invoke-system-run-approval.ts	1
 src/gateway/node-pairing-ssh-verify.ts	1
 src/gateway/node-registry-private.ts	1
-src/gateway/node-registry.ts	4
+src/gateway/node-registry.ts	2
 src/gateway/openai-agent-run-usage.ts	1
 src/gateway/openai-http.ts	22
 src/gateway/operator-approval-snapshot.ts	4
@@ -2719,7 +2719,7 @@ src/gateway/server-methods/skills-workspace-handler.ts	1
 src/gateway/server-methods/skills.ts	3
 src/gateway/server-methods/system-agent-chat-params.ts	2
 src/gateway/server-methods/system-changes.ts	9
-src/gateway/server-methods/task-suggestions.ts	7
+src/gateway/server-methods/task-suggestions.ts	5
 src/gateway/server-methods/terminal-upload.ts	1
 src/gateway/server-methods/terminal.ts	6
 src/gateway/server-methods/tools-catalog.ts	2
@@ -3150,8 +3150,7 @@ src/plugin-sdk/status-helpers.ts	7
 src/plugin-sdk/tool-payload.ts	2
 src/plugin-sdk/tool-plugin.ts	10
 src/plugin-sdk/windows-spawn.ts	1
-src/plugin-state/plugin-state-store.sqlite.ts	2
-src/plugin-state/plugin-state-store.ts	6
+src/plugin-state/plugin-state-store.ts	5
 src/plugin-state/plugin-store-validation.ts	1
 src/plugin-state/runtime-health-store.ts	1
 src/plugins/agent-tool-result-middleware.ts	1
@@ -3256,7 +3255,7 @@ src/plugins/public-surface-loader.ts	2
 src/plugins/recommended-tool-installs.ts	1
 src/plugins/register-plugin-cli-command-groups.ts	1
 src/plugins/registry-registrars-capabilities.ts	1
-src/plugins/registry-registrars-host.ts	4
+src/plugins/registry-registrars-host.ts	1
 src/plugins/registry-registrars-network.ts	3
 src/plugins/registry-registrars-operations.ts	2
 src/plugins/registry-registrars-providers.ts	1
@@ -3536,7 +3535,6 @@ ui/src/app/config.ts	1
 ui/src/app/custom-theme.ts	2
 ui/src/app/native-bridge.ts	3
 ui/src/app/native-gateways.runtime.ts	4
-ui/src/app/native-link-routing.ts	1
 ui/src/app/native-notifications.ts	2
 ui/src/app/native-route-memory.ts	1
 ui/src/app/native-web-chrome.ts	2
@@ -3589,8 +3587,6 @@ ui/src/components/desktop/desktop-panel.ts	2
 ui/src/components/dock-panel-layout.ts	3
 ui/src/components/exec-approval.ts	1
 ui/src/components/file-preview-modal.ts	1
-ui/src/components/github-link-hovercard-registration.ts	1
-ui/src/components/github-link-hovercard.runtime.ts	1
 ui/src/components/hub-tabs.ts	1
 ui/src/components/input-dialog.ts	1
 ui/src/components/lobster-dex.ts	2

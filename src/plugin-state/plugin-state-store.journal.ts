@@ -4,7 +4,6 @@ import {
   bindPluginStateEntry,
   createPluginStateError,
   deleteExpiredPluginStateEntries,
-  enforcePostRegisterLimits,
   hasPluginStateEntry,
   MAX_PLUGIN_STATE_VALUE_BYTES,
   parseStoredJson,
@@ -13,6 +12,7 @@ import {
   upsertPluginStateEntry,
   type PluginStateDatabase,
 } from "./plugin-state-store.kernel.js";
+import { enforcePostRegisterLimits } from "./plugin-state-store.retention.js";
 import { serializePluginStoreJson, validatePluginStoreKey } from "./plugin-store-validation.js";
 
 export type PluginStateSequencedJournalParams = {

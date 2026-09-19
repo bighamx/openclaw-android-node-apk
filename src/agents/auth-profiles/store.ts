@@ -440,7 +440,7 @@ function mergeRuntimeExternalProfileState(params: {
 }): AuthProfileStore {
   const existingRuntimeProfileIds = new Set(params.existing.runtimeExternalProfileIds ?? []);
   if (existingRuntimeProfileIds.size === 0) {
-    return params.next;
+    return mergeRuntimeExternalProfileReferences(params);
   }
   const merged = cloneAuthProfileStore(params.next);
   const mergedRuntimeProfileIds = new Set(merged.runtimeExternalProfileIds ?? []);

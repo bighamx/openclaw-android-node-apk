@@ -107,7 +107,6 @@ export type TelegramMessageContext = {
   isForum: boolean;
   historyKey?: string;
   historyLimit: BuildTelegramMessageContextParams["historyLimit"];
-  groupHistories: BuildTelegramMessageContextParams["groupHistories"];
   route: ReturnType<typeof resolveTelegramConversationRoute>["route"];
   skillFilter: TelegramMessageContextPayload["skillFilter"];
   sendTyping: () => Promise<void>;
@@ -135,7 +134,6 @@ export const buildTelegramMessageContext = async ({
   ownerAgentId,
   historyLimit,
   dmHistoryLimit,
-  groupHistories,
   dmPolicy,
   allowFrom,
   groupAllowFrom,
@@ -498,8 +496,6 @@ export const buildTelegramMessageContext = async ({
     providerMentionPatterns: cfg.channels?.telegram?.accounts?.[account.accountId]?.mentionPatterns,
     requireMention: Boolean(requireMention),
     options,
-    groupHistories,
-    historyLimit,
     logger,
   });
   if (!bodyResult) {
@@ -541,7 +537,6 @@ export const buildTelegramMessageContext = async ({
     historyKey: bodyResult.historyKey ?? "",
     historyLimit,
     dmHistoryLimit,
-    groupHistories,
     groupConfig,
     topicConfig,
     effectiveWasMentioned: bodyResult.effectiveWasMentioned,
@@ -693,7 +688,6 @@ export const buildTelegramMessageContext = async ({
     isForum,
     historyKey: bodyResult.historyKey ?? "",
     historyLimit,
-    groupHistories,
     route,
     skillFilter,
     sendTyping,

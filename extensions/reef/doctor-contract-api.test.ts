@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
+import type { OpenAsyncKeyedStoreOptions } from "openclaw/plugin-sdk/plugin-state-runtime";
 import {
   createPluginStateKeyedStoreForTests,
   createPluginStateSyncKeyedStoreForTests,
@@ -95,7 +96,7 @@ function createRuntime(env: NodeJS.ProcessEnv) {
       ...options,
       env: options.env ?? env,
     });
-  runtime.state.openKeyedStore = <T>(options: OpenKeyedStoreOptions) =>
+  runtime.state.openKeyedStore = <T>(options: OpenAsyncKeyedStoreOptions) =>
     createPluginStateKeyedStoreForTests<T>("reef", {
       ...options,
       env: options.env ?? env,

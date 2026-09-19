@@ -8,7 +8,7 @@ import { DraftGatewayState } from "./draft-gateway-state.ts";
 import { DraftPlaceBrowser } from "./draft-place-browser.ts";
 import type { NewSessionRouteData } from "./location.ts";
 import { PICKER_INPUT_DEBOUNCE_MS } from "./place-browser-state.ts";
-import { loadNewSessionPreference, patchNewSessionPreference } from "./preferences.ts";
+import { loadNewSessionPreference, replaceBrowserPreference } from "./preferences.ts";
 import { TestReactiveControllerHost } from "./reactive-controller-host.test-support.ts";
 
 afterEach(() => {
@@ -596,7 +596,7 @@ describe("DraftGatewayState", () => {
   );
 
   it("keeps group route defaults isolated from ordinary New Session preferences", async () => {
-    patchNewSessionPreference("ws://gateway.example", "main", {
+    replaceBrowserPreference("ws://gateway.example", "main", {
       folder: "/workspace/ordinary",
       worktree: true,
     });

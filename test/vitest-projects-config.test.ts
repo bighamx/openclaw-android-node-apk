@@ -700,6 +700,7 @@ describe("projects vitest config", () => {
   it.each([
     "src/wizard/setup.inference-recovery.integration.test.ts",
     "src/plugins/loader.trust-diagnostics.test.ts",
+    "src/plugins/public-artifact-environment.test.ts",
     "src/agents/embedded-agent-runner/model.test.ts",
     "src/agents/embedded-agent-runner/model.forward-compat.test.ts",
     "src/agents/embedded-agent-runner/model.generation-scope.test.ts",

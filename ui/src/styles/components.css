@@ -1517,7 +1517,7 @@ openclaw-toast-host[data-toast-placement="shell"]
   stroke-linejoin: round;
 }
 
-openclaw-github-link-hovercard-provider {
+openclaw-link-reader-hovercard-provider {
   display: contents;
 }
 
@@ -4882,8 +4882,7 @@ td.data-table-key-col {
 .cmd-palette__clear:hover {
   background: var(--bg-hover);
 }
-.cmd-palette__clear svg,
-.cmd-palette__notices summary svg {
+.cmd-palette__clear svg {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
@@ -5052,21 +5051,11 @@ td.data-table-key-col {
   color: var(--muted);
   font-size: 13px;
 }
-.cmd-palette__source-error,
-.cmd-palette__notices {
+.cmd-palette__source-error {
   border-top: 1px solid var(--border);
   padding: 10px 20px;
   color: var(--muted);
   font-size: 12px;
-}
-.cmd-palette__notices summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.cmd-palette__notices p {
-  margin: 8px 0 0;
-  line-height: 1.5;
 }
 .cmd-palette__footer {
   display: flex;
@@ -5690,6 +5679,25 @@ td.data-table-key-col {
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
+}
+
+.session-row-workspace {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.session-row-workspace[data-workspace-kind="worktree"] {
+  border-color: color-mix(in srgb, var(--ok) 25%, var(--border));
+  background: color-mix(in srgb, var(--ok) 8%, var(--bg));
+  color: var(--ok);
 }
 
 .session-row-badge {

@@ -364,6 +364,36 @@ it.each(["name", "base"])(
   },
 );
 
+it("does not drain queued Gateway edits into a newer disconnected browser choice", async () => {
+  const prefs = identityPreferences();
+  const first = prefs.make();
+  await prefs.ready(first);
+  const started = createDeferred();
+  const release = createDeferred();
+  prefs.beforeSave.mockImplementationOnce(async () => {
+    started.resolve();
+    await release.promise;
+  });
+  const writes = vi.spyOn(first.gateway, "persistPreference");
+  first.place.setBaseRef("release");
+  await started.promise;
+  try {
+    first.place.setWorktreeName("queued-task");
+    first.context.gateway.snapshot.phase = "reconnecting";
+    first.gateway.synchronize(first.context.gateway);
+    first.place.setWorktreeName("new-local-task");
+    expect(loadNewSessionPreference("ws://gateway.example", "main")).toMatchObject({
+      worktreeName: "new-local-task",
+    });
+  } finally {
+    release.resolve();
+    await Promise.all(writes.mock.results.map((result) => result.value));
+  }
+  expect(loadNewSessionPreference("ws://gateway.example", "main")).toMatchObject({
+    worktreeName: "new-local-task",
+  });
+});
+
 it("retires the submitted agent preference while the same view has selected another agent", async () => {
   const prefs = identityPreferences();
   const first = prefs.make();

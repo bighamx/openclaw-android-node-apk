@@ -173,7 +173,16 @@ export function startGatewayTaskSubscriptions(params: {
         }
       },
     };
-    const refreshCliTasks = (sessionKey?: string) => {
+    if (disposed) {
+      return undefined;
+    }
+    runtime.configureTaskRegistryRuntime({ observers });
+    // Run admission and scheduler waits can change before any agent activity arrives.
+    const unsubscribeRunChanges = sessionChanges.subscribe((change) => {
+      if (!("sessionKey" in change) && change.scope !== "agent-runs") {
+        return;
+      }
+      const sessionKey = "sessionKey" in change ? change.sessionKey : undefined;
       const taskIds = sessionKey
         ? (state.taskIdsByRelatedSessionKey.get(sessionKey) ?? [])
         : state.tasks.keys();
@@ -183,33 +192,19 @@ export function startGatewayTaskSubscriptions(params: {
           observers.onEvent({ kind: "upserted", task: cloneTaskRecordForObserver(task) });
         }
       }
+    });
+    return () => {
+      unsubscribeRunChanges();
+      if (runtime.getTaskRegistryObservers() === observers) {
+        runtime.configureTaskRegistryRuntime({ observers: null });
+      }
     };
-    let unsubscribeRunChanges: (() => void) | undefined;
-    if (!disposed) {
-      runtime.configureTaskRegistryRuntime({ observers });
-      // Run admission and scheduler waits can change before any agent activity arrives.
-      unsubscribeRunChanges = sessionChanges.subscribe((change) => {
-        if ("sessionKey" in change) {
-          refreshCliTasks(change.sessionKey);
-        } else if (change.scope === "agent-runs") {
-          refreshCliTasks();
-        }
-      });
-    }
-    return { runtime, observers, unsubscribeRunChanges };
   });
   void registered.catch((error: unknown) => {
     params.log.warn("Task registry observer registration failed", { error });
   });
   return () => {
     disposed = true;
-    return registered
-      .then(({ runtime, observers, unsubscribeRunChanges }) => {
-        unsubscribeRunChanges?.();
-        if (runtime.getTaskRegistryObservers() === observers) {
-          runtime.configureTaskRegistryRuntime({ observers: null });
-        }
-      })
-      .catch(() => undefined);
+    return registered.then((unsubscribe) => unsubscribe?.()).catch(() => undefined);
   };
 }

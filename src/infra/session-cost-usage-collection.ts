@@ -22,7 +22,7 @@ import {
 import {
   listSessionTranscriptArchivesReadOnly,
   listSessionTranscriptInstances,
-  loadSessionEntry,
+  loadSessionEntryReadOnly,
   loadTranscriptEventsSync,
   readTranscriptStatsBatchReadOnlySync,
   readTranscriptStatsSync,
@@ -320,10 +320,11 @@ export function resolveExistingUsageSessionFile(params: {
   );
   if (target && completeTarget) {
     const targetKeyAgentId = parseAgentSessionKey(target.sessionKey)?.agentId;
-    const targetKeyEntry = loadSessionEntry({
+    const targetKeyEntry = loadSessionEntryReadOnly({
       agentId: target.agentId!,
       sessionKey: target.sessionKey!,
       storePath: target.storePath!,
+      projection: "list",
     });
     // Complete targets remain authoritative after metadata cleanup; reject
     // only an existing key row that proves the identity is stale.
@@ -366,10 +367,11 @@ export function resolveExistingUsageSessionFile(params: {
   const targetKeyAgentId = parseAgentSessionKey(target?.sessionKey)?.agentId;
   const targetKeyEntry =
     target?.sessionKey && sqliteMarker && !completeTarget
-      ? loadSessionEntry({
+      ? loadSessionEntryReadOnly({
           agentId: sqliteMarker.agentId,
           sessionKey: target.sessionKey,
           storePath: sqliteMarker.storePath,
+          projection: "list",
         })
       : undefined;
   if (

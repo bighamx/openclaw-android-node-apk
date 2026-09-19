@@ -1,19 +1,21 @@
 import { createHash } from "node:crypto";
 import {
-  assertCanInsertPluginStateEntry,
   bindPluginStateEntry,
   createPluginStateError,
   deleteExpiredPluginStateEntries,
   deletePluginStateEntry,
-  enforcePostRegisterLimits,
   parseStoredJson,
   resolvePluginStateExpiresAtMs,
   selectPluginStateEntry,
   upsertPluginStateEntry,
   type PluginStateDatabase,
-  type PluginStateRegisterEntryParams,
   type PluginStateReadRow,
 } from "./plugin-state-store.kernel.js";
+import {
+  assertCanInsertPluginStateEntry,
+  enforcePostRegisterLimits,
+  type PluginStateRegisterEntryParams,
+} from "./plugin-state-store.retention.js";
 import type {
   PluginStateCompareResult,
   PluginStateObservation,
@@ -130,6 +132,7 @@ export function compareAndApplyPluginStateEntry(
   }
   const expiresAt = resolvePluginStateExpiresAtMs({
     ttlMs: params.ttlMs,
+    namespace: params.namespace,
     now,
     operation: "register",
     path: store.path,
