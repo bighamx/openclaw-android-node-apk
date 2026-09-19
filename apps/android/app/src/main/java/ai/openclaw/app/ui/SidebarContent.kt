@@ -51,7 +51,6 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -1031,7 +1030,7 @@ private fun SidebarPagesHeader(
         )
       }
 
-      DropdownMenu(
+      AppDropdownMenu(
         expanded = menuMode != SidebarPagesMenuMode.Closed,
         onDismissRequest = { onMenuModeChange(SidebarPagesMenuMode.Closed) },
         modifier = Modifier.widthIn(min = 210.dp, max = 340.dp),

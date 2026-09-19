@@ -127,9 +127,11 @@ describe("browser tab card", () => {
       "data:image/png;base64,c29jaWFs",
     );
     expect(element.shadowRoot?.querySelector(".title")?.textContent).toBe("Example page");
-    expect(gateway.request).toHaveBeenCalledExactlyOnceWith("controlUi.linkPreview", {
-      url: "https://example.com/page",
-    });
+    expect(gateway.request).toHaveBeenCalledExactlyOnceWith(
+      "controlUi.linkPreview",
+      { url: "https://example.com/page" },
+      { signal: expect.any(AbortSignal) },
+    );
     element.shadowRoot?.querySelector(".icon img")?.dispatchEvent(new Event("error"));
     element.shadowRoot?.querySelector(".shot img")?.dispatchEvent(new Event("error"));
     await element.updateComplete;

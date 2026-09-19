@@ -702,6 +702,7 @@ src/infra/sqlite-wal-split-brain.ts
 src/infra/sqlite-wal-write-admission.ts
 src/infra/sqlite-wal.ts
 src/infra/sqlite-worker-broker-admission.ts
+src/infra/sqlite-worker-broker-lifecycle.ts
 src/infra/sqlite-worker-broker-reply.ts
 src/infra/sqlite-worker-broker.ts
 src/infra/sqlite-worker-client.ts

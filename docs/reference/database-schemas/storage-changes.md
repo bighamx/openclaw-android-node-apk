@@ -47,8 +47,9 @@ separately without discarding that outcome or replaying the write. Incomplete
 result delivery retains its existing unknown-outcome handling. Final publication
 and follower dispatch run after synchronous native wait servicing returns.
 Preparation refusals retain that port through terminal cleanup replies too.
-The shared-state owner retires the exact unavailable actor after its accepted
-callbacks finish, so the next call opens a usable actor without retrying the prior write.
+The shared-state owner retires the exact unavailable actor after accepted callbacks
+finish across all clients sharing it, so the next call opens a usable actor without
+retrying the prior write.
 Nested callbacks return their completed outcomes while further commands on the
 failed actor refuse without waiting for the enclosing callback to close itself.
 Retirement cleanup failures retain canonical retry custody and report separately
@@ -73,9 +74,20 @@ the existing profile-version invalidation, then evaluates current requester,
 session, and role policy and publishes the RPC response in one synchronous step.
 Prepared directory rows are descriptive
 facts, never permission or current alias authority. Project recents retain a narrow
-fresh canonical-profile and alias query for their disclosure scope. Profile
-mutations, avatar storage, identity merges, and final identity/permission lookups
-keep their existing native owners.
+fresh canonical-profile and alias query for their disclosure scope. Profile creation,
+display-name and role changes, explicit avatar uploads, identity merges, and final
+identity/permission lookups keep their existing native owners.
+
+Post-login Tailscale avatar adoption reads and conditionally writes through the
+shared-state worker. Its transaction follows the current merge target and preserves
+every non-null avatar, including an explicit empty upload. Committed descriptors
+update the existing profile catalog before observers run; later edits and merges
+published by the host profile owner remain authoritative. The catalog retains its
+existing process-local freshness contract. Uncertain result delivery retains a fixed read-only
+reconciliation of the original physical source through close, without replaying
+the mutation or converting the original error into success. Failed reconciliation
+or reader retirement remains owned by canonical close for retry. Profile schema,
+avatar bytes, fetch limits, and final identity and permission checks are unchanged.
 
 Explicit promotion notice and claim annotations execute in the shared-state
 worker. The CLI awaits their best-effort completion before reporting results;
@@ -950,6 +962,12 @@ and refresh-lock cleanup before releasing custody. Atomic pruning retains all
 obsolete-row comparison bytes on the host until its transaction settles; bounded
 SQL batches do not impose an aggregate memory limit. Cache formats, schemas,
 retention, and update behavior are unchanged.
+
+Shared-state database drainage also joins resources registered while an earlier
+resource is closing. Native retirement waits for those resources; failed cleanup
+remains owned for a later explicit retry.
+Maintenance cleanup joins work started by earlier cleanup phases before closing
+the resources it uses. Clients adopted by actor retirement share its cleanup result.
 
 Memory managers admit writes on their exact borrowed agent connection. Provider
 calls and source preparation run before admission; generated-cache and source

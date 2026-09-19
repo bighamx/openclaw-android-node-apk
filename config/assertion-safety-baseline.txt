@@ -712,7 +712,6 @@ extensions/memory-core/src/memory/manager-search-orchestration.ts	1
 extensions/memory-core/src/memory/manager-search.ts	6
 extensions/memory-core/src/memory/manager-sync-base.ts	3
 extensions/memory-core/src/memory/manager-vector-rebuild-state.ts	1
-extensions/memory-core/src/memory/manager-watch-ops.ts	4
 extensions/memory-core/src/memory/manager.ts	2
 extensions/memory-core/src/memory/search-deadline.ts	1
 extensions/memory-core/src/migration/doctor-host-event-sources.ts	1
@@ -3036,9 +3035,8 @@ src/media-generation/provider-registry.ts	1
 src/media-understanding/attachments.select.ts	1
 src/media-understanding/entry-capabilities.ts	1
 src/media-understanding/image-model-runtime.ts	3
-src/media-understanding/runner.entries.ts	7
+src/media-understanding/runner.entries.ts	6
 src/media-understanding/runner.ts	1
-src/media-understanding/runtime.ts	2
 src/media-understanding/shared.ts	2
 src/media/audio-transcode.ts	1
 src/media/bounded-read-file.ts	2

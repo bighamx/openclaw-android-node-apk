@@ -4909,17 +4909,20 @@ public struct ControlUiLinkReaderMetadata: Codable, Sendable {
     public let pathpattern: String
     public let detailmethod: String
     public let previewmethod: String?
+    public let imagemethod: String?
 
     public init(
         hosts: [String],
         pathpattern: String,
         detailmethod: String,
-        previewmethod: String? = nil)
+        previewmethod: String? = nil,
+        imagemethod: String? = nil)
     {
         self.hosts = hosts
         self.pathpattern = pathpattern
         self.detailmethod = detailmethod
         self.previewmethod = previewmethod
+        self.imagemethod = imagemethod
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -4927,6 +4930,7 @@ public struct ControlUiLinkReaderMetadata: Codable, Sendable {
         case pathpattern = "pathPattern"
         case detailmethod = "detailMethod"
         case previewmethod = "previewMethod"
+        case imagemethod = "imageMethod"
     }
 }
 

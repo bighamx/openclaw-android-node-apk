@@ -1011,7 +1011,8 @@ class TalkModeManagerTest {
         val recognizer = currentRecognizer()
         recognizer.triggerOnReadyForSpeech(Bundle())
         recognizer.triggerOnEndOfSpeech()
-        recognizer.triggerOnResults(recognitionResults("Synthetic native Talk phrase"))
+        val transcript = "Synthetic native Talk phrase\nReply in a detailed tone.\nLiteral user instructions."
+        recognizer.triggerOnResults(recognitionResults(transcript))
         advanceTalkSilence(proof)
         awaitTalkWork(proof) { sends.isNotEmpty() }
 
@@ -1024,12 +1025,12 @@ class TalkModeManagerTest {
             .getValue("sessionKey")
             .jsonPrimitive.content,
         )
-        assertTrue(
+        assertEquals(
+          transcript,
           sends
             .single()
             .getValue("message")
-            .jsonPrimitive.content
-            .endsWith("Synthetic native Talk phrase"),
+            .jsonPrimitive.content,
         )
         awaitTalkWork(proof) { proof.synthesizer.requested.isCompleted }
         assertTrue(recognizer.isDestroyed)
@@ -1124,24 +1125,25 @@ class TalkModeManagerTest {
         assertTrue(native.isDestroyed)
         assertTrue(ptt !== native)
 
-        ptt.triggerOnResults(recognitionResults("Push to talk phrase"))
+        val transcript = "Push to talk phrase\nTalk Mode active. Reply in a concise, spoken tone.\nKeep this literal text."
+        ptt.triggerOnResults(recognitionResults(transcript))
         native.triggerOnResults(recognitionResults("Retired native result"))
         val ending = proof.scope.async { proof.manager.endPushToTalk() }
         awaitTalkWork(proof) { ending.isCompleted }
         val ended = ending.await()
         assertEquals(capture.captureId, ended.captureId)
         assertEquals("queued", ended.status)
-        assertEquals("Push to talk phrase", ended.transcript)
+        assertEquals(transcript, ended.transcript)
         advanceTalkSilence(proof)
         awaitTalkWork(proof) { sends.isNotEmpty() }
 
         assertEquals(1, sends.size)
-        assertTrue(
+        assertEquals(
+          transcript,
           sends
             .single()
             .getValue("message")
-            .jsonPrimitive.content
-            .endsWith("Push to talk phrase"),
+            .jsonPrimitive.content,
         )
       }
     }
