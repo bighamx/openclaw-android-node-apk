@@ -242,6 +242,7 @@ class OpenClawImageLightbox extends OpenClawLitElement {
                       class=${this.scale > 1 ? "image zoomed" : "image"}
                       src=${this.currentImage?.src ?? this.src}
                       alt=${title}
+                      referrerpolicy="no-referrer"
                       @load=${this.handleImageLoad}
                       @error=${this.handleImageError}
                       @dragstart=${(event: DragEvent) => event.preventDefault()}

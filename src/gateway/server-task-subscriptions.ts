@@ -1,5 +1,7 @@
 import { getAgentRunContext, getAgentRunContextOwnership } from "../infra/agent-run-registry.js";
 import type { SubsystemLogger } from "../logging/subsystem.js";
+import { sessionChanges } from "../sessions/session-row-changes.js";
+import { cloneTaskRecordForObserver } from "../tasks/task-registry-records.js";
 import { getTaskRegistryProcessState } from "../tasks/task-registry.process-state.js";
 import type { TaskRegistryObserverEvent } from "../tasks/task-registry.store.types.js";
 import { isTerminalTaskStatus, type TaskRecord } from "../tasks/task-registry.types.js";
@@ -171,10 +173,30 @@ export function startGatewayTaskSubscriptions(params: {
         }
       },
     };
+    const refreshCliTasks = (sessionKey?: string) => {
+      const taskIds = sessionKey
+        ? (state.taskIdsByRelatedSessionKey.get(sessionKey) ?? [])
+        : state.tasks.keys();
+      for (const taskId of taskIds) {
+        const task = state.tasks.get(taskId);
+        if (task?.runtime === "cli" && !isTerminalTaskStatus(task.status)) {
+          observers.onEvent({ kind: "upserted", task: cloneTaskRecordForObserver(task) });
+        }
+      }
+    };
+    let unsubscribeRunChanges: (() => void) | undefined;
     if (!disposed) {
       runtime.configureTaskRegistryRuntime({ observers });
+      // Run admission and scheduler waits can change before any agent activity arrives.
+      unsubscribeRunChanges = sessionChanges.subscribe((change) => {
+        if ("sessionKey" in change) {
+          refreshCliTasks(change.sessionKey);
+        } else if (change.scope === "agent-runs") {
+          refreshCliTasks();
+        }
+      });
     }
-    return { runtime, observers };
+    return { runtime, observers, unsubscribeRunChanges };
   });
   void registered.catch((error: unknown) => {
     params.log.warn("Task registry observer registration failed", { error });
@@ -182,7 +204,8 @@ export function startGatewayTaskSubscriptions(params: {
   return () => {
     disposed = true;
     return registered
-      .then(({ runtime, observers }) => {
+      .then(({ runtime, observers, unsubscribeRunChanges }) => {
+        unsubscribeRunChanges?.();
         if (runtime.getTaskRegistryObservers() === observers) {
           runtime.configureTaskRegistryRuntime({ observers: null });
         }

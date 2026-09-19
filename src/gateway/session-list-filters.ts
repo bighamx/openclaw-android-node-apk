@@ -19,6 +19,7 @@ import type { SessionOwnerFacetIdentity } from "../shared/session-types.js";
 import type { SynchronousWork } from "../shared/synchronous-work.js";
 import {
   projectSessionOwner,
+  projectSessionProfileInvolvement,
   addSessionOwnerFacetIdentity,
   sortSessionOwnerFacet,
   projectSessionParticipants,
@@ -271,17 +272,22 @@ export function* filterSessionEntries(
         continue;
       }
     }
-    const participants =
-      involvingActorId || profileRelation?.relationship === "involving"
-        ? projectSessionParticipants(entry, identities, cfg)
-        : undefined;
+    let participants: ReturnType<typeof projectSessionParticipants> | undefined;
+    const matchesInvolvement = (profileId: string, personal: boolean) => {
+      const state = projectSessionProfileInvolvement(entry, profileId, identities);
+      return (
+        !(personal && state?.hidden) &&
+        (Boolean(state?.lastMention || (personal && state?.hidden === false)) ||
+          (effectiveOwner?.identity?.type === "profile" &&
+            effectiveOwner.identity.id === profileId) ||
+          (participants ??= projectSessionParticipants(entry, identities, cfg)).has(
+            JSON.stringify({ type: "profile", id: profileId }),
+          ))
+      );
+    };
     if (
       profileRelation?.relationship === "involving" &&
-      !(
-        (effectiveOwner?.identity?.type === "profile" &&
-          effectiveOwner.identity.id === profileRelation.profileId) ||
-        participants?.has(JSON.stringify({ type: "profile", id: profileRelation.profileId }))
-      )
+      !matchesInvolvement(profileRelation.profileId, false)
     ) {
       continue;
     }
@@ -295,14 +301,7 @@ export function* filterSessionEntries(
       continue;
     }
     // Preserve the existing viewer-independent owner facet; explicit relations still narrow it.
-    if (
-      involvingActorId &&
-      !(
-        (effectiveOwner?.identity?.type === "profile" &&
-          effectiveOwner.identity.id === involvingActorId) ||
-        participants?.has(JSON.stringify({ type: "profile", id: involvingActorId }))
-      )
-    ) {
+    if (involvingActorId && !matchesInvolvement(involvingActorId, true)) {
       continue;
     }
     if (opts.includePeople || opts.involvingProfileId) {

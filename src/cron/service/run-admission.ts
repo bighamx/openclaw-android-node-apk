@@ -15,6 +15,7 @@ import { normalizeCronRunErrorText } from "./execution-errors.js";
 import { enrollForeignReceipt } from "./foreign-receipt-monitor.js";
 import { recomputeJobNextRunAtMs } from "./jobs-scheduling.js";
 import { locked } from "./locked.js";
+import { retainManualOneShotOccurrence } from "./one-shot-schedule.js";
 import { runWithCronAdmission } from "./run-admission-capacity.js";
 import { skipCronJobsWithoutOwners } from "./run-owner.js";
 import {
@@ -333,6 +334,7 @@ export async function persistQueuedCronRunReservations(params: {
               ),
             };
           });
+          const ownershipAtMs = params.manualRun?.scheduleOwnershipAtMs ?? params.reservedAtMs;
           for (const { job } of reservations) {
             if (params.manualRun?.onExit) {
               job.enabled = false;
@@ -342,6 +344,8 @@ export async function persistQueuedCronRunReservations(params: {
               delete job.state.startupCatchupAtMs;
               delete job.state.pacedNextRunAtMs;
               delete job.state.forcePreservedNextRunAtMs;
+            } else if (params.scheduleMode === "preserve") {
+              retainManualOneShotOccurrence(job, ownershipAtMs);
             }
             job.state.queuedAtMs = params.reservedAtMs;
           }

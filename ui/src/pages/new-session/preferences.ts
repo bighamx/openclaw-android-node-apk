@@ -232,11 +232,11 @@ export function patchNewSessionPreference(
   gatewayUrl: string,
   agentId: string,
   patch: NewSessionPreference,
-): void {
+): boolean {
   const storage = getSafeLocalStorage();
   const normalizedAgentId = normalizeAgentId(agentId);
   if (!storage || !gatewayUrl || !normalizedAgentId) {
-    return;
+    return false;
   }
   const store = readStore(storage, gatewayUrl);
   const current = normalizePreference(store.agents?.[normalizedAgentId]) ?? {};
@@ -256,7 +256,9 @@ export function patchNewSessionPreference(
         agents,
       } satisfies PersistedPreferences),
     );
+    return true;
   } catch {
-    // Browser storage can be disabled or full; preferences are best effort.
+    // Browser storage can be disabled or full; callers can report unconfirmed writes.
+    return false;
   }
 }

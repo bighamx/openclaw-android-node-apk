@@ -239,7 +239,7 @@ export function cloneTaskDeliveryState(state: TaskDeliveryState): TaskDeliverySt
   };
 }
 
-function resolveTaskAgentId(params: {
+export function resolveTaskAgentId(params: {
   explicitAgentId?: string;
   childSessionKey?: string;
   ownerKey: string;

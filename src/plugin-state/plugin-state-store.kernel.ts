@@ -489,7 +489,6 @@ function deleteOldestPluginStateNamespaceEntries(
 
 type PluginStateRetention = {
   namespaceCount: number;
-  pluginCount: number;
   nextExpiry: number;
   now: number;
   sweepPending: boolean;
@@ -504,19 +503,15 @@ export function readPluginStateRetention(
     getPluginStateKysely(db)
       .selectFrom("plugin_state_entries")
       .select((eb) => [
-        eb.fn.countAll<number | bigint>().as("plugin_count"),
-        eb.fn
-          .countAll<number | bigint>()
-          .filterWhere("namespace", "=", params.namespace)
-          .as("namespace_count"),
+        eb.fn.countAll<number | bigint>().as("namespace_count"),
         eb.fn.min<number | bigint | null>("expires_at").as("next_expiry"),
       ])
       .where("plugin_id", "=", params.pluginId)
+      .where("namespace", "=", params.namespace)
       .where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", params.now)])),
   );
   return {
     namespaceCount: coerceRequiredSqliteNumber(row?.namespace_count ?? 0),
-    pluginCount: coerceRequiredSqliteNumber(row?.plugin_count ?? 0),
     nextExpiry: normalizeSqliteNumber(row?.next_expiry ?? null) ?? Infinity,
     now: params.now,
     sweepPending: true,
@@ -532,73 +527,29 @@ export function enforcePostRegisterLimits(params: {
   now: number;
   retention?: PluginStateRetention;
   protectedKey: string;
-  maxPluginEntries: number | undefined;
 }): void {
   if (params.overflowPolicy === "reject-new") {
     return;
   }
-  const maxPluginEntries = params.maxPluginEntries;
-  // A plugin cap no larger than the namespace cap sheds the same oldest prefix.
-  if (params.retention || maxPluginEntries === undefined || params.maxEntries < maxPluginEntries) {
-    const namespaceCount =
-      params.retention?.namespaceCount ??
-      countLivePluginStateNamespaceEntries(params.store.db, {
-        pluginId: params.pluginId,
-        namespace: params.namespace,
-        now: params.now,
-      });
-    if (namespaceCount > params.maxEntries) {
-      const deleted = deleteOldestPluginStateNamespaceEntries(params.store.db, {
-        pluginId: params.pluginId,
-        namespace: params.namespace,
-        protectedKey: params.protectedKey,
-        now: params.now,
-        limit: namespaceCount - params.maxEntries,
-      });
-      if (params.retention) {
-        params.retention.namespaceCount -= deleted;
-        params.retention.pluginCount -= deleted;
-      }
-    }
-  }
-
-  if (maxPluginEntries === undefined) {
-    return;
-  }
-
-  const pluginCount =
-    params.retention?.pluginCount ??
-    countLivePluginStateEntries(params.store.db, {
+  const namespaceCount =
+    params.retention?.namespaceCount ??
+    countLivePluginStateNamespaceEntries(params.store.db, {
       pluginId: params.pluginId,
+      namespace: params.namespace,
       now: params.now,
     });
-  if (pluginCount <= maxPluginEntries) {
+  if (namespaceCount <= params.maxEntries) {
     return;
   }
-
-  // Shed only rows from the namespace that grew. Sibling namespaces can hold
-  // durable state; if this namespace cannot cover the overflow, fail so the
-  // surrounding transaction rolls every insertion and deletion back.
   const deleted = deleteOldestPluginStateNamespaceEntries(params.store.db, {
     pluginId: params.pluginId,
     namespace: params.namespace,
     protectedKey: params.protectedKey,
     now: params.now,
-    limit: pluginCount - maxPluginEntries,
+    limit: namespaceCount - params.maxEntries,
   });
   if (params.retention) {
     params.retention.namespaceCount -= deleted;
-    params.retention.pluginCount -= deleted;
-  }
-  // The deletion uses the same live-row predicate and transaction as pluginCount.
-  const remainingPluginCount = params.retention?.pluginCount ?? pluginCount - deleted;
-  if (remainingPluginCount > maxPluginEntries) {
-    throw createPluginStateError({
-      code: "PLUGIN_STATE_LIMIT_EXCEEDED",
-      operation: "register",
-      message: `Plugin state for ${params.pluginId} exceeds the ${maxPluginEntries} live row limit.`,
-      path: params.store.path,
-    });
   }
 }
 
@@ -610,7 +561,6 @@ export function assertCanInsertPluginStateEntry(params: {
   overflowPolicy: PluginStateOverflowPolicy;
   now: number;
   retention?: PluginStateRetention;
-  maxPluginEntries: number;
 }): void {
   if (params.overflowPolicy !== "reject-new") {
     return;
@@ -627,21 +577,6 @@ export function assertCanInsertPluginStateEntry(params: {
       code: "PLUGIN_STATE_LIMIT_EXCEEDED",
       operation: "register",
       message: `Plugin state namespace ${params.namespace} for ${params.pluginId} reached its ${params.maxEntries}-row limit.`,
-      path: params.store.path,
-    });
-  }
-  const maxPluginEntries = params.maxPluginEntries;
-  const pluginCount =
-    params.retention?.pluginCount ??
-    countLivePluginStateEntries(params.store.db, {
-      pluginId: params.pluginId,
-      now: params.now,
-    });
-  if (pluginCount >= maxPluginEntries) {
-    throw createPluginStateError({
-      code: "PLUGIN_STATE_LIMIT_EXCEEDED",
-      operation: "register",
-      message: `Plugin state for ${params.pluginId} reached the ${maxPluginEntries} live row limit.`,
       path: params.store.path,
     });
   }
@@ -664,7 +599,6 @@ export type PluginStateRegisterEntryParams = {
 export function registerPluginStateEntry(
   store: PluginStateDatabase,
   params: PluginStateRegisterEntryParams,
-  maxPluginEntries: number,
   retention?: PluginStateRetention,
 ): void {
   const now = Date.now();
@@ -674,8 +608,8 @@ export function registerPluginStateEntry(
     operation: "register",
     path: store.path,
   });
-  // Counts belong to this transaction. Expiry (including sibling rows) or a
-  // backward clock invalidates them; ordinary writes update them incrementally.
+  // Counts belong to this transaction. Namespace expiry or a backward clock
+  // invalidates them; ordinary writes update them incrementally.
   if (retention && (now < retention.now || now >= retention.nextExpiry)) {
     Object.assign(retention, readPluginStateRetention(store.db, { ...params, now }));
   }
@@ -704,7 +638,6 @@ export function registerPluginStateEntry(
       overflowPolicy: params.overflowPolicy,
       now,
       retention,
-      maxPluginEntries,
     });
   }
   upsertPluginStateEntry(
@@ -721,7 +654,6 @@ export function registerPluginStateEntry(
   if (retention) {
     if (!existing) {
       retention.namespaceCount += 1;
-      retention.pluginCount += 1;
     }
     retention.nextExpiry = Math.min(retention.nextExpiry, expiresAt ?? Infinity);
     retention.now = now;
@@ -735,7 +667,6 @@ export function registerPluginStateEntry(
     now,
     protectedKey: params.key,
     retention,
-    maxPluginEntries,
   });
 }
 

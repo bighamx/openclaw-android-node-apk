@@ -153,13 +153,9 @@ export function executePluginStateCommand(
                 captureOpenClawStateDatabaseReadAdmission(store.path).identity.key,
               );
             case "pluginState.register":
-              return registerPluginStateEntry(store, command.input, command.input.maxPluginEntries);
+              return registerPluginStateEntry(store, command.input);
             case "pluginState.registerIfAbsent":
-              return registerPluginStateEntryIfAbsent(
-                store,
-                command.input,
-                command.input.maxPluginEntries,
-              );
+              return registerPluginStateEntryIfAbsent(store, command.input);
             case "pluginState.deleteIfEqual":
               return deletePluginStateEntryIfEqual(store, command.input);
             case "pluginState.consume":

@@ -11,7 +11,8 @@ import {
 } from "openclaw/plugin-sdk/plugin-state-test-runtime";
 import { createPluginRuntimeMock } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { composeOutbound, generateIdentity, MemoryAuditStore } from "../protocol/index.js";
+import { composeOutbound, generateIdentity } from "../protocol/index.js";
+import { MemoryAuditStore } from "../protocol/memory-stores.test-support.js";
 import { ReefMessageFlow } from "./flow.js";
 import {
   allow,

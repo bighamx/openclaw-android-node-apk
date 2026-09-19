@@ -1,4 +1,3 @@
-// Telegram plugin module implements bot message context.session behavior.
 import {
   type BuildChannelInboundEventContextParams,
   type BuildChannelInboundEventContextAsyncParams,

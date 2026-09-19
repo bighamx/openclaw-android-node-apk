@@ -1,4 +1,3 @@
-// Telegram plugin module implements delivery.replies behavior.
 import type { Bot } from "grammy";
 import type { Message } from "grammy/types";
 import { isChannelPartialDeliveryError } from "openclaw/plugin-sdk/channel-inbound";

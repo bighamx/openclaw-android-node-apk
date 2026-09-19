@@ -1,4 +1,3 @@
-// Telegram plugin module implements lane delivery text deliverer behavior.
 import {
   createPreviewMessageReceipt,
   resolveTranscriptBackedChannelFinalText,

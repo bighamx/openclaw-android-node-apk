@@ -81,6 +81,12 @@ function packageSourceFixture(
     const staging = tempDirs.make("npm-package-staging-");
     mkdirSync(join(staging, "package"));
     copyFileSync(join(directory, "package.json"), join(staging, "package/package.json"));
+    if (existsSync(join(directory, "npm-shrinkwrap.json"))) {
+      copyFileSync(
+        join(directory, "npm-shrinkwrap.json"),
+        join(staging, "package/npm-shrinkwrap.json"),
+      );
+    }
     return execFileSync("tar", [
       "-czf",
       join(destination, `openclaw-${packageVersion}.tgz`),
@@ -516,6 +522,124 @@ describe("prepared npm bundle", () => {
       }),
     ).toThrow(/producer|attempt evidence/);
   });
+
+  it.each([false, true])(
+    "checks packed legacy runtime dependencies before sealing (complete=%s)",
+    (complete) => {
+      const fixture = packageSourceFixture("2026.7.33");
+      // Use a non-workspace runtime: coverage must protect every declared dependency,
+      // not just the AI package whose omission broke 2026.7.33.
+      writeFileSync(
+        join(fixture.sourceDir, "package.json"),
+        JSON.stringify({
+          name: "openclaw",
+          version: "2026.7.33",
+          files: ["npm-shrinkwrap.json"],
+          dependencies: { "runtime-fixture": "1.0.0" },
+        }),
+      );
+      writeFileSync(
+        join(fixture.sourceDir, "npm-shrinkwrap.json"),
+        JSON.stringify({
+          name: "openclaw",
+          version: "2026.7.33",
+          lockfileVersion: 3,
+          packages: complete
+            ? {
+                "": { dependencies: { "runtime-fixture": "1.0.0" } },
+                "node_modules/runtime-fixture": { version: "1.0.0" },
+              }
+            : { "": {} },
+        }),
+      );
+      if (complete) {
+        const bundle = prepareNpmPackageBundle(fixture);
+        expect(bundle.packageVersion).toBe("2026.7.33");
+        expect(existsSync(join(fixture.outputDir, "package-bundle.json"))).toBe(true);
+      } else {
+        expect(() => prepareNpmPackageBundle(fixture)).toThrow(
+          "npm-shrinkwrap.json is missing declared dependency runtime-fixture",
+        );
+        expect(existsSync(join(fixture.outputDir, "package-bundle.json"))).toBe(false);
+      }
+    },
+  );
+
+  it.each([true, false])(
+    "prepares a legacy root shrinkwrap before sealing (has shrinkwrap=%s)",
+    (hasShrinkwrap) => {
+      const version = "2026.7.34";
+      const fixture = packageSourceFixture(version);
+      const aiDir = join(fixture.sourceDir, "packages/ai");
+      mkdirSync(aiDir, { recursive: true });
+      writeFileSync(
+        join(fixture.sourceDir, "package.json"),
+        JSON.stringify({
+          name: "openclaw",
+          version,
+          files: ["npm-shrinkwrap.json"],
+          dependencies: { "@openclaw/ai": version },
+        }),
+      );
+      writeFileSync(join(aiDir, "package.json"), JSON.stringify({ name: "@openclaw/ai", version }));
+      if (hasShrinkwrap) {
+        writeFileSync(
+          join(fixture.sourceDir, "npm-shrinkwrap.json"),
+          JSON.stringify({
+            name: "openclaw",
+            version,
+            lockfileVersion: 3,
+            packages: {
+              "": { dependencies: { "@openclaw/ai": "2026.7.33" } },
+              "node_modules/@openclaw/ai": { version: "2026.7.33" },
+            },
+          }),
+        );
+      }
+      const runPack = vi.fn((directory: string, destination: string) => {
+        const manifest = JSON.parse(readFileSync(join(directory, "package.json"), "utf8")) as {
+          name: string;
+        };
+        const staging = tempDirs.make("npm-package-staging-");
+        mkdirSync(join(staging, "package"));
+        copyFileSync(join(directory, "package.json"), join(staging, "package/package.json"));
+        if (manifest.name === "openclaw" && existsSync(join(directory, "npm-shrinkwrap.json"))) {
+          copyFileSync(
+            join(directory, "npm-shrinkwrap.json"),
+            join(staging, "package/npm-shrinkwrap.json"),
+          );
+        }
+        const tarballName =
+          manifest.name === "@openclaw/ai"
+            ? `openclaw-ai-${version}.tgz`
+            : `openclaw-${version}.tgz`;
+        return execFileSync("tar", [
+          "-czf",
+          join(destination, tarballName),
+          "-C",
+          staging,
+          "package",
+        ]);
+      });
+      const prepareRootShrinkwrap = vi.fn(({ aiTarballPath }: { aiTarballPath: string }) => {
+        expect(existsSync(aiTarballPath)).toBe(true);
+        const shrinkwrapPath = join(fixture.sourceDir, "npm-shrinkwrap.json");
+        const shrinkwrap = JSON.parse(readFileSync(shrinkwrapPath, "utf8"));
+        shrinkwrap.packages[""].dependencies["@openclaw/ai"] = version;
+        shrinkwrap.packages["node_modules/@openclaw/ai"].version = version;
+        writeFileSync(shrinkwrapPath, JSON.stringify(shrinkwrap));
+      });
+
+      const prepared = prepareNpmPackageBundle({
+        ...fixture,
+        prepareRootShrinkwrap,
+        runPack,
+      });
+
+      expect(prepareRootShrinkwrap).toHaveBeenCalledTimes(hasShrinkwrap ? 1 : 0);
+      expect(prepared.dependencyTarballs).toHaveLength(1);
+    },
+  );
 
   it.each([
     ["2026.8.1", "v2026.8.1-2", "same-source"],

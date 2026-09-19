@@ -152,12 +152,18 @@ export const usersHandlers: GatewayRequestHandlers = {
       return;
     }
     try {
-      const result = await setCanonicalUserPreferences(profileId, params.entries);
+      const result = await setCanonicalUserPreferences(profileId, params.entries, {
+        expectedEntries: params.expectedEntries,
+      });
       if (!result) {
         respond(false, undefined, authenticatedProfileUnavailableError());
         return;
       }
       if (!result.ok) {
+        if (result.error.code === "conflict") {
+          respond(true, { status: "conflict" }, undefined);
+          return;
+        }
         if (result.error.code === "profile-key-limit") {
           respond(
             false,

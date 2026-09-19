@@ -24,7 +24,6 @@ import {
   pluginStateRegister,
   pluginStateRegisterIfAbsent,
   pluginStateUpdate,
-  resolveMaxPluginStateEntriesPerPlugin,
 } from "./plugin-state-store.sqlite.js";
 import type {
   OpenKeyedStoreOptions,
@@ -63,7 +62,7 @@ import {
 } from "./plugin-store-validation.js";
 
 // Public plugin-state facade over the sqlite-backed store. It validates plugin
-// ids, namespaces, JSON values, TTLs, and per-plugin limits before persistence.
+// ids, namespaces, JSON values, TTLs, and namespace limits before persistence.
 export type {
   OpenKeyedStoreOptions,
   PluginStateCompareIntent,
@@ -78,12 +77,10 @@ export type { PluginDoctorRawStateEntry } from "./plugin-state-store.sqlite.js";
 
 export {
   closePluginStateDatabaseAsync,
-  countPluginStateLiveEntries,
   getPluginStateCapacity,
   MAX_PLUGIN_STATE_BULK_DELETE_ENTRIES,
   pluginStateDeleteEntriesIfUnchanged,
   pluginStateDoctorEntriesInKeyRange,
-  resolveMaxPluginStateEntriesPerPlugin,
   sweepExpiredPluginStateEntries,
 } from "./plugin-state-store.sqlite.js";
 
@@ -232,7 +229,6 @@ function createKeyedStoreForPluginId<T>(
         comparison,
         maxEntries: prepared.maxEntries,
         overflowPolicy: prepared.overflowPolicy,
-        maxPluginEntries: resolveMaxPluginStateEntriesPerPlugin(),
         env: prepared.env,
       };
       let result: PluginStateCompareResult<unknown>;
@@ -274,7 +270,6 @@ function createKeyedStoreForPluginId<T>(
         ...entry,
         maxEntries: prepared.maxEntries,
         overflowPolicy: prepared.overflowPolicy,
-        maxPluginEntries: resolveMaxPluginStateEntriesPerPlugin(),
       });
     },
     registerIfAbsent: async (key, value, opts) => {
@@ -286,7 +281,6 @@ function createKeyedStoreForPluginId<T>(
         overflowPolicy: prepared.overflowPolicy,
         env: prepared.env,
         ...entry,
-        maxPluginEntries: resolveMaxPluginStateEntriesPerPlugin(),
       });
     },
     update: async (...args) => store.update(...args),
@@ -631,7 +625,6 @@ export async function registerPluginStateSequencedJournalEntry(params: {
     },
     journalKeyPrefix,
     journalValueJson,
-    maxPluginEntries: resolveMaxPluginStateEntriesPerPlugin(),
     ...(params.cursorOptions.env ? { env: params.cursorOptions.env } : {}),
   });
 }

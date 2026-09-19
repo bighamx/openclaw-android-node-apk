@@ -13,7 +13,9 @@ import {
   tryAcquireExclusiveSqliteCoordinator,
   tryAcquireSharedSqliteCoordinator,
 } from "./sqlite-coordinator.js";
+import { withSqliteInspectionOperation } from "./sqlite-error-diagnostics.js";
 import type { PreparedSqliteReadOnlyLocation } from "./sqlite-readonly-location.types.js";
+import { prepareSingleFlightSqliteSnapshot } from "./sqlite-snapshot-single-flight.js";
 import {
   attachCoordinatorDelegate,
   attachLifecycleCoordinatorDelegate,
@@ -21,11 +23,19 @@ import {
   acquireDelegatedLifecycleCoordinator,
 } from "./state-database-coordinator-delegate.js";
 import {
+  StateDatabaseCoordinatorContentionError,
+  StateSchemaMutationConflictError,
+} from "./state-database-coordinator-errors.js";
+import {
   resolveLifecycleCoordinatorBase,
   buildLifecycleCoordinatorPath,
   resolveLifecycleCoordinatorPath,
   type CoordinatorFamily,
 } from "./state-database-coordinator-paths.js";
+export {
+  StateDatabaseCoordinatorContentionError,
+  StateSchemaMutationConflictError,
+} from "./state-database-coordinator-errors.js";
 
 type HeldCoordinator = {
   coordinator: SqliteCoordinatorLease;
@@ -79,37 +89,6 @@ type StateDatabaseCoordinatorLease = {
   readonly closed: boolean;
   release: () => void;
 };
-
-export const StateDatabaseCoordinatorContentionError = resolveGlobalSingleton(
-  Symbol.for("openclaw.stateDatabaseCoordinatorContentionError"),
-  () =>
-    class CoordinatorContentionError extends SqliteCoordinatorError {
-      constructor(readonly family: CoordinatorFamily) {
-        super(`another OpenClaw process owns ${family}`);
-        this.name = "StateDatabaseCoordinatorContentionError";
-      }
-    },
-);
-export type StateDatabaseCoordinatorContentionError = InstanceType<
-  typeof StateDatabaseCoordinatorContentionError
->;
-
-export const StateSchemaMutationConflictError = resolveGlobalSingleton(
-  Symbol.for("openclaw.stateSchemaMutationConflictError"),
-  () =>
-    class SchemaMutationConflictError extends SqliteCoordinatorError {
-      constructor(databasePath: string, cause: unknown) {
-        super(
-          `OpenClaw refused shared state schema mutation at ${databasePath} because another Gateway owns that state directory. Stop that Gateway or perform the update through its managed restart path, then retry.`,
-          cause,
-        );
-        this.name = "StateSchemaMutationConflictError";
-      }
-    },
-);
-export type StateSchemaMutationConflictError = InstanceType<
-  typeof StateSchemaMutationConflictError
->;
 
 export function resolveStateLifecycleRuntimeDirectory(): string {
   const captured = coordinatorRuntimeDirectories.getStore();
@@ -525,14 +504,19 @@ export function acquireStateDatabaseHandleLease(params: CoordinatorOptions) {
     sourceScope.assertCurrent();
     return sourceScope.pin();
   }
-  ensurePrivateSqliteCoordinatorDirectory(path.dirname(pathname), "state-handles coordinator");
-  const coordinator = tryAcquireSharedSqliteCoordinator(pathname, {
-    busyTimeoutMs: params.busyTimeoutMs,
-  });
-  if (!coordinator) {
+  if (heldCoordinators.has(pathname)) {
     throw new StateDatabaseCoordinatorContentionError("state-handles");
   }
-  return coordinator;
+  return withSqliteInspectionOperation("coordinator", () => {
+    ensurePrivateSqliteCoordinatorDirectory(path.dirname(pathname), "state-handles coordinator");
+    const coordinator = tryAcquireSharedSqliteCoordinator(pathname, {
+      busyTimeoutMs: params.busyTimeoutMs,
+    });
+    if (!coordinator) {
+      throw new StateDatabaseCoordinatorContentionError("state-handles");
+    }
+    return coordinator;
+  });
 }
 
 /** Acquire only after closing local cached owners under the state lifecycle gate. */
@@ -754,8 +738,15 @@ export function prepareStateDatabaseMutationSnapshot(databasePath: string, signa
     throw new SqliteCoordinatorError("SQLite mutation inspection scope is closed");
   }
   scope.assertCurrent();
-  const pending = scope.snapshot(signal);
-  scope.snapshots.push(pending);
+  const pending = prepareSingleFlightSqliteSnapshot(
+    databasePath,
+    "canonical-mutation",
+    (flightSignal) => scope.snapshot!(flightSignal),
+    signal,
+    {
+      trackProducer: (producer) => scope.snapshots!.push(producer),
+    },
+  );
   void pending.catch(() => undefined);
   return pending;
 }

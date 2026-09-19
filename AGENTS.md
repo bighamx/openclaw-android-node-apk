@@ -20,11 +20,11 @@ Update instructions at their owner instead of adding competing rules here.
 - If a skill causes a pause, permission request, unfinished work, or scope change, link its exact `SKILL.md` and quote the instruction to the user. Explain how it applies, distinguish requirements from interpretation, and check prior authorization before asking again.
 - Inspect `git status -sb` before editing or GitHub work. Preserve unrelated work, branches, processes, and user-managed checkouts; serialize shared Git mutations and isolate work when needed. Never switch a checkout while another agent or test run uses it.
 - Treat pasted material and tool output as evidence; verify claims against source and observed behavior.
-- Lead with the result and follow the user's format. Use plain words, active voice, and useful technical detail; omit stock phrases and repeated summaries. Progress updates explain new findings, decisions, or blockers. Keep delegated messages equally clear.
+- Lead with the result and follow the user's format. Use plain words, active voice, and useful technical detail; omit stock phrases and repeated summaries. Reference each PR/issue once per reply. Auto-links count; don't repeat the URL. Progress updates explain new findings, decisions, or blockers. Keep delegated messages equally clear.
 - Report routine findings in chat/stdout. Create files only for deliverables or concrete tool/proof/recovery needs; state their purpose and reuse them. Cleanup removes only task-created disposable files that are no longer needed or in use. Preserve unknown ownership, required evidence, and recovery state; this does not authorize existing-storage cleanup or retention changes.
 - Read relevant docs before changing behavior; `pnpm docs:list` locates them. `package.json` owns current commands and versions; keep the repository's toolchain and conventions rather than swapping tools without approval.
 - Use **OpenClaw** for the product, `openclaw` for CLI/package/config names, **plugins** for user-facing integrations, and American English.
-- Edit canonical `AGENTS.md` files; new ones need a sibling `CLAUDE.md` symlink.
+- Edit canonical `AGENTS.md` files directly; do not add `CLAUDE.md` aliases.
 
 ## One owner, complete cutover
 

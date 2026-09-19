@@ -19,6 +19,7 @@ vi.mock("../../infra/sqlite-readonly-worker.js", async (importOriginal) => ({
 const rows: AuthProfileRowRead = {
   store: { status: "readable", raw: { version: 1, profiles: {} } },
   state: { status: "missing", reason: "row" },
+  cacheable: true,
 };
 const readers = new Set<ReturnType<typeof prepareAgentAuthProfileRowsRead>>();
 function prepare(env: NodeJS.ProcessEnv = { OPENCLAW_STATE_DIR: "/fixture" }) {
@@ -60,6 +61,14 @@ afterEach(async () => {
 });
 
 describe("prepared auth profile row reads", () => {
+  it("retains revocable read authority even when persisted rows come from a cache", async () => {
+    const reader = prepare();
+    reader.assertCurrent();
+    expect(resources.hasOpenClawAgentDatabaseAsyncResources()).toBe(true);
+    await Promise.all(resources.revokeAgentDatabaseResources({ path: "/fixture/auth.sqlite" }));
+    expect(() => reader.assertCurrent()).toThrow("Auth profile read owner was revoked");
+    expect(child.read).not.toHaveBeenCalled();
+  });
   it.each([false, true])(
     "retains failed snapshot cleanup for disposal retry (read failure: %s)",
     async (failRead) => {
@@ -88,6 +97,10 @@ describe("prepared auth profile row reads", () => {
         const failure: unknown = await reader.read().then(
           () => undefined,
           (error: unknown) => error,
+        );
+        expect(child.read).toHaveBeenCalledWith(
+          "/fixture/private/auth.sqlite",
+          expect.objectContaining({ source: "snapshot" }),
         );
         const cleanupFailure = expect.objectContaining({
           message: "SQLite read-only worker snapshot cleanup failed: /fixture/private",
@@ -162,6 +175,7 @@ describe("prepared auth profile row reads", () => {
         "/fixture/auth.sqlite",
         expect.objectContaining({
           mode: "auth-profile-rows",
+          source: "canonical",
           expectedIdentity: "file:original",
           env: { OPENCLAW_STATE_DIR: "/fixture/original" },
         }),

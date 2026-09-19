@@ -33,7 +33,6 @@ export function clearPluginStateNamespace(
 export function registerPluginStateEntryIfAbsent(
   store: PluginStateDatabase,
   params: Omit<PluginStateRegisterEntryParams, "createdAtMs">,
-  maxPluginEntries: number,
 ): boolean {
   const now = Date.now();
   const expiresAt = resolvePluginStateExpiresAtMs({
@@ -49,7 +48,7 @@ export function registerPluginStateEntryIfAbsent(
   }
   // The exact expired key can lie beyond the namespace cleanup batch.
   deletePluginStateEntry(store.db, params);
-  assertCanInsertPluginStateEntry({ maxPluginEntries, store, ...params, now });
+  assertCanInsertPluginStateEntry({ store, ...params, now });
   const inserted = insertPluginStateEntryIfAbsent(
     store.db,
     bindPluginStateEntry({
@@ -65,7 +64,6 @@ export function registerPluginStateEntryIfAbsent(
     return false;
   }
   enforcePostRegisterLimits({
-    maxPluginEntries,
     store,
     ...params,
     now,

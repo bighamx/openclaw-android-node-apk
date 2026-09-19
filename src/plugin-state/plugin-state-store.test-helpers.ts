@@ -26,7 +26,6 @@ type PluginStateDatabaseSeedEntry = {
 type PluginStateSqliteTestApi = {
   probePluginStateStore(): PluginStateStoreProbeResult;
   seedPluginStateDatabaseEntriesForTests(entries: readonly PluginStateDatabaseSeedEntry[]): void;
-  setMaxPluginStateEntriesPerPluginForTests(value?: number): void;
 };
 
 type PluginStateStoreTestApi = {
@@ -51,10 +50,6 @@ export function clearPluginStateStoreForTests(): void {
 
 export function probePluginStateStore(): PluginStateStoreProbeResult {
   return getSqliteTestApi().probePluginStateStore();
-}
-
-export function setMaxPluginStateEntriesPerPluginForTests(value?: number): void {
-  getSqliteTestApi().setMaxPluginStateEntriesPerPluginForTests(value);
 }
 
 /** Seeds plugin state entries for tests without opening public store handles. */

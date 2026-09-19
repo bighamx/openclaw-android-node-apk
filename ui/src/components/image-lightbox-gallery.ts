@@ -84,6 +84,7 @@ export class ImageLightboxGalleryController {
           return null;
         }
         const image = new Image();
+        image.referrerPolicy = "no-referrer";
         image.src = item.src;
         try {
           await image.decode();

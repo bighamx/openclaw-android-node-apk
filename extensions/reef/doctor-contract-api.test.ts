@@ -19,12 +19,8 @@ import {
   normalizeCompatibilityConfig,
   stateMigrations,
 } from "./doctor-contract-api.js";
-import {
-  base64url,
-  generateIdentity,
-  MemoryAuditStore,
-  type ReviewRequest,
-} from "./protocol/index.js";
+import { base64url, generateIdentity, type ReviewRequest } from "./protocol/index.js";
+import { MemoryAuditStore } from "./protocol/memory-stores.test-support.js";
 import { ReefChannelConfigSchema } from "./src/config-schema.js";
 import {
   REEF_REPLAY_MAX_ENTRIES,

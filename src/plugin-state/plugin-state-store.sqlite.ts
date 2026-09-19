@@ -63,12 +63,9 @@ import {
   type PluginStateStoreProbeStep,
 } from "./plugin-state-store.types.js";
 
-// Plugin-wide fuse only; namespace maxEntries still owns normal cache eviction.
 export { MAX_PLUGIN_STATE_VALUE_BYTES } from "./plugin-state-store.kernel.js";
-const MAX_PLUGIN_STATE_ENTRIES_PER_PLUGIN = 50_000;
 export const MAX_PLUGIN_STATE_BULK_DELETE_ENTRIES = 512;
 export const PLUGIN_STATE_DOCTOR_IMPORT_BATCH_ROWS = 500;
-let maxPluginStateEntriesPerPluginForTests: number | undefined;
 
 export type PluginDoctorRawStateEntry = Omit<PluginStateEntry<unknown>, "value" | "expiresAt"> & {
   valueJson: string;
@@ -198,17 +195,13 @@ function runWriteTransaction<T>(
   return runOpenClawStateWriteTransaction(write, options);
 }
 
-export function resolveMaxPluginStateEntriesPerPlugin(): number {
-  return maxPluginStateEntriesPerPluginForTests ?? MAX_PLUGIN_STATE_ENTRIES_PER_PLUGIN;
-}
-
 type PluginStateRegisterParams = PluginStateRegisterEntryParams & { env?: NodeJS.ProcessEnv };
 
 export function pluginStateRegister(params: PluginStateRegisterParams): void {
   try {
     runWriteTransaction(
       "register",
-      (store) => registerPluginStateEntry(store, params, resolveMaxPluginStateEntriesPerPlugin()),
+      (store) => registerPluginStateEntry(store, params),
       envOptions(params.env),
     );
   } catch (error) {
@@ -248,12 +241,7 @@ export function pluginStateImportBatch(
             // A row can evict before failing. Roll back only that row, then commit
             // the successful prefix before reporting failure so Doctor can resume.
             runSqliteImmediateTransactionSync(store.db, () =>
-              registerPluginStateEntry(
-                store,
-                { ...params, ...entry },
-                resolveMaxPluginStateEntriesPerPlugin(),
-                retention,
-              ),
+              registerPluginStateEntry(store, { ...params, ...entry }, retention),
             );
           } catch (error) {
             // Only a surviving outer transaction can commit its prefix. Lost
@@ -294,8 +282,7 @@ export function pluginStateRegisterIfAbsent(params: {
   try {
     return runWriteTransaction(
       "register",
-      (store) =>
-        registerPluginStateEntryIfAbsent(store, params, resolveMaxPluginStateEntriesPerPlugin()),
+      (store) => registerPluginStateEntryIfAbsent(store, params),
       envOptions(params.env),
     );
   } catch (error) {
@@ -340,7 +327,6 @@ export function pluginStateUpdate(params: {
         }
         if (!existing) {
           assertCanInsertPluginStateEntry({
-            maxPluginEntries: resolveMaxPluginStateEntriesPerPlugin(),
             store,
             pluginId: params.pluginId,
             namespace: params.namespace,
@@ -367,7 +353,6 @@ export function pluginStateUpdate(params: {
           }),
         );
         enforcePostRegisterLimits({
-          maxPluginEntries: resolveMaxPluginStateEntriesPerPlugin(),
           store,
           pluginId: params.pluginId,
           namespace: params.namespace,
@@ -751,11 +736,7 @@ export function clearPluginStateDatabaseForTests(): void {
   );
 }
 
-function setMaxPluginStateEntriesPerPluginForTests(value?: number): void {
-  maxPluginStateEntriesPerPluginForTests = value;
-}
-
-export function countPluginStateLiveEntries(pluginId: string, env?: NodeJS.ProcessEnv): number {
+function countPluginStateLiveEntries(pluginId: string, env?: NodeJS.ProcessEnv): number {
   const pathname = resolveOpenClawStateSqlitePath(env ?? process.env);
   try {
     return (
@@ -782,7 +763,8 @@ export function getPluginStateCapacity(
 ): { liveEntries: number; maxEntries: number } {
   return {
     liveEntries: countPluginStateLiveEntries(pluginId, env),
-    maxEntries: resolveMaxPluginStateEntriesPerPlugin(),
+    // Doctor's capacity contract remains available; keyed state has no aggregate row quota.
+    maxEntries: Number.POSITIVE_INFINITY,
   };
 }
 
@@ -909,7 +891,6 @@ if (process.env.VITEST || process.env.NODE_ENV === "test") {
   (globalThis as Record<PropertyKey, unknown>)[Symbol.for("openclaw.pluginStateSqliteTestApi")] = {
     probePluginStateStore,
     seedPluginStateDatabaseEntriesForTests,
-    setMaxPluginStateEntriesPerPluginForTests,
   };
 }
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

@@ -595,7 +595,7 @@ describe("DraftGatewayState", () => {
     },
   );
 
-  it("keeps group route defaults isolated from ordinary New Session preferences", () => {
+  it("keeps group route defaults isolated from ordinary New Session preferences", async () => {
     patchNewSessionPreference("ws://gateway.example", "main", {
       folder: "/workspace/ordinary",
       worktree: true,
@@ -616,7 +616,7 @@ describe("DraftGatewayState", () => {
     });
 
     expect(gateway.readPreference("main")).toBeNull();
-    gateway.persistPreference("main", "/workspace", {
+    await gateway.persistPreference("main", "/workspace", {
       folder: "/workspace/client",
       worktree: false,
     });

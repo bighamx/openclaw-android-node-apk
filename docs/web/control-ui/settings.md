@@ -466,7 +466,7 @@ Open **Activity** from the sidebar's page picker, or visit `/activity` under the
 - **Sessions** shows recent session activity grouped by day, with search, time, and people filters. Sessions sort newest first by their latest input or completed run, using the same time as the row's age and day group. Pins do not affect this order. Each row shows the human attribution and configured agent avatar/name. Subagent sessions are excluded from the feed, search results, and people counts. Active rows offer **Inspect run** when the Gateway has recorded a run reference.
 - Each session can show a rolling recap in one to three sentences: what was done and where the work stands. Recaps use the agent's [utility model](/gateway/config-agents/models#agents-defaults-model) and are shared across clients and Gateway restarts. Initial loading uses shimmer placeholders; an existing recap shimmers while refreshing. A failed refresh keeps the last recap and identifies the refresh failure. **Retry recap** requests another attempt after the Gateway's cooldown. Read-only viewers can read cached recaps but cannot request generation. On a page with mixed permissions, view-only sessions do not block recap generation for writable sessions.
 - Sessions with a GitHub checkout show associated branch PRs and their added/removed line counts. Hover or keyboard-focus a PR to preview its details, or select it to open GitHub. Before an open PR exists, the branch shows its diff against the default branch, including uncommitted work. These are checkout/PR statistics, not cumulative session edit counts; unavailable counts stay hidden, and retained stale data carries a warning.
-- Sessions can show up to four transcript images in a small grid. Select an image to expand it in the image viewer. Previews load as rows approach the viewport, reading bounded recent transcript pages; **Search older images** continues when more history remains. Existing thumbnails remain visible during refreshes and failed retries. Changing the session or connection clears the previous gallery.
+- Sessions can show up to four transcript images in one compact horizontal row. On narrow screens, scroll the previews sideways to see the remaining images. Select an image to expand it in the image viewer. Previews load as rows approach the viewport, reading bounded recent transcript pages; **Search older images** continues when more history remains. Existing thumbnails remain visible during refreshes and failed retries. Changing the session or connection clears the previous gallery.
 - **Live activity** shows running and queued sessions above the ephemeral browser-local tool stream. The session snapshot comes from the Gateway; the tool stream uses the same `session.tool` and tool events that power Chat tool cards.
 - **Run inspector** is deep-link only and reads the Gateway's durable, immutable `audit.run.inspect` safe-only projection. The RPC contains required `decisionDisplays` and never a raw `decisions` field. Use **Inspect run** on an active session or the run ID link in Live activity, or open `/activity?view=run&run=<percent-encoded-run-id>` directly. Reloading or revisiting the link queries the Gateway again; it never reconstructs identity from Live activity.
 
@@ -506,22 +506,41 @@ Meeting transcripts are separate from agent chat-history search in **Sessions**.
 Each page contains up to 50 meetings, grouped by local day with newest first.
 Rows show participant previews, duration, an overview when available, and distinct
 **In progress** and **No speech captured** states. Search by title or session/source ID, then
-select a meeting. Existing `/meetings?selector=...` links open its saved summary. Meeting URLs are
-not searched. Open **Filters** for
+select a meeting. Existing `/meetings?selector=...` links open **Summary** by default,
+including while capture is active. Meeting URLs are not searched. Open **Filters** for
 provider, account, agent, and date controls; the disclosure opens automatically
 when those filters are active. Provider, account, and agent IDs match
 exactly. Date filters use UTC session start times, with an inclusive lower bound
 and exclusive upper bound. **Next page** continues the ordered results;
 **First page**, a filter change, or **Refresh** starts a new pagination pass.
-The reader opens **Summary** first. Select **Transcript** for timestamped speaker
-text alongside the list on desktop or in a single column on mobile. Its URL
-preserves the selected meeting and tab.
+The reader opens **Summary** for both active and completed meetings. Select
+**Transcript** to read timestamped speech. An explicitly selected tab stays selected,
+including when capture ends. A URL with a transcript search and no explicit tab
+opens **Transcript**. Timestamped speaker text appears alongside the list on desktop
+or in a single column on mobile. Its URL preserves the selected meeting and tab.
+
+While the page is visible and connected, the library and active meeting refresh
+automatically every three seconds. **Live capture** shows elapsed time; an empty
+active transcript says **Waiting for speech**. Updates show saved speech, so
+provider capture and transcription can add latency. Background reads preserve
+filter drafts, the current transcript page, and loaded history without a loading
+flash. Use **Load more** to continue past the current page. Hidden tabs pause
+automatic reads and catch up when visible again. Completed meetings refresh less
+frequently once notes are available; a meeting without notes keeps checking for
+the stored summary after capture stops.
+
+Active captures generate a summary about every five minutes when new speech has
+been saved, using the owning agent's utility model. Summary jobs do not overlap;
+quiet periods keep the existing notes. The configured primary model and then
+text heuristics provide fallback notes when needed. **Summary so far** marks
+interim notes and shows when they were generated. Capture continues during
+summary generation, and stopping the meeting saves a fresh final summary.
 
 **Search within this transcript** searches the full stored transcript in bounded
 server pages. **Load more** continues through utterances or matches; only the
 latest five loaded pages stay in the browser's reading window. **Read from
 beginning** returns to the first page. **Summary** renders the stored Markdown
-notes, including their speaker-labeled transcript, and labels model-generated or
+notes with the transcript section kept in the separate **Transcript** tab, and labels model-generated or
 heuristic provenance when available. Opening this tab does not run a summary job.
 Missing summaries and empty transcripts have distinct empty states.
 Saved summaries load independently of speech pages. If a transcript page exceeds

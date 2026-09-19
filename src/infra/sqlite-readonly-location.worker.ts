@@ -1,14 +1,17 @@
 import path from "node:path";
 import { setImmediate } from "node:timers/promises";
-import { coerceErrorMessage } from "@openclaw/normalization-core/error-coercion";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { SQLITE_READONLY_CHILD_ARG } from "./runtime-process-entrypoints.js";
-import { formatSqliteErrorCodeSuffix } from "./sqlite-error-diagnostics.js";
+import {
+  formatSqliteErrorCodeSuffix,
+  formatSqliteReadOnlyInspectionFailure,
+} from "./sqlite-error-diagnostics.js";
 import { encodeSqliteAuthTransferFrame } from "./sqlite-readonly-auth-transfer.js";
 import { releaseSnapshotTempDirectory } from "./sqlite-readonly-location-cleanup.js";
 import {
   createOnlineReadOnlyBackup,
   prepareSqliteReadOnlyLocationInProcess,
+  prepareSqliteReadOnlyLocationSyncFallbackInProcess,
   prepareSqliteReadOnlyLocationSyncInProcess,
 } from "./sqlite-readonly-location.js";
 import {
@@ -31,7 +34,11 @@ async function inspect(args: string[]): Promise<SqliteReadOnlyWorkerResult> {
   const pathname = args[1];
   const stagingRoot = args[2];
   if (
-    (mode !== "sync" && mode !== "async" && mode !== "consolidated" && mode !== "reclaim") ||
+    (mode !== "sync" &&
+      mode !== "sync-fallback" &&
+      mode !== "async" &&
+      mode !== "consolidated" &&
+      mode !== "reclaim") ||
     !pathname
   ) {
     return {
@@ -87,17 +94,19 @@ async function inspect(args: string[]): Promise<SqliteReadOnlyWorkerResult> {
     const prepared =
       mode === "sync"
         ? prepareSqliteReadOnlyLocationSyncInProcess(pathname, stagingRoot)
-        : await prepareSqliteReadOnlyLocationInProcess(pathname, stagingRoot);
+        : mode === "sync-fallback"
+          ? await prepareSqliteReadOnlyLocationSyncFallbackInProcess(pathname, stagingRoot)
+          : await prepareSqliteReadOnlyLocationInProcess(pathname, stagingRoot);
     releaseSnapshotTempDirectory(prepared.cleanupRoot ?? path.dirname(prepared.location));
     return { ok: true, location: prepared.location };
   } catch (error) {
-    const message = `${coerceErrorMessage(error)}${formatSqliteErrorCodeSuffix(error)}`;
-    return { ok: false, message };
+    return { ok: false, message: formatSqliteReadOnlyInspectionFailure(error) };
   }
 }
 
 function runSession(): void {
   let busy = false;
+  let closeRequested = false;
   const transfers = createSqliteWorkerTransferOwner();
   const sourceLeases = new Set<ReturnType<typeof acquireStateDatabaseHandleLease>>();
   let activeTransfer: { requestId: number; transferId: number } | undefined;
@@ -111,11 +120,7 @@ function runSession(): void {
   };
   const fail = (id: number, error: unknown) => {
     transfers.close();
-    send(
-      id,
-      { ok: false, message: `${coerceErrorMessage(error)}${formatSqliteErrorCodeSuffix(error)}` },
-      true,
-    );
+    send(id, { ok: false, message: formatSqliteReadOnlyInspectionFailure(error) }, true);
   };
   process.once("disconnect", () => {
     if (busy) {
@@ -124,9 +129,13 @@ function runSession(): void {
     }
   });
   process.on("message", (message: unknown) => {
-    if (message === "close" && !busy) {
-      transfers.close();
-      process.disconnect?.();
+    if (message === "close") {
+      if (busy) {
+        closeRequested = true;
+      } else {
+        transfers.close();
+        process.disconnect?.();
+      }
       return;
     }
     if (
@@ -214,7 +223,7 @@ function runSession(): void {
           { kinds: ["store", "state"] },
         );
         activeTransfer = { requestId: id, transferId: handle.id };
-        send(id, { type: "start", handle });
+        send(id, { type: "start", handle: { ...handle, cacheable: rows.cacheable } });
       })().catch((error: unknown) => fail(id, error));
       return;
     }
@@ -228,7 +237,7 @@ function runSession(): void {
       !Number.isSafeInteger(message.id) ||
       !("args" in message) ||
       !Array.isArray(message.args) ||
-      message.args[0] !== "sync" ||
+      (message.args[0] !== "sync" && message.args[0] !== "sync-fallback") ||
       !message.args.every((arg): arg is string => typeof arg === "string")
     ) {
       process.exit(1);
@@ -240,13 +249,15 @@ function runSession(): void {
         Buffer.byteLength(JSON.stringify(inspected)) > SQLITE_READONLY_WORKER_MAX_BUFFER
           ? { ok: false, message: "exceeded its output buffer" }
           : inspected;
-      if (result.ok) {
-        busy = false;
-      }
       process.send?.({ id, result }, (error) => {
         if (error || !result.ok) {
           // A failed inspection may still own a native handle and admission.
           process.exit(1);
+          return;
+        }
+        busy = false;
+        if (closeRequested) {
+          process.disconnect?.();
         }
       });
     });

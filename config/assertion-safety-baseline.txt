@@ -256,7 +256,6 @@ extensions/copilot/src/sdk-loader.ts	2
 extensions/copilot/src/tool-bridge.ts	6
 extensions/copilot/src/workspace-bootstrap.ts	1
 extensions/crabbox/src/crabbox-worker-inspect.ts	3
-extensions/crabbox/src/crabbox-worker-provider.ts	1
 extensions/cua-computer/src/commands.ts	2
 extensions/cua-computer/src/driver-artifact-verification.ts	2
 extensions/cua-computer/src/driver-artifacts.ts	1
@@ -599,7 +598,6 @@ extensions/logbook/src/config.ts	1
 extensions/logbook/src/node-host.ts	1
 extensions/logbook/src/service.ts	6
 extensions/matrix/src/actions.ts	2
-extensions/matrix/src/approval-auth.ts	1
 extensions/matrix/src/approval-handler.runtime.ts	8
 extensions/matrix/src/approval-native.ts	6
 extensions/matrix/src/approval-reactions.ts	1
@@ -1055,7 +1053,7 @@ extensions/signal/src/send.ts	1
 extensions/signal/src/shared.ts	1
 extensions/signal/src/signal-ingress.ts	2
 extensions/slack/src/accounts.ts	6
-extensions/slack/src/action-runtime.ts	7
+extensions/slack/src/action-runtime.ts	5
 extensions/slack/src/actions.ts	9
 extensions/slack/src/approval-actions.ts	1
 extensions/slack/src/approval-handler.runtime.ts	1
@@ -1380,7 +1378,7 @@ packages/acp-core/src/runtime/session-identity.ts	2
 packages/acp-core/src/types.ts	2
 packages/agent-core/src/agent-loop.ts	3
 packages/agent-core/src/harness/compaction/branch-summarization.ts	1
-packages/agent-core/src/harness/compaction/compaction.ts	2
+packages/agent-core/src/harness/compaction/compaction.ts	1
 packages/agent-core/src/harness/session/tool-result-pairing.ts	14
 packages/agent-core/src/harness/session/uuid.ts	1
 packages/agent-core/src/harness/utils/truncate.ts	1
@@ -1659,11 +1657,11 @@ src/agents/embedded-agent-runner/compaction-diagnostics.ts	5
 src/agents/embedded-agent-runner/compaction-hooks.ts	1
 src/agents/embedded-agent-runner/compaction-session-agent.ts	7
 src/agents/embedded-agent-runner/context-engine-maintenance.ts	3
-src/agents/embedded-agent-runner/delivery-evidence.ts	11
+src/agents/embedded-agent-runner/delivery-evidence.ts	1
 src/agents/embedded-agent-runner/direct-compaction-preparation.ts	1
 src/agents/embedded-agent-runner/empty-assistant-turn.ts	1
 src/agents/embedded-agent-runner/extensions.ts	1
-src/agents/embedded-agent-runner/extra-params.ts	9
+src/agents/embedded-agent-runner/extra-params.ts	8
 src/agents/embedded-agent-runner/google-prompt-cache.ts	5
 src/agents/embedded-agent-runner/history.ts	2
 src/agents/embedded-agent-runner/message-visibility.ts	13
@@ -1701,8 +1699,8 @@ src/agents/embedded-agent-runner/run/attempt-setup.ts	1
 src/agents/embedded-agent-runner/run/attempt-stop-reason-recovery.ts	3
 src/agents/embedded-agent-runner/run/attempt-stream-prepare.ts	3
 src/agents/embedded-agent-runner/run/attempt-stream.ts	6
-src/agents/embedded-agent-runner/run/attempt-tool-call-replay-sanitization.ts	17
-src/agents/embedded-agent-runner/run/attempt-tool-call-stream-normalization.ts	4
+src/agents/embedded-agent-runner/run/attempt-tool-call-replay-sanitization.ts	12
+src/agents/embedded-agent-runner/run/attempt-tool-call-stream-normalization.ts	2
 src/agents/embedded-agent-runner/run/attempt-tool-call-text-promotion.ts	3
 src/agents/embedded-agent-runner/run/attempt-tool-prepare.ts	3
 src/agents/embedded-agent-runner/run/attempt-transcript-lifecycle.ts	1
@@ -1710,7 +1708,7 @@ src/agents/embedded-agent-runner/run/attempt-user-transcript-context-registry.ts
 src/agents/embedded-agent-runner/run/attempt.model-diagnostic-events.ts	5
 src/agents/embedded-agent-runner/run/attempt.model-diagnostic-lifecycle.ts	3
 src/agents/embedded-agent-runner/run/attempt.model-diagnostic-observation.ts	1
-src/agents/embedded-agent-runner/run/attempt.tool-call-argument-repair.ts	11
+src/agents/embedded-agent-runner/run/attempt.tool-call-argument-repair.ts	2
 src/agents/embedded-agent-runner/run/auth-profile-success.ts	1
 src/agents/embedded-agent-runner/run/context-recovery-state.ts	2
 src/agents/embedded-agent-runner/run/helpers.ts	3
@@ -1747,7 +1745,7 @@ src/agents/embedded-agent-subscribe.handlers.messages.lifecycle.ts	2
 src/agents/embedded-agent-subscribe.handlers.messages.stream.ts	6
 src/agents/embedded-agent-subscribe.handlers.messages.update.ts	5
 src/agents/embedded-agent-subscribe.handlers.tools.completion.ts	1
-src/agents/embedded-agent-subscribe.handlers.tools.results.ts	14
+src/agents/embedded-agent-subscribe.handlers.tools.results.ts	2
 src/agents/embedded-agent-subscribe.handlers.tools.start.ts	7
 src/agents/embedded-agent-subscribe.tool-text-diagnostics.ts	6
 src/agents/embedded-agent-tool-media.ts	10
@@ -1756,7 +1754,7 @@ src/agents/embedded-agent-utils.ts	3
 src/agents/exec-auto-reviewer.ts	1
 src/agents/exec-defaults.ts	2
 src/agents/execution-auth-binding.ts	1
-src/agents/failover-error.ts	12
+src/agents/failover-error.ts	3
 src/agents/failover/retry-evidence.ts	1
 src/agents/failover/signal-details.ts	1
 src/agents/fallback-skip-cache.ts	1
@@ -1797,7 +1795,7 @@ src/agents/media-generation-task-status-shared.ts	1
 src/agents/memory-write-provenance.ts	1
 src/agents/minimax-vlm.ts	1
 src/agents/model-auth-label.ts	1
-src/agents/model-auth-model.ts	2
+src/agents/model-auth-model.ts	1
 src/agents/model-fallback-attempt.ts	1
 src/agents/model-fallback-runner.ts	2
 src/agents/model-provider-auth.ts	1
@@ -1857,7 +1855,7 @@ src/agents/sessions/agent-session-tree.ts	2
 src/agents/sessions/agent-session-utils.ts	1
 src/agents/sessions/auth-storage.ts	4
 src/agents/sessions/extensions/loader.ts	7
-src/agents/sessions/extensions/runner.ts	17
+src/agents/sessions/extensions/runner.ts	15
 src/agents/sessions/extensions/types.ts	1
 src/agents/sessions/keybindings.ts	2
 src/agents/sessions/model-registry.ts	12
@@ -1983,7 +1981,7 @@ src/agents/utils/frontmatter.ts	2
 src/agents/utils/tools-manager.ts	2
 src/agents/workspace-legacy-state.ts	2
 src/agents/workspace-state-store.ts	1
-src/agents/workspace.ts	6
+src/agents/workspace.ts	5
 src/agents/worktrees/git.ts	2
 src/agents/worktrees/registry.ts	11
 src/agents/worktrees/run-lease.ts	1
@@ -2344,7 +2342,6 @@ src/commands/doctor/cron/legacy-repair.ts	5
 src/commands/doctor/cron/legacy-store-migration.ts	12
 src/commands/doctor/cron/store-migration.ts	9
 src/commands/doctor/cron/warnings.ts	1
-src/commands/doctor/shared/active-tool-schema-warnings.ts	1
 src/commands/doctor/shared/allowfrom-fallback-migration.ts	1
 src/commands/doctor/shared/allowlist-policy-repair.ts	3
 src/commands/doctor/shared/channel-doctor.ts	4
@@ -2579,8 +2576,8 @@ src/fleet/service-support.runtime.ts	1
 src/flows/channel-setup.prompts.ts	2
 src/flows/channel-setup.status.ts	2
 src/flows/channel-setup.ts	7
-src/flows/doctor-core-checks.runtime.ts	5
-src/flows/doctor-core-checks.ts	4
+src/flows/doctor-core-checks.runtime.ts	3
+src/flows/doctor-core-checks.ts	3
 src/flows/doctor-health-contributions-final.ts	1
 src/flows/doctor-health-contributions.ts	1
 src/flows/doctor-removed-workspaces-state-check.ts	2
@@ -2650,7 +2647,7 @@ src/gateway/server-chat.ts	5
 src/gateway/server-close.ts	1
 src/gateway/server-core-runtime.ts	1
 src/gateway/server-cron-reconciled.ts	1
-src/gateway/server-cron.ts	5
+src/gateway/server-cron.ts	3
 src/gateway/server-http-upgrades.ts	2
 src/gateway/server-in-process-dispatch.ts	3
 src/gateway/server-instance-runtime.ts	3
@@ -3026,7 +3023,7 @@ src/logging/log-file-shared.ts	1
 src/logging/logger.ts	11
 src/logging/parse-log-line.ts	1
 src/logging/redact-internal-state.ts	1
-src/logging/redact.ts	3
+src/logging/redact.ts	2
 src/logging/secret-redaction-registry.ts	1
 src/logging/state.ts	6
 src/logging/subsystem.ts	4
@@ -3227,7 +3224,7 @@ src/plugins/managed-npm-retention.ts	4
 src/plugins/manifest-capability-normalizers.ts	3
 src/plugins/manifest-install-owner.ts	1
 src/plugins/manifest-registry.ts	2
-src/plugins/manifest-setup-normalizers.ts	5
+src/plugins/manifest-setup-normalizers.ts	4
 src/plugins/manifest.ts	2
 src/plugins/marketplace.ts	6
 src/plugins/memory-runtime.ts	1
@@ -3355,7 +3352,6 @@ src/sessions/user-turn-transcript-runtime-context.ts	2
 src/sessions/user-turn-transcript.media-normalize.ts	2
 src/sessions/user-turn-transcript.ts	5
 src/shared/account-enabled.ts	1
-src/shared/assistant-error-format.ts	3
 src/shared/bounded-serial-queue.ts	1
 src/shared/chat-content.ts	2
 src/shared/chat-message-content.ts	7
@@ -3545,7 +3541,6 @@ ui/src/app/native-notifications.ts	2
 ui/src/app/native-route-memory.ts	1
 ui/src/app/native-web-chrome.ts	2
 ui/src/app/overlays.ts	1
-ui/src/app/question-prompt.ts	2
 ui/src/app/server-prefs-state.ts	14
 ui/src/app/server-prefs.ts	10
 ui/src/app/settings.ts	9
@@ -3671,7 +3666,6 @@ ui/src/pages/channels/view.detail.ts	1
 ui/src/pages/channels/view.nostr-profile-form.ts	4
 ui/src/pages/channels/view.nostr.ts	5
 ui/src/pages/channels/view.ts	9
-ui/src/pages/chat/attachment-api.ts	1
 ui/src/pages/chat/chat-avatar.ts	4
 ui/src/pages/chat/chat-command-executor.ts	1
 ui/src/pages/chat/chat-composer-capability-host.ts	4

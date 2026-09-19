@@ -90,6 +90,25 @@ export async function executeDispatch(state: PrepareDispatchExecutionReadyState)
     didDeliverVisiblePartialReply ||= delivered;
     return delivered;
   };
+  const forwardToolProgress = async (forward: () => unknown) => {
+    if (isDispatchOperationAborted()) {
+      return;
+    }
+    markProgress();
+    await waitForPendingDirectBlockReplyDelivery(getDispatchAbortOperation()?.abortSignal);
+    if (isDispatchOperationAborted()) {
+      return;
+    }
+    markInboundDedupeReplayUnsafe();
+    if (
+      shouldForwardProgressCallback({
+        forwardWhenSourceDeliverySuppressed: true,
+        requiresToolSummaryVisibility: true,
+      })
+    ) {
+      await forward();
+    }
+  };
   const replyResult = await runWithDispatchLifecycleAdmission(
     async () =>
       await runWithDispatchAbortSignal(
@@ -105,6 +124,7 @@ export async function executeDispatch(state: PrepareDispatchExecutionReadyState)
                 sessionPromptSourceReplyDeliveryMode: state.sessionStableSourceReplyDeliveryMode,
                 ...state.sourceReplyDeliveryRuntimeOptions,
                 ...({
+                  mediaNormalizationOwner: state.isInternalWebchatTurn ? "gateway" : undefined,
                   onDeliberateSilentTerminalReply: () => {
                     deliberateSilentTerminalReply = true;
                   },
@@ -407,48 +427,10 @@ export async function executeDispatch(state: PrepareDispatchExecutionReadyState)
                     steps,
                   });
                 },
-                onApprovalEvent: async (payload) => {
-                  if (isDispatchOperationAborted()) {
-                    return;
-                  }
-                  markProgress();
-                  await waitForPendingDirectBlockReplyDelivery(
-                    getDispatchAbortOperation()?.abortSignal,
-                  );
-                  if (isDispatchOperationAborted()) {
-                    return;
-                  }
-                  markInboundDedupeReplayUnsafe();
-                  if (
-                    shouldForwardProgressCallback({
-                      forwardWhenSourceDeliverySuppressed: true,
-                      requiresToolSummaryVisibility: true,
-                    })
-                  ) {
-                    await state.onApprovalEventFromReplyOptions?.(payload);
-                  }
-                },
-                onPatchSummary: async (payload) => {
-                  if (isDispatchOperationAborted()) {
-                    return;
-                  }
-                  markProgress();
-                  await waitForPendingDirectBlockReplyDelivery(
-                    getDispatchAbortOperation()?.abortSignal,
-                  );
-                  if (isDispatchOperationAborted()) {
-                    return;
-                  }
-                  markInboundDedupeReplayUnsafe();
-                  if (
-                    shouldForwardProgressCallback({
-                      forwardWhenSourceDeliverySuppressed: true,
-                      requiresToolSummaryVisibility: true,
-                    })
-                  ) {
-                    await state.onPatchSummaryFromReplyOptions?.(payload);
-                  }
-                },
+                onApprovalEvent: (payload) =>
+                  forwardToolProgress(() => state.onApprovalEventFromReplyOptions?.(payload)),
+                onPatchSummary: (payload) =>
+                  forwardToolProgress(() => state.onPatchSummaryFromReplyOptions?.(payload)),
                 onBlockReply,
               },
               state.preparedReplyDispatchRuntime && !params.configOverride

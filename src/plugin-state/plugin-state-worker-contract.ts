@@ -18,7 +18,7 @@ import type { PluginStateWorkerFailure } from "./plugin-state-worker-errors.js";
 
 type Namespace = { pluginId: string; namespace: string };
 type Key = Namespace & { key: string };
-type Register = Omit<PluginStateRegisterEntryParams, "createdAtMs"> & { maxPluginEntries: number };
+type Register = Omit<PluginStateRegisterEntryParams, "createdAtMs">;
 
 export type PluginStateWorkerOperations = {
   "pluginState.appendJournal": {

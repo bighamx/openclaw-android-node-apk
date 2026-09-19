@@ -261,6 +261,7 @@ class MessageImageResourceDirective extends AsyncDirective {
             @error=${(event: Event) => this.onSettled(event, img.url)}
             src=${previewUrl}
             alt=${title}
+            referrerpolicy="no-referrer"
             class="chat-message-image"
             width=${img.width ?? nothing}
             height=${img.height ?? nothing}

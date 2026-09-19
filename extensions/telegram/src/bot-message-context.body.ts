@@ -1,4 +1,3 @@
-// Telegram plugin module implements bot message context.body behavior.
 import {
   buildMentionRegexes,
   classifyChannelInboundEvent,

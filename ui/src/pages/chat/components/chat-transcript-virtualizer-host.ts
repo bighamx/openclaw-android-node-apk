@@ -1,7 +1,7 @@
 // Per-session virtualizer host: scroll anchoring, measurement, and row sync
 // for one transcript. Owned and swapped by ChatTranscriptController.
 import { VirtualizerController } from "@tanstack/lit-virtual";
-import { elementScroll, observeElementRect } from "@tanstack/virtual-core";
+import { observeElementRect } from "@tanstack/virtual-core";
 import {
   nothing,
   type ReactiveController,
@@ -29,6 +29,7 @@ import {
   maxTranscriptScrollOffset,
   measureConnectedTranscriptRows,
   measureTranscriptRow,
+  reconcileInitialTranscriptOffset,
   resolveTranscriptScrollMargin,
   PositionRailGutterController,
   syncScrollMargin,
@@ -41,7 +42,9 @@ import {
 import { renderChatTranscriptLayout, type TranscriptRow } from "./chat-transcript-layout.ts";
 import {
   createTranscriptOffsetState,
+  isTranscriptMaintenanceScroll,
   observeTranscriptOffset,
+  scrollTranscriptOffset,
 } from "./chat-transcript-offset-observer.ts";
 import { activeTranscriptMessageId } from "./chat-transcript-position.ts";
 import { TranscriptPrependAnchor } from "./chat-transcript-prepend-anchor.ts";
@@ -240,12 +243,8 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
       initialOffset: initialOffset ?? Number.MAX_SAFE_INTEGER,
       anchorTo: "end",
       followOnAppend: false,
-      scrollToFn: (offset, options, instance) => {
-        const before = this.scrollElement?.scrollTop ?? 0;
-        elementScroll(offset, options, instance);
-        // The observer owns provenance for every write, including absolute compensation retries.
-        this.offsetState.recordProgrammaticScroll?.(before, this.scrollElement?.scrollTop ?? 0);
-      },
+      scrollToFn: (offset, options, instance) =>
+        scrollTranscriptOffset(this.offsetState, offset, options, instance),
       observeElementRect: (instance, callback) =>
         observeElementRect(instance, (rect) => {
           // Hidden tabs and detached faces are not viewport resizes. Keep the
@@ -285,7 +284,14 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
             isProgrammaticScroll: () => this.isProgrammaticScroll,
             cancelScroll: () => this.cancelScroll(),
             requestUpdate: () => this.host.requestUpdate(),
-            onReaderScroll: (towardEnd) => this.callbacks.onReaderScroll?.(towardEnd),
+            onReaderScroll: (towardEnd) => {
+              this.callbacks.onReaderScroll?.(towardEnd);
+              // Downward input at the physical end may not emit a scroll event.
+              // Remember that edge before late content measurement can move it.
+              if (towardEnd && this.canAutoFollow()) {
+                this.endAnchor.capture(this.scrollElement);
+              }
+            },
           },
           instance,
           callback,
@@ -566,16 +572,17 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
     ) as TemplateResult;
   }
 
+  get isMaintenanceScroll(): boolean {
+    return isTranscriptMaintenanceScroll(this.offsetState, this.scrollElement);
+  }
+
   get isProgrammaticScroll(): boolean {
     const element = this.scrollElement;
     // Lit's scroll listener can precede TanStack's offset observer. Read the
     // committed viewport so the final event publishes the settled end policy.
-    const maxOffset = maxTranscriptScrollOffset(element) ?? 0;
-    const distanceFromEnd = maxOffset - (element?.scrollTop ?? 0);
+    const distanceFromEnd = (maxTranscriptScrollOffset(element) ?? 0) - (element?.scrollTop ?? 0);
     return (
-      // A shrinking viewport range can clamp the write before its native read-back arrives.
-      (this.offsetState.maintenanceScrollOffset !== null &&
-        Math.min(this.offsetState.maintenanceScrollOffset, maxOffset) === element?.scrollTop) ||
+      this.isMaintenanceScroll ||
       this.offsetState.pendingScrollOffset !== null ||
       (this.offsetState.scrollCommand !== null &&
         distanceFromEnd > CHAT_TRANSCRIPT_END_THRESHOLD_PX)
@@ -771,24 +778,13 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
     if (!this.implicitEndAnchorPending || !this.connected || !this.contentReady) {
       return;
     }
-    const maxOffset = maxTranscriptScrollOffset(this.scrollElement);
-    const virtualizer = this.virtualizerController.getVirtualizer();
-    const scrollOffset = virtualizer.scrollOffset;
-    if (maxOffset === null || scrollOffset === null) {
-      return;
+    const result = reconcileInitialTranscriptOffset(
+      this.scrollElement,
+      this.virtualizerController.getVirtualizer(),
+    );
+    this.implicitEndAnchorPending = result === "pending";
+    if (result === "corrected") {
+      this.host.requestUpdate();
     }
-    if (scrollOffset >= 0 && scrollOffset <= maxOffset) {
-      this.implicitEndAnchorPending = false;
-      return;
-    }
-    if (maxOffset !== 0) {
-      return;
-    }
-    this.implicitEndAnchorPending = false;
-    // The DOM clamps an underfilled end anchor to zero without a scroll event,
-    // so TanStack cannot reconcile its maximum-integer initial offset itself.
-    virtualizer.scrollOffset = 0;
-    virtualizer.scrollToOffset(0);
-    this.host.requestUpdate();
   }
 }
