@@ -27,7 +27,7 @@ import {
   withPendingTaskRegistryEvents,
 } from "./task-registry-listener-state.js";
 import { createTaskRegistryProjectionPreparation } from "./task-registry-projection-prepare.js";
-import { listTasksFromIndex, normalizeTaskRecord } from "./task-registry-records.js";
+import { listTasksFromIndex, normalizeTaskTimestamps } from "./task-registry-records.js";
 import { createAsyncRegistryRestore, createSyncRegistryReader } from "./task-registry-restore.js";
 import type { TaskRegistryRestoreResult } from "./task-registry-restore.worker.js";
 import {
@@ -278,7 +278,7 @@ function restoreTaskRegistryOnce() {
         commit() {},
         rollback() {
           if (taskRegistryRestoreState === installed) {
-            // An enclosing rollback also undoes the identifier repair performed by restore.
+            // An enclosing rollback can undo orphan settlement and snapshot inputs.
             taskRegistryRestoreState = { status: "uninitialized", admission: reader.admission };
             projection.dirty = true;
             bumpTaskRegistryRevision();
@@ -499,7 +499,7 @@ function installSnapshot(
       continue;
     }
     const current = tasks.get(taskId);
-    const next = normalizeTaskRecord(record);
+    const next = normalizeTaskTimestamps(record);
     if (!isDeepStrictEqual(current, next)) {
       tasks.set(taskId, next);
       if (recordWrites) {
@@ -665,10 +665,9 @@ export async function runTaskRegistryWorkerMutation<T>(
   mutate: (beginRecovery: () => void) => Promise<T>,
   readCurrent: () => Promise<TaskRegistryStoreSnapshot>,
 ): Promise<T> {
-  const { scope, admission } = context;
+  const { scope, admission, readEventTarget } = context;
   const store = getTaskRegistryStore();
   admission.assertCurrent();
-  const readEventTarget = context.readEventTarget;
   const pending = createPendingTaskRegistryMutation(
     scope,
     readEventTarget
@@ -728,11 +727,15 @@ export async function runTaskRegistryWorkerMutation<T>(
         dirtyScopes.delete(scope);
       }
     } catch (error) {
-      context.onPublicationError?.(error);
-      taskRegistryLog.warn("Failed to reconcile managed child task after worker operation", {
-        flowId: scope.flowId,
-        error,
-      });
+      // A newer committed row owns publication now. Keep the dirty scope for
+      // canonical readback without rejecting readers of the settled mutation.
+      if (!recovery?.isSuperseded(error)) {
+        context.onPublicationError?.(error);
+        taskRegistryLog.warn("Failed to reconcile managed child task after worker operation", {
+          flowId: scope.flowId,
+          error,
+        });
+      }
     } finally {
       pendingMutations.delete(pending);
     }

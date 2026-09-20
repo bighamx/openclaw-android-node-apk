@@ -4263,6 +4263,24 @@ wa-dropdown.sidebar-identity-menu::part(menu) {
   padding: 3px 4px;
 }
 
+.sidebar-identity-menu__outbox {
+  box-sizing: border-box;
+  width: min(260px, calc(100dvw - 44px));
+  padding: 4px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.sidebar-identity-menu__outbox strong {
+  color: var(--text);
+}
+
+.sidebar-identity-menu__outbox p {
+  margin: 4px 0 0;
+}
+
 .sidebar-identity-menu__avatar {
   display: inline-grid;
   width: 20px;

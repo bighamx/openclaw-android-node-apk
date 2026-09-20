@@ -253,7 +253,7 @@ backup behavior, and login-proxy configuration, see
 
 Hover a cloud session in the sidebar to see its provider and profile. When known, a compact line below them shows the operating system, machine class, vCPU count, and memory in GB. The placement badge tooltip includes the same machine details; unavailable fields are omitted.
 
-A selected session running on a worker shows a quiet **Runs on Cloud** chip in the chat header. Connections with `operator.write` can choose **Move session…** to continue on the Gateway or an eligible paired device, and can use **Stop cloud worker…** through the write-scoped `sessions.reclaim` lifecycle. Moving to a configured cloud profile requires `operator.admin`. Cloud rows are filtered against all execution modes advertised by each profile: the same bundled Crabbox profile is selectable for OpenClaw `worker-turn` and Codex `remote-exec`, while a genuinely single-mode profile stays disabled for the other runtime. Profiles with multiple machine classes show a machine picker; choosing the default omits an override, while choosing a different class on the current profile resizes the session. The confirmation explains that an active turn is interrupted and never replayed; OpenClaw reconciles the workspace before activating the destination. While the durable operation is in progress, the chip shows **Moving to…**. If recovery is blocked, the chip exposes the bounded error after reconnect so the action never fails silently.
+A selected session running on a worker shows a quiet **Runs on Cloud** chip in the chat header. Connections with `operator.write` can choose **Move session…** to continue on the Gateway or an eligible paired device, and can use **Stop cloud worker…** through the write-scoped `sessions.reclaim` lifecycle. Moving to a configured cloud profile requires `operator.admin`. Cloud rows are filtered against all execution modes advertised by each profile: the same bundled Crabbox profile is selectable for OpenClaw `worker-turn` and Codex `remote-exec`, while a genuinely single-mode profile stays disabled for the other runtime. Profiles with multiple machine classes show a machine picker. Leaving the Move session picker untouched omits a size override; explicitly selecting a class, including the displayed default, sends that class. Choosing a different class on the current profile resizes the session. The confirmation explains that an active turn is interrupted and never replayed; OpenClaw reconciles the workspace before activating the destination. While the durable operation is in progress, the chip shows **Moving to…**. If recovery is blocked, the chip exposes the bounded error after reconnect so the action never fails silently.
 
 You can send a message while an existing worker session is provisioning or preparing its workspace. The accepted message shows **Received · waiting for worker setup** and starts automatically once that worker is ready. Stop, Move, and Restart keep their own admission controls; cancelled or interrupted input is not silently started on a different destination. The unsent draft in the New Session flow remains separate from accepted input.
 
@@ -310,6 +310,11 @@ single-line and shortened to 50 characters or fewer, or cleared. Between 51 and
 edit. Counts exclude leading and trailing whitespace. Session-creation errors and
 recovery actions remain visible in either mode.
 
+Pasted images appear as small, removable thumbnails below the text. Pasting or
+removing them leaves the input, **New session** action, and settings control in
+place; the palette grows downward. Images can start a session on their own or
+accompany text. There is no attachment picker in the palette.
+
 - **Enter** opens or runs the selected result. With no result, Enter does not send.
 - **Shift+Enter** adds a line. The field grows downward to three lines, then scrolls
   without moving the palette or its top-right controls.
@@ -327,7 +332,7 @@ the checkbox restores your usual choices immediately and leaves the prompt
 intact. One-off choices are not remembered for the next palette session.
 
 Accepted creation closes the palette and offers **Open session** without changing
-the foreground view or its draft. A failed submission retains the prompt and
+the foreground view or its draft. A failed submission retains the prompt, images, and
 choices with an error. These settings do not affect sessions opened from search,
 and the existing conversation composer keeps its own send and steer/queue
 shortcuts. Long prompts remain intact for session creation and are never sent as
@@ -402,7 +407,7 @@ For device and cloud sessions, the submitted prompt also starts background namin
 
 For a remote target, the Control UI creates the repository or managed-worktree session with an empty initial message and no `execNode`, dispatches it by exact `deviceId`, `autoDevice: true`, or `profileId` (plus an optional cloud machine class), waits for active placement, and then sends the first message and attachments with the same idempotency key used by recovery. Explicit and automatic device dispatch require `operator.write`; cloud profile dispatch requires `operator.admin`. The composer footer chooses the new session's model and reasoning level.
 
-Model and **Effort** are separate adjacent composer controls in chat and New session, on desktop and mobile. The model picker never contains Effort or Fast-mode controls. Long model labels ellipsize to leave room for the other controls; the full name remains in the picker, accessible label, and tooltip. Mobile Effort uses a gauge whose needle reflects the current level, with a lightning badge when Fast mode is active. In chat, Fast mode stays in the Effort menu, or appears as the adjacent control when reasoning is unavailable. Models with neither available control omit it.
+Model and **Effort** are separate adjacent composer controls in chat and New session, on desktop and mobile. The model picker never contains Effort or Fast-mode controls. Long model labels ellipsize to leave room for the other controls; the full name remains in the picker, accessible label, and tooltip. Narrow composers, including split panes in wider windows, use compact controls so each picker stays independently clickable. Effort uses a gauge in these layouts whose needle reflects the current level, with a lightning badge when Fast mode is active. In chat, Fast mode stays in the Effort menu, or appears as the adjacent control when reasoning is unavailable. Models with neither available control omit it.
 
 Search the model picker by model name or provider. Your search stays applied as the model catalog refreshes. Press **Escape** to clear a nonempty search while keeping the picker open; press it again to close the picker and return focus to its trigger.
 
@@ -420,7 +425,28 @@ When an interrupted remote-placement draft needs deletion, cleanup reclaims the 
 
 Unsent text and staged attachments can be recovered only in the same browser profile and Gateway credential scope; they are never stored on the Gateway or synced across devices. The browser keeps the 20 most recently edited draft scopes per Gateway credential scope for up to seven days, with at most 25 MiB of attachment data per draft, but it can evict browser storage sooner. A successful send or New Session creation, explicit attachment removal, or confirmed session deletion retires the corresponding browser draft. If cleanup fails after deletion, clear site data for the Control UI origin to remove it. Clearing site data also removes every other browser draft. If a draft's attachments exceed the cap, the current tab keeps them and shows the existing storage warning, but only the text is restart-recoverable. OpenClaw **Incognito** drafts are never durable. Turning Incognito off resumes browser autosave for the current text and attachments, without requiring another edit. Switching New Session destinations and returning with Back keeps unsent Incognito text and attachments in the current tab, but reloading or closing the tab discards them. In a private browser window, IndexedDB availability and lifetime are controlled by the browser and stored data is normally cleared when the private session ends. The **Incognito** toggle in the new-session page's top-right control rail retires that browser draft and creates a web-only thread whose session entry, transcript, and compaction state stay in memory until the Gateway restarts; OpenClaw also skips its automatic memory flush. The agent keeps its normal tools, so an explicit save request or tool-driven file write can still persist data. The model provider still processes messages, and content-free audit metadata is still recorded. Remote-placement starts persist their model and reasoning choices before dispatching the session to its worker.
 
+<a id="register-an-existing-repository" />
+
 **Projects.** The Place picker lists configured agent workspaces and repositories recorded with `projects.register`. Read-only connections receive project names and IDs; checkout paths and origin URLs are included only at `operator.write`. An admin can browse to a Git checkout and choose **Register as project**; write-only operators see a hint directing them to that flow. Choosing a project sends its ID through `sessions.create`, so it can run directly or supply the source for optional Worktree isolation without submitting a raw path. If an agent workspace was moved or removed, update that agent's configured workspace path. If a recorded checkout was moved or removed, re-register it before starting another session there.
+
+You can also register an existing checkout through the
+[Gateway CLI](/cli/gateway/query#gateway-call-%3Cmethod%3E). Registration requires
+`operator.admin`; listing requires `operator.read`.
+
+```bash
+openclaw gateway call projects.register \
+  --params '{"path":"/srv/projects/example","name":"example"}' --json
+openclaw gateway call projects.list --json
+```
+
+Use an absolute path on the machine running the Gateway, even when the CLI runs
+on another machine. The Gateway service account must be able to access the Git
+checkout, and its `HEAD` must resolve to a commit. Registration records the
+existing checkout without cloning it. `name` is optional and defaults to the
+checkout directory's name.
+
+Registering the same resolved repository root again returns its existing project ID and
+display name. Passing a different `name` does not rename an existing project.
 
 **Projects from GitHub.** Search the same picker or paste a GitHub HTTPS or `git@github.com` repository URL. For a remote destination, creation records that source and the runner fetches it during dispatch; no Gateway project clone is required. For Gateway execution, the picker clones into the Gateway-managed projects area. Recent repository sources retain their URL without inventing a local path. Public repository search and cloning work anonymously. Private remote checkout uses the effective shared `tools.github` identity; the discovery credential below only grants picker access. For affiliated and private repositories, prefer the explicit `gateway.controlUi.github.token` SecretRef so this service access has a clear runtime owner. When it is omitted, the Gateway still uses its shipped `GH_TOKEN` then `GITHUB_TOKEN` fallback from the shared process environment. When it is explicit, its exact environment or store name is excluded from agent execution without clearing unrelated native GitHub CLI variables. Search requires `operator.read`, cloning requires `operator.write`, and deleting a Gateway-managed cloned checkout requires `operator.admin`. Clone deletion refuses while a live session or managed worktree still references the checkout. SecretRef ownership is not an OS-user security boundary; use a sandbox, dedicated host, or dedicated OS user when same-account processes are not trusted.
 

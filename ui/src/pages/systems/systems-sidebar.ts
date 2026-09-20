@@ -148,7 +148,7 @@ class SystemsSidebar extends OpenClawLightDomElement {
         type="button"
         data-status=${row.environment.status}
         aria-pressed=${row.environment.id === controller.selectedId}
-        title=${platform ? `${status} · ${platform}` : status}
+        aria-description=${platform ? `${status} · ${platform}` : status}
         @click=${() => controller.select(row.environment.id)}
       >
         <i class="systems-machine__dot" aria-hidden="true"></i>
@@ -158,7 +158,7 @@ class SystemsSidebar extends OpenClawLightDomElement {
         >
         ${
           row.environment.desktop
-            ? html`<span class="systems-machine__desktop" title=${t("systems.desktop")}
+            ? html`<span class="systems-machine__desktop"
                 >${icons.monitor}<span class="sr-only">${t("systems.desktop")}</span></span
               >`
             : nothing
