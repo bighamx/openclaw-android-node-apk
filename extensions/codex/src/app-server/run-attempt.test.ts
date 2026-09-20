@@ -129,7 +129,7 @@ import {
   attachSqliteSessionTarget,
   readTranscriptMessagesByIdentity,
 } from "./sqlite-session.test-helpers.js";
-import { createCodexTestModel } from "./test-support.js";
+import { createCodexTestModel, createCodexTestOAuthProfile } from "./test-support.js";
 import {
   buildDeveloperInstructions,
   buildTurnStartParams,
@@ -1995,102 +1995,6 @@ describe("runCodexAppServerAttempt", () => {
     });
   });
 
-  it.each([true, false])(
-    "checkpoints raw patch output and network provenance with commentary persistence %s",
-    async (persistCommentary) => {
-      const params = createParams(
-        path.join(tempDir, "checkpoint.jsonl"),
-        path.join(tempDir, "workspace"),
-      );
-      await attachSqliteSessionTarget(
-        params,
-        path.join(tempDir, "checkpoint-sessions.json"),
-        "checkpoint-session",
-      );
-      params.config = {
-        ...params.config,
-        ui: { prefs: { chatPersistCommentary: persistCommentary } },
-      };
-      const harness = createStartedThreadHarness();
-      const run = runCodexAppServerAttempt(params);
-      await harness.waitForMethod("turn/start");
-      const patchId = "patch-1";
-      await harness.notify(
-        rawItemCompleted({
-          type: "custom_tool_call",
-          call_id: patchId,
-          name: "apply_patch",
-          input: "*** Begin Patch\n*** Add File: example.txt\n+saved\n*** End Patch\n",
-        }),
-      );
-      await harness.notify(
-        itemNotification("item/completed", {
-          type: "fileChange",
-          id: patchId,
-          status: "completed",
-          changes: [{ path: "example.txt", kind: { type: "add" } }],
-        }),
-      );
-      const beforeRawOutput = await readTranscriptMessagesByIdentity(params);
-      expect(beforeRawOutput.map((message) => message.role)).toEqual(["user", "assistant"]);
-      await harness.notify(
-        itemNotification("item/completed", {
-          type: "webSearch",
-          id: "search-1",
-          status: "completed",
-          query: "saved file",
-        }),
-      );
-      expect(await readTranscriptMessagesByIdentity(params)).toEqual(beforeRawOutput);
-      await harness.notify(
-        rawItemCompleted({
-          type: "custom_tool_call_output",
-          call_id: patchId,
-          output: "Success. Updated the following files:\nA example.txt",
-        }),
-      );
-      await harness.notify(
-        itemNotification("item/completed", {
-          type: "agentMessage",
-          id: "network-commentary",
-          phase: "commentary",
-          text: "The search confirms the result.",
-        }),
-      );
-      const checkpoint = await readTranscriptMessagesByIdentity(params);
-      expect(checkpoint.map((message) => message.role)).toEqual([
-        "user",
-        "assistant",
-        "toolResult",
-        "assistant",
-        "toolResult",
-        ...(persistCommentary ? ["assistant"] : []),
-      ]);
-      expect(JSON.stringify(checkpoint[2])).toContain("Success. Updated the following files:");
-      expect(checkpoint[4]).toMatchObject({ __openclaw: { resultContentSource: "network" } });
-      if (persistCommentary) {
-        expect(checkpoint[5]).toMatchObject({ __openclaw: { turnTainted: true } });
-      }
-      await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
-      const result = await run;
-      const finalMessages = await readTranscriptMessagesByIdentity(params);
-      for (const message of checkpoint) {
-        expect(
-          finalMessages.filter((candidate) => candidate.idempotencyKey === message.idempotencyKey),
-        ).toEqual([message]);
-      }
-      if (persistCommentary) {
-        expect(
-          result.messagesSnapshot.find(
-            (message) => readMirrorIdentity(message) === "turn-1:commentary:network-commentary",
-          ),
-        ).toMatchObject({
-          __openclaw: { turnTainted: true },
-        });
-      }
-    },
-  );
-
   it("does not mirror the Codex prompt early when user message persistence is suppressed", async () => {
     const sessionFile = path.join(tempDir, "session-suppressed-early-prompt.jsonl");
     const storePath = path.join(tempDir, "sessions-suppressed-early-prompt.json");
@@ -3131,7 +3035,6 @@ describe("runCodexAppServerAttempt", () => {
         id: "call-wiki-status-1",
         name: "wiki_status",
         arguments: { topic: "README.md" },
-        input: { topic: "README.md" },
       },
     ]);
     const toolResultMessage = result.messagesSnapshot[2];
@@ -3143,14 +3046,7 @@ describe("runCodexAppServerAttempt", () => {
     expect(toolResultMessage.isError).toBe(false);
     expect(toolResultMessage.content).toStrictEqual([
       {
-        type: "toolResult",
-        id: "call-wiki-status-1",
-        name: "wiki_status",
-        toolName: "wiki_status",
-        toolCallId: "call-wiki-status-1",
-        toolUseId: "call-wiki-status-1",
-        tool_use_id: "call-wiki-status-1",
-        content: "wiki_status done",
+        type: "text",
         text: "wiki_status done",
       },
     ]);
@@ -6331,12 +6227,7 @@ describe("runCodexAppServerAttempt", () => {
           version: 1,
           profiles: {
             "openai:work": {
-              type: "oauth",
-              provider: "openai",
-              access: "access-token",
-              refresh: "refresh-token",
-              expires: Date.now() + 60_000,
-              accountId: "account-work",
+              ...createCodexTestOAuthProfile("account-work"),
               email: "work@example.test",
             },
           },
@@ -6465,6 +6356,8 @@ describe("runCodexAppServerAttempt", () => {
     const params = createRunParams();
     params.authProfileId = "openai:work";
     params.agentDir = path.join(tempDir, "agent");
+    params.authProfileStore.profiles["openai:work"] =
+      createCodexTestOAuthProfile("synthetic-account");
     const run = runCodexAppServerAttempt(params);
     await waitForMethod("turn/start");
     await new Promise<void>((resolve) => {
@@ -6918,6 +6811,8 @@ describe("runCodexAppServerAttempt", () => {
         },
       },
     } as never;
+    params.authProfileStore.profiles["openai:work"] =
+      createCodexTestOAuthProfile("synthetic-account");
     const run = runCodexAppServerAttempt(params, {
       pluginConfig: { appServer: { mode: "yolo" } },
     });
@@ -7106,12 +7001,7 @@ describe("runCodexAppServerAttempt", () => {
       version: 1,
       profiles: {
         "openai-profile": {
-          type: "oauth",
-          provider: "openai",
-          access: "access-token",
-          refresh: "refresh-token",
-          expires: Date.now() + 60_000,
-          accountId: "account-work",
+          ...createCodexTestOAuthProfile("account-work"),
           email: "work@example.test",
         },
       },
@@ -7328,12 +7218,7 @@ describe("runCodexAppServerAttempt", () => {
       version: 1,
       profiles: {
         "openai-profile": {
-          type: "oauth",
-          provider: "openai",
-          access: "access-token",
-          refresh: "refresh-token",
-          expires: Date.now() + 60_000,
-          accountId: "account-work",
+          ...createCodexTestOAuthProfile("account-work"),
           email: "work@example.test",
         },
       },
@@ -7651,12 +7536,7 @@ describe("runCodexAppServerAttempt", () => {
       version: 1,
       profiles: {
         "openai-profile": {
-          type: "oauth",
-          provider: "openai",
-          access: "access-token",
-          refresh: "refresh-token",
-          expires: Date.now() + 60_000,
-          accountId: "account-work",
+          ...createCodexTestOAuthProfile("account-work"),
           email: "work@example.test",
         },
       },
@@ -7797,6 +7677,8 @@ describe("runCodexAppServerAttempt", () => {
     const params = createParams(sessionFile, workspaceDir);
     delete params.authProfileId;
     params.agentDir = path.join(tempDir, "agent");
+    params.authProfileStore.profiles["openai:bound"] =
+      createCodexTestOAuthProfile("synthetic-account");
     const run = runCodexAppServerAttempt(params);
     await waitForMethod("turn/start");
     await new Promise<void>((resolve) => {

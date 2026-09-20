@@ -187,12 +187,19 @@ type NativeDeviceSettingsMessage =
   | { type: "open-system-settings"; id: PermissionId }
   | { type: "open"; panel: NativePanel }
   | { type: "check-for-updates" }
+  | { type: "chrome-extension-status" }
   | { type: "install-chrome-extension" };
 
 const nativeChromeExtensionSetupResultSchema = z.object({
   nativeHostRegistered: z.boolean(),
   installRequested: z.boolean(),
+  // v2026.9.5 Mac apps can load newer Gateway UIs but omit this in setup replies.
+  // Keep optional until the minimum supported Mac app includes status discovery.
+  installedProfiles: z.number().int().nonnegative().optional(),
   discoveredProfiles: z.number().int().nonnegative(),
+});
+const nativeChromeExtensionStatusResultSchema = nativeChromeExtensionSetupResultSchema.required({
+  installedProfiles: true,
 });
 export type NativeChromeExtensionSetupResult = z.infer<
   typeof nativeChromeExtensionSetupResultSchema
@@ -206,6 +213,7 @@ export type NativeDeviceSettingsCapability = {
   openSystemSettings(id: PermissionId): void;
   openPanel(panel: NativePanel): void;
   checkForUpdates(): void;
+  chromeExtensionStatus(): Promise<NativeChromeExtensionSetupResult>;
   installChromeExtension(): Promise<NativeChromeExtensionSetupResult>;
   refresh(): void;
   dispose(): void;
@@ -282,6 +290,23 @@ export function createNativeDeviceSettingsCapability(): NativeDeviceSettingsCapa
   window.addEventListener(CHANGE_EVENT, onChange);
   window.addEventListener("focus", refresh);
   refresh();
+  const chromeExtensionRequest = async (
+    type: "chrome-extension-status" | "install-chrome-extension",
+  ) => {
+    if (disposed) {
+      throw new Error("Native device settings is unavailable");
+    }
+    const reply = await post({ type });
+    const schema =
+      type === "chrome-extension-status"
+        ? nativeChromeExtensionStatusResultSchema
+        : nativeChromeExtensionSetupResultSchema;
+    const result = schema.safeParse(reply);
+    if (disposed || !result.success) {
+      throw new Error("Native Chrome setup returned an invalid result");
+    }
+    return result.data;
+  };
   return {
     get snapshot() {
       return snapshot;
@@ -295,17 +320,8 @@ export function createNativeDeviceSettingsCapability(): NativeDeviceSettingsCapa
     openSystemSettings: (id) => void send({ type: "open-system-settings", id }),
     openPanel: (panel) => void send({ type: "open", panel }),
     checkForUpdates: () => void send({ type: "check-for-updates" }),
-    async installChromeExtension() {
-      if (disposed) {
-        throw new Error("Native device settings is unavailable");
-      }
-      const reply = await post({ type: "install-chrome-extension" });
-      const result = nativeChromeExtensionSetupResultSchema.safeParse(reply);
-      if (disposed || !result.success) {
-        throw new Error("Native Chrome setup returned an invalid result");
-      }
-      return result.data;
-    },
+    chromeExtensionStatus: () => chromeExtensionRequest("chrome-extension-status"),
+    installChromeExtension: () => chromeExtensionRequest("install-chrome-extension"),
     refresh,
     dispose() {
       disposed = true;

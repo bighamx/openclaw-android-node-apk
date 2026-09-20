@@ -15,18 +15,29 @@ import type {
   SessionBranchSummaryReadResult,
 } from "./session-accessor.sqlite-branches.js";
 import type {
+  SessionIdentityEvidenceIdentity,
+  SessionIdentityEvidenceResult,
+} from "./session-accessor.sqlite-entry-availability.js";
+import type {
   readSessionTranscriptModelContext,
   SessionModelContextLimits,
 } from "./session-accessor.sqlite-model-context.js";
 import type {
   SessionAccessScope,
+  SessionEntryListScope,
+  SessionEntrySummary,
   SessionTranscriptRuntimeTarget,
 } from "./session-accessor.types.js";
+import type { CanonicalSessionReaderContinuation } from "./session-canonical-key.js";
 import type {
   SessionHistoryWorkerRequest,
   SessionHistoryWorkerResult,
 } from "./session-history-types.js";
 import type { SessionMember } from "./session-sharing-store.kernel.js";
+import type {
+  SessionStoreTargetInventoryRequest,
+  SessionStoreTargetInventoryResult,
+} from "./session-store-target-inventory.js";
 import type { TranscriptEntryAnchor } from "./transcript-entry-anchor.js";
 
 export type SessionModelContextWorkerInput = {
@@ -77,6 +88,35 @@ export type SessionUsageCacheWorkerInput = {
   env: NodeJS.ProcessEnv;
 };
 
+export type SessionEntryListWorkerInput = {
+  kind: "session-entry-list";
+  database: { agentId: string; path: string };
+  scope: SessionEntryListScope;
+};
+
+export type SessionEntryListWorkerResult = {
+  kind: "session-entry-list";
+  entries: SessionEntrySummary[];
+};
+
+export type SessionTargetInventoryWorkerInput = {
+  kind: "session-target-inventory";
+  request: SessionStoreTargetInventoryRequest;
+};
+
+export type SessionIdentityEvidenceWorkerInput = {
+  kind: "session-identity-evidence";
+  database: { agentId: string; path: string };
+  env: NodeJS.ProcessEnv;
+  identities: readonly SessionIdentityEvidenceIdentity[];
+  continuation?: CanonicalSessionReaderContinuation;
+};
+
+export type SessionIdentityEvidenceWorkerResult = {
+  kind: "session-identity-evidence";
+  evidence: SessionIdentityEvidenceResult[];
+};
+
 export type SessionBranchSummaryWorkerInput = {
   kind: "branch-summaries";
   request: SessionBranchSummaryReadRequest;
@@ -87,6 +127,9 @@ export type SessionTranscriptWorkerValues = {
   "history-page": SessionHistoryWorkerResult;
   "session-row-presence": boolean;
   "session-members": SessionMember[];
+  "session-entry-list": SessionEntryListWorkerResult;
+  "session-target-inventory": SessionStoreTargetInventoryResult;
+  "session-identity-evidence": SessionIdentityEvidenceWorkerResult;
   "usage-cache": SessionCostUsageCacheReadResult;
   "model-context": ReturnType<typeof readSessionTranscriptModelContext>;
   "session-entry": {

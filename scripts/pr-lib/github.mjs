@@ -348,9 +348,40 @@ export function readPrMetadata(pr, repository, fields, readOptions = () => ({}))
   return readPr(repo, String(pr), fields, "read", { readOptions, revalidate: true });
 }
 
+function assignReviewer(pr, reviewer) {
+  if (!/^[1-9][0-9]*$/.test(pr) || typeof reviewer !== "string" || !reviewer.trim()) {
+    throw new Error("Expected a PR number and reviewer login.");
+  }
+  const repo = repositoryLocator(undefined, "plain");
+  const result = execPrGhJson(
+    [
+      "api",
+      "--hostname",
+      repo.host,
+      `repos/${repo.name}/issues/${pr}/assignees`,
+      "--method",
+      "POST",
+      "-f",
+      `assignees[]=${reviewer}`,
+    ],
+    {},
+    "plain",
+  );
+  if (
+    !Array.isArray(result?.assignees) ||
+    !result.assignees.some((assignee) => assignee?.login === reviewer)
+  ) {
+    throw invalidMetadata("GitHub did not assign the requested reviewer.");
+  }
+}
+
 function main([route, ...args]) {
   if (!["plain", "read"].includes(route)) {
     throw new Error("Expected a GitHub CLI route.");
+  }
+  if (route === "plain" && args[0] === "assign-reviewer" && args.length === 3) {
+    assignReviewer(args[1], args[2]);
+    return;
   }
   let result;
   // Keep the existing caller/artifact field contract while sourcing ordinary

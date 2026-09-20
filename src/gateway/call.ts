@@ -42,7 +42,10 @@ import { roleScopesAllow } from "../shared/operator-scope-compat.js";
 import { resolveSafeTimeoutDelayMs } from "../utils/timer-delay.js";
 import { VERSION } from "../version.js";
 import { resolveGatewayAuth } from "./auth-resolve.js";
-import { loadStoredOperatorDeviceAuthToken } from "./call-device-auth.js";
+import {
+  loadStoredOperatorDeviceAuthToken,
+  shouldOmitDeviceIdentityForGatewayCall,
+} from "./call-device-auth.js";
 import {
   ensureExplicitGatewayAuth,
   GatewayExplicitAuthRequiredError,
@@ -88,7 +91,6 @@ import {
   resolveLeastPrivilegeOperatorScopesForMethod,
   type OperatorScope,
 } from "./method-scopes.js";
-import { isLoopbackGatewayUrl } from "./net.js";
 import { assertGatewayCliMessageContext } from "./operator-cli-message-input.js";
 import {
   GatewayTransportError,
@@ -458,35 +460,6 @@ export function buildGatewayConnectionDetails(
     resolveConfigPath: (env) => resolveGatewayConfigPath(env),
     resolveGatewayPort: (config, env) => resolveGatewayPortValue(config, env),
   });
-}
-
-function shouldOmitDeviceIdentityForGatewayCall(params: {
-  opts: CallGatewayBaseOptions;
-  url: string;
-  authMode: ReturnType<typeof resolveGatewayAuth>["mode"];
-  token?: string;
-  password?: string;
-  allowAuthNone?: boolean;
-}): boolean {
-  const mode = params.opts.mode ?? GATEWAY_CLIENT_MODES.CLI;
-  const clientName = params.opts.clientName ?? GATEWAY_CLIENT_NAMES.CLI;
-  // Inactive ambient credentials must not turn an auth-none CLI call device-less.
-  // Omit identity only when the Gateway will actually authenticate the supplied secret.
-  const hasSharedSecretAuth =
-    (params.authMode === "token" && Boolean(params.token)) ||
-    (params.authMode === "password" && Boolean(params.password));
-  const isLoopback = isLoopbackGatewayUrl(params.url);
-  const isLocalBackendSharedAuth =
-    mode === GATEWAY_CLIENT_MODES.BACKEND &&
-    clientName === GATEWAY_CLIENT_NAMES.GATEWAY_CLIENT &&
-    (hasSharedSecretAuth || params.allowAuthNone === true) &&
-    isLoopback;
-  const isLocalCliSharedAuth =
-    mode === GATEWAY_CLIENT_MODES.CLI &&
-    clientName === GATEWAY_CLIENT_NAMES.CLI &&
-    hasSharedSecretAuth &&
-    isLoopback;
-  return isLocalBackendSharedAuth || isLocalCliSharedAuth;
 }
 
 export function resolveDeviceIdentityForGatewayCall(
@@ -1074,6 +1047,7 @@ async function executeGatewayRequestWithScopes<T>(params: {
 async function callGatewayWithScopes<T = Record<string, unknown>>(
   opts: CallGatewayBaseOptions,
   scopes: OperatorScope[] | undefined,
+  localCliAbort = false,
 ): Promise<T> {
   const context = await resolveGatewayCallContext(opts);
   const { timeoutMs, startupTimeoutMs, safeTimerTimeoutMs } = resolveGatewayCallTimeout(
@@ -1226,12 +1200,16 @@ async function callGatewayWithScopes<T = Record<string, unknown>>(
     }
     throw error;
   }
-  const effectiveScopes =
+  // A one-shot shared-auth CLI connection cannot match an earlier run's owner.
+  // Request admin authority for cancellation; the Gateway still validates it.
+  const effectiveScopes: OperatorScope[] | undefined =
     requestedStoredDeviceAuth && hasExplicitAuth && opts.requiredStoredDeviceAuthScopes
       ? opts.requiredStoredDeviceAuthScopes
       : useStoredDeviceAuth
         ? undefined
-        : scopes;
+        : localCliAbort && omitDeviceIdentity && !deviceIdentity
+          ? [ADMIN_SCOPE]
+          : scopes;
   return await executeGatewayRequestWithScopes<T>({
     opts,
     scopes: effectiveScopes,
@@ -1346,6 +1324,9 @@ export async function callGatewayCli<T = Record<string, unknown>>(
   const scopes = isGatewayMethodClassified(opts.method)
     ? resolveLeastPrivilegeOperatorScopesForMethod(opts.method, opts.params)
     : CLI_DEFAULT_OPERATOR_SCOPES;
+  if (opts.method === "chat.abort" || opts.method === "sessions.abort") {
+    return await callGatewayWithScopes(opts, scopes, true);
+  }
   return await callGatewayWithScopeEscalation(opts, scopes);
 }
 

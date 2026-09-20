@@ -109,9 +109,12 @@ function createMaintenanceRuntime(params: {
       get: (sessionId: string) =>
         params.placements.find((placement) => placement.sessionId === sessionId),
       list: () => params.placements,
-      listForReconcile: () =>
+      listForReconcile: (sessionKey?: string) =>
         params.placements.filter(
-          (placement) => placement.state !== "local" && placement.state !== "reclaimed",
+          (placement) =>
+            placement.state !== "local" &&
+            placement.state !== "reclaimed" &&
+            (sessionKey === undefined || placement.sessionKey === sessionKey),
         ),
       retireSessionPlacement: vi.fn(),
       pruneOrphanedWorkspaceReconciliations: () => {

@@ -705,7 +705,7 @@ describe("chat transcript invalidation", () => {
     transcript.hostUpdated();
     await flushDeferredRowPrune();
 
-    const thumbnailSource = source.replace(/\/full$/u, "/thumbnail");
+    const thumbnailSource = `${source.replace(/\/full$/u, "/thumbnail")}?v=2`;
     const previousResource = observeChatMediaResource<string | null>(
       "managed-image",
       `${thumbnailSource}::test-auth-token::`,

@@ -1,3 +1,4 @@
+import path from "node:path";
 import {
   cancelPendingAgentQuestionForSession,
   claimPendingAgentQuestionAnswer,
@@ -7,7 +8,9 @@ import {
   resolveAttemptFsWorkspaceOnly,
   setActiveEmbeddedRun,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { prepareAgentWorkspaceAttachments } from "openclaw/plugin-sdk/agent-workspace-runtime";
 import { getAgentScopedMediaLocalRoots } from "openclaw/plugin-sdk/media-local-roots";
+import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import { hasPromptImageInput } from "openclaw/plugin-sdk/session-transcript-runtime";
 import { asOptionalRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { terminateCodexBackgroundTerminals } from "./attempt-client-cleanup.js";
@@ -17,12 +20,14 @@ import {
   createCodexSteeringQueue,
   type CodexSteeringQueueOptions,
 } from "./attempt-steering.js";
+import type { EmbeddedRunAttemptResult } from "./attempt-terminal.js";
 import { CodexAppServerEventProjector } from "./event-projector.js";
 import { createCodexNativeMcpAppResultDetailsPreparer } from "./native-mcp-app.js";
 import { canonicalizeNativeProgressCardInput } from "./plan-compaction-state.js";
 import { isJsonObject, type CodexTurnStartResponse } from "./protocol.js";
 import { readRecentCodexRateLimits } from "./rate-limit-cache.js";
 import { readBoundedCodexRemoteWorkspaceFile } from "./remote-workspace-media.js";
+import { mapCodexAppServerRemoteWorkspacePath } from "./remote-workspace-path.js";
 import type { CodexAttemptLifecycleController } from "./run-attempt-lifecycle-controller.js";
 import type { CodexAttemptNotificationController } from "./run-attempt-notification-controller.js";
 import type { CodexAttemptResources } from "./run-attempt-resources.js";
@@ -97,6 +102,40 @@ export function activateCodexAttemptTurn(
         },
       }
     : dynamicToolParams;
+  const hostPrepareReplyMedia = params.hostCapabilities.prepareReplyMedia;
+  const remoteWorkspaceRoot = connection.appServer.remoteWorkspaceRoot;
+  const replyMediaClient = resourceState.client;
+  const prepareReplyMedia =
+    hostPrepareReplyMedia && remoteWorkspaceRoot
+      ? async (
+          content:
+            | { kind: "attempt"; attempt: EmbeddedRunAttemptResult }
+            | { kind: "payload"; payload: ReplyPayload },
+          transferSignal?: AbortSignal,
+        ) =>
+          hostPrepareReplyMedia({
+            ...content,
+            workspaceRoot: remoteWorkspaceRoot,
+            signal: runAbortController.signal,
+            readWorkspaceFile: async (relativePath, { maxBytes, signal }) => {
+              connection.assertCurrent();
+              const file = await readBoundedCodexRemoteWorkspaceFile({
+                client: replyMediaClient,
+                path: mapCodexAppServerRemoteWorkspacePath({
+                  value: path.resolve(params.workspaceDir, relativePath),
+                  localWorkspaceRoot: params.workspaceDir,
+                  remoteWorkspaceRoot,
+                }),
+                workspaceRoot: remoteWorkspaceRoot,
+                maxBytes,
+                signal: transferSignal ? AbortSignal.any([signal, transferSignal]) : signal,
+                timeoutMs: connection.appServer.requestTimeoutMs,
+              });
+              connection.assertCurrent();
+              return Buffer.from(file.dataBase64, "base64");
+            },
+          })
+      : undefined;
   const progressCardTool = toolBridge.availableTools.find((tool) => tool.name === "progress_card");
   let nativePlanUpdateOrdinal = 0;
   const prepareNativeMcpAppResultDetails = createCodexNativeMcpAppResultDetailsPreparer({
@@ -130,7 +169,19 @@ export function activateCodexAttemptTurn(
           toolBridge.availableTools.some((tool) => tool.name === "message")),
       onAsyncDelivery: async (delivery) => {
         return await codexTranscriptMirrorRuntime.deliverAsyncMessageBestEffort({
-          params: projectionParams,
+          params:
+            prepareReplyMedia && projectionParams.onBlockReply
+              ? {
+                  ...projectionParams,
+                  onBlockReply: async (payload, options) => {
+                    const prepared = await prepareReplyMedia({ kind: "payload", payload });
+                    if (prepared.kind !== "payload") {
+                      throw new Error("Reply media preparation returned the wrong result kind");
+                    }
+                    await projectionParams.onBlockReply?.(prepared.payload, options);
+                  },
+                }
+              : projectionParams,
           cwd: effectiveCwd,
           threadId: resourceState.thread.threadId,
           turnId: activeTurnId,
@@ -141,10 +192,10 @@ export function activateCodexAttemptTurn(
       runAbortSignal: runAbortController.signal,
       remoteWorkspaceRoot: connection.appServer.remoteWorkspaceRoot,
       remoteWorkspaceRequestTimeoutMs: connection.appServer.requestTimeoutMs,
-      readRemoteWorkspaceFile: ({ path, maxBytes, signal, timeoutMs }) =>
+      readRemoteWorkspaceFile: ({ path: remotePath, maxBytes, signal, timeoutMs }) =>
         readBoundedCodexRemoteWorkspaceFile({
           client: resourceState.client,
-          path,
+          path: remotePath,
           maxBytes,
           signal,
           timeoutMs,
@@ -288,6 +339,7 @@ export function activateCodexAttemptTurn(
   const workspaceOnly = resolveAttemptFsWorkspaceOnly({ config: params.config, sessionAgentId });
   const imageContext = {
     workspaceDir: connection.effectiveWorkspace,
+    agentWorkspaceDir: params.workspaceDir,
     model: params.model,
     config: params.config,
     workspaceOnly,
@@ -306,7 +358,18 @@ export function activateCodexAttemptTurn(
     requestTimeoutMs: connection.appServer.requestTimeoutMs,
     signal: runAbortController.signal,
     assertActive: assertSteeringActive,
-    prepareMessage: async (text, options) => {
+    prepareMessage: async (text, options, assertMessageCurrent) => {
+      const attachmentNote = await prepareAgentWorkspaceAttachments({
+        workspaceDir: params.workspaceDir,
+        turn: {
+          config: params.config,
+          media: options.media,
+          timeoutMs: params.timeoutMs,
+          abortSignal: runAbortController.signal,
+          userTurnTranscriptRecorder: options.userTurnTranscriptRecorder,
+        },
+        assertCurrent: assertMessageCurrent,
+      });
       const result = await detectAndLoadAgentHarnessPromptImages({
         ...imageContext,
         prompt: text,
@@ -327,7 +390,10 @@ export function activateCodexAttemptTurn(
         userTurnTranscriptRecorder: options.userTurnTranscriptRecorder,
       });
       return {
-        input: buildCodexUserInput(text, result.images),
+        input: buildCodexUserInput(
+          attachmentNote ? `${text}\n\n${attachmentNote}` : text,
+          result.images,
+        ),
         message: {
           ...source,
           role: "user",
@@ -628,6 +694,7 @@ export function activateCodexAttemptTurn(
     activeProjector,
     runtimeModelSelection,
     streamState,
+    prepareReplyMedia,
     handle,
     freezeRunTerminalOutcome,
     notifyUserMessagePersisted,

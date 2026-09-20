@@ -31,15 +31,7 @@ repo_root() {
 }
 
 ensure_gh_api_auth() {
-  # Retain GraphQL here: a relay's REST /user may identify its caller instead of
-  # the mutation writer. REST is not an equivalent authentication preflight.
-  local response exit_code=0
-  response=$(pr_gh_plain api graphql -f 'query=query { viewer { login } }' --include 2>&1) || exit_code=$?
-  if [ "$exit_code" -eq 75 ] || [ "$exit_code" -eq 77 ]; then
-    printf '%s\n' "$response" >&2
-    return 1
-  fi
-  printf '%s' "$response" | node "$(dirname "${BASH_SOURCE[0]}")/gh-api-preflight.mjs" "$exit_code"
+  pr_gh_writer_login >/dev/null || return 1
 }
 
 ensure_full_pr_worktree_checkout() {

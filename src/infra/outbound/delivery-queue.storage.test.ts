@@ -4,8 +4,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { trackSqliteStatementExecutions } from "../../../test/helpers/sqlite-statement-execution-counter.js";
-import { openOpenClawStateDatabase } from "../../state/openclaw-state-db.js";
+import {
+  openOpenClawStateDatabase,
+  runOpenClawStateWriteTransaction,
+} from "../../state/openclaw-state-db.js";
 import { failPendingDelivery } from "./delivery-queue-ack.js";
+import { ackDeliveryInDatabase } from "./delivery-queue-ack.kernel.js";
+import { releaseSpoolArtifacts } from "./delivery-queue-media-spool.js";
 import { OUTBOUND_DELIVERY_QUEUE_NAME } from "./delivery-queue-media-staging.js";
 import { renewDeliveryPlatformSendLease } from "./delivery-queue-platform-lease.js";
 import {
@@ -214,7 +219,15 @@ describe("delivery-queue storage", () => {
             : null,
         );
         try {
-          await ackDelivery(id, stateDir, { expectedPlatformSendAttemptId: secondAttemptId });
+          // Count the native kernel's reads; the public ACK now runs in a separate worker.
+          const spoolPaths = runOpenClawStateWriteTransaction(
+            (database) =>
+              ackDeliveryInDatabase(database, id, stateDir, {
+                expectedPlatformSendAttemptId: secondAttemptId,
+              }),
+            { env: { ...process.env, OPENCLAW_STATE_DIR: stateDir } },
+          );
+          await releaseSpoolArtifacts(spoolPaths, stateDir);
           expect(reads.rowCounts.queue).toBeGreaterThan(0);
           expect(reads.textBytes.queue).toBeGreaterThan(0);
           expect.soft(reads.counts.queue).toBeLessThanOrEqual(3);
@@ -473,6 +486,27 @@ describe("delivery-queue storage", () => {
 
     it("ack is idempotent (no error on missing file)", async () => {
       await expect(ackDelivery("nonexistent-id", tmpDir())).resolves.toBeUndefined();
+    });
+
+    it("claimless ack rejects a live-claimed row instead of deleting it", async () => {
+      const stateDir = tmpDir();
+      const id = await enqueueTextDelivery({
+        channel: "directchat",
+        to: "+1",
+        payloads: [{ text: "claimless-ack-guard" }],
+      });
+      const attemptId = await claimDeliveryPlatformSendAttempt(id, stateDir);
+      if (!attemptId) {
+        throw new Error("test invariant: the unclaimed row must accept a platform claim");
+      }
+
+      await expect(ackDelivery(id, stateDir)).rejects.toThrow(
+        `Delivery platform claim was lost: ${id}`,
+      );
+
+      const pending = await loadPendingDelivery(id, stateDir);
+      expect(pending).toMatchObject({ id, producerClaimId: attemptId });
+      expect(readStatus(id)).toBe("pending");
     });
 
     it("removes acked entries from pending recovery", async () => {

@@ -40,7 +40,7 @@ function managedImageSource(): string {
 }
 
 function managedImageResourceKey(source: string): string {
-  return `${source.replace(/\/full$/u, "/thumbnail")}::::`;
+  return `${source.replace(/\/full$/u, "/thumbnail")}?v=2::::`;
 }
 
 function installManagedImageUrls(prefix = `managed-image-${crypto.randomUUID()}`) {
@@ -1019,7 +1019,7 @@ describe("chat media resource lifecycle", () => {
     expect(resolveArtifactDownload).toHaveBeenCalledTimes(2);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     for (const [requestUrl, init] of fetchMock.mock.calls) {
-      expect(requestUrl).toBe(ticketedUrl.replace(/\/full(?=\?)/u, "/thumbnail"));
+      expect(requestUrl).toBe(`${ticketedUrl.replace(/\/full(?=\?)/u, "/thumbnail")}&v=2`);
       const headers = new Headers(init.headers);
       expect(headers.get("Authorization")).toBeNull();
       expect(headers.get("x-openclaw-requester-session-key")).toBeNull();

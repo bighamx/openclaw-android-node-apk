@@ -34,16 +34,16 @@ import {
 } from "../../infra/agent-events.js";
 import { registerAgentRunContext } from "../../infra/agent-run-registry.js";
 import { loadDeliveryQueueEntryInDatabase } from "../../infra/delivery-queue-sqlite-bound.js";
+import { loadDeliveryQueueEntry } from "../../infra/delivery-queue-sqlite.js";
 import {
-  loadDeliveryQueueEntry,
-  upsertDeliveryQueueEntry,
-} from "../../infra/delivery-queue-sqlite.js";
-import {
+  completeDeliveryQueueEntryInDatabase,
   prepareDeliveryQueueTerminalEntry,
   terminalizePendingDeliveryQueueEntryInDatabase,
 } from "../../infra/delivery-queue-sqlite.kernel.js";
+import { seedDeliveryQueueEntry } from "../../infra/delivery-queue-sqlite.test-support.js";
 import { OUTBOUND_DELIVERY_QUEUE_NAME } from "../../infra/outbound/delivery-queue-media-staging.js";
-import { ackDelivery, enqueueDeliveryOnce } from "../../infra/outbound/delivery-queue-storage.js";
+import type { QueuedDelivery } from "../../infra/outbound/delivery-queue-types.js";
+import { createUnmodifiedPreparedOutboundBatch } from "../../infra/outbound/prepared-batch.js";
 import {
   initializeGlobalHookRunner,
   resetGlobalHookRunner,
@@ -196,6 +196,22 @@ vi.mock("../../config/sessions/transcript.js", async (importOriginal) => {
 });
 
 let tmpDir: string;
+
+function seedQueuedFinal(id: string, text: string): void {
+  const entry: QueuedDelivery = {
+    id,
+    enqueuedAt: Date.now(),
+    retryCount: 0,
+    attemptCount: 0,
+    channel: "discord",
+    to: "discord:dm:123",
+    preparedBatch: createUnmodifiedPreparedOutboundBatch([{ text }]),
+    queuePolicy: "required",
+    completionRetention: "permanent",
+    retainOnFailure: true,
+  };
+  seedDeliveryQueueEntry({ queueName: OUTBOUND_DELIVERY_QUEUE_NAME, stateDir: tmpDir, entry });
+}
 const resolveGatewayContext = () => undefined;
 
 function loadSessionEntry(
@@ -1598,7 +1614,8 @@ describe("main-session-restart-recovery", () => {
 
   it.each([
     {
-      label: "same-process lifecycle rotation",
+      label: "an announcement interrupted during lifecycle rotation",
+      lifecycleRunId: undefined,
       sessionKey: "agent:main:telegram:group:-100:topic:2",
       sessionId: "topic-2-session",
       restartRecoveryRuns: [
@@ -1610,7 +1627,8 @@ describe("main-session-restart-recovery", () => {
       userMessage: { role: "user", content: "earlier human request" },
     },
     {
-      label: "full restart",
+      label: "an announcement interrupted during a full restart",
+      lifecycleRunId: undefined,
       sessionKey: "agent:main:telegram:group:-100:topic:8893",
       sessionId: "topic-8893-session",
       restartRecoveryRuns: undefined,
@@ -1625,7 +1643,46 @@ describe("main-session-restart-recovery", () => {
         },
       },
     },
-  ])("reconciles an interrupted completion after $label", async (fixture) => {
+    {
+      label: "a parent continuation after children settled",
+      lifecycleRunId: undefined,
+      sessionKey: "agent:main:dashboard:parent",
+      sessionId: "parent-session",
+      restartRecoveryRuns: [
+        {
+          runId: "announce:requester-settle:main:parent:child:yield-1",
+          lifecycleGeneration: "generation-old",
+        },
+      ],
+      userMessage: {
+        role: "user",
+        content: "The child finished; continue the original task.",
+        provenance: {
+          kind: "inter_session",
+          sourceSessionKey: "agent:main:subagent:child",
+          sourceChannel: "internal",
+          sourceTool: "subagent_settle",
+        },
+      },
+    },
+    {
+      label: "a hard-killed parent continuation",
+      sessionKey: "agent:main:dashboard:hard-killed-parent",
+      sessionId: "hard-killed-parent-session",
+      lifecycleRunId: "announce:requester-settle:main:parent:child:cold",
+      restartRecoveryRuns: undefined,
+      userMessage: {
+        role: "user",
+        content: "The child finished; continue the original task.",
+        provenance: {
+          kind: "inter_session",
+          sourceSessionKey: "agent:main:subagent:child",
+          sourceChannel: "internal",
+          sourceTool: "subagent_settle",
+        },
+      },
+    },
+  ])("resumes unfinished work after $label", async (fixture) => {
     const sessionsDir = await makeSessionsDir();
     const storePath = path.join(sessionsDir, "sessions.json");
     await writeStore(sessionsDir, {
@@ -1635,6 +1692,7 @@ describe("main-session-restart-recovery", () => {
         status: "running",
         abortedLastRun: true,
         restartRecoveryRuns: fixture.restartRecoveryRuns,
+        lifecycleRunId: fixture.lifecycleRunId,
       },
     });
     await writeTranscript(sessionsDir, fixture.sessionId, [
@@ -1643,67 +1701,21 @@ describe("main-session-restart-recovery", () => {
       { role: "toolResult", content: "done" },
     ]);
 
-    await expectRecovery({ started: 0, settled: 0, failed: 0, skipped: 1 });
-    expect(callGateway).not.toHaveBeenCalled();
-    expect(loadSessionEntry({ sessionKey: fixture.sessionKey, storePath })).toMatchObject({
-      status: "killed",
-      abortedLastRun: false,
+    await expectRecovery({ started: 1, settled: 0, failed: 0, skipped: 0 });
+    expect(callGateway).toHaveBeenCalledOnce();
+    expect(gatewayParams()).toMatchObject({
+      sessionKey: fixture.sessionKey,
+      expectedExistingSessionId: fixture.sessionId,
+      message: expect.stringContaining("The restart did not cancel the user's task"),
     });
-    expect(readStore(storePath)[fixture.sessionKey]).not.toHaveProperty("restartRecoveryRuns");
+    const recovered = loadSessionEntry({ sessionKey: fixture.sessionKey, storePath });
+    expect(recovered).toMatchObject({ status: "running" });
+    expect(recovered?.restartRecoveryDeliverySourceRunId).toBe(
+      fixture.restartRecoveryRuns?.[0]?.runId ?? fixture.lifecycleRunId,
+    );
   });
 
   registerHarnessCompletionRecoveryCases(getHarnessRecoveryFixture);
-
-  it("retries when a human recovery run appears during announce reconciliation", async () => {
-    const sessionsDir = await makeSessionsDir();
-    const storePath = path.join(sessionsDir, "sessions.json");
-    const sessionKey = "agent:main:telegram:group:-100:topic:41819";
-    const announceRun = {
-      runId: "announce:v1:agent:main:subagent:child:run-race",
-      lifecycleGeneration: "generation-old",
-    };
-    const humanRun = { runId: "human-run-race", lifecycleGeneration: "generation-old" };
-    await writeStore(sessionsDir, {
-      [sessionKey]: {
-        ...runningSessionEntry("topic-41819-session"),
-        abortedLastRun: true,
-        restartRecoveryRuns: [announceRun],
-      },
-    });
-    await writeTranscript(sessionsDir, "topic-41819-session", [
-      { role: "user", content: "earlier human request" },
-      { role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "exec" }] },
-      { role: "toolResult", content: "done" },
-    ]);
-    const updateSessionEntry = sessionAccessor.updateSessionEntry;
-    let injectedHumanRun = false;
-    const updateSpy = vi
-      .spyOn(sessionAccessor, "updateSessionEntry")
-      .mockImplementation(async (scope, update, options) => {
-        if (!injectedHumanRun) {
-          injectedHumanRun = true;
-          await updateSessionEntry(scope, (entry) => ({
-            restartRecoveryRuns: [...(entry.restartRecoveryRuns ?? []), humanRun],
-          }));
-        }
-        return await updateSessionEntry(scope, update, options);
-      });
-
-    try {
-      await expectRecovery({ started: 0, settled: 0, failed: 1, skipped: 0 });
-    } finally {
-      updateSpy.mockRestore();
-    }
-
-    expect(callGateway).not.toHaveBeenCalled();
-    expect(loadSessionEntry({ sessionKey, storePath })).toMatchObject({
-      status: "running",
-      abortedLastRun: true,
-      restartRecoveryRuns: [announceRun, humanRun],
-    });
-    await expectRecovery({ started: 1, settled: 0, failed: 0, skipped: 0 });
-    expect(callGateway).toHaveBeenCalledOnce();
-  });
 
   it.each([
     {
@@ -2868,17 +2880,7 @@ describe("main-session-restart-recovery", () => {
     ],
   ])("defers mixed deliveries while any exact queue owner is pending", async (...deliveries) => {
     try {
-      await enqueueDeliveryOnce(
-        {
-          channel: "discord",
-          to: "discord:dm:123",
-          payloads: [{ text: "Pending sibling." }],
-          queuePolicy: "required",
-          completionRetention: "permanent",
-        },
-        "delivery-still-pending",
-        tmpDir,
-      );
+      seedQueuedFinal("delivery-still-pending", "Pending sibling.");
       const sessionsDir = await makeSessionsDir();
       await writeMainSession({
         sessionsDir,
@@ -2900,17 +2902,7 @@ describe("main-session-restart-recovery", () => {
 
   it("completes terminal deliveries despite a residual pending queue row", async () => {
     try {
-      await enqueueDeliveryOnce(
-        {
-          channel: "discord",
-          to: "discord:dm:123",
-          payloads: [{ text: "Already delivered." }],
-          queuePolicy: "required",
-          completionRetention: "permanent",
-        },
-        "delivery-terminal-with-row",
-        tmpDir,
-      );
+      seedQueuedFinal("delivery-terminal-with-row", "Already delivered.");
       const sessionsDir = await makeSessionsDir();
       const storePath = path.join(sessionsDir, "sessions.json");
       await writeMainSession({
@@ -3069,20 +3061,10 @@ describe("main-session-restart-recovery", () => {
     async (ownerStatus) => {
       const deliveryId = `delivery-owner-${ownerStatus}`;
       try {
-        await enqueueDeliveryOnce(
-          {
-            channel: "discord",
-            to: "discord:dm:123",
-            payloads: [{ text: "Queue owns this final." }],
-            queuePolicy: "required",
-            completionRetention: "permanent",
-          },
-          deliveryId,
-          tmpDir,
-        );
+        seedQueuedFinal(deliveryId, "Queue owns this final.");
         if (ownerStatus === "settling") {
           const entry = loadDeliveryQueueEntry(OUTBOUND_DELIVERY_QUEUE_NAME, deliveryId, tmpDir)!;
-          upsertDeliveryQueueEntry({
+          seedDeliveryQueueEntry({
             queueName: OUTBOUND_DELIVERY_QUEUE_NAME,
             entry: { ...entry, recoveryState: "settlement_pending" },
             status: "failed",
@@ -3112,7 +3094,11 @@ describe("main-session-restart-recovery", () => {
             ),
           ).toMatchObject({ status: "terminalized" });
         } else if (ownerStatus === "completed") {
-          await ackDelivery(deliveryId, tmpDir);
+          completeDeliveryQueueEntryInDatabase(
+            openOpenClawStateDatabase({ env: { ...process.env, OPENCLAW_STATE_DIR: tmpDir } }),
+            OUTBOUND_DELIVERY_QUEUE_NAME,
+            deliveryId,
+          );
         }
         const sessionsDir = await makeSessionsDir();
         await writeMainSession({

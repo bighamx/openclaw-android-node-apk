@@ -395,10 +395,11 @@ function openMessageImage(
   const index = images?.indexOf(img) ?? -1;
   const onOpenImage = opts?.onOpenImage;
   const open = (item: ImageLightboxItem) => {
+    const sizedItem = { ...item, width: img.width, height: img.height };
     const nextItem =
       images && images.length > 1 && index >= 0
         ? {
-            ...item,
+            ...sizedItem,
             gallery: {
               index,
               items: images.map(
@@ -408,7 +409,7 @@ function openMessageImage(
               ),
             },
           }
-        : item;
+        : sizedItem;
     if (requestVersion === undefined) {
       onOpenImage?.(nextItem);
     } else {
@@ -420,17 +421,24 @@ function openMessageImage(
     return;
   }
 
-  const resource = resolveManagedOutgoingImageResource(img.url, opts, img.artifactId, "full", true);
-  const openFull = (url: string) => {
-    const release = opts?.onOpenImage ? retainManagedImageBlobUrl(resource.cacheKey) : undefined;
-    openResolvedImage(onOpenImage ? open : undefined, url, title, release);
-  };
-  if (resource.value) {
-    openFull(resource.value);
+  if (onOpenImage) {
+    const preview = resolveManagedOutgoingImageResource(img.url, opts, img.artifactId);
+    open({
+      src: previewUrl,
+      title,
+      release: retainManagedImageBlobUrl(preview.cacheKey),
+      loadFullResolution: () => loadGalleryImage(img, opts, true),
+    });
     return;
   }
 
-  const pendingWindow = opts?.onOpenImage ? null : reserveExternalWindowForDeferredNavigation();
+  const resource = resolveManagedOutgoingImageResource(img.url, opts, img.artifactId, "full", true);
+  if (resource.value) {
+    openResolvedImage(undefined, resource.value, title);
+    return;
+  }
+
+  const pendingWindow = reserveExternalWindowForDeferredNavigation();
   const failed = () => {
     pendingWindow?.close();
     showToast({ message: t("chat.imageLightbox.loadFailed") });
@@ -446,7 +454,7 @@ function openMessageImage(
       } else if (pendingWindow) {
         pendingWindow.location.replace(safeUrl);
       } else {
-        openFull(safeUrl);
+        openResolvedImage(undefined, safeUrl, title);
       }
     })
     .catch(failed);
@@ -489,7 +497,13 @@ async function loadGalleryImage(
     release?.();
     return null;
   }
-  return { src: safeSrc, title: image.alt?.trim() || t("chat.imageLightbox.untitled"), release };
+  return {
+    src: safeSrc,
+    title: image.alt?.trim() || t("chat.imageLightbox.untitled"),
+    width: image.width,
+    height: image.height,
+    release,
+  };
 }
 
 class MessageImagesDirective extends Directive {

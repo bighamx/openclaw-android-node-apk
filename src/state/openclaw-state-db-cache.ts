@@ -28,8 +28,8 @@ import {
 } from "../infra/state-database-coordinator.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import {
-  createOpenClawDatabaseVerificationError,
-  readOpenClawDatabaseQuarantine,
+  assertOpenClawStateDatabaseNotQuarantined,
+  type OpenClawQuarantineReadCleanupError,
 } from "./openclaw-quarantine-store.js";
 import {
   createOpenClawStateDatabaseAsyncLifecycle,
@@ -110,7 +110,9 @@ function notifyOpenClawStateDatabaseClosed(database: StateDatabaseHandle): void 
   });
 }
 
-function requireOpenClawStateDatabaseIdentity(database: StateDatabaseHandle): DatabasePathIdentity {
+export function requireOpenClawStateDatabaseIdentity(
+  database: StateDatabaseHandle,
+): DatabasePathIdentity {
   const identity = databaseIdentities.get(database.db);
   if (!identity) {
     throw new Error("Published shared-state owner has no recorded database identity");
@@ -413,25 +415,10 @@ function recordOpenClawStateDatabaseLifecycleOpenError(pathname: string, error: 
 function assertOpenClawStateDatabaseFreshOpenAllowedAtPath(
   pathname: string,
   env: NodeJS.ProcessEnv,
+  onNativeCleanupFailure?: (error: OpenClawQuarantineReadCleanupError) => void,
 ): void {
   assertOpenClawStateDatabaseOpenAllowed(pathname);
-  let quarantineFailure: Error | undefined;
-  try {
-    const quarantine = readOpenClawDatabaseQuarantine(pathname, { env });
-    if (quarantine) {
-      quarantineFailure = createOpenClawDatabaseVerificationError(
-        "state",
-        pathname,
-        quarantine.reason,
-      );
-    }
-  } catch {
-    // A broken quarantine store must not brick every state read.
-    // The process latch and daily verifier still cover known damage.
-  }
-  if (quarantineFailure) {
-    throw quarantineFailure;
-  }
+  assertOpenClawStateDatabaseNotQuarantined(pathname, env, onNativeCleanupFailure);
 }
 
 /** Explicit retirement can checkpoint WAL and must join the lifecycle writer gate. */

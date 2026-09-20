@@ -441,7 +441,7 @@ export function executeExistingOpenClawStateRead(
   const controller = new AbortController();
   const run = async (): Promise<OpenClawStateReadReply | undefined> => {
     const producerSettled = createDeferredCore();
-    const transport = createOpenClawStateReadTransport(command, (error) => controller.abort(error));
+    const transport = createOpenClawStateReadTransport(command);
     let cleanupPending: Promise<void> | undefined;
     let transportStopped = false;
     let cleaned = false;
@@ -564,10 +564,18 @@ export function executeExistingOpenClawStateRead(
       }
       let location = snapshot?.location ?? pathname;
       if (nativeSource) {
-        prepared = await prepareSqliteReadOnlyLocationFromOwnedDatabase(
-          nativeSource.db,
-          authority.assertCurrent,
-        );
+        prepared =
+          excluded || mutation
+            ? await prepareSqliteReadOnlyLocationFromOwnedDatabase(
+                nativeSource.db,
+                authority.assertCurrent,
+              )
+            : await prepareSqliteReadOnlyLocationFromOwnedDatabase(
+                nativeSource.db,
+                authority.assertCurrent,
+                authority.signal,
+                "async",
+              );
         location = prepared.location;
       } else if (!snapshot && (preserveArtifacts || excluded || mutation)) {
         await transport.validateFresh(context, authority);
@@ -635,10 +643,6 @@ export function executeExistingOpenClawStateRead(
       await cleanup();
     } catch (error) {
       cleanupErrors.push(error);
-    }
-    const taskFailure = await transport.readFailure();
-    if (taskFailure && !errors.includes(taskFailure.error)) {
-      errors.unshift(taskFailure.error);
     }
     // Cancellation can be the producer's error as well as its final admission result.
     errors.push(

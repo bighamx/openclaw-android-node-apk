@@ -376,7 +376,6 @@ describe("node worker supervisor recovery", () => {
 
           process.kill(anchor.pid, "SIGCONT");
           await waitForIdentityDeath(anchor);
-          expect(inspectOwnedNodeWorkerTree(anchor)).toBe("dead");
           const terminalState = operation === "cancel-running" ? "cancelled" : "interrupted";
           await vi.waitFor(() => {
             expect(store.get(input.launchId)).toMatchObject({
@@ -388,6 +387,7 @@ describe("node worker supervisor recovery", () => {
               available: totalCapacity,
             });
           });
+          expect(inspectOwnedNodeWorkerTree(anchor)).toBe("dead");
           expect(await reconcile()).toMatchObject(
             completed ? { ...completed, workerLineageSettled: true } : { state: terminalState },
           );

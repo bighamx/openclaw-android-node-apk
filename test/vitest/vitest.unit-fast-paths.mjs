@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { isAgentsCoreIsolatedTestFile } from "./vitest.agents-paths.mjs";
 import { cliProcessTestFiles } from "./vitest.cli-process-paths.mjs";
 import { commandsLightTestFiles } from "./vitest.commands-light-paths.mjs";
 import { isDatabaseWorkerCoreTestFile } from "./vitest.database-worker-core-paths.mjs";
@@ -523,6 +524,8 @@ function analyzeUnitFastTestFile(cwd, file) {
   let analysis;
   if (isDatabaseWorkerCoreTestFile(file) || gatewayDatabaseWorkerTestFiles.includes(file)) {
     analysis = { file, unitFast: false, reasons: ["database-worker-owner"] };
+  } else if (isAgentsCoreIsolatedTestFile(file)) {
+    analysis = { file, unitFast: false, reasons: ["agents-core-isolated-owner"] };
   } else if (isToolingIsolatedTestFile(file)) {
     // Explicit project ownership wins over inferred eligibility so full-suite
     // configs cannot run the same stateful tooling test in two worker pools.

@@ -617,6 +617,24 @@ export async function mountSidebarContext(
   return { provider, sidebar, context };
 }
 
+export async function mountSessionCatalogSidebar(client: GatewayBrowserClient) {
+  const gateway = createGatewayHarness(client);
+  gateway.publish({
+    hello: {
+      features: { methods: ["sessions.catalog.list"], events: ["sessions.catalog.changed"] },
+    } as ApplicationGatewaySnapshot["hello"],
+  });
+  const { sidebar } = await mountSidebar(
+    gateway.gateway,
+    createSessions("main", ["agent:main:main"]),
+  );
+  sidebar.connected = true;
+  await sidebar.updateComplete;
+  await vi.advanceTimersByTimeAsync(0);
+  await sidebar.updateComplete;
+  return { gateway, sidebar };
+}
+
 export const TWO_AGENTS = {
   defaultId: "main",
   mainKey: "main",
