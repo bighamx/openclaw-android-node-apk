@@ -1,6 +1,7 @@
 // The handle lease outlives transactions and maintenance, including close-time WAL work.
 import type { DatabaseSync } from "node:sqlite";
 import { openNodeSqliteDatabase, resolveExistingSqliteFileUri } from "../infra/node-sqlite.js";
+import { withSqliteNativeOpen } from "../infra/sqlite-error-diagnostics.js";
 import { acquireStateDatabaseHandleLease } from "../infra/state-database-coordinator.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 
@@ -35,11 +36,10 @@ export function openTrackedStateDatabaseResult(
   const lease = acquireStateDatabaseHandleLease({ databasePath: pathname, busyTimeoutMs: 0 });
   try {
     const location = options?.existingOnly ? resolveExistingSqliteFileUri(pathname) : pathname;
-    const database = options?.readOnly
-      ? openNodeSqliteDatabase(location, { readOnly: true, timeout: options.timeout })
-      : openNodeSqliteDatabase(location, {
-          enableForeignKeyConstraints: options?.enableForeignKeyConstraints,
-        });
+    const nativeOptions = options?.readOnly
+      ? { readOnly: true, timeout: options.timeout }
+      : { enableForeignKeyConstraints: options?.enableForeignKeyConstraints };
+    const database = withSqliteNativeOpen(() => openNodeSqliteDatabase(location, nativeOptions));
     handleLeases.set(database, lease);
     return { status: "available", database };
   } catch (error) {

@@ -101,6 +101,7 @@ overrides:
   uuid: 14.0.2
 
 allowBuilds:
+  onnxruntime-node: false
   "@google/genai": true
   "@lydell/node-pty": true
   "@matrix-org/matrix-sdk-crypto-nodejs": true

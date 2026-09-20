@@ -45,12 +45,21 @@ context, and wrapper selection stays unchanged.
 
 `OPENCLAW_PR_GIT` selects the Git executable. Startup checks that binary with a
 10-second deadline before choosing wrapper code; Darwin process-identity Python
-calls use the same deadline. Ordinary PR metadata and check rollups use REST.
+calls use the same deadline. Ordinary PR metadata uses REST; review snapshots omit
+unused check rollups, and preparation reads only the live head fields it consumes.
 Writer identity uses REST `GET /user --include` through the protected selected CLI;
 included headers keep relay callers on the native writer route. Reviewer assignment
-uses REST and verifies that GitHub retained the requested assignee. GraphQL remains
-for required-check app binding, merge-queue state, and squash previews that lack
-equivalent REST contracts. API failures preserve safe quota and retry metadata from the original response.
+uses REST and verifies that GitHub retained the requested assignee. The CI watcher
+polls GraphQL summaries, expanding check details only for failure analysis or
+pending checks after CI succeeds. Primary GraphQL exhaustion selects a bounded
+REST fallback; secondary throttles and access failures never authorize a transport
+switch. The watcher retains complete check/status and workflow evidence. Native
+REST landing is limited to ordinary immediate squash with authoritative absence
+of classic protection, supported effective rules without a merge queue, exact-head
+publisher-bound checks, and the existing retained-outcome lifecycle. Choose the
+transport before dispatch; never retry an uncertain mutation through another API.
+Other landing modes retain their GraphQL contracts.
+API failures preserve safe quota and retry metadata from the original response.
 When that response has no usable HTTP framing, a separate GraphQL/core quota
 probe is labeled supplemental and does not establish the failed request's reset.
 Diagnostics never add automatic retries.

@@ -85,6 +85,7 @@ function normalizeOmittedMediaContentBlock(
   if (
     item.type !== "image" ||
     item.omitted !== true ||
+    normalizeOptionalString(item.artifactId) !== undefined ||
     normalizeOptionalString(item.url) !== undefined
   ) {
     return null;

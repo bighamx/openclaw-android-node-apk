@@ -11,6 +11,10 @@ import { openNodeSqliteDatabase, requireNodeSqlite } from "../../infra/node-sqli
 import { SqliteWorkerError } from "../../infra/sqlite-worker-contract.js";
 import type { SqliteWorkerNativeSettlementOwner } from "../../infra/sqlite-worker-operation-settlement.js";
 import {
+  acquireStateDatabaseCoordinator,
+  withStateDatabaseCoordinatorRuntimeDirectory,
+} from "../../infra/state-database-coordinator.js";
+import {
   getActiveGatewayRootWorkCount,
   resetGatewayWorkAdmission,
 } from "../../process/gateway-work-admission.js";
@@ -315,6 +319,7 @@ describe("registered artifact task reads", () => {
           | undefined;
         let responded = false;
         let closing: Promise<void> | undefined;
+        let heldCoordinator: ReturnType<typeof acquireStateDatabaseCoordinator> | undefined;
         const observation = observeHostSql();
         let submissionSql = observation.counts();
         let submissionExec: string[] = [];
@@ -368,6 +373,12 @@ describe("registered artifact task reads", () => {
             return receipt;
           });
         try {
+          // Keep producer coordinator cleanup outside the registered RPC SQL observation.
+          const context = captureOpenClawStateWorkerContext();
+          heldCoordinator = withStateDatabaseCoordinatorRuntimeDirectory(
+            context.coordinatorRuntime,
+            () => acquireStateDatabaseCoordinator({ databasePath: context.admission.databasePath }),
+          );
           emitAgentEvent({
             runId: task.runId!,
             stream: "tool",
@@ -389,6 +400,8 @@ describe("registered artifact task reads", () => {
           });
           expect(Object.values(observation.counts())).toEqual(Array(8).fill(0));
           observation.restore();
+          heldCoordinator.release();
+          heldCoordinator = undefined;
           if (outcome === "replaced config") {
             config = rolePolicyConfig();
           } else if (outcome === "retired database") {
@@ -425,6 +438,7 @@ describe("registered artifact task reads", () => {
           });
         } finally {
           observation.restore();
+          heldCoordinator?.release();
           release.resolve();
           await result;
           await closing;

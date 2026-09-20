@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { createWorkspaceStateIdentity } from "../agents/workspace-state-identity.js";
 import type { ExecutionIdentityInspectionQuery } from "../audit/execution-identity-inspection.types.js";
 import { acquireStateDatabaseHandleExclusion } from "../infra/state-database-coordinator.js";
 import type {
@@ -586,13 +587,30 @@ it("closes only the operation matching a state path while its sibling finishes n
   expect(mock.closePool).toHaveBeenCalledOnce();
 });
 
-it.each(["fleet.get", "userProfiles.avatar.reconcile"] as const)(
+it.each([
+  "fleet.get",
+  "userProfiles.avatar.reconcile",
+  "onboardingRecommendations.read",
+  "workspace.snapshot",
+  "sandboxRegistry.get",
+  "sandboxRegistry.runtimeIds",
+] as const)(
   "captures and charges the retained UTF-8 selector while dispatch waits (%s)",
   async (type) => {
     const { options } = source();
     const selector = "租户🦞".repeat(512);
     const command =
-      type === "fleet.get" ? { type, tenantId: selector } : { type, profileId: selector };
+      type === "fleet.get"
+        ? { type, tenantId: selector }
+        : type === "userProfiles.avatar.reconcile"
+          ? { type, profileId: selector }
+          : type === "onboardingRecommendations.read"
+            ? { type, configKey: selector }
+            : type === "workspace.snapshot"
+              ? { type, workspaceDir: selector }
+              : type === "sandboxRegistry.get"
+                ? { type, containerName: selector }
+                : { type, backendId: selector, scopeKey: selector };
     const expected = { ...command };
     const dispatch = createDeferredCore();
     const task = queueTask(dispatch.promise);
@@ -601,17 +619,45 @@ it.each(["fleet.get", "userProfiles.avatar.reconcile"] as const)(
     const originalRoot = options.env.OPENCLAW_STATE_DIR;
     if (command.type === "fleet.get") {
       command.tenantId = "different tenant after admission";
-    } else {
+    } else if (command.type === "userProfiles.avatar.reconcile") {
       command.profileId = "different profile after admission";
+    } else if (command.type === "onboardingRecommendations.read") {
+      command.configKey = "different key after admission";
+    } else if (command.type === "sandboxRegistry.get") {
+      command.containerName = "different container after admission";
+    } else if (command.type === "sandboxRegistry.runtimeIds") {
+      command.backendId = "different backend after admission";
+      command.scopeKey = "different scope after admission";
+    } else {
+      command.workspaceDir = "different workspace after admission";
     }
     options.env.OPENCLAW_STATE_DIR = path.join(originalRoot, "different");
     const returned: OpenClawStateReadReply =
       type === "fleet.get"
         ? { ok: true, type, sourceAdmitted: true, cell: undefined }
-        : { ok: true, type, sourceAdmitted: true, profile: undefined };
+        : type === "userProfiles.avatar.reconcile"
+          ? { ok: true, type, sourceAdmitted: true, profile: undefined }
+          : type === "onboardingRecommendations.read"
+            ? { ok: true, type, sourceAdmitted: true, record: null }
+            : type === "sandboxRegistry.get"
+              ? { ok: true, type, sourceAdmitted: true, entry: null }
+              : type === "sandboxRegistry.runtimeIds"
+                ? { ok: true, type, sourceAdmitted: true, runtimeIds: [] }
+                : {
+                    ok: true,
+                    type,
+                    sourceAdmitted: true,
+                    snapshot: {
+                      identity: createWorkspaceStateIdentity(selector),
+                      setup: { version: 1 },
+                      setupExists: false,
+                    },
+                  };
     try {
       expect(Number.isSafeInteger(submitted.inputBytes)).toBe(true);
-      expect(submitted.inputBytes).toBeGreaterThanOrEqual(Buffer.byteLength(selector));
+      expect(submitted.inputBytes).toBeGreaterThanOrEqual(
+        Buffer.byteLength(selector) * (type === "sandboxRegistry.runtimeIds" ? 2 : 1),
+      );
       dispatch.resolve();
       const request = await task.captured;
       expect(request.command).toEqual(expected);

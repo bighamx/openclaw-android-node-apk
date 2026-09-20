@@ -349,7 +349,19 @@ class WorkerTaskPoolCore<Input, Output> {
   private createWorker(slot: Slot<Input, Output>): Worker {
     const worker = runInWorkerPoolContext(() => {
       const prepared = this.options.prepareWorker?.();
-      slot.temporaryDirectory = prepared?.temporaryDirectory;
+      slot.releaseResources = prepared?.releaseResources;
+      const temporaryDirectory = prepared?.temporaryDirectory;
+      if (temporaryDirectory) {
+        const releaseResources = slot.releaseResources;
+        slot.releaseResources = async () => {
+          try {
+            const { removeTemporaryArtifacts } = await import("./temp-artifact-cleanup.js");
+            await removeTemporaryArtifacts(temporaryDirectory, "Worker task");
+          } finally {
+            await releaseResources?.();
+          }
+        };
+      }
       const workerUrl = this.options.workerUrl;
       const workerOptions = {
         // Preserve native require(ESM) and its transitive import-only exports.

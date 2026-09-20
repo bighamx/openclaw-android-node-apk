@@ -17,6 +17,25 @@ export const cliRecoveryEntrypoints = {
   },
 } as const;
 
+// Failure reporting and exit finalization must share their compiled error classes.
+export const updateCandidateExitEntrypoints = {
+  oneShotExit: {
+    currentModuleUrl: import.meta.url,
+    sourceWorkerName: "one-shot-exit",
+    distWorkerPath: "cli/one-shot-exit.js",
+  },
+  failureTriage: {
+    currentModuleUrl: import.meta.url,
+    sourceWorkerName: "update-cli/update-command-triage",
+    distWorkerPath: "cli/update-cli/update-command-triage.js",
+  },
+  commandResult: {
+    currentModuleUrl: import.meta.url,
+    sourceWorkerName: "update-cli/update-command-result",
+    distWorkerPath: "cli/update-cli/update-command-result.js",
+  },
+} as const;
+
 // Prepare the real Gateway fixture before its readiness hook starts; source
 // transforms must not consume that hook's startup deadline.
 export const stateDirGatewayFixtureEntrypoint = {
@@ -25,8 +44,19 @@ export const stateDirGatewayFixtureEntrypoint = {
   distWorkerPath: "cli/state-dir-gateway-check.server-fixture.test-support.js",
 } as const;
 
+export const updateFinalizationOutputEntrypoint = {
+  currentModuleUrl: import.meta.url,
+  sourceWorkerName: "update-finalization-output.test-support",
+  distWorkerPath: "legacy-finalizer/src/cli/update-finalization-output.test-support.js",
+} as const;
+
 // Direct-stop children use the invocation's prepared graph before readiness starts.
 export const gatewayDirectStopEntrypoints = {
+  forcedCronFixture: {
+    currentModuleUrl: import.meta.url,
+    sourceWorkerName: "gateway-cli/run-loop.forced-cron.test-support",
+    distWorkerPath: "cli/gateway-cli/run-loop.forced-cron.test-support.js",
+  },
   modelAcquisitionFixture: {
     currentModuleUrl: import.meta.url,
     sourceWorkerName: "gateway-cli/run-loop.model-acquisition.test-support",

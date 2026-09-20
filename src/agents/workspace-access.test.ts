@@ -101,6 +101,55 @@ describe("host-owned workspace access", () => {
     },
   );
 
+  it("preserves remote discovery failure causes across the SDK boundary", async () => {
+    const root = workspace();
+    const cause = new Error("transport disconnected");
+    const release = registerAgentWorkspaceAccess(root, {
+      ...provider(),
+      loadSkills: async () => {
+        throw cause;
+      },
+    });
+    try {
+      // The provider fails before using its request; the binding still owns classification.
+      const loadSkills = getAgentWorkspaceAccess(root)!.loadSkills!;
+      await loadSkills({
+        sourcePlan: {
+          workspaceDir: root,
+          roots: [],
+          pluginSkillsDir: root,
+          pluginSkillRoots: [],
+          managedSkillsDir: root,
+          stateDir: root,
+        },
+        limits: { maxCandidatesPerRoot: 1, maxSkillsLoadedPerSource: 1, maxSkillFileBytes: 1 },
+        additionalBins: [],
+      }).then(
+        () => {
+          throw new Error("expected discovery to fail");
+        },
+        (error: unknown) => {
+          expect(error).toMatchObject({ cause });
+          expect(isWorkspaceAccessUnavailableError(error)).toBe(true);
+          expect(isWorkspaceAccessUnavailableError(new Error("wrapped", { cause: error }))).toBe(
+            true,
+          );
+          // Plugins may load a separate copy of the SDK; identity cannot depend on prototypes.
+          expect(isWorkspaceAccessUnavailableError({ code: "WORKSPACE_ACCESS_UNAVAILABLE" })).toBe(
+            true,
+          );
+        },
+      );
+      expect(isWorkspaceAccessUnavailableError(cause)).toBe(false);
+      release();
+      expect(() => getAgentWorkspaceAccess(root, "loadSkills")).toThrow(
+        WorkspaceAccessUnavailableError,
+      );
+    } finally {
+      release();
+    }
+  });
+
   it("leaves unconfigured workspaces local and declared workspaces unavailable until start", () => {
     const root = workspace();
     expect(getAgentWorkspaceAccess(root)).toBeUndefined();
@@ -109,12 +158,17 @@ describe("host-owned workspace access", () => {
     expect(() => getAgentWorkspaceAccess(root, "memoryFiles")).toThrow(
       WorkspaceAccessUnavailableError,
     );
+    expect(() => getAgentWorkspaceAccess(root, "loadSkills")).toThrow(
+      WorkspaceAccessUnavailableError,
+    );
     const release = registerAgentWorkspaceAccess(root, provider());
     expect(getAgentWorkspaceAccess(root)).toBeDefined();
     expect(getAgentWorkspaceAccess(root, "memoryFiles")).toBeUndefined();
+    expect(getAgentWorkspaceAccess(root, "loadSkills")).toBeUndefined();
     release();
     expect(() => getAgentWorkspaceAccess(root)).toThrow(WorkspaceAccessUnavailableError);
     expect(getAgentWorkspaceAccess(root, "memoryFiles")).toBeUndefined();
+    expect(getAgentWorkspaceAccess(root, "loadSkills")).toBeUndefined();
   });
 
   it("rejects duplicate ownership and revokes retained methods without affecting a replacement", async () => {

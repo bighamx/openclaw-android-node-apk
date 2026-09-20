@@ -31,7 +31,11 @@ import type { PluginToolIcons } from "../chat-tool-icon-controller.ts";
 import "./chat-clawhub-card.ts";
 import type { LinkFaviconFetcher } from "../link-favicon-loader.ts";
 import { workspaceResultConflictFromTranscript } from "../workspace-conflict.ts";
-import { readAsyncQuestions, type AsyncQuestionPresentation } from "./chat-async-question.ts";
+import {
+  readAsyncQuestions,
+  renderAsyncQuestionSummary,
+  type AsyncQuestionPresentation,
+} from "./chat-async-question.ts";
 import {
   renderAssistantAttachments,
   renderMessageAttachment,
@@ -458,10 +462,7 @@ export function renderGroupedMessage(
   const toolRenderOptions = { ...opts, messageKey, onOpenSidebar };
   const renderText = () =>
     asyncQuestions
-      ? html`<openclaw-chat-async-question
-          .questions=${asyncQuestions}
-          .presentation=${opts.asyncQuestions}
-        ></openclaw-chat-async-question>`
+      ? renderAsyncQuestionSummary(asyncQuestions, opts.asyncQuestions!)
       : jsonResult
         ? renderMessageJson(
             jsonResult,

@@ -153,3 +153,5 @@ export {
   createPluginRuntimeMock,
   type PluginRuntimeMediaMock,
 } from "./test-helpers/plugin-runtime-mock.js";
+
+export { createHookRunner } from "../plugins/hooks.js";

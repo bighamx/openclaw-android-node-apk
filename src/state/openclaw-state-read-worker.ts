@@ -93,11 +93,27 @@ function captureCommand(command: OpenClawStateReadCommand): OpenClawStateReadCom
 
 function commandBytes(command: OpenClawStateReadRequest["command"]): number {
   let bytes = Buffer.byteLength(command.type, "utf8");
+  if (command.type === "sandboxRegistry.get") {
+    return bytes + Buffer.byteLength(command.containerName, "utf8");
+  }
+  if (command.type === "sandboxRegistry.runtimeIds") {
+    return (
+      bytes +
+      Buffer.byteLength(command.backendId, "utf8") +
+      Buffer.byteLength(command.scopeKey, "utf8")
+    );
+  }
   if (command.type === "fleet.get") {
     return bytes + Buffer.byteLength(command.tenantId, "utf8");
   }
+  if (command.type === "onboardingRecommendations.read") {
+    return bytes + Buffer.byteLength(command.configKey, "utf8");
+  }
   if (command.type === "userProfiles.avatar.reconcile") {
     return bytes + Buffer.byteLength(command.profileId, "utf8");
+  }
+  if (command.type === "workspace.snapshot") {
+    return bytes + Buffer.byteLength(command.workspaceDir, "utf8");
   }
   if (command.type === "audit.run.inspect") {
     const input = command.input;

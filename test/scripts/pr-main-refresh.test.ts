@@ -110,6 +110,15 @@ describePosix("native PR main refresh boundaries", () => {
       expect(checkouts.length).toBeGreaterThan(0);
       expect(checkouts.every((e) => e.args?.at(-1) === f.head)).toBe(true);
       expect(f.events().filter((e) => e.kind === "main-fetch")).toHaveLength(1);
+      expect(
+        f
+          .events()
+          .some(
+            (event) =>
+              event.kind === "gh" &&
+              event.args?.some((arg) => /\/(?:files|check-runs|status)\?/.test(arg)),
+          ),
+      ).toBe(false);
     },
   );
 

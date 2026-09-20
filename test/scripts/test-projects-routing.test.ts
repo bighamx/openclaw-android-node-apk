@@ -509,6 +509,27 @@ describe("test-projects args", () => {
     ]);
   });
 
+  it("routes managed handoff scenarios through one infra project", () => {
+    const files = [
+      "lifecycle",
+      "native-lifecycle",
+      "recovery-systemd",
+      "recovery-launchd",
+      "terminal-result",
+      "triage",
+      "repair-validating",
+      "repair-verifying",
+    ].map((scenario) => `src/infra/update-managed-service-handoff-${scenario}.test.ts`);
+    expect(buildVitestRunPlans(files)).toEqual([
+      {
+        config: "test/vitest/vitest.infra.config.ts",
+        forwardedArgs: [],
+        includePatterns: files,
+        watchMode: false,
+      },
+    ]);
+  });
+
   it("keeps split test entries in their owner configs", () => {
     expect(buildVitestRunPlans(["src/agents/openai-transport-stream.base.test.ts"])).toEqual([
       {

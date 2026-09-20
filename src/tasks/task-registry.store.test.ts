@@ -1623,9 +1623,6 @@ describe("task-registry store runtime", () => {
       const deleteTaskWithDeliveryState = vi.fn((taskId: string) => {
         sqliteState.delete(taskId);
       });
-      const listTasksForOwnerKey = vi.fn(async (key: string) =>
-        [...sqliteState.values()].filter((task) => task.ownerKey === key),
-      );
 
       configureTaskRegistryRuntime({
         store: {
@@ -1642,7 +1639,8 @@ describe("task-registry store runtime", () => {
           },
           upsertTaskWithDeliveryState,
           deleteTaskWithDeliveryState,
-          listTasksForOwnerKey,
+          listTasksForOwnerKey: async (_context, key) =>
+            [...sqliteState.values()].filter((task) => task.ownerKey === key),
         },
       });
 

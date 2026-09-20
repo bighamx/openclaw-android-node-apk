@@ -370,11 +370,8 @@ export async function readTriageUpdateFailure(
 export async function readPendingTriageUpdateFailure(
   env: NodeJS.ProcessEnv,
   redaction: SupportRedactionContext,
-): Promise<
-  { failure: TriageUpdateFailure; recordedAtMs: number; correlated: boolean } | undefined
-> {
-  // A pending update notification is evidence only. Do not consume it or create
-  // state while the Gateway is offline; delivery instructions are never projected.
+): Promise<TriageUpdateFailure | undefined> {
+  // Diagnostic evidence only; the resolution owner selects current ledger history.
   const { readRestartSentinelReadOnly } = await import("../infra/restart-sentinel.js");
   const sentinel = await readRestartSentinelReadOnly(env);
   if (sentinel?.payload.kind !== "update") {
@@ -388,7 +385,7 @@ export async function readPendingTriageUpdateFailure(
   ) {
     return undefined;
   }
-  const failure = sanitizeTriageUpdateFailure(
+  return sanitizeTriageUpdateFailure(
     {
       result: {
         ...(stats?.runId ? { runId: stats.runId } : {}),
@@ -410,15 +407,4 @@ export async function readPendingTriageUpdateFailure(
     },
     redaction,
   );
-  let correlated = false;
-  if ("result" in failure && failure.result.runId) {
-    try {
-      const { getUpdateRun } = await import("../infra/update-run-reader.js");
-      const run = getUpdateRun(failure.result.runId, { env });
-      correlated = Boolean(run?.target.version || run?.target.sha);
-    } catch {
-      // Unavailable history is uncorrelated evidence, not a failed Doctor check.
-    }
-  }
-  return { failure, recordedAtMs: payload.ts, correlated };
 }

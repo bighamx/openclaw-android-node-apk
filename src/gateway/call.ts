@@ -30,11 +30,7 @@ import {
 import { getRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { createAbortError } from "../infra/abort-signal.js";
-import {
-  loadDeviceIdentityIfPresent,
-  loadOrCreateDeviceIdentity,
-  type DeviceIdentity,
-} from "../infra/device-identity.js";
+import type { DeviceIdentity } from "../infra/device-identity.js";
 import { isVitestRuntimeEnv } from "../infra/env.js";
 import { extractErrorCodeOrErrno } from "../infra/error-graph-internal.js";
 import type { DeviceAuthEntry } from "../shared/device-auth.js";
@@ -44,6 +40,7 @@ import { VERSION } from "../version.js";
 import { resolveGatewayAuth } from "./auth-resolve.js";
 import {
   loadStoredOperatorDeviceAuthToken,
+  resolveDeviceIdentityForGatewayCall,
   shouldOmitDeviceIdentityForGatewayCall,
 } from "./call-device-auth.js";
 import {
@@ -95,6 +92,7 @@ import { assertGatewayCliMessageContext } from "./operator-cli-message-input.js"
 import {
   GatewayTransportError,
   type GatewayTransportErrorKind,
+  formatGatewayTimeoutError,
   isGatewayTransportError,
 } from "./transport-error.js";
 export type { GatewayConnectionDetails };
@@ -110,7 +108,10 @@ export type GatewayRequestFunction = <T = Record<string, unknown>>(
   opts?: GatewayClientRequestOptions,
 ) => Promise<T>;
 
-type CallGatewayBaseOptions = Pick<GatewayClientOptions, "caps" | "clientName" | "mode"> & {
+type CallGatewayBaseOptions = Pick<
+  GatewayClientOptions,
+  "caps" | "clientName" | "mode" | "preparedDeviceAuth"
+> & {
   url?: string;
   /** Require this resolved endpoint without overriding target selection or authentication. */
   expectUrl?: string;
@@ -462,20 +463,6 @@ export function buildGatewayConnectionDetails(
   });
 }
 
-export function resolveDeviceIdentityForGatewayCall(
-  sharedStateMode?: "read-only",
-): DeviceIdentity | null {
-  try {
-    return sharedStateMode === "read-only"
-      ? loadDeviceIdentityIfPresent()
-      : loadOrCreateDeviceIdentity();
-  } catch {
-    // Read-only or restricted environments should still be able to call the
-    // gateway with token/password auth without crashing before the RPC.
-    return null;
-  }
-}
-
 function resolveGatewayCallAuth(config: OpenClawConfig) {
   return resolveGatewayAuth({
     authConfig: config.gateway?.auth,
@@ -659,13 +646,6 @@ function formatGatewayCloseError(
   return message;
 }
 
-function formatGatewayTimeoutError(
-  timeoutMs: number,
-  connectionDetails: GatewayConnectionDetails,
-): string {
-  return `gateway timeout after ${timeoutMs}ms\n${connectionDetails.message}`;
-}
-
 /** Wrap raw socket-level connect failures (ECONNREFUSED etc.) into one actionable message. */
 function createGatewayUnreachableTransportError(params: {
   cause: Error;
@@ -702,12 +682,14 @@ function createGatewayCloseTransportError(params: {
 function createGatewayTimeoutTransportError(params: {
   timeoutMs: number;
   connectionDetails: GatewayConnectionDetails;
+  requestDispatched: boolean;
 }): GatewayTransportError {
+  const { timeoutMs, connectionDetails, requestDispatched } = params;
   return new GatewayTransportError({
     kind: "timeout",
-    timeoutMs: params.timeoutMs,
-    connectionDetails: params.connectionDetails,
-    message: formatGatewayTimeoutError(params.timeoutMs, params.connectionDetails),
+    timeoutMs,
+    connectionDetails,
+    message: formatGatewayTimeoutError(timeoutMs, connectionDetails, requestDispatched),
   });
 }
 
@@ -1014,6 +996,7 @@ async function executeGatewayRequestWithScopes<T>(params: {
         createGatewayTimeoutTransportError({
           timeoutMs: wrapperTimeoutMs,
           connectionDetails: params.connectionDetails,
+          requestDispatched: primaryRequestStarted,
         }),
       );
     }, safeTimerTimeoutMs);
@@ -1031,6 +1014,7 @@ async function executeGatewayRequestWithScopes<T>(params: {
           createGatewayTimeoutTransportError({
             timeoutMs: startupTimeoutMs,
             connectionDetails: params.connectionDetails,
+            requestDispatched: false,
           }),
         );
       })
@@ -1122,9 +1106,9 @@ async function callGatewayWithScopes<T = Record<string, unknown>>(
         ? null
         : resolveDeviceIdentityForGatewayCall(opts.sharedStateMode)
       : opts.deviceIdentity;
-  let storedAuth: DeviceAuthEntry | null | undefined;
+  let storedAuth: DeviceAuthEntry | null | undefined = opts.preparedDeviceAuth;
   if (useStoredDeviceAuth) {
-    storedAuth = await loadStoredOperatorDeviceAuthToken(
+    storedAuth ??= await loadStoredOperatorDeviceAuthToken(
       deviceIdentity,
       deviceAuthScope,
       opts.sharedStateMode,

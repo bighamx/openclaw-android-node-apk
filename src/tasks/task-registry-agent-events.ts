@@ -398,6 +398,13 @@ async function persist(pending: PendingEvent): Promise<void> {
           },
           beforeObservers: async (assertCurrentPublication) => {
             if (pending.publication && pending.phase.kind !== "consumed") {
+              const assertCurrentOwners = () => {
+                assertCurrentPublication();
+                if (getTaskRegistryStore() !== store || getTaskFlowRegistryStore() !== flowStore) {
+                  throw new Error("Task event publication owners changed");
+                }
+              };
+              assertCurrentOwners();
               const current = tasks.get(taskId);
               if (
                 pending.publication.becomesTerminal &&
@@ -408,16 +415,9 @@ async function persist(pending: PendingEvent): Promise<void> {
               }
               await finishTaskMutation(context, store, flowStore, taskId, {
                 operation: "update",
-                assertCurrent: () => {
-                  assertCurrentPublication();
-                  if (
-                    getTaskRegistryStore() !== store ||
-                    getTaskFlowRegistryStore() !== flowStore
-                  ) {
-                    throw new Error("Task event publication owners changed");
-                  }
-                },
+                assertCurrent: assertCurrentOwners,
               });
+              assertCurrentOwners();
               flowEffectsSettled = true;
             }
           },

@@ -1,9 +1,14 @@
 // Status scan overview tests cover overview collection and gateway/runtime summary inputs.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSqliteWalHealth } from "./sqlite-wal-health.test-support.js";
+import { createStatusGatewayProbeBudget } from "./status.gateway-probe-budget.js";
 import { collectStatusScanOverview } from "./status.scan-overview.ts";
 
 const sqliteWal = createSqliteWalHealth();
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const mocks = vi.hoisted(() => ({
   hasConfiguredChannelsForReadOnlyScope: vi.fn(),
@@ -98,6 +103,7 @@ function firstChannelsTableCall(): ChannelsTableCall {
 describe("collectStatusScanOverview", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(performance, "now").mockReturnValue(0);
 
     mocks.hasConfiguredChannelsForReadOnlyScope.mockReturnValue(true);
     mocks.getStatusCommandSecretTargetIds.mockReturnValue([]);
@@ -169,7 +175,7 @@ describe("collectStatusScanOverview", () => {
   it("uses gateway fallback overrides for channels.status when requested", async () => {
     const result = await collectStatusScanOverview({
       commandName: "status --all",
-      opts: { timeoutMs: 1234 },
+      opts: createStatusGatewayProbeBudget(1234),
       showSecrets: false,
       useGatewayCallOverridesForChannelsStatus: true,
     });
@@ -201,7 +207,7 @@ describe("collectStatusScanOverview", () => {
   it("can keep channel overview on metadata-only status paths", async () => {
     const result = await collectStatusScanOverview({
       commandName: "status",
-      opts: { timeoutMs: 1234 },
+      opts: createStatusGatewayProbeBudget(1234),
       showSecrets: false,
       includeLiveChannelStatus: false,
       includeChannelSetupRuntimeFallback: false,
@@ -247,7 +253,7 @@ describe("collectStatusScanOverview", () => {
     });
     const result = await collectStatusScanOverview({
       commandName: "status",
-      opts: {},
+      opts: createStatusGatewayProbeBudget(),
       showSecrets: true,
     });
 
@@ -296,7 +302,7 @@ describe("collectStatusScanOverview", () => {
 
     const result = await collectStatusScanOverview({
       commandName: "status",
-      opts: {},
+      opts: createStatusGatewayProbeBudget(),
       showSecrets: false,
       includeChannelsData: false,
     });
@@ -340,7 +346,7 @@ describe("collectStatusScanOverview", () => {
     });
     const result = await collectStatusScanOverview({
       commandName: "status",
-      opts: {},
+      opts: createStatusGatewayProbeBudget(),
       showSecrets: false,
       includeChannelsData: false,
     });

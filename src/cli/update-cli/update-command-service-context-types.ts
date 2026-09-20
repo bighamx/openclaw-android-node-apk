@@ -1,7 +1,10 @@
 import type { DaemonRuntimePinSnapshot } from "../../daemon/runtime-pin-types.js";
 import type { ServiceInspectionReason } from "../../daemon/service-inspection-error.js";
 import type { GatewayServiceDefinitionBackupReceipt } from "../../daemon/service-stage.js";
-import type { GatewayServiceCommandConfig } from "../../daemon/service-types.js";
+import type {
+  GatewayServiceCommandConfig,
+  SystemdServiceIdentity,
+} from "../../daemon/service-types.js";
 import type {
   PackageDirectoryIdentity,
   PackageIntegrityFingerprint,
@@ -46,8 +49,12 @@ export type PreManagedServiceStop = {
   serviceEnv?: NodeJS.ProcessEnv;
   serviceDefinitionEnv?: NodeJS.ProcessEnv;
   serviceNodeRunner?: string;
+  servicePort?: number;
+  /** Original service generation, which can differ from the invoking CLI package. */
+  serviceIdentity?: { version: string; buildId?: string };
   /** Original account observed from the pinned native user-manager connection. */
   serviceManagerUid?: number;
+  serviceSystemdIdentity?: SystemdServiceIdentity;
   windowsTaskAutoStartRecovery?: WindowsTaskAutoStartRecovery;
 };
 

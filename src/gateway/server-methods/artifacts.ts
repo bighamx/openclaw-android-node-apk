@@ -1,12 +1,8 @@
 // Artifact gateway methods collect generated artifacts from session transcripts
 // and expose list/get/download RPCs scoped by session, run, task, or agent.
 import { createHash } from "node:crypto";
-import { isHttpUrl } from "@openclaw/net-policy/url-protocol";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
-import {
-  normalizeOptionalString as asNonEmptyString,
-  readStringValue,
-} from "@openclaw/normalization-core/string-coerce";
+import { normalizeOptionalString as asNonEmptyString } from "@openclaw/normalization-core/string-coerce";
 import {
   ErrorCodes,
   errorShape,
@@ -34,18 +30,22 @@ import {
 import { tryResolveSessionCompatibilityOwnerAgentId } from "../session-request-agent.js";
 import { visitSessionMessagesAsync } from "../session-transcript-readers.js";
 import { loadGatewaySessionEntryReadOnly } from "../session-utils.js";
+import { parseTranscriptImageArtifactId } from "../transcript-image-artifacts.js";
 import {
-  type ArtifactBase64Payload,
-  base64FromDataUrl,
-  mimeFromDataUrl,
-  readArtifactBase64Payload,
-} from "./artifacts-base64.js";
+  type ArtifactLookup,
+  type ArtifactRecord,
+  mediaUrlValue,
+  resolveBlockDownload,
+  resolveMessageRunId,
+  resolveMessageTaskId,
+} from "./artifacts-content.js";
 import { readArtifactImagePage } from "./artifacts-image-page.js";
 import {
   ArtifactSessionResolutionError,
   type ArtifactQuery,
   prepareArtifactSessionResolution,
 } from "./artifacts-session-resolution.js";
+import { findTranscriptImageArtifact } from "./artifacts-transcript-images.js";
 import { readGatewayRequestMutationAuthority } from "./session-mutation-guards.js";
 import type {
   GatewayClient,
@@ -54,13 +54,6 @@ import type {
   RespondFn,
 } from "./types.js";
 import { assertValidParams } from "./validation.js";
-
-type ArtifactDownloadMode = ArtifactSummary["download"]["mode"];
-
-type ArtifactRecord = ArtifactSummary & {
-  data?: string;
-  url?: string;
-};
 
 type ArtifactCollectionOptions = {
   includeDownloadData?: boolean;
@@ -113,25 +106,6 @@ function normalizeArtifactType(value: string): string {
   return "file";
 }
 
-function mediaUrlValue(value: unknown): string | undefined {
-  if (typeof value === "string") {
-    return asNonEmptyString(value);
-  }
-  const record = asOptionalRecord(value);
-  return asNonEmptyString(record?.url);
-}
-
-function isSafeDownloadUrl(value: string): boolean {
-  const trimmed = value.trim();
-  if (!trimmed || /^data:/i.test(trimmed)) {
-    return false;
-  }
-  if (trimmed.startsWith("/")) {
-    return !trimmed.startsWith("//") && trimmed.startsWith("/api/");
-  }
-  return isHttpUrl(trimmed);
-}
-
 /** Generates a stable id from transcript position plus display metadata. */
 function artifactId(parts: {
   sessionKey: string;
@@ -153,74 +127,6 @@ function resolveMessageSeq(message: Record<string, unknown>, fallback: number): 
   const meta = asOptionalRecord(message["__openclaw"]);
   const seq = meta?.seq;
   return typeof seq === "number" && Number.isInteger(seq) && seq > 0 ? seq : fallback;
-}
-
-function resolveMessageRunId(message: Record<string, unknown>): string | undefined {
-  const meta = asOptionalRecord(message["__openclaw"]);
-  return asNonEmptyString(meta?.runId) ?? asNonEmptyString(message.runId);
-}
-
-function resolveMessageTaskId(message: Record<string, unknown>): string | undefined {
-  const meta = asOptionalRecord(message["__openclaw"]);
-  return (
-    asNonEmptyString(meta?.messageTaskId) ??
-    asNonEmptyString(meta?.taskId) ??
-    asNonEmptyString(message.messageTaskId) ??
-    asNonEmptyString(message.taskId)
-  );
-}
-
-function resolveBlockDownload(
-  block: Record<string, unknown>,
-  opts: { includeData: boolean },
-): {
-  mode: ArtifactDownloadMode;
-  data?: string;
-  url?: string;
-  mimeType?: string;
-  sizeBytes?: number;
-} {
-  const data = readStringValue(block.data)?.trim();
-  const content = readStringValue(block.content)?.trim();
-  const url = asNonEmptyString(block.url) ?? asNonEmptyString(block.openUrl);
-  const imageUrl = mediaUrlValue(block.image_url);
-  const audioUrl = asNonEmptyString(block.audio_url);
-  const source = asOptionalRecord(block.source);
-  const sourceData = readStringValue(source?.data)?.trim();
-  const sourceUrl = asNonEmptyString(source?.url);
-  const dataUrl = [url, sourceUrl, imageUrl, audioUrl, data, content, sourceData].find(
-    (value) => typeof value === "string" && /^data:/i.test(value),
-  );
-  const base64FromDetectedDataUrl = readArtifactBase64Payload(
-    dataUrl ? base64FromDataUrl(dataUrl) : undefined,
-    opts,
-  );
-  const directBase64 = [data, sourceData, content]
-    .filter((value): value is string => typeof value === "string" && !/^data:/i.test(value))
-    .map((value) => readArtifactBase64Payload(value, opts))
-    .find((value): value is ArtifactBase64Payload => value !== undefined);
-  const base64 = base64FromDetectedDataUrl ?? directBase64;
-  const remoteUrl = [url, sourceUrl, imageUrl, audioUrl].find(
-    (value) => typeof value === "string" && isSafeDownloadUrl(value),
-  );
-  const mimeType =
-    asNonEmptyString(block.mimeType) ??
-    asNonEmptyString(block.media_type) ??
-    asNonEmptyString(source?.media_type) ??
-    asNonEmptyString(source?.mimeType) ??
-    (dataUrl ? mimeFromDataUrl(dataUrl) : undefined);
-  const explicitSize = block.sizeBytes ?? source?.sizeBytes;
-  const sizeBytes =
-    typeof explicitSize === "number" && Number.isFinite(explicitSize) && explicitSize >= 0
-      ? Math.floor(explicitSize)
-      : base64?.sizeBytes;
-  if (base64) {
-    return { mode: "bytes", data: base64.data, mimeType, sizeBytes };
-  }
-  if (remoteUrl) {
-    return { mode: "url", url: remoteUrl, mimeType, sizeBytes };
-  }
-  return { mode: "unsupported", mimeType, sizeBytes };
 }
 
 function isArtifactBlock(block: Record<string, unknown>): boolean {
@@ -505,10 +411,15 @@ async function findArtifact(
   getRuntimeConfig: () => OpenClawConfig | undefined,
   opts: ArtifactCollectionOptions = {},
   client: GatewayClient | null = null,
-): Promise<{
-  artifact?: ArtifactRecord;
-  sessionKey?: string;
-}> {
+): Promise<ArtifactLookup> {
+  if (parseTranscriptImageArtifactId(params.artifactId)) {
+    return findTranscriptImageArtifact(
+      params,
+      getRuntimeConfig,
+      opts.includeDownloadData !== false,
+      client,
+    );
+  }
   const loaded = await loadArtifacts(params, getRuntimeConfig, opts, client);
   return {
     sessionKey: loaded.sessionKey,
@@ -519,6 +430,19 @@ async function findArtifact(
 function toSummary(artifact: ArtifactRecord): ArtifactSummary {
   const { data: _dataValue, url: _url, ...summary } = artifact;
   return summary;
+}
+
+function artifactResponseIsCurrent(found: ArtifactLookup, respond: RespondFn): boolean {
+  try {
+    found.assertCurrent?.();
+    return true;
+  } catch (error) {
+    if (!(error instanceof ArtifactSessionResolutionError)) {
+      throw error;
+    }
+    respond(false, undefined, error.shape);
+    return false;
+  }
 }
 
 async function respondManagedArtifactDownload(
@@ -630,7 +554,9 @@ export const artifactsHandlers: GatewayRequestHandlers = {
       respondArtifactNotFound(respond, query.artifactId);
       return;
     }
-    respond(true, { artifact: toSummary(artifact) });
+    if (artifactResponseIsCurrent(found.value, respond)) {
+      respond(true, { artifact: toSummary(artifact) });
+    }
   },
   "artifacts.download": async (request) => {
     const { params, client } = request;
@@ -689,6 +615,9 @@ export const artifactsHandlers: GatewayRequestHandlers = {
             url: artifact.url,
           })
         : null;
+    if (!artifactResponseIsCurrent(found.value, respond)) {
+      return;
+    }
     respond(true, {
       artifact: toSummary(artifact),
       ...(artifact.download.mode === "bytes"

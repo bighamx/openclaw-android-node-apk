@@ -5,6 +5,11 @@ import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import type { OpenClawStateReadOutcome } from "./openclaw-state-read.types.js";
 
+vi.hoisted(() => {
+  // Shared setup can preload the real reader; bind this fixture to its transport mocks.
+  vi.resetModules();
+});
+
 const mock = vi.hoisted(() => ({
   close: vi.fn<() => Promise<void>>(),
   read: vi.fn<() => Promise<OpenClawStateReadOutcome>>(),

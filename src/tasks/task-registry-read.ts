@@ -1,5 +1,6 @@
 import { createSqliteLifecycleAggregateError } from "../infra/sqlite-coordinator.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
+import type { OpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.types.js";
 import { captureTaskRegistryReadFence } from "./task-registry-listener-state.js";
 import { cloneTaskRecord, selectTaskRecordsForOwnerTree } from "./task-registry-records.js";
 import {
@@ -15,7 +16,7 @@ import {
   matchesScope,
   type PendingTaskRegistryMutation,
 } from "./task-registry.process-state.js";
-import { getTaskRegistryStore } from "./task-registry.store.js";
+import { getTaskRegistryStore, type TaskRegistryStore } from "./task-registry.store.js";
 import type { TaskRegistryMutationScope } from "./task-registry.store.types.js";
 import type { TaskRecord } from "./task-registry.types.js";
 
@@ -85,8 +86,14 @@ function isTaskRegistryReadIdentityCurrent(taskId: string): boolean {
   return true;
 }
 
+type TaskRegistryReadOwner = {
+  context: OpenClawStateWorkerContext;
+  store: TaskRegistryStore;
+  assertCurrent: () => void;
+};
+
 /** External readers join a fixed accepted prefix; persistence preparation must never use this fence. */
-export async function prepareTaskRegistryRead(): Promise<TaskRegistryRead | undefined> {
+export async function prepareTaskRegistryReadOwner(): Promise<TaskRegistryReadOwner> {
   const context = captureOpenClawStateWorkerContext();
   const store = getTaskRegistryStore();
   const fence = captureTaskRegistryReadFence(context.admission);
@@ -98,7 +105,15 @@ export async function prepareTaskRegistryRead(): Promise<TaskRegistryRead | unde
   if (errors.length > 1) {
     throw createSqliteLifecycleAggregateError(errors, "Task read preparation failed", errors[0]);
   }
-  assertTaskRegistryOwnerCurrent(context, store);
+  const assertCurrent = () => assertTaskRegistryOwnerCurrent(context, store);
+  assertCurrent();
+  return { context, store, assertCurrent };
+}
+
+export async function prepareTaskRegistryRead(
+  owner?: TaskRegistryReadOwner,
+): Promise<TaskRegistryRead | undefined> {
+  const { context, store } = owner ?? (await prepareTaskRegistryReadOwner());
   if (!(await prepareTaskRegistryProjectionAsync(context, store, 3))) {
     return undefined;
   }

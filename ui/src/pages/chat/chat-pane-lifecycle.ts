@@ -53,7 +53,7 @@ import { ChatPaneSessionCreation } from "./chat-pane-session-creation.ts";
 import { ChatPaneSessionPanelToggleController } from "./chat-pane-session-panel-toggle.ts";
 import {
   CHAT_COMPOSER_TEXTAREA_SELECTOR,
-  CHAT_OPEN_DETAILS_SELECTOR,
+  closeChatPaneDetails,
   focusChatComposerFromPrintableKeydown,
 } from "./chat-pane-shared.ts";
 import { resolveSidebarLayoutForBoard } from "./chat-pane-sidebar-layout.ts";
@@ -245,7 +245,8 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionCreation {
       !this.active ||
       !this.presented ||
       event.defaultPrevented ||
-      document.querySelector(".shell-nav[aria-modal='true']")
+      document.querySelector(".shell-nav[aria-modal='true']") ||
+      this.handleArchiveSessionShortcut(event)
     ) {
       return;
     }
@@ -286,30 +287,14 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionCreation {
     ) {
       return;
     }
-    const openDetails = this.querySelectorAll<HTMLDetailsElement>(CHAT_OPEN_DETAILS_SELECTOR);
-    if (openDetails.length > 0) {
+    if (closeChatPaneDetails(this)) {
       event.preventDefault();
-      openDetails.forEach((details) => {
-        details.open = false;
-      });
     }
   };
 
   protected readonly handleDocumentPointerdown = (event: PointerEvent) => {
-    const state = this.state;
-    if (!state) {
-      return;
-    }
-    const path = event.composedPath();
-    let changed = false;
-    this.querySelectorAll<HTMLDetailsElement>(CHAT_OPEN_DETAILS_SELECTOR).forEach((details) => {
-      if (!path.includes(details)) {
-        details.open = false;
-        changed = true;
-      }
-    });
-    if (changed) {
-      state.requestUpdate();
+    if (this.state && closeChatPaneDetails(this, event.composedPath())) {
+      this.state.requestUpdate();
     }
   };
 

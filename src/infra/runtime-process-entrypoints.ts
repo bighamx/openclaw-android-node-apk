@@ -54,6 +54,11 @@ export const runtimeProcessEntrypoints = {
     sourceWorkerName: "../state/openclaw-state.worker",
     distWorkerPath: "state/openclaw-state.worker.js",
   },
+  authProfileInlineUsage: {
+    currentModuleUrl,
+    sourceWorkerName: "../agents/auth-profiles/inline-usage.worker",
+    distWorkerPath: "agents/auth-profiles/inline-usage.worker.js",
+  },
   agentDatabaseExecution: {
     currentModuleUrl,
     sourceWorkerName: "../state/openclaw-agent-execution.worker",
@@ -63,6 +68,21 @@ export const runtimeProcessEntrypoints = {
     currentModuleUrl,
     sourceWorkerName: "../worker/memory-worker-entry",
     distWorkerPath: "worker/memory-worker-entry.js",
+  },
+  workspaceSkills: {
+    currentModuleUrl,
+    sourceWorkerName: "../worker/skills-worker-entry",
+    distWorkerPath: "worker/skills-worker-entry.js",
+  },
+  boardStore: {
+    currentModuleUrl,
+    sourceWorkerName: "../boards/sqlite-board-store.worker",
+    distWorkerPath: "boards/sqlite-board-store.worker.js",
+  },
+  heartbeatOutcomeStore: {
+    currentModuleUrl,
+    sourceWorkerName: "heartbeat-outcome-store.worker",
+    distWorkerPath: "infra/heartbeat-outcome-store.worker.js",
   },
   sqliteStore: {
     currentModuleUrl,

@@ -7,6 +7,11 @@ import type { MemoryWorkspaceFiles } from "../../packages/memory-host-sdk/src/ho
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { readPersistedMediaFacts, type MediaFact } from "../media/media-facts.js";
 import type { UserTurnTranscriptRecorder } from "../sessions/user-turn-transcript.types.js";
+import type {
+  WorkspaceSkillSourceRequest,
+  WorkspaceSkillSources,
+} from "../skills/loading/workspace-skill-sources.types.js";
+import type { SkillResourceSourceReader } from "../skills/types.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.types.js";
 
 type WorkspaceAttachmentTurn = {
@@ -20,6 +25,15 @@ type WorkspaceAttachmentTurn = {
 export type AgentWorkspaceAccess = {
   /** Native Memory file operations; indexing and session state remain on Gateway. */
   memoryFiles?: MemoryWorkspaceFiles;
+  /** Read native source tiers and execution-host facts without applying Gateway policy. */
+  loadSkills?: (request: WorkspaceSkillSourceRequest) => Promise<WorkspaceSkillSources>;
+  /** Keep a host subscription alive until aborted; notify without transferring file contents. */
+  watchSkills?: (
+    request: Pick<WorkspaceSkillSourceRequest, "sourcePlan" | "executionWorkspaceDir">,
+    onChange: (event: "change" | "unavailable") => void,
+    signal: AbortSignal,
+  ) => Promise<void>;
+  skillResources?: SkillResourceSourceReader;
   bridge: Pick<
     SandboxFsBridge,
     "readFile" | "readFileWithSource" | "readDirectory" | "writeFile" | "stat"
@@ -249,6 +263,64 @@ export function registerAgentWorkspaceAccess(
       assertPreparationCurrent();
       return note;
     };
+  }
+  const loadSkills = access.loadSkills?.bind(access);
+  if (loadSkills) {
+    boundAccess.loadSkills = async (request) => {
+      assertCurrent();
+      let result: WorkspaceSkillSources;
+      try {
+        result = await loadSkills(request);
+      } catch (cause) {
+        throw new WorkspaceAccessUnavailableError("Remote workspace skill discovery failed", {
+          cause,
+        });
+      }
+      assertCurrent();
+      return result;
+    };
+  }
+  const watchSkills = access.watchSkills?.bind(access);
+  if (watchSkills) {
+    boundAccess.watchSkills = async (request, onChange, signal) => {
+      assertCurrent();
+      const active = AbortSignal.any([signal, lifetime.signal]);
+      active.throwIfAborted();
+      await watchSkills(
+        request,
+        (event) => {
+          if (!active.aborted && binding.active && bindings.get(key) === binding) {
+            onChange(event);
+          }
+        },
+        active,
+      );
+    };
+  }
+  const skillResources = access.skillResources;
+  if (skillResources) {
+    boundAccess.skillResources = Object.freeze({
+      async readInstructions(filePath, options) {
+        assertCurrent();
+        options.signal?.throwIfAborted();
+        const result = await skillResources.readInstructions(filePath, options);
+        assertCurrent();
+        options.signal?.throwIfAborted();
+        return result;
+      },
+      async resolveExplicitSkill(selection) {
+        assertCurrent();
+        const result = await skillResources.resolveExplicitSkill(selection);
+        assertCurrent();
+        return result;
+      },
+      async readSkillFiles(skill, options) {
+        assertCurrent();
+        const result = await skillResources.readSkillFiles(skill, options);
+        assertCurrent();
+        return result;
+      },
+    });
   }
   binding.access = Object.freeze(boundAccess);
   bindings.set(key, binding);

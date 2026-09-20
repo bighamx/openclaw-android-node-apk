@@ -217,7 +217,7 @@ export function addRunIdIndex(taskId: string, runId?: string) {
   ids.add(taskId);
 }
 
-export function deleteRunIdIndex(taskId: string, runId?: string): void {
+function deleteRunIdIndex(taskId: string, runId?: string): void {
   if (runId?.trim()) {
     deleteIndexedKey(indexState.taskIdsByRunId, runId.trim(), taskId);
   }
@@ -289,11 +289,34 @@ export function deleteRelatedSessionKeyIndex(taskId: string, task: TaskSessionKe
   }
 }
 
-export function rebuildRunIdIndex() {
-  indexState.taskIdsByRunId.clear();
-  for (const [taskId, task] of indexState.tasks.entries()) {
-    addRunIdIndex(taskId, task.runId);
+/** Update after installing next; previous is the row replaced at that write. */
+export function updateRunIdIndex(
+  previous: Pick<TaskRecord, "taskId" | "runId"> | undefined,
+  next: Pick<TaskRecord, "taskId" | "runId">,
+): void {
+  const previousRunId = normalizeOptionalString(previous?.runId);
+  const nextRunId = normalizeOptionalString(next.runId);
+  if (previous && previousRunId === nextRunId) {
+    return;
   }
+  if (previous) {
+    deleteRunIdIndex(previous.taskId, previousRunId);
+  }
+  if (!nextRunId) {
+    return;
+  }
+  if (!previous || !indexState.taskIdsByRunId.has(nextRunId)) {
+    addRunIdIndex(next.taskId, nextRunId);
+    return;
+  }
+  // Native create/reuse selects duplicate runs in task-map insertion order.
+  const ids = new Set<string>();
+  for (const [taskId, task] of indexState.tasks) {
+    if (normalizeOptionalString(task.runId) === nextRunId) {
+      ids.add(taskId);
+    }
+  }
+  indexState.taskIdsByRunId.set(nextRunId, ids);
 }
 
 export function removeTaskIndexes(task: TaskRecord): void {
@@ -329,6 +352,40 @@ export function matchesScope(task: TaskRecord, scope: TaskRegistryMutationScope)
     Boolean(scope.runId && task.runId?.trim() === scope.runId) ||
     Boolean(scope.childSessionKey && task.childSessionKey?.trim() === scope.childSessionKey)
   );
+}
+
+export function selectTaskRegistryScopes(scopes?: readonly TaskRegistryMutationScope[]): {
+  taskIds: Iterable<string>;
+  matches: (task: TaskRecord) => boolean;
+} {
+  if (!scopes) {
+    return { taskIds: indexState.tasks.keys(), matches: () => true };
+  }
+  const single = scopes[0];
+  if (scopes.length === 1 && single) {
+    return { taskIds: taskIdsInScope(single), matches: (task) => matchesScope(task, single) };
+  }
+  const taskIds = new Set(scopes.map((scope) => scope.taskId));
+  const runIds = new Set(scopes.flatMap((scope) => scope.runId || []));
+  const childSessionKeys = new Set(scopes.flatMap((scope) => scope.childSessionKey || []));
+  const candidates = new Set(taskIds);
+  for (const { keys, index } of [
+    { keys: runIds, index: indexState.taskIdsByRunId },
+    { keys: childSessionKeys, index: indexState.taskIdsByRelatedSessionKey },
+  ]) {
+    for (const key of keys) {
+      for (const taskId of index.get(key) ?? []) {
+        candidates.add(taskId);
+      }
+    }
+  }
+  return {
+    taskIds: candidates,
+    matches: (task) =>
+      taskIds.has(task.taskId) ||
+      runIds.has(task.runId?.trim() ?? "") ||
+      childSessionKeys.has(task.childSessionKey?.trim() ?? ""),
+  };
 }
 
 /** Restore transaction-local publication facts without replacing held witness objects. */

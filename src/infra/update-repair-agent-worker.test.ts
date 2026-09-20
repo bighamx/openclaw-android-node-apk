@@ -8,9 +8,14 @@ import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { toErrorObject } from "./errors.js";
 import { UPDATE_RUN_ID_ENV } from "./update-control-plane-sentinel.js";
 import { prepareUnattendedUpdateRepair } from "./update-repair-agent.js";
-import type { UpdateRepairEvent, UpdateRepairParams } from "./update-repair-protocol.js";
+import {
+  updateRepairParentMessageSchema,
+  type UpdateRepairEvent,
+  type UpdateRepairParams,
+} from "./update-repair-protocol.js";
 import * as requesterOwner from "./update-requester-authority.js";
 import { createUpdateRun, getUpdateRun, recordUpdateRunPhase } from "./update-run-ledger.js";
+import { renderUpdateRunReport } from "./update-run-report.js";
 
 async function candidate(root: string, runtime: string) {
   const directory = path.join(root, "dist/infra");
@@ -36,6 +41,54 @@ function repairParams(state: {
 }
 
 describe("fresh candidate repair process", () => {
+  it.each(["Required recovery check failed.\n".repeat(80), "🚀 Recovery failed.\n".repeat(80)])(
+    "delivers long validation summaries within the existing wire limit (%#)",
+    async (details) => {
+      await withOpenClawTestState({ prefix: "repair-summary-boundary-" }, async (state) => {
+        await candidate(
+          state.workspaceDir,
+          `
+          import fs from "node:fs";
+          process.on("message", message => {
+            if (message.type === "start") process.send({ type: "validate", id: 1 });
+            if (message.type === "validation-result") {
+              fs.writeFileSync("validation.json", JSON.stringify(message));
+              process.send({ type: "result", result: {
+                status: "unavailable", attempts: [], finalValidation: message.validation,
+                reason: "No usable inference route."
+              } }, () => process.disconnect());
+            }
+          });
+          process.send({ type: "ready", candidateRehearsal: true });
+        `,
+        );
+        const result = await prepareUnattendedUpdateRepair({
+          ...repairParams(state),
+          validate: async () => ({
+            ok: false,
+            score: 0,
+            summary: details,
+          }),
+        });
+        expect(result).toMatchObject({
+          status: "unavailable",
+          reason: "No usable inference route.",
+        });
+        const received: unknown = JSON.parse(
+          await fs.readFile(path.join(state.workspaceDir, "validation.json"), "utf8"),
+        );
+        const message = updateRepairParentMessageSchema.parse(received);
+        expect(message.type).toBe("validation-result");
+        if (message.type !== "validation-result") {
+          throw new Error("Missing validation result");
+        }
+        expect(message.validation.summary.length).toBeLessThanOrEqual(1024);
+        expect(details.startsWith(message.validation.summary)).toBe(true);
+        expect(message.validation.summary).not.toBe("");
+      });
+    },
+  );
+
   it.each([
     {
       source: "external",
@@ -189,6 +242,59 @@ describe("fresh candidate repair process", () => {
       );
     },
   );
+
+  it("keeps unavailable inference separate from the update failure it could not repair", async () => {
+    await withOpenClawTestState({ prefix: "repair-no-route-", layout: "home" }, async (state) => {
+      const failure = "Doctor completed, then failed to exit (killed at 299 s)";
+      const reason = "No usable, authenticated, tool-capable inference route could be verified.";
+      await candidate(
+        state.workspaceDir,
+        `
+        process.on("message", message => {
+          if (message.type !== "start") return;
+          const result = { status: "unavailable", attempts: [], reason: ${JSON.stringify(reason)},
+            finalValidation: { ok: false, score: 0, summary: ${JSON.stringify(failure)} } };
+          process.send({ type: "event", event: { type: "stopped", status: result.status, reason: result.reason } });
+          process.send({ type: "result", result }, () => process.disconnect());
+        });
+        process.send({ type: "ready", candidateRehearsal: true });
+        `,
+      );
+      const admitted = createUpdateRun({ trigger: "cli" }, { env: state.env });
+      recordUpdateRunPhase(
+        admitted.runId,
+        "verifying",
+        { step: { step: "Checking update health", status: "failed", detail: failure } },
+        { env: state.env },
+      );
+      await runUpdateCommandRepair({
+        root: state.workspaceDir,
+        env: state.env,
+        run: { runId: admitted.runId, env: state.env },
+        phase: "verifying",
+        result: {
+          status: "error",
+          mode: "npm",
+          root: state.workspaceDir,
+          reason: "doctor-failed",
+          steps: [],
+          durationMs: 299_000,
+        },
+        validate: async () => ({ ok: false, score: 0, summary: failure }),
+      });
+      const recorded = getUpdateRun(admitted.runId, { env: state.env })!;
+      expect(recorded.steps.find((step) => step.step === "repairing")?.status).toBe("skipped");
+      expect(recorded.repair).toMatchObject([{ status: "skipped", reason }]);
+      const report = renderUpdateRunReport({
+        ...recorded,
+        status: "failed",
+        reason: "doctor-failed",
+      });
+      expect(report.markdown).toContain(`Failed: Checking update health — ${failure}`);
+      expect(report.markdown).toContain(`Repair 1: skipped — ${reason}`);
+      expect(report.markdown).not.toContain("Failed: repairing");
+    });
+  });
 
   it("repairs a candidate rehearsal in the staged candidate runtime", async () => {
     await withOpenClawTestState(

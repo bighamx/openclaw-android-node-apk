@@ -11,7 +11,6 @@ extensions/anthropic/index.test.ts
 extensions/anthropic/register.runtime.ts
 extensions/anthropic/session-catalog.test.ts
 extensions/browser/src/browser-tool.test.ts
-extensions/browser/src/browser/cdp.ts
 extensions/browser/src/browser/chrome-mcp.test.ts
 extensions/browser/src/browser/chrome.internal.test.ts
 extensions/browser/src/browser/chrome.ts
@@ -508,7 +507,6 @@ src/commands/onboarding-plugin-install.ts
 src/commands/status.test.ts
 src/config/config-misc.test.ts
 src/config/config.plugin-validation.test.ts
-src/config/env-preserve.ts
 src/config/io.observe-recovery.test.ts
 src/config/io.write-config.test.ts
 src/config/io.write-prepare.test.ts
@@ -751,7 +749,6 @@ src/security/audit-extra.async.ts
 src/security/audit-extra.sync.ts
 src/security/audit.ts
 src/shared/json-schema-defaults.ts
-src/shared/text/assistant-visible-text.ts
 src/skills/lifecycle/clawhub.test.ts
 src/skills/security/scanner.ts
 src/skills/workshop/service.test.ts

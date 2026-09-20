@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import type { OpenClawConfig } from "../config/config.js";
+import * as gatewayCall from "../gateway/call.js";
 import {
   completeGatewayBootLifecycle,
   recordGatewayBootStart,
@@ -14,12 +15,6 @@ const mocks = vi.hoisted(() => ({
   hasActiveGatewayExecCredential: vi.fn(),
   note: vi.fn(),
 }));
-vi.mock("../gateway/call.js", () => ({
-  callGateway: mocks.callGateway,
-  buildGatewayConnectionDetails: () => ({ url: "ws://127.0.0.1:18789" }),
-  buildGatewayProbeConnectionDetails: mocks.buildGatewayProbeConnectionDetails,
-  isGatewayCredentialsRequiredError: () => false,
-}));
 vi.mock("../flows/doctor-gateway-exec-credential.js", () => ({
   hasActiveGatewayExecCredential: mocks.hasActiveGatewayExecCredential,
 }));
@@ -31,6 +26,7 @@ vi.mock("../../packages/terminal-core/src/note.js", () => ({ note: mocks.note })
 const tempDirs = useAutoCleanupTempDirTracker((cleanup) => {
   afterEach(() => {
     closeOpenClawStateDatabaseForTest();
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
     cleanup();
   });
@@ -44,6 +40,10 @@ beforeEach(() => {
   mocks.buildGatewayProbeConnectionDetails
     .mockReset()
     .mockResolvedValue({ url: "ws://127.0.0.1:18789" });
+  vi.spyOn(gatewayCall, "callGateway").mockImplementation(mocks.callGateway);
+  vi.spyOn(gatewayCall, "buildGatewayProbeConnectionDetails").mockImplementation(
+    mocks.buildGatewayProbeConnectionDetails,
+  );
   mocks.hasActiveGatewayExecCredential.mockReset().mockResolvedValue(false);
   mocks.note.mockReset();
   const bootId = recordGatewayBootStart(process.env, completedAtMs - 1_000);
@@ -66,6 +66,7 @@ describe("Doctor installation replacement diagnostics", () => {
       const runtime = { log: vi.fn(), error: vi.fn(), exit: vi.fn() };
       const result = await checkGatewayHealth({ cfg: {}, runtime });
 
+      expect(mocks.callGateway).toHaveBeenCalledWith(expect.objectContaining({ method: "status" }));
       expect(result.healthOk).toBe(reachable);
       expect(mocks.note).toHaveBeenCalledWith(
         `Previous installation replacement (${new Date(completedAtMs).toISOString()}): ${reason}`,
