@@ -12,14 +12,6 @@ import {
 } from "../../app/question-prompt.ts";
 import { readPresenceEntries } from "../../app/user-profile.ts";
 import { BROWSER_ANNOTATION_EVENT } from "../../components/browser/browser-annotation.ts";
-import {
-  BROWSER_PANEL_TOGGLE_EVENT,
-  LINK_READER_PANEL_TOGGLE_EVENT,
-  DESKTOP_PANEL_TOGGLE_EVENT,
-  PORTAL_PANEL_TOGGLE_EVENT,
-  TERMINAL_PANEL_DOCK_BOTTOM_EVENT,
-  TERMINAL_PANEL_TOGGLE_EVENT,
-} from "../../components/panel-toggle-contract.ts";
 import { matchesShortcutCombo } from "../../lib/keyboard-shortcut-contract.ts";
 import { parseCatalogSessionKey } from "../../lib/sessions/catalog-key.ts";
 import { resolveSessionKey } from "../../lib/sessions/index.ts";
@@ -62,6 +54,7 @@ import {
   subscribeChatPaneStartup,
 } from "./chat-pane-startup-subscriptions.ts";
 import { getChatPendingInputs } from "./chat-pending-inputs.ts";
+import { cancelChatModelRecovery } from "./chat-session.ts";
 import { handlePageGatewayEvent } from "./chat-state-events.ts";
 import { createPageState } from "./chat-state-page.ts";
 import {
@@ -79,7 +72,7 @@ import { WIDGET_PROMPT_EVENT, type WidgetPromptEventDetail } from "./components/
 import { CHAT_COMPOSER_DRAFT_STORAGE_ERROR } from "./composer-persistence.ts";
 import { exportChatMarkdown } from "./export.ts";
 import { admitChatSubmission } from "./history-merge.ts";
-import { admitInitialTurnHandoff } from "./initial-turn-handoff.ts";
+import { admitInitialTurnHandoff, subscribeInitialTurnHandoff } from "./initial-turn-handoff.ts";
 import {
   applyChatCacheSnapshot,
   cacheChatSessionSnapshot,
@@ -408,6 +401,15 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionCreation {
     }
     chatState.attach(pageState);
     chatState.addCleanup(
+      subscribeInitialTurnHandoff(() => {
+        if (admitInitialTurnHandoff(pageState, pageState.sessionKey)) {
+          pageState.lastError = CHAT_COMPOSER_DRAFT_STORAGE_ERROR;
+          pageState.chatError = CHAT_COMPOSER_DRAFT_STORAGE_ERROR;
+        }
+        pageState.requestUpdate?.();
+      }),
+    );
+    chatState.addCleanup(
       this.context.agentIdentity.subscribe(() => void pageState.loadAssistantIdentity()),
     );
     chatState.restoreComposer({ preserveCurrent: true });
@@ -425,33 +427,7 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionCreation {
     chatState.addCleanup(() =>
       window.removeEventListener(BROWSER_ANNOTATION_EVENT, handleBrowserAnnotation),
     );
-    const panelToggleEvents = [
-      [TERMINAL_PANEL_TOGGLE_EVENT, "terminal", "openclaw-terminal-panel"],
-      [BROWSER_PANEL_TOGGLE_EVENT, "browser", "openclaw-browser-panel"],
-      [LINK_READER_PANEL_TOGGLE_EVENT, "link-reader", "openclaw-link-reader-panel"],
-      [DESKTOP_PANEL_TOGGLE_EVENT, "desktop", "openclaw-desktop-panel"],
-      [PORTAL_PANEL_TOGGLE_EVENT, "portal", "openclaw-portals-page"],
-    ] as const;
-    const panelToggleCleanups = panelToggleEvents.map(([eventName, slot, tagName]) => {
-      const listener = (event: Event) => {
-        this.sessionPanelToggles.handle(slot, tagName, event);
-      };
-      window.addEventListener(eventName, listener);
-      return () => window.removeEventListener(eventName, listener);
-    });
-    const handleTerminalDockBottom = () => {
-      const state = this.state;
-      if (!state || !this.active || !this.presented) {
-        return;
-      }
-      state.updateSidebarLayout(closeSlot(state.sidebarLayout, "terminal"));
-    };
-    window.addEventListener(TERMINAL_PANEL_DOCK_BOTTOM_EVENT, handleTerminalDockBottom);
-    chatState.addCleanup(() => {
-      panelToggleCleanups.forEach((cleanup) => cleanup());
-      window.removeEventListener(TERMINAL_PANEL_DOCK_BOTTOM_EVENT, handleTerminalDockBottom);
-      this.pendingPanelToggleRequests.clear();
-    });
+    chatState.addCleanup(this.sessionPanelToggles.subscribe());
     // Interactive widget prompts bubble from the widget iframe; a listener on
     // the pane element keeps split-view routing correct — the prompt reaches
     // only the pane that owns the frame.
@@ -568,6 +544,13 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionCreation {
 
   override willUpdate(changedProperties: Map<PropertyKey, unknown>) {
     this.captureArchivePresentationFocus();
+    if (
+      this.state &&
+      ((changedProperties.has("selected") && !this.selected) ||
+        (changedProperties.has("presented") && !this.presented))
+    ) {
+      cancelChatModelRecovery(this.state);
+    }
     if (changedProperties.has("sessionKey") && this.state) {
       const catalogKey = parseCatalogSessionKey(this.sessionKey);
       const nextSessionKey = catalogKey
@@ -676,6 +659,7 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionCreation {
     this.composerPresentation?.dispose();
     this.composerPresentation = undefined;
     if (this.state) {
+      cancelChatModelRecovery(this.state);
       retireInitialChatSnapshot(this.state);
       resetTaskDetail(this.state);
       chatAvatars.invalidateChatAvatarCache(this.state);

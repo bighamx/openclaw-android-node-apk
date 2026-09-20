@@ -236,6 +236,7 @@ async function fixture({
     "update-command-service",
     "update-command-post-update",
     "update-command-result",
+    "../../infra/update-run-step",
     ...(main
       ? [
           "update-command-verification",

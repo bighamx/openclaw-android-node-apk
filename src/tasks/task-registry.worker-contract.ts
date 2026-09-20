@@ -59,7 +59,7 @@ export type TaskRegistryWorkerOperations = TaskInitialWorkerOperations &
     };
     "flows.runTask": { input: ManagedTaskInFlowInput; output: ManagedTaskInFlowReceipt };
     "tasks.mutationSnapshot": {
-      input: TaskRegistryMutationScope | undefined;
+      input: TaskRegistryMutationScope | readonly TaskRegistryMutationScope[] | undefined;
       output: TaskRegistryStoreSnapshot;
     };
     "flows.createManaged": {
@@ -107,6 +107,7 @@ export function isTaskRegistryWorkerCommand(command: {
   switch (command.type) {
     case "tasks.observeAgentEvent":
     case "tasks.createRecord":
+    case "tasks.finalizeActive":
     case "tasks.settleUnstarted":
     case "flows.createForTask":
     case "tasks.linkInitialFlow":

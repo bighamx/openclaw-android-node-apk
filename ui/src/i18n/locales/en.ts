@@ -596,6 +596,7 @@ export const en: TranslationMap & {
       version: "v{version}",
       commitBehind: "{count} commit behind",
       commitsBehind: "{count} commits behind",
+      viewChanges: "Compare on GitHub",
     },
     sidebar: {
       campaignTarget: "{status} · {target}",
@@ -734,7 +735,7 @@ export const en: TranslationMap & {
       tokenAge: "Age",
       desktopOpenWindow: "Open this desktop in a new window",
       desktopEnableHint:
-        "Enable desktop.host.enabled: true in the node config and add desktop.stream to gateway.nodes.commands.allow, then restart both. The node reconnects with a pending reapproval for desktop.stream; approve it here or with openclaw nodes approve.",
+        "Desktop sharing starts enabled on desktop nodes. In the desktop app on that node, check the Desktop sharing switch under Settings. Approve any pending desktop capability request here, and check that Gateway policy does not deny desktop.stream. The node needs Screen Sharing or an authenticated local VNC server.",
       uptime: "up {time}",
       loadLabel: "load {load}",
       loadTitle: "Load averages (1 / 5 / 15 min): {averages} on {cores} cores",
@@ -1952,6 +1953,7 @@ export const en: TranslationMap & {
     settings: "Settings",
     askOpenClaw: "Ask OpenClaw",
     settingsGroupDevice: "This Mac",
+    settingsGroupThisComputer: "This computer",
     settingsGroupThisIPhone: "This iPhone",
     settingsGroupThisIPad: "This iPad",
     settingsGroupThisDevice: "This device",
@@ -2244,14 +2246,20 @@ export const en: TranslationMap & {
       testingButton: "Testing…",
     },
     nativeDiscovery: {},
+    nativeModels: {
+      title: "Use an installed agent",
+      body: "Choose a model from an installed agent. It keeps its own sign-in and tools. Use saves your choice without running the setup test.",
+      choose: "Choose a model",
+      use: "Use",
+      saving: "Saving…",
+      loading: "Checking installed agents…",
+      empty:
+        "No models are available from installed agents. Sign in through your agent, then open the picker again.",
+      signIn: "Sign in through the installed agent, then check again.",
+    },
     empty: {
       title: "Recommended installs",
-      intro: "No existing AI access was detected. Install one of these tools, then check again.",
-    },
-    unavailable: {
-      title: "Found, but needs attention",
-      signIn: "Set up & verify {provider}",
-      useApiKey: "Use API key",
+      intro: "Install an assistant or local model service, then check again.",
     },
     signIn: {
       title: "Set up and verify a model",
@@ -4028,35 +4036,8 @@ export const en: TranslationMap & {
       closeVideoPreview: "Close video preview",
     },
     modelControls: {},
-    permissionControls: {
-      label: "Execution permissions",
-      help: "Choose what available tools may do in this session. This does not change the tool profile.",
-      default: "Default",
-      defaultDescription: "Follow the agent's configured execution permissions.",
-      defaultWithMode: "Default ({mode})",
-      fullRequiresAdmin: "Full access requires operator.admin access.",
-      updateFailed: "Failed to update permissions: {error}",
-      refreshFailed: "Permissions were saved, but refreshing the session failed: {error}",
-      modes: {
-        "read-only": {
-          label: "Read Only",
-          description:
-            "Agent tools can read within the session root, but cannot write or run commands.",
-        },
-        guarded: {
-          label: "Guarded",
-          description: "A human reviews requests beyond the session root.",
-        },
-        workspace: {
-          label: "Workspace",
-          description: "An AI reviewer checks requests beyond the session root.",
-        },
-        full: {
-          label: "Full Access",
-          description: "No reviewer; files and commands are unrestricted.",
-        },
-      },
-    },
+    nativeRuntimeRecovery: {},
+    permissionControls: {},
     rail: {
       title: "Side chat",
       subtitle: "Ask about this session or its project",
@@ -4253,6 +4234,7 @@ export const en: TranslationMap & {
       removeNamedAttachment: "Remove {name}",
       removeBrowserAnnotation: "Remove browser annotation: {name}",
       addAttachment: "Add attachment",
+      attach: "Attach…",
       attachPhoto: "Photo",
       attachFileOption: "File",
       menu: {
@@ -4442,6 +4424,17 @@ export const en: TranslationMap & {
       summary: "Summary",
       toolInput: "Tool input",
       toolOutput: "Tool output",
+      providerResponse: "Provider tool response",
+      providerResponseNote:
+        "Captured before context processing. The exact model input is unverified.",
+      executionOutput: "Execution output",
+      executionOutputNote: "Captured execution output, not a verified model input.",
+      showFullOutput: "Show full output",
+      fullOutputUnavailable: "Full output unavailable. Only the captured output is shown.",
+      copyOutput: "Copy available output",
+      downloadOutput: "Download available output",
+      outputLoadFailed: "Could not load the full output. Try again.",
+      outputDownloadFailed: "Could not download the output. Try again.",
       toolError: "Tool error",
       rawDetails: "Raw details",
       activity: {

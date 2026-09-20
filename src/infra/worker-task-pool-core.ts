@@ -16,13 +16,18 @@ import {
   createWorkerNativeSectionState,
   releaseWorkerNativeSectionsOnExit,
 } from "./worker-task-native-sections.js";
-import { completeWorkerTask, type WorkerTaskCompletion } from "./worker-task-pool-completion.js";
+import {
+  createWorkerTaskCompletion,
+  joinWorkerTaskPreparationCleanups,
+  type WorkerTaskCompletion,
+} from "./worker-task-pool-completion.js";
 import {
   closeOwnedWorkerTask,
   joinOwnedWorkerTask,
   joinOwnedWorkerTasks,
   type OwnedWorkerTaskSettlement,
 } from "./worker-task-pool-owned.js";
+import { closeWorkerPoolResources } from "./worker-task-pool-resources.js";
 import {
   createWorkerTaskPoolRetirement,
   type WorkerTaskPoolRetirement,
@@ -55,6 +60,7 @@ export class WorkerTaskError extends Error {
 class WorkerTaskPoolCore<Input, Output> {
   private readonly slots = new Set<Slot<Input, Output>>();
   private readonly ownedTasks = new Set<Task<Input, Output>>();
+  private readonly resourceClosures = new WeakMap<Worker, { pending: number }>();
   private readonly ownedSettlement: OwnedWorkerTaskSettlement<Input, Output> = {
     cancel: (task) => this.cancel(task, new WorkerTaskError("worker task closed", "unavailable")),
     detach: (task) => {
@@ -77,6 +83,7 @@ class WorkerTaskPoolCore<Input, Output> {
     },
   };
   private readonly completion: WorkerTaskCompletion<Input, Output> = {
+    preparationCleanups: new Map(),
     releaseAdmission: (task) => this.releaseAdmission(task),
     releaseCompute: (permit) => this.computeCapacity!.release(permit),
     diagnostics: () => ({
@@ -177,7 +184,6 @@ class WorkerTaskPoolCore<Input, Output> {
       abort: () => this.cancel(task, toErrorObject(options.signal?.reason, "worker task aborted")),
       done: false,
       admitted: false,
-      preparing: false,
       ...(owned ? { owner: { closed: false, retire: false } } : {}),
       inputBytes,
       enqueuedAt: performance.now(),
@@ -235,6 +241,11 @@ class WorkerTaskPoolCore<Input, Output> {
     return this.retirement.retryFailedRetirements();
   }
 
+  /** Close a retained native resource without cancelling other paths' tasks. */
+  async closeResources(key?: string): Promise<void> {
+    await closeWorkerPoolResources(this.slots, this.resourceClosures, key);
+  }
+
   /** Pause dispatch, settle current work and join native exit before restarting the queue. */
   rotate(): Promise<void> {
     if (this.rotation) {
@@ -285,9 +296,9 @@ class WorkerTaskPoolCore<Input, Output> {
     // A failed owned stop must be observed before that task permits its next retry.
     const unowned = [...this.slots].filter((slot) => !ownedSlots.has(slot));
     const closures = [...owned, ...unowned.map((slot) => this.retirement.retire(slot))];
-    return (tasks.length ? joinOwnedWorkerTasks(closures) : Promise.all(closures))
-      .then(() => this.retirement.joinArtifacts())
-      .then(() => undefined);
+    return (tasks.length ? joinOwnedWorkerTasks(closures) : Promise.all(closures)).then(() =>
+      joinWorkerTaskPreparationCleanups(this.completion, this.retirement.joinArtifacts()),
+    );
   }
 
   private dispatch(): void {
@@ -405,23 +416,21 @@ class WorkerTaskPoolCore<Input, Output> {
     const taskInput = task.input!;
     delete task.input;
     let input: Input;
-    task.preparing = true;
     task.preparation = createDeferredCore();
     try {
-      input =
-        typeof taskInput === "function"
-          ? await (taskInput as () => Input | Promise<Input>)() // SAFETY: Callable inputs are factories.
-          : taskInput;
+      try {
+        input =
+          typeof taskInput === "function"
+            ? await (taskInput as () => Input | Promise<Input>)() // SAFETY: Callable inputs are factories.
+            : taskInput;
+      } finally {
+        task.preparation.resolve();
+        task.preparation = undefined;
+      }
     } catch (error) {
       // No input reached the worker; a rejected owner must not retire its healthy siblings.
       this.finish(task, toErrorObject(error, "worker task preparation failed"));
       return;
-    } finally {
-      task.preparing = false;
-      task.preparation.resolve();
-      if (task.done && !task.owner) {
-        this.releaseAdmission(task);
-      }
     }
     // A cancelled preparation may finish later, but it must never create or feed a worker.
     if (task.done) {
@@ -651,7 +660,7 @@ class WorkerTaskPoolCore<Input, Output> {
     task.runInContext(() => task.controller.abort());
     clearTimeout(task.timer);
     task.options.signal?.removeEventListener("abort", task.abort);
-    const complete = () => completeWorkerTask(task, this.completion, error, value);
+    const complete = createWorkerTaskCompletion(task, this.completion, error, value);
     if (task.owner) {
       task.owner.complete = complete;
       task.owner.retire ||= retire || Boolean(error && task.slot);
@@ -706,7 +715,9 @@ class WorkerTaskPoolCore<Input, Output> {
 
   // Reply handling restores the caller's context; idle retirement must leave it behind.
   private idle(slot: Slot<Input, Output>): void {
-    slot.worker?.unref();
+    if (slot.worker && !this.resourceClosures.get(slot.worker)?.pending) {
+      slot.worker.unref();
+    }
     const idleMs = this.options.idleTimeoutMs ?? 60_000;
     if (idleMs > 0) {
       slot.idleTimer = runInWorkerPoolContext(() =>

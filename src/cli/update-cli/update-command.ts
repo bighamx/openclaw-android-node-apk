@@ -22,7 +22,6 @@ import {
   admitUpdateCommandRun,
   assertUpdatePackageActivationAdmission,
   createUpdateRunProgress,
-  failUpdateCommandRun,
   prepareUpdateCommand,
   prepareMutableUpdateRuntime,
   resolveUpdateCommandAdmissionEnv,
@@ -35,6 +34,7 @@ import type { UpdateCommandRecoveryState } from "./update-command-service.js";
 import { resolveUpdateCommandTarget } from "./update-command-target.js";
 import {
   reportPreMutationUpdateResult,
+  prepareUnexpectedUpdateCommandFailure,
   withUpdateCommandTerminalResult,
 } from "./update-command-terminal.js";
 import { withUpdateFailureTriage } from "./update-command-triage.js";
@@ -70,6 +70,8 @@ export async function updateCommand(inputOpts: UpdateCommandOptions): Promise<vo
       root: resolveUpdateCommandAdmissionRoot(prepared),
       invocationCwd,
       pkgOwnership: prepared.pkgOwnership,
+      expectedForeground:
+        prepared.controlPlaneUpdateSentinelMeta?.completionOwner === "gateway-restart" || undefined,
     });
     const { updateStateNeedsInitialization } = await import("./update-command-initialization.js");
     assertUpdatePackageActivationAdmission(root, { serviceRoot });
@@ -103,6 +105,8 @@ async function runAdmittedUpdate(
     invocationCwd,
     initialization,
     pkgOwnership: prepared.pkgOwnership,
+    expectedForeground:
+      prepared.controlPlaneUpdateSentinelMeta?.completionOwner === "gateway-restart" || undefined,
     installKind: prepared.installKind,
   });
   const opts = { ...inputOpts, run };
@@ -155,7 +159,7 @@ async function runAdmittedUpdate(
   } catch (error) {
     // Execution owns recovery; only failures before execution starts are terminalized here.
     if (!executionStarted) {
-      failUpdateCommandRun(error, run);
+      throw await prepareUnexpectedUpdateCommandFailure(error, opts);
     }
     throw error;
   } finally {

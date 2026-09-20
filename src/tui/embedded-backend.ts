@@ -314,10 +314,7 @@ export class EmbeddedTuiBackend implements TuiBackend {
     this.unbindSessionProjection = undefined;
     const projection = this.sessionProjection;
     this.sessionProjection = undefined;
-    await projection?.then(
-      (value) => value.dispose(),
-      () => {},
-    );
+    await projection?.catch(() => undefined).then((value) => value?.dispose());
     this.unsubscribe?.();
     this.unsubscribe = undefined;
     this.pendingLifecycleErrors.forEach(clearTimeout);
@@ -332,6 +329,7 @@ export class EmbeddedTuiBackend implements TuiBackend {
     this.previousRuntimeLog = undefined;
     this.previousRuntimeError = undefined;
     setEmbeddedMode(false);
+    await this.preparedModelRuntime.waitUntilReady();
   }
 
   async sendChat(opts: ChatSendOptions): Promise<TuiChatSendResult> {

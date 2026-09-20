@@ -22,11 +22,10 @@ import {
   type UpdateCandidateRehearsal,
 } from "./update-candidate-rehearsal.js";
 import type { UpdateDoctorConfigChange } from "./update-doctor-config.js";
-import { parseUpdateDoctorLintReport } from "./update-doctor-lint.js";
+import { applyUpdateDoctorLintReport, parseUpdateDoctorLintReport } from "./update-doctor-lint.js";
 import {
   consumeUpdatePostInstallDoctorResult,
   createUpdatePostInstallDoctorResultPath,
-  normalizeUpdatePostInstallDoctorWarnings,
   UPDATE_POST_INSTALL_DOCTOR_ADVISORY_EXIT_CODE,
   UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH_ENV,
   type UpdatePostInstallDoctorResult,
@@ -57,6 +56,7 @@ type CanaryResult = {
   logTail: string[];
   steps: UpdateStepResult[];
   candidateSchemaVersions?: OpenClawSchemaVersions;
+  gatewayRestartCompletion?: boolean;
   doctorConfigWrites?: boolean;
   doctorConfigChanges?: UpdateDoctorConfigChange[];
   retainedRehearsal?: { rehearsal: UpdateCandidateRehearsal; cleanup: () => Promise<void> };
@@ -98,6 +98,7 @@ export async function validateUpdateCandidateCanary(params: {
   const stepLogTail: string[] = [];
   let activeStep = { name: "Checking update runtime", command: "Checking update runtime" };
   let stepStartedAt = started;
+  let activeLintStep: UpdateStepResult | undefined;
   const steps: UpdateStepResult[] = [];
   const cleanupRehearsal = async () => {
     if (!rehearsal) {
@@ -119,6 +120,7 @@ export async function validateUpdateCandidateCanary(params: {
     }
   };
   let candidateSchemaVersions: OpenClawSchemaVersions | undefined;
+  let gatewayRestartCompletion = false;
   let doctorConfigWrites = false;
   let doctorConfigChanges: UpdateDoctorConfigChange[] = [];
   let listenerIsolation: CanaryResult["listenerIsolation"];
@@ -300,6 +302,7 @@ export async function validateUpdateCandidateCanary(params: {
     };
     for (const command of commands) {
       phase = command.phase;
+      activeLintStep = undefined;
       env.OPENCLAW_UPDATE_IN_PROGRESS = phase === "doctor" ? "1" : "0";
       activeStep = { name: command.name, command: command.args.join(" ") };
       stepStartedAt = Date.now();
@@ -371,23 +374,25 @@ export async function validateUpdateCandidateCanary(params: {
           }
         }
       }
+      activeLintStep =
+        phase === "lint"
+          ? {
+              ...activeStep,
+              cwd: params.root,
+              durationMs: Date.now() - stepStartedAt,
+              exitCode: running.child.exitCode,
+              signal: running.child.signalCode,
+              killed: running.child.killed,
+              termination: timedOut ? "timeout" : running.child.signalCode ? "signal" : "exit",
+              outputLimitExceeded: running.outputExceeded(),
+              doctorLintFindings: [],
+            }
+          : undefined;
       params.signal?.throwIfAborted();
-      let lintWarnings: string[] = [];
-      if (code === 0 && phase === "lint") {
-        if (running.outputExceeded()) {
-          throw new Error("Update health check output exceeded the inspection limit");
-        }
-        const report = parseUpdateDoctorLintReport(running.stdout());
-        lintWarnings = normalizeUpdatePostInstallDoctorWarnings(
-          report.warnings.map((finding) =>
-            redactSupportString(
-              [finding.message, finding.fixHint].filter(Boolean).join("\n"),
-              { env, stateDir: params.stateDir },
-              { maxLength: 20_000 },
-            ),
-          ),
-        );
-      }
+      const lintReport = activeLintStep
+        ? applyUpdateDoctorLintReport(activeLintStep, running.stdout(), code, env)
+        : undefined;
+      doctorAdvisory ??= activeLintStep?.advisory;
       if (code === 0 && phase === "plugins") {
         const fail = (message: string) => {
           code = 1;
@@ -447,35 +452,34 @@ export async function validateUpdateCandidateCanary(params: {
           ? undefined
           : JSON.parse(running.stdout());
         candidateSchemaVersions = parseOpenClawSchemaVersions(contract);
+        gatewayRestartCompletion = isRecord(contract) && contract.gatewayRestartCompletion === true;
         doctorConfigWrites = isRecord(contract) && contract.doctorConfigWrites === "pid-start-v1";
         if (!candidateSchemaVersions) {
           code = 1;
           capture("The update did not report its supported database versions");
         }
       }
-      const step: UpdateStepResult = {
+      const step: UpdateStepResult = activeLintStep ?? {
         ...activeStep,
         cwd: params.root,
         durationMs: Date.now() - stepStartedAt,
         exitCode: code,
         ...(timedOut ? { termination: "timeout" as const } : {}),
-        ...(doctorAdvisory ? { advisory: doctorAdvisory } : {}),
-        ...(code === 0 && pluginObservations.length > 0
-          ? { stdoutTail: pluginObservations.join("\n") }
-          : {}),
       };
+      if (doctorAdvisory) {
+        step.advisory = doctorAdvisory;
+      }
+      if (code === 0 && pluginObservations.length > 0) {
+        step.stdoutTail = pluginObservations.join("\n");
+      }
       const failureMessage = lintCompletion
         ? `Update health check completed, then ${lintCompletion.processExited ? "output pipes stayed open" : "failed to exit"} (${stopped && running.wasKilled() ? "killed" : "termination requested"} at ${lintCompletion.elapsedSeconds} s)`
         : `Update ${phase === "lint" ? "health check" : phase} failed`;
       if (code !== 0 && !doctorAdvisory) {
         let findings =
           doctorReceipt?.status === "error" ? doctorReceipt.failureFacts : pluginFailures;
-        if (!findings?.length && phase === "lint" && !running.outputExceeded()) {
-          try {
-            findings = parseUpdateDoctorLintReport(running.stdout(), env).failureFacts;
-          } catch {
-            // A failed child may exit before emitting JSON; retain its first stderr line below.
-          }
+        if (!findings?.length && lintReport) {
+          findings = lintReport.failureFacts;
         }
         if (!findings?.length && phase === "config" && !running.outputExceeded()) {
           findings = parseConfigFailureFacts(running.stdout(), env);
@@ -500,9 +504,6 @@ export async function validateUpdateCandidateCanary(params: {
               ),
             ];
       }
-      if (lintWarnings.length > 0) {
-        step.warnings = lintWarnings;
-      }
       steps.push(step);
       if (code !== 0 && !doctorAdvisory) {
         throw new Error(
@@ -519,9 +520,8 @@ export async function validateUpdateCandidateCanary(params: {
     stepStartedAt = Date.now();
     stepLogTail.length = 0;
     remaining();
-    const args = ["gateway", "run", "--update-canary", "--bind", "loopback", "--port"];
-    args.push(String(port));
-    const running = launch(entry, args);
+    const args = ["gateway", "run", "--update-canary", "--bind", "loopback"];
+    const running = launch(entry, [...args, "--port", String(port)]);
     try {
       const probeFailure = await waitForUpdateCandidateReadiness({
         port,
@@ -564,6 +564,7 @@ export async function validateUpdateCandidateCanary(params: {
       durationMs: Date.now() - started,
       logTail,
       candidateSchemaVersions,
+      gatewayRestartCompletion,
       ...(doctorConfigWrites ? { doctorConfigWrites } : {}),
       ...(doctorConfigChanges.length ? { doctorConfigChanges } : {}),
       listenerIsolation,
@@ -576,8 +577,8 @@ export async function validateUpdateCandidateCanary(params: {
       `${displayPhase}: ${error instanceof Error ? error.message : String(error)} (${durationMs}ms)`,
     );
     let failed = steps.at(-1);
-    if (!failed || failed.exitCode === 0 || failed.advisory) {
-      failed = {
+    if (!failed || (failed.exitCode === 0 && failed !== activeLintStep) || failed.advisory) {
+      failed = activeLintStep ?? {
         ...activeStep,
         cwd: params.root,
         durationMs: Date.now() - stepStartedAt,
@@ -625,6 +626,7 @@ export async function validateUpdateCandidateCanary(params: {
       durationMs: Date.now() - started,
       logTail,
       candidateSchemaVersions,
+      gatewayRestartCompletion,
       ...(doctorConfigChanges.length ? { doctorConfigChanges } : {}),
       ...(retainedRehearsal ? { retainedRehearsal } : {}),
       listenerIsolation,

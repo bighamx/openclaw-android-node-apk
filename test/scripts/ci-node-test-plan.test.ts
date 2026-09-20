@@ -64,6 +64,7 @@ import { createPluginSdkLightVitestConfig } from "../vitest/vitest.plugin-sdk-li
 import { createPluginSdkVitestConfig } from "../vitest/vitest.plugin-sdk.config.ts";
 import { createPluginsVitestConfig } from "../vitest/vitest.plugins.config.ts";
 import { createRuntimeConfigVitestConfig } from "../vitest/vitest.runtime-config.config.ts";
+import { startupCorpusTestFiles } from "../vitest/vitest.startup-corpus-paths.mjs";
 import { createTasksVitestConfig } from "../vitest/vitest.tasks.config.ts";
 import { fullSuiteVitestShards } from "../vitest/vitest.test-shards.mjs";
 import { createToolingVitestConfig } from "../vitest/vitest.tooling.config.ts";
@@ -80,10 +81,7 @@ import { createWizardVitestConfig } from "../vitest/vitest.wizard.config.ts";
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
 describe("startup corpus coverage", () => {
-  const files = [
-    "src/config/config-startup-corpus.test.ts",
-    "src/config/state-startup-corpus.test.ts",
-  ];
+  const files = startupCorpusTestFiles;
   const group = {
     shard_name: "core-runtime-config",
     configs: ["test/vitest/vitest.runtime-config.config.ts"],
@@ -102,7 +100,10 @@ describe("startup corpus coverage", () => {
   it.each<
     { label: string } & Partial<Parameters<typeof hasCompleteStartupCorpusCoverage>[0][number]>
   >([
-    { label: "partial file list", groups: [{ ...group, includePatterns: files.slice(0, 1) }] },
+    ...files.map((missingFile) => ({
+      label: `missing ${missingFile}`,
+      groups: [{ ...group, includePatterns: files.filter((file) => file !== missingFile) }],
+    })),
     { label: "unknown full config", groups: [{ ...group, includePatterns: undefined }] },
     {
       label: "glob instead of complete files",

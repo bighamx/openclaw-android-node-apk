@@ -2,7 +2,7 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred, withTestTimeout } from "../../test/helpers/promise.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
-import * as taskMutationEffects from "./task-executor-create.async.js";
+import * as taskMutationEffects from "./task-executor-mutation-effects.async.js";
 import { createTaskFlowForTask } from "./task-flow-registry.js";
 import * as taskRegistryListenerState from "./task-registry-listener-state.js";
 import { updateTask } from "./task-registry-mutation.js";
@@ -17,6 +17,7 @@ import { linkTaskToFlowById } from "./task-registry-record-api.js";
 import { tasks } from "./task-registry-state.js";
 import { getTaskRegistryStore, onTaskRegistryChange } from "./task-registry.store.js";
 import { loadTaskRegistryStateFromSqliteReadOnly } from "./task-registry.store.sqlite.js";
+import { prepareTaskFixtureRead } from "./task-registry.test-support.js";
 
 afterEach(resetReadState);
 
@@ -29,6 +30,7 @@ describe("task registry terminal read preparation", () => {
         const task = createReadTask(runId);
         const flow = expectDefined(createTaskFlowForTask({ task }), "terminal task flow");
         expect(linkTaskToFlowById({ taskId: task.taskId, flowId: flow.flowId })).not.toBeNull();
+        await prepareTaskFixtureRead(task);
         const request = () => requestTasks(task.ownerKey);
         const terminalInstalled = createDeferred();
         const releaseEffects = createDeferred();

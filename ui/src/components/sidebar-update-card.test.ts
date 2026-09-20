@@ -222,7 +222,13 @@ describe("SidebarUpdateCard", () => {
 
   it("renders an available update and narrates it after the Gateway drops its metadata", async () => {
     const element = await mount(
-      { currentVersion: "1.0.0", latestVersion: "1.0.0", channel: "dev", commitsBehind: 246 },
+      {
+        currentVersion: "1.0.0",
+        latestVersion: "1.0.0",
+        channel: "dev",
+        commitsBehind: 246,
+        currentSha: "1234567890abcdef",
+      },
       {
         channel: "dev",
         autoEnabled: false,
@@ -237,6 +243,9 @@ describe("SidebarUpdateCard", () => {
     expect(element.querySelector(".sidebar-update-card__action")?.textContent).toContain(
       "246 commits behind",
     );
+    expect(
+      [...element.querySelectorAll(".update-git-revisions code")].map((code) => code.textContent),
+    ).toEqual(["12345678", "abc1234d"]);
 
     element.updateBusy = true;
     await element.updateComplete;

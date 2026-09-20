@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { startupCorpusTestFiles } from "../../test/vitest/vitest.startup-corpus-paths.mjs";
 import { fullSuiteVitestShards } from "../../test/vitest/vitest.test-shards.mjs";
 import { runManagedCommand } from "./managed-child-process.mts";
 import { resolveRepoRoot } from "./repo-root.mjs";
@@ -152,14 +153,12 @@ const runtimeConsumers = [
     mode: "runtime",
     dir: "",
   },
-  ...["src/config/config-startup-corpus.test.ts", "src/config/state-startup-corpus.test.ts"].map(
-    (file) => ({
-      file,
-      configs: ["test/vitest/vitest.runtime-config.config.ts"],
-      mode: "runtime" as const,
-      dir: "src",
-    }),
-  ),
+  ...startupCorpusTestFiles.map((file) => ({
+    file,
+    configs: ["test/vitest/vitest.runtime-config.config.ts"],
+    mode: "runtime" as const,
+    dir: "src",
+  })),
   {
     file: "test/agent-exec-code-mode.live.test.ts",
     configs: ["test/vitest/vitest.live.config.ts"],

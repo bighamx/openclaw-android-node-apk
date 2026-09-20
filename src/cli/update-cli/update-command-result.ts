@@ -31,7 +31,7 @@ import {
   recordUpdateRunStep,
 } from "../../infra/update-run-ledger.js";
 import type { UpdateRunRecord } from "../../infra/update-run-record.js";
-import { updateRunStepsFromResultStep } from "../../infra/update-run-step.js";
+import { isFailedUpdateStep, updateRunStepsFromResultStep } from "../../infra/update-run-step.js";
 import type { UpdateRunResult, UpdateStepResult } from "../../infra/update-runner.js";
 import { hasCommandProcessCleanupError } from "../../process/exec-result.js";
 import { defaultRuntime } from "../../runtime.js";
@@ -52,7 +52,6 @@ import type {
   OriginalManagedServiceRuntime,
   ManagedGatewayUpdateVerdict,
   PreManagedServiceStop,
-  UpdateRestartParams,
 } from "./update-command-service-context-types.js";
 import { GatewayServiceUpdateOwnershipError } from "./update-command-service-plan.js";
 import { resolveUpdateResultNextAction } from "./update-recovery-guidance.js";
@@ -118,11 +117,9 @@ export function recordServiceReconciliationWarnings(
 
 export function prepareUpdateServiceResult(
   params: Pick<
-    UpdateRestartParams,
-    "result" | "root" | "preManagedServiceStop" | "shouldRestart"
-  > & {
-    coreAlreadyCurrent?: boolean;
-  },
+    FinishUpdateParams,
+    "result" | "root" | "preManagedServiceStop" | "shouldRestart" | "coreAlreadyCurrent" | "opts"
+  >,
 ): boolean {
   const verdict = params.preManagedServiceStop?.serviceUpdateVerdict;
   const serviceEnv = params.preManagedServiceStop?.serviceEnv ?? process.env;
@@ -139,6 +136,7 @@ export function prepareUpdateServiceResult(
   }
   const shouldRestart =
     params.shouldRestart &&
+    params.opts.run?.completionOwner !== "gateway-restart" &&
     (!params.coreAlreadyCurrent || params.preManagedServiceStop?.running === true);
   if (verdict?.kind === "owned" && verdict.requiresInstallRootRefresh && !shouldRestart) {
     recordServiceReconciliationWarning(
@@ -182,13 +180,13 @@ export type MutableUpdateExecutionResult = {
   activationConfig?: UpdateConfigSnapshot;
 };
 
-function createUpdateCommandFailureResult(
+export function createUpdateCommandFailureResult(
   params: Pick<UpdateRunResult, "mode" | "root" | "recovery" | "durationMs"> & {
     failure: { cause: unknown; detail?: string };
     admission?: true;
     phase?: string;
   },
-): UpdateRunResult {
+): UpdateRunResult & { failedStep: UpdateStepResult } {
   const { failure, admission, phase, ...result } = params;
   const { cause, detail } = failure;
   const preMutationFailure = cause instanceof UpdatePreMutationError;
@@ -311,7 +309,7 @@ export async function withUpdateAdmissionReporting<T>(
     if (opts.json) {
       defaultRuntime.error(message);
     }
-    printResult(
+    await printResult(
       createUpdateCommandFailureResult({
         mode: "unknown",
         admission: true,
@@ -358,14 +356,11 @@ export class UpdateCommandPendingRecoveryFailure extends UpdateCommandFailure {
   }
 }
 
-export function reportUpdateCommandPendingRecovery(
+export async function reportUpdateCommandPendingRecovery(
   error: UpdateCommandPendingRecoveryFailure,
   opts: Pick<UpdateCommandOptions, "json">,
-): never {
-  // printResult resolves history, which may be part of the retained evidence.
-  if (opts.json) {
-    defaultRuntime.writeJson(error.result);
-  }
+): Promise<never> {
+  await printResult(error.result, opts, { readHistory: false, nextAction: error.detail });
   defaultRuntime.error(
     `Update recovery remains pending (${error.result.reason ?? "update-failed"}). Retained state and artifacts were left for the owning updater to reconcile; automatic restart and repair were not attempted.${error.detail ? `\n${error.detail}` : ""}`,
   );
@@ -442,7 +437,7 @@ export function resolveAutomaticUpdateTriage(
     ) &&
     params.preManagedServiceStop?.serviceMutationAllowed !== false &&
     !result.steps.some((step) => step.termination === "signal");
-  const failedStep = result.steps.find((step) => step.exitCode !== 0 && !step.advisory);
+  const failedStep = result.steps.find(isFailedUpdateStep);
   const phase = result.reason ?? "update";
   return eligible
     ? {
@@ -505,6 +500,10 @@ export async function writeControlPlaneUpdateRestartSentinelBestEffort(params: {
       params.env,
     );
   } catch (err) {
+    if (params.meta.completionOwner === "gateway-restart") {
+      // The replacement cannot finish its run from a pending sentinel.
+      throw err;
+    }
     const message = `Failed to write update.run restart sentinel: ${String(err)}`;
     if (params.jsonMode) {
       defaultRuntime.error(message);

@@ -88,7 +88,13 @@ packing the chunks back together. Fork isolation, process lifetimes, worker
 limits, timeouts, and the 50-job fallback cap stay unchanged. Hosted CI must
 establish the resulting job durations.
 
-Precise and fallback plugin envelopes share the same packing owner and a 240-second aggregate estimated budget per job, including multiple envelopes of the same config. Members retain compatible runner/dist requirements and run one at a time; total cost bounds packing rather than a pair limit. Each envelope retains its original child process, environment, native shard arguments and include scope, including process-bounded Codex, Matrix and Telegram work. Runtime-preparing envelopes remain separate. Co-location preserves each original file/process bound and native shard partition; a physical job may contain several such envelopes. Workers, timeouts and serial stop-on-failure behavior stay unchanged. Costs retain the larger complete-family rate from [run 33676780376](https://github.com/openclaw/openclaw/actions/runs/33676780376) and [run 33747183683](https://github.com/openclaw/openclaw/actions/runs/33747183683), rounded up per counting file without lowering prior floors. Both cohorts used two CPUs and two workers; counting inputs include the config-owned exclusions, and runtime preparation is charged separately. Repacking the retained 78 envelopes with these rates projects 30 jobs instead of 32. The largest sum of matching observed child spans is 340.128 seconds. This is a forecast across different source revisions, not measured combined-job latency; native CI must verify elapsed time and cleanup within the eight-minute end-to-end objective.
+Precise and fallback plugin envelopes share the same packing owner and a 240-second aggregate estimated budget per job, including multiple envelopes of the same config. This budget belongs only to changed-extension jobs; compact core budgets are unchanged. Members retain compatible runner/dist requirements and run one at a time. Each envelope retains its original child process, environment, native shard arguments and include scope, including process-bounded Codex, Matrix and Telegram work. Runtime-preparing envelopes remain separate, and an envelope above the budget stays alone. Worker limits, runner classes, timeouts, coverage and serial stop-on-failure behavior are unchanged.
+
+The fallback rates use median wrapper seconds per counting file from 371 successful envelopes across four contributing PR runs in a ten-green-run sample: [35490342736](https://github.com/openclaw/openclaw/actions/runs/35490342736), [35490482496](https://github.com/openclaw/openclaw/actions/runs/35490482496), [35490609684](https://github.com/openclaw/openclaw/actions/runs/35490609684), and [35491344005](https://github.com/openclaw/openclaw/actions/runs/35491344005). The 27-config table includes database workers at 7.582 seconds/file instead of the previous unmeasured one-second default, and Feishu at 0.411 seconds/file. Explicit database-worker app-server files use a conservative 46.26 seconds/file: their slowest 11-file envelope reached 508.783 seconds. This floor keeps that envelope standalone instead of hiding it in the mixed config median. The selected 8-class runners delivered two CPUs and two workers; serial envelopes do not gain file parallelism from more CPUs. Existing runtime preparation allowances remain conservative additions to these fallback estimates.
+
+The landed caps are 90 compact rows, 130 final PR Node rows and 70 final push Node rows; changed-extension fallback retains its 50-row cap. These caps admit the 240-second budget without another policy increase. In the historical 123-envelope curve, 240 seconds emits 49 extension rows and final PR Node counts of 123 Blacksmith, 119 hybrid and 127 GitHub, versus 42 extension rows at the interim 320-second budget. Re-emitting PR #153435's 38 changed paths and a broad SDK fallback after rebasing gives 124 envelopes in 50 extension rows for both changed sets. Blacksmith, hybrid and GitHub compact PR counts are 77, 71 and 82, including two dist descriptors outside the Node matrix; final PR Node counts are 125, 119 and 130. Push Node counts are 57, 46 and 55, with compact counts of 58, 47 and 56. Every profile fits the landed caps; GitHub PR and extension fallback use their full row allowances. Canonical pushes do not append changed-extension envelopes. The conservative registration ceiling remains the landed 5,010 bound.
+
+Median rates are estimates, not elapsed-time guarantees. Replaying the selected fallback layout against the largest matching observed child spans gives a 432.758-second combined envelope sum at 240 seconds, versus 520.688 seconds at the interim 320-second budget; the slowest individual envelope is 508.783 seconds. Whole-config observations can have different file inventories across source revisions. These are forecasts, not measured combined-job walls. The original job in run 35490342736 bundled 17 envelopes into 2,015.674 seconds of child spans and 2,049 seconds of wall time despite a 240-second prediction. Native PR CI must verify the interim improvement toward the ten-minute PR objective. Exact config/include-set observations and successful PR-run ingestion in the timing refit remain follow-up work; narrow PR samples must not prune unrelated observations merely because they were not selected.
 
 GitHub-hosted core storage/state stripes also have a 64-file admission ceiling. In [run 35477045216](https://github.com/openclaw/openclaw/actions/runs/35477045216), a 203-file serial stripe continued passing tests until the one-hour job deadline; its 196-file sibling completed in 2,867 test seconds. The compact split owner bounds each hosted prerequisite-preserving stripe independently of older timing estimates, and the existing distinct-family rule prevents reassembly in one job. Blacksmith and hybrid retain their existing measured partitioning. Every file remains covered once, with fork isolation, serial file execution, worker limits, deadlines, and the 90-row compact cap. This is a workload bound, not a measured new runtime; hosted CI must establish the resulting duration.
 
@@ -275,8 +281,8 @@ runtime build is charged once per job. Unknown groups retain positive fallback
 costs. Native evidence with the same inventory must verify latency, actual
 resources and cleanup before claiming improvement.
 
-`config/ci-test-timings.json` records CI measurements for UI and Gateway E2E files
-and compact Node groups. UI and compact packers prefer these weights over their in-source cold-start
+`config/ci-test-timings.json` records CI measurements for UI and Gateway E2E files,
+PR tooling files, and compact Node groups. UI and compact packers prefer active weights over their in-source cold-start
 tables. UI E2E keys are repo-relative paths, including tests under `ui/src/pages/`,
 and every file estimate includes the measured fork, import, and setup overhead.
 Compact groups have separate Blacksmith and GitHub-hosted measurements, selected
@@ -316,6 +322,32 @@ timestamps outside that window fail validation.
 
 The refit seeks up to five successful `ci.yml` push runs on `main` with parsed
 compact measurements. Docs-only runs and unparseable logs do not fill that quota.
+It also reads the newest five successful `ci.yml` `pull_request` runs for the
+PR-only numbered tooling family. These tests execute the PR merge-ref, not a
+canonical main revision; that provenance is appropriate for PR-only tooling.
+PR logs update only `toolingFileSeconds`, never main compact or release weights.
+Tooling measurements are collected ahead of planner activation: run `35506602947`
+exceeds the current hosted and hybrid row caps when applied. Keep activation
+separate until measured test improvements or approved capacity make every profile fit.
+The map keeps separate Blacksmith and GitHub measurements. Numbered tooling
+parents and their child timing keys change when files move, so per-file costs
+can survive repacking and serve local tooling scheduling after activation. Unmeasured files use
+the remaining cold hints or the positive two-second default.
+
+Only successful complete tooling invocations contribute. Native file summaries
+include suite hooks; older verbose-only logs supply summed case durations.
+Those case costs exclude import/setup and can exceed wall time for concurrent
+cases, so they are packing weights rather than claims of per-file wall time.
+Retries contribute one median per file, profile and run. Ordinary refits require
+two independent runs and retain the 15% write threshold. Partial PR plans do not
+prove that absent files disappeared, so tooling maps retain unobserved files.
+
+For an explicit reviewed seed, use `pnpm ci:timings:refit --tooling-run <id>`
+(repeatable). It validates successful PR workflow and job metadata, permits a
+single run only for tooling, preserves all other timing maps, and records the
+seed run IDs and merge-ref provenance in `source`. The initial tooling seed uses
+run `35506602947`; subsequent daily samples replace it under the ordinary rules.
+
 It also samples up to five successful manual runs of each release-check workflow
 that owns Gateway E2E. Run searches remain bounded by 25 pages and GitHub's
 1,000-result filtered-query limit. Incomplete pagination fails without writing.
@@ -431,8 +463,8 @@ in-source `COMPACT_GITHUB_GROUP_SECONDS_HINTS` fallback until hosted observation
 meet the sampling minimum. Later main attempts on the hybrid backend, or main
 runs using `OPENCLAW_CI_RUNNER_BACKEND=github`, can fill it naturally. Once recorded,
 hosted weights survive all-Blacksmith windows: pruning requires observations
-from at least three hosted runs in the sampled window. Sampling stays main-only;
-fork PR timings never influence the packer.
+from at least three hosted runs in the sampled window. Compact group sampling
+stays main-only; PR samples influence only the separate tooling file map.
 
 The `CI Test Timings Refit` workflow runs daily at 09:43 UTC and supports manual
 dispatch on `main`. When weights change, it updates the single

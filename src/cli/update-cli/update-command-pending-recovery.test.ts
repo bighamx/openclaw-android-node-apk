@@ -4,7 +4,6 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanupTempDirs, makeTempDir } from "../../../test/helpers/temp-dir.js";
-import * as triageUpdate from "../../commands/triage-update.js";
 import * as config from "../../config/config.js";
 import * as launchd from "../../daemon/launchd.js";
 import * as gatewayService from "../../daemon/service.js";
@@ -13,6 +12,7 @@ import { resolvePackageActivationAnchor } from "../../infra/package-update-activ
 import * as temporaryState from "../../infra/tmp-openclaw-dir.js";
 import * as updateCheck from "../../infra/update-check.js";
 import { CONTROL_PLANE_UPDATE_SENTINEL_META_ENV } from "../../infra/update-control-plane-sentinel.js";
+import * as failureArtifacts from "../../infra/update-failure-report-artifact.js";
 import * as updateGlobal from "../../infra/update-global.js";
 import * as handoffCleanup from "../../infra/update-managed-service-handoff-cleanup.js";
 import {
@@ -103,7 +103,10 @@ function pendingPackageInvocation(
   const metaPath = path.join(home, "sentinel.json");
   fs.writeFileSync(configPath, "{}\n");
   fs.writeFileSync(contextPath, "retained triage\n");
-  fs.writeFileSync(metaPath, JSON.stringify({ meta: { triageContextPath: contextPath } }));
+  fs.writeFileSync(
+    metaPath,
+    JSON.stringify({ version: 1, meta: { triageContextPath: contextPath } }),
+  );
   for (const key of [
     "OPENCLAW_UPDATE_RUN_ID",
     POST_CORE_UPDATE_ENV,
@@ -159,7 +162,7 @@ function pendingPackageInvocation(
     .mockResolvedValue(false);
   const runTriage = vi.fn(async () => ({ status: "cancelled" as const }));
   const prepareTriage = vi.spyOn(triage, "prepareUpdateFailureTriage").mockResolvedValue(runTriage);
-  const writeTriage = vi.spyOn(triageUpdate, "writeTriageUpdateFailure");
+  const writeTriage = vi.spyOn(failureArtifacts, "writeTriageUpdateFailure");
   const cleanupHandoffs = vi.spyOn(handoffCleanup, "cleanupStaleManagedServiceUpdateHandoffs");
   const loadPlugins = vi.spyOn(installedPlugins, "loadInstalledPluginIndexInstallRecords");
   const resumePostCore = vi
@@ -487,7 +490,7 @@ describe("pending recovery finalizer", () => {
       const context = path.join(f.root, "triage.json");
       const meta = path.join(f.root, "sentinel.json");
       fs.writeFileSync(context, "unchanged");
-      fs.writeFileSync(meta, JSON.stringify({ meta: { triageContextPath: context } }));
+      fs.writeFileSync(meta, JSON.stringify({ version: 1, meta: { triageContextPath: context } }));
       const primary = {
         status: "error" as const,
         mode: "npm" as const,
