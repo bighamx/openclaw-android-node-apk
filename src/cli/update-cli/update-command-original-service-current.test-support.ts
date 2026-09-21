@@ -18,7 +18,7 @@ import {
 import type { GatewayServiceState } from "../../daemon/service.js";
 import * as integrity from "../../infra/package-update-integrity.js";
 import { createUpdateRun } from "../../infra/update-run-ledger.js";
-import type { UpdateRunResult } from "../../infra/update-runner.js";
+import type { UpdateRunResult } from "../../infra/update-runner-types.js";
 import type { OpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import type { UpdateCommandOptions } from "./shared.js";
 import { withUpdateCommandExecutor } from "./update-command-executor.js";

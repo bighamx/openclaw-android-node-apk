@@ -50,12 +50,12 @@ import { ensureTaskRuntimeStateReady } from "./runtime-internal.js";
 import { createAcpTaskBackingDetailForTest } from "./task-backing-authority.test-support.js";
 import {
   createTaskFlowForTask as createTaskFlowForTaskOrNull,
-  createManagedTaskFlow as createManagedTaskFlowOrNull,
   getTaskFlowById,
   reloadTaskFlowRegistryFromStoreAsync,
   requestFlowCancel,
   updateFlowRecordByIdExpectedRevision,
 } from "./task-flow-registry.js";
+import { createManagedTaskFlow } from "./task-flow-registry.test-support.js";
 import type { TaskFlowRecord } from "./task-flow-registry.types.js";
 import { getTaskActivitySnapshot } from "./task-registry-activity.js";
 import { updateTaskStateByRunId } from "./task-registry-record-api.js";
@@ -134,16 +134,6 @@ const DEFAULT_TASK_RETENTION_MS = 7 * 24 * 60 * 60_000;
 const LOST_TASK_RETENTION_MS = 24 * 60 * 60_000;
 const NOTIFYCHAT_ORIGIN = { channel: "notifychat", to: "notifychat:123" } as const;
 const GUILDCHAT_ORIGIN = { channel: "guildchat", to: "guildchat:123" } as const;
-
-function createManagedTaskFlow(
-  params: Parameters<typeof createManagedTaskFlowOrNull>[0],
-): TaskFlowRecord {
-  const flow = createManagedTaskFlowOrNull(params);
-  if (!flow) {
-    throw new Error("expected managed TaskFlow creation to succeed");
-  }
-  return flow;
-}
 
 function createTaskFlowForTask(
   params: Parameters<typeof createTaskFlowForTaskOrNull>[0],
@@ -2884,6 +2874,7 @@ describe("task-registry", () => {
         expect(getGatewaySuspendStatus(suspension.suspensionId)).toEqual({
           status: "ready",
           expiresAtMs: suspension.expiresAtMs,
+          writeCustody: [],
         });
       } finally {
         releaseSend();
@@ -3548,7 +3539,7 @@ describe("task-registry", () => {
       });
 
       startTaskRegistryMaintenance();
-      stopTaskRegistryMaintenance();
+      await stopTaskRegistryMaintenance();
 
       await vi.advanceTimersByTimeAsync(5_000);
       await flushAsyncWork();

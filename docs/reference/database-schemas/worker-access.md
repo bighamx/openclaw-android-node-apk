@@ -34,6 +34,11 @@ asynchronous planning first, then reread authoritative rows inside the admitted
 transaction. Preserve FIFO order, coordinator custody, transaction/commit grants,
 and settlement of accepted write-capable work.
 
+Worker authority requests wait for the retained host owner's grant or refusal;
+host scheduling delays do not expire that authority. The host still checks current
+authority before granting, and broker failure joins worker exit before releasing
+custody. Coordinator-lock and broker-capacity admission keep their own deadlines.
+
 ## Carry facts, publish after commit
 
 Before yielding, capture the physical store target, source/admission scope,
@@ -86,6 +91,13 @@ and receipts, retained transcript-session keys, and lazy subagent source/visibil
 reads remain migration debt. Process-held incognito databases and the existing
 CLI-import history path still need their owner/lifetime migration; they are not
 new synchronous exceptions or fallbacks for a failed durable worker read.
+
+Exact message membership reads for managed attachments also use the history
+worker. The worker validates the entire visible JSON range on every lookup,
+including unchanged projection revisions, and returns only matching messages.
+Cold archive decoding and restoration retain the existing archive worker and
+host generation/commit authorization; transcript read fences still bind the
+subsequent read. No validation cache or new restoration owner is introduced.
 
 The asynchronous transcript-search facade similarly moves durable FTS reads for
 all four Gateway/tool callers through the existing worker lifecycle. Each caller

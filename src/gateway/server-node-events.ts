@@ -57,7 +57,7 @@ import {
   NODE_PRESENCE_ACTIVITY_EVENT,
   normalizeNodePresenceAliveReason,
 } from "../shared/node-presence.js";
-import { deliveryContextFromSession } from "../utils/delivery-context.shared.js";
+import { deliveryContextFromSession } from "../utils/delivery-context.read.js";
 import { resolveChatAttachmentMaxBytes as defaultResolveChatAttachmentMaxBytes } from "./chat-attachment-policy.js";
 import {
   INLINE_IMAGE_DURABLE_OMISSION_MARKER as DEFAULT_INLINE_IMAGE_DURABLE_OMISSION_MARKER,

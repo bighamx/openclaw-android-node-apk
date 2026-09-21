@@ -4,12 +4,14 @@ import type {
   readSessionEntryResetRecallCutoff,
 } from "../../../packages/memory-host-sdk/src/host/session-files.js";
 import type { PreparedSessionHistoryReadTarget } from "../../gateway/session-history-read.types.js";
+import type { SessionPreviewItem, SessionTitleFields } from "../../gateway/session-utils.types.js";
 import type {
   SessionCostUsageCacheRead,
   SessionCostUsageCacheReadResult,
 } from "../../infra/session-cost-usage-cache-read.js";
 import type { SensitiveTextRedactionSnapshot } from "../../logging/redact.js";
 import type { UserTurnTranscriptAdmissionReceipt } from "../../sessions/user-turn-transcript.types.js";
+import type { SessionLifecycleTimestamps } from "./lifecycle.types.js";
 import type {
   SessionBranchSummaryReadRequest,
   SessionBranchSummaryReadResult,
@@ -26,6 +28,7 @@ import type {
   SessionAccessScope,
   SessionEntryListScope,
   SessionEntrySummary,
+  SessionTranscriptReadScope,
   SessionTranscriptRuntimeTarget,
 } from "./session-accessor.types.js";
 import type { CanonicalSessionReaderContinuation } from "./session-canonical-key.js";
@@ -37,6 +40,8 @@ import type { SessionMember } from "./session-sharing-store.kernel.js";
 import type {
   SessionStoreTargetInventoryRequest,
   SessionStoreTargetInventoryResult,
+  SessionStoreTargetReadRequest,
+  SessionStoreTargetReadResult,
 } from "./session-store-target-inventory.js";
 import type {
   SessionTranscriptSearchParams,
@@ -83,6 +88,33 @@ export type SessionTranscriptHistoryWorkerInput = {
   admission?: UserTurnTranscriptAdmissionReceipt;
 };
 
+export type SessionPreviewWorkerInput = {
+  kind: "session-preview";
+  database: { agentId: string; path: string };
+  scope: SessionTranscriptReadScope;
+  maxItems: number;
+  maxChars: number;
+  admission?: UserTurnTranscriptAdmissionReceipt;
+};
+
+export type SessionPreviewWorkerResult = {
+  kind: "session-preview";
+  items: SessionPreviewItem[];
+};
+
+export type SessionTitleFieldsWorkerInput = {
+  kind: "session-title-fields";
+  database: { agentId: string; path: string };
+  scope: SessionTranscriptReadScope;
+  includeInterSession?: boolean;
+  admission?: UserTurnTranscriptAdmissionReceipt;
+};
+
+export type SessionTitleFieldsWorkerResult = {
+  kind: "session-title-fields";
+  fields: SessionTitleFields;
+};
+
 export type SessionRowPresenceWorkerInput = {
   kind: "session-row-presence";
   database: { agentId: string; path: string };
@@ -114,6 +146,25 @@ export type SessionEntryListWorkerResult = {
   entries: SessionEntrySummary[];
 };
 
+export type SessionExactEntriesWorkerInput = {
+  kind: "session-exact-entries";
+  database: { agentId: string; path: string };
+  env: NodeJS.ProcessEnv;
+  sessionKeys: readonly string[];
+  lifecycleSessionKey?: string;
+};
+
+export type SessionExactEntriesWorkerResult = {
+  kind: "session-exact-entries";
+  entries: SessionEntrySummary[];
+  lifecycleTimestamps: SessionLifecycleTimestamps;
+};
+
+export type SessionStoreTargetWorkerInput = {
+  kind: "session-store-target";
+  request: SessionStoreTargetReadRequest;
+};
+
 export type SessionTargetInventoryWorkerInput = {
   kind: "session-target-inventory";
   request: SessionStoreTargetInventoryRequest;
@@ -141,9 +192,13 @@ export type SessionTranscriptWorkerValues = {
   "transcript-search": SessionTranscriptSearchWorkerResult;
   "branch-summaries": SessionBranchSummaryReadResult;
   "history-page": SessionHistoryWorkerResult;
+  "session-preview": SessionPreviewWorkerResult;
+  "session-title-fields": SessionTitleFieldsWorkerResult;
   "session-row-presence": boolean;
   "session-members": SessionMember[];
   "session-entry-list": SessionEntryListWorkerResult;
+  "session-exact-entries": SessionExactEntriesWorkerResult;
+  "session-store-target": SessionStoreTargetReadResult;
   "session-target-inventory": SessionStoreTargetInventoryResult;
   "session-identity-evidence": SessionIdentityEvidenceWorkerResult;
   "usage-cache": SessionCostUsageCacheReadResult;
@@ -165,5 +220,40 @@ export type SessionTranscriptWorkerReply<Kind extends keyof SessionTranscriptWor
       error:
         | { kind: "cold"; sessionId: string }
         | { kind: "projection"; sessionId: string }
-        | { kind: "fence"; message: string };
+        | { kind: "fence"; message: string }
+        | { kind: "syntax"; message: string };
     };
+
+export type SessionHistoryWorkerDatabase = {
+  searchTranscripts: (
+    params: SessionTranscriptSearchWorkerInput["params"],
+  ) => Promise<SessionTranscriptSearchWorkerResult["result"]>;
+  generation: number;
+  assertCurrent: () => void;
+  run: (
+    prepare: () => Omit<SessionTranscriptHistoryWorkerInput, "database">,
+    inputBytes: number,
+  ) => Promise<SessionHistoryWorkerResult>;
+  readPreview: (
+    input: Omit<SessionPreviewWorkerInput, "kind" | "database">,
+  ) => Promise<SessionPreviewWorkerResult["items"]>;
+  readTitleFields: (
+    input: Omit<SessionTitleFieldsWorkerInput, "kind" | "database">,
+  ) => Promise<SessionTitleFieldsWorkerResult["fields"]>;
+  readEntryPresence: (scope: SessionRowPresenceWorkerInput["scope"]) => Promise<boolean>;
+  readIdentityEvidence: (
+    input: Omit<SessionIdentityEvidenceWorkerInput, "kind" | "database">,
+  ) => Promise<SessionIdentityEvidenceResult[]>;
+  readExactEntries: (
+    input: Omit<SessionExactEntriesWorkerInput, "kind" | "database">,
+  ) => Promise<SessionExactEntriesWorkerResult>;
+  readEntries: (
+    scope: SessionEntryListWorkerInput["scope"],
+  ) => Promise<SessionEntryListWorkerResult["entries"]>;
+  readMembers: (
+    input: Omit<SessionMembersWorkerInput, "kind" | "database">,
+  ) => Promise<SessionMember[]>;
+  readUsageCache: (
+    input: Omit<SessionUsageCacheWorkerInput, "kind" | "database">,
+  ) => Promise<SessionCostUsageCacheReadResult>;
+};

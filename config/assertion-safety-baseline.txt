@@ -66,7 +66,6 @@ extensions/browser/src/browser/config-mutations.ts	1
 extensions/browser/src/browser/config.ts	1
 extensions/browser/src/browser/errors.ts	4
 extensions/browser/src/browser/extension-install-layout.ts	6
-extensions/browser/src/browser/extension-install.ts	3
 extensions/browser/src/browser/extension-native-host.ts	1
 extensions/browser/src/browser/extension-native-protocol.ts	1
 extensions/browser/src/browser/extension-relay/auth-v2.ts	10
@@ -403,7 +402,6 @@ extensions/discord/src/voice/realtime-turns.ts	3
 extensions/discord/src/voice/receive-recovery.ts	5
 extensions/discord/src/voice/sdk-runtime.ts	1
 extensions/discord/src/voice/segment.ts	1
-extensions/discord/src/voice/voice-receive.ts	1
 extensions/duckduckgo/src/config.ts	1
 extensions/duckduckgo/src/ddg-search-provider.ts	1
 extensions/elevenlabs/config-compat.ts	2
@@ -1859,7 +1857,6 @@ src/agents/sessions/sdk.ts	3
 src/agents/sessions/session-manager-codec.ts	5
 src/agents/sessions/session-manager-core.ts	1
 src/agents/sessions/session-manager-entries.ts	3
-src/agents/sessions/session-manager-persistence.ts	2
 src/agents/sessions/session-manager.ts	2
 src/agents/sessions/settings-manager.ts	11
 src/agents/sessions/steering-message-identity.ts	2
@@ -2885,7 +2882,6 @@ src/infra/openclaw-root.ts	1
 src/infra/outbound/agent-delivery.ts	2
 src/infra/outbound/channel-selection.ts	2
 src/infra/outbound/conversation-delivery.ts	1
-src/infra/outbound/current-conversation-bindings.ts	1
 src/infra/outbound/deliver-channel.ts	4
 src/infra/outbound/deliver-payload.ts	1
 src/infra/outbound/deliver-prepare.ts	1
@@ -2978,7 +2974,6 @@ src/infra/unhandled-rejections.ts	6
 src/infra/update-check-package-target.ts	2
 src/infra/update-global.ts	3
 src/infra/update-package-manager.ts	1
-src/infra/update-runner-install-surface.ts	1
 src/infra/voicewake-routing.ts	4
 src/infra/warning-filter.ts	4
 src/infra/windows-gateway-firewall-diagnostics.ts	3
@@ -3529,7 +3524,7 @@ ui/src/app/stale-chunk-reload.ts	1
 ui/src/app/startup-settings.ts	1
 ui/src/app/user-profile.ts	2
 ui/src/app/web-push.runtime.ts	2
-ui/src/components/agent-select.ts	3
+ui/src/components/agent-select.ts	2
 ui/src/components/app-sidebar-agent-menu.ts	2
 ui/src/components/app-sidebar-nav-menus.ts	6
 ui/src/components/app-sidebar-render.ts	4
@@ -3735,7 +3730,7 @@ ui/src/pages/logs/log-lines.ts	1
 ui/src/pages/logs/view.ts	2
 ui/src/pages/memory-import/view.ts	3
 ui/src/pages/model-providers/view.ts	3
-ui/src/pages/model-setup/provider-picker.ts	3
+ui/src/pages/model-setup/provider-picker.ts	2
 ui/src/pages/model-setup/view.ts	2
 ui/src/pages/new-session/discovery.ts	3
 ui/src/pages/new-session/draft-place-browser.ts	2

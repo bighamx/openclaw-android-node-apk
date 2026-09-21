@@ -38,6 +38,7 @@ import {
   createContractsVitestConfig,
   pluginContractPatterns,
 } from "./vitest/vitest.contracts-shared.ts";
+import codexConfig from "./vitest/vitest.extension-codex.config.ts";
 import {
   databaseWorkerExtensionTestFiles,
   databaseWorkerExtensionTestRoots,
@@ -85,6 +86,7 @@ const scopedGatewayMethodsIsolatedTestFiles = [
   "server-methods/tasks.test.ts",
   "server-methods/agent.task-runtime.test.ts",
   "server-methods/agent.test.ts",
+  "server-methods/agent.visitor-access.test.ts",
   "server-methods/board.runtime-boundaries.test.ts",
   "server-methods/chat.reset-visible-yield.test.ts",
   "server-methods/environments.pairing-snapshot.test.ts",
@@ -122,6 +124,15 @@ afterEach(() => {
 });
 
 describe("projects vitest config", () => {
+  it("isolates Codex file globals while inheriting the shared worker budget", () => {
+    const config = requireTestConfig(codexConfig);
+    expect(config.isolate).toBe(true);
+    expect(config.pool).toBe(requireTestConfig(baseConfig).pool);
+    expect(config.runner).toBeUndefined();
+    expect(config.fileParallelism).toBe(requireTestConfig(baseConfig).fileParallelism);
+    expect(config.maxWorkers).toBe(requireTestConfig(baseConfig).maxWorkers);
+  });
+
   it("pins an explicit full-suite project worker limit", () => {
     const previous = process.env.OPENCLAW_VITEST_MAX_WORKERS;
     try {
@@ -436,7 +447,7 @@ describe("projects vitest config", () => {
     const configFiles = new Map<string, string[]>();
     const matches: string[] = [];
     const processLimits = [
-      ["test/vitest/vitest.extension-codex.config.ts", "extensions/codex/", 12],
+      ["test/vitest/vitest.extension-codex.config.ts", "extensions/codex/", 24],
       ["test/vitest/vitest.extension-matrix.config.ts", "extensions/matrix/", 40],
       ["test/vitest/vitest.extension-telegram.config.ts", "extensions/telegram/", 1],
     ] as const;

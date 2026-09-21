@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { CLOUD_PROFILE_RETRY_DELAYS_MS } from "../pages/new-session/cloud-profile-discovery.ts";
 import { takeControlUiViewportScreenshot } from "../test-helpers/control-ui-e2e-screenshot.ts";
-import { navigateToControlUiSession } from "../test-helpers/control-ui-e2e.ts";
+import { navigateToControlUiSession, pauseVirtualClock } from "../test-helpers/control-ui-e2e.ts";
 import { tooltipTitleText } from "./control-ui-e2e-suite.test-support.ts";
 import {
   ONE_PIXEL_PNG_B64,
@@ -416,6 +416,8 @@ suite.define(() => {
           await takeControlUiViewportScreenshot(page, page.locator(".shell"), [startButton]),
         );
       }
+      // Hold each retry's deadline until the next deferred response is installed.
+      await pauseVirtualClock(page);
       await gateway.rejectDeferred("environments.list", profileCatalogError);
 
       // A recorded request is not a processed failure. Let the page settle and

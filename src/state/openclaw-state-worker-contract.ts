@@ -25,6 +25,7 @@ import type { DeferredPluginMigration } from "../infra/deferred-plugin-migration
 import type { DeliveryQueueWorkerOperations } from "../infra/delivery-queue.worker-contract.js";
 import type * as deviceAuth from "../infra/device-auth-store.kernel.js";
 import type { ExecAuthorizationWorkerOperations } from "../infra/exec-approvals-contracts.js";
+import type { CurrentConversationBindingWorkerOperations } from "../infra/outbound/current-conversation-bindings.worker-contract.js";
 import type { PreparedPromotionClaim } from "../infra/promotions-feed.kernel.js";
 import type { ApnsRegistration } from "../infra/push-apns-store.types.js";
 import type { WebPushWorkerOperations } from "../infra/push-web-store.worker-contract.js";
@@ -73,7 +74,8 @@ import type { UserPreferenceWorkerOperations } from "./user-preferences.types.js
 import type { UserProfileWorkerOperations } from "./user-profiles.worker.js";
 
 /** Commands share one physical shared-state actor; bindings belong to commands, not open input. */
-export type OpenClawStateWorkerOperations = WebPushWorkerOperations &
+export type OpenClawStateWorkerOperations = CurrentConversationBindingWorkerOperations &
+  WebPushWorkerOperations &
   ExecAuthorizationWorkerOperations &
   AuditWriterOperations &
   NativeHookRelayStoreWorkerOperations &

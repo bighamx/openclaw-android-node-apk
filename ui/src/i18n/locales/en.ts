@@ -890,6 +890,7 @@ export const en: TranslationMap & {
     name: "Name",
     namePlaceholder: "auto",
     baseBranch: "Base branch",
+    baseBranchPlaceholder: "Remote default",
     repo: "Repository",
     empty: "No managed worktrees.",
     restorable: "Restorable",
@@ -1644,6 +1645,8 @@ export const en: TranslationMap & {
     appearance: {
       lobsterVisits: "Lobster visits",
       lobsterVisitsOn: "Drops by occasionally",
+      lobsterVisitsThemeHidden:
+        "The lobster stays home while the {theme} theme is active. Other visitors still drop by.",
       lobsterVisitsOff: "Never visits",
       lobsterSounds: "Lobster sounds",
       lobsterSoundsOn: "Tiny blubs when touched",
@@ -2127,6 +2130,7 @@ export const en: TranslationMap & {
     automation: "Automation",
     mcp: "MCP",
     memory: "Memory",
+    search: "Search",
     talk: "Talk",
     infrastructure: "Infrastructure",
     labs: "Labs",
@@ -2177,6 +2181,7 @@ export const en: TranslationMap & {
     automation: "Commands, hooks, automations, and plugins.",
     mcp: "MCP servers, auth, tools, and diagnostics.",
     memory: "Memory engine, search, and dreaming.",
+    search: "Choose how agents search the web and check provider health.",
     talk: "Realtime voice: provider, model, and speaker voice.",
     infrastructure: "Gateway, browser, node host, discovery, and ACP settings.",
     labs: "Experimental agent and tool capabilities.",
@@ -3152,6 +3157,7 @@ export const en: TranslationMap & {
   },
   dreaming: {},
   modelProviders: {},
+  searchPage: {},
   usage: {
     common: {
       emptyValue: "—",
@@ -3889,7 +3895,7 @@ export const en: TranslationMap & {
     },
     goals: {},
     asyncQuestions: {
-      title: "Answer when ready",
+      title: "Optional · work can continue",
       pendingOne: "{count} unanswered question",
       pendingMany: "{count} unanswered questions",
       inComposer: "Answer above the message box.",
@@ -3899,6 +3905,7 @@ export const en: TranslationMap & {
     },
     questions: {
       other: "Type your own answer here",
+      multilineHint: "Enter adds a line · Ctrl/⌘+Enter to continue",
       answer: "Answer",
       answerPlaceholder: "{label}",
       openLink: "Open link",
@@ -3911,7 +3918,7 @@ export const en: TranslationMap & {
       skipped: "Skipped",
       collapse: "Collapse question",
       expand: "Expand question",
-      eyebrow: "Question",
+      eyebrow: "Waiting for your answer",
       summaryLabel: "Question outcome",
       ownAnswerFor: "Your own answer for {header}",
       storeRequestedBy: "Requested by {agent} · {session}",

@@ -1073,10 +1073,15 @@ install_companion_plugins() {
   node scripts/e2e/lib/upgrade-survivor/assertions.mjs assert-baseline-plugin "$baseline_plugin_version" "$plugin" "$tag"
 }
 
-seed_legacy_operator_gateway() {
+start_legacy_operator_mock() {
   export MOCK_REQUEST_LOG="$ARTIFACT_ROOT/legacy-operator-requests.jsonl"
-  mock_openai_pid="$(openclaw_e2e_start_mock_openai 44081 "$ARTIFACT_ROOT/legacy-operator-mock.log")"
-  openclaw_e2e_wait_mock_openai 44081
+  local log="$ARTIFACT_ROOT/legacy-operator-mock.log"
+  mock_openai_pid="$(openclaw_e2e_start_mock_openai 0 "$log")"
+  OPENCLAW_UPGRADE_SURVIVOR_MOCK_PORT="$(openclaw_e2e_wait_mock_openai 0 80 400 "" "$mock_openai_pid" "$log")" || return "$?"
+  export OPENCLAW_UPGRADE_SURVIVOR_MOCK_PORT
+}
+
+seed_legacy_operator_gateway() {
   start_gateway
   node scripts/e2e/lib/upgrade-survivor/assertions.mjs seed-legacy-operator-default-cron
   stop_gateway
@@ -2248,6 +2253,10 @@ if [ "$SCENARIO" = "abandoned-update" ]; then
   run_abandoned_update_survivor
   run_completed="1"
   exit 0
+fi
+if [ "$SCENARIO" = "legacy-operator-state" ]; then
+  # The baseline CLI must author the endpoint already owned by the model mock.
+  phase start-legacy-operator-mock start_legacy_operator_mock
 fi
 phase apply-baseline-config-recipe apply_baseline_config_recipe
 run_missing_load_path_fixture seed

@@ -1,6 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 import { resolveOptionalIntegerOption } from "@openclaw/normalization-core/number-coercion";
-import { executeSqliteQuerySync, executeSqliteQueryTakeFirstSync } from "../infra/kysely-sync.js";
+import {
+  executeSqliteQuerySync,
+  executeSqliteQueryTakeFirstSync,
+  prepareSqliteQueryTakeFirstSync,
+} from "../infra/kysely-sync.js";
 import type { TranscriptSessionDescriptor, TranscriptUtterance } from "./provider-types.js";
 import {
   meetingTranscriptDb,
@@ -25,16 +29,93 @@ type TranscriptSessionEntry = {
 };
 type TranscriptSessionMatchEntry = TranscriptSessionEntry & { inputRevision: string };
 
+export function readTranscriptExportOwnership(
+  database: DatabaseSync,
+  session: TranscriptSessionIdentity,
+) {
+  return executeSqliteQueryTakeFirstSync(
+    database,
+    meetingTranscriptSessionQuery(database, session).select([
+      "export_manifest_json",
+      "export_pending_json",
+    ]),
+  );
+}
+
+export function readTranscriptExportPathCollisions(database: DatabaseSync, exportKey: string) {
+  return executeSqliteQuerySync(
+    database,
+    meetingTranscriptDb(database)
+      .selectFrom("meeting_transcript_sessions")
+      .select(["session_id", "started_at", "selector", "export_pending_json"])
+      .where("export_key", "=", exportKey)
+      .orderBy("selector", "asc"),
+  ).rows;
+}
+
+export function readTranscriptExportPathOwners(database: DatabaseSync, exportKey: string) {
+  return executeSqliteQuerySync(
+    database,
+    meetingTranscriptDb(database)
+      .selectFrom("meeting_transcript_sessions")
+      .select(["session_id", "started_at", "export_manifest_json", "export_pending_json"])
+      .where("export_key", "=", exportKey)
+      .orderBy("selector", "asc"),
+  ).rows;
+}
+
+type SummarySnapshotRow = Pick<
+  MeetingTranscriptSessionRow,
+  | "next_utterance_seq"
+  | "title"
+  | "source_json"
+  | "metadata_json"
+  | "stopped_at"
+  | "created_at_ms"
+  | "updated_at_ms"
+>;
+const summarySnapshotQueries = new WeakMap<
+  DatabaseSync,
+  ReturnType<typeof prepareSqliteQueryTakeFirstSync<TranscriptSessionIdentity, SummarySnapshotRow>>
+>();
+
 /** Runs inside the read worker's transaction so input and replacement basis agree. */
 export function readTranscriptSummarySnapshot(
   database: DatabaseSync,
   session: TranscriptSessionIdentity,
   maxUtterances: number,
 ): TranscriptSummarySnapshot | undefined {
-  const row = executeSqliteQueryTakeFirstSync(
-    database,
-    meetingTranscriptSessionQuery(database, session).selectAll(),
-  );
+  let read = summarySnapshotQueries.get(database);
+  if (!read) {
+    read = prepareSqliteQueryTakeFirstSync<TranscriptSessionIdentity, SummarySnapshotRow>(
+      database,
+      (parameter) =>
+        meetingTranscriptDb(database)
+          .selectFrom("meeting_transcript_sessions")
+          .where(
+            "session_id",
+            "=",
+            parameter((value) => value.sessionId),
+          )
+          .where(
+            "started_at",
+            "=",
+            parameter((value) => value.startedAt),
+          )
+          // Retain native integer decoding while omitting unrelated export bookkeeping.
+          .select([
+            "next_utterance_seq",
+            "title",
+            "source_json",
+            "metadata_json",
+            "stopped_at",
+            "created_at_ms",
+            "updated_at_ms",
+          ]),
+    );
+    summarySnapshotQueries.set(database, read);
+  }
+  const row = read(session);
   if (!row) {
     return undefined;
   }

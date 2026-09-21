@@ -518,14 +518,13 @@ defineDiscordVoiceTests((harness) => {
         }
         return { text: texts[marker - 1] };
       });
-      const openingDecoded = createDeferred<void>();
-      decodeOpusStreamChunksMock.mockImplementationOnce(async (input, params) => {
-        let decoded = 0;
-        for await (const packet of input) {
-          await params.onChunk(packet, packet);
-          if (++decoded === openingFrames) {
-            openingDecoded.resolve();
-          }
+      const openingConsumed = createDeferred<void>();
+      let consumedFrames = 0;
+      const send = f.entry.audio.send.bind(f.entry.audio);
+      vi.spyOn(f.entry.audio, "send").mockImplementation((command, transferList) => {
+        send(command, transferList);
+        if (command.type === "capture-ack" && ++consumedFrames === openingFrames) {
+          openingConsumed.resolve();
         }
       });
       if (transition === "disable") {
@@ -542,7 +541,7 @@ defineDiscordVoiceTests((harness) => {
         for (let frame = 0; frame < openingFrames; frame++) {
           stream.write(Buffer.alloc(3_840, 1));
         }
-        await openingDecoded.promise;
+        await openingConsumed.promise;
         await f.entry.processingQueue;
         expect(agentCommandMock).not.toHaveBeenCalled();
         expect(controlRealtimeVoiceAgentRunMock).not.toHaveBeenCalled();
@@ -649,6 +648,51 @@ defineDiscordVoiceTests((harness) => {
     expect(agentCommandMock).not.toHaveBeenCalled();
   });
 
+  it.each(["start", "replace"] as const)(
+    "does not reassign raw packets held by decoding when recording leases %s",
+    async (transition) => {
+      const f = await fixture();
+      if (transition === "replace") {
+        await startTranscripts(f.manager, f.sink);
+      }
+      const entered = createDeferred<void>();
+      const release = createDeferred<void>();
+      let first = true;
+      decodeOpusStreamChunksMock.mockImplementation(async (input, callbacks) => {
+        for await (const packet of input) {
+          if (first) {
+            first = false;
+            entered.resolve();
+            await release.promise;
+          }
+          await callbacks.onChunk(packet, packet);
+        }
+      });
+      const receiving = f.begin("100000000000000001");
+      await vi.waitFor(() => expect(f.streams.has("100000000000000001")).toBe(true));
+      const stream = f.streams.get("100000000000000001")!;
+      const replacement = vi.fn();
+      try {
+        stream.write(Buffer.alloc(96_000, 1));
+        await entered.promise;
+        await startTranscripts(f.manager, replacement, "notes-2");
+        // This second packet crosses the registration writer while the SAME
+        // subscription/decoder still owns the preceding packet's old receipt.
+        stream.end(Buffer.alloc(96_000, 2));
+      } finally {
+        release.resolve();
+        stream.end();
+        await receiving;
+        await f.entry.processingQueue;
+      }
+      expect(f.sink).not.toHaveBeenCalled();
+      expect(replacement).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ sessionId: "notes-2", text: "audio-2-96000" }),
+      );
+      expect(getSessionConnection(f.entry).receiver.subscribe).toHaveBeenCalledOnce();
+    },
+  );
+
   it.each(["start", "replace"])(
     "binds new audio during continuous speech at capture %s",
     async (phase) => {
@@ -679,7 +723,7 @@ defineDiscordVoiceTests((harness) => {
     const f = await fixture();
     await f.begin("guest");
     expect(f.streams.size).toBe(0);
-    f.entry.connection.receiver.speaking.users.set("guest", Date.now());
+    f.entry.audio.speakingUsers.add("guest");
     await startTranscripts(f.manager, f.sink);
     expect(f.streams.has("guest")).toBe(true);
     f.streams.get("guest")!.end(Buffer.alloc(96_000, 2));
@@ -768,24 +812,13 @@ defineDiscordVoiceTests((harness) => {
     const f = await fixture();
     const packetCount = 130;
     const consumed = Array.from({ length: packetCount }, () => createDeferred<void>());
-    const processed = createDeferred<void>();
-    decodeOpusStreamChunksMock.mockImplementationOnce(async (input, params) => {
-      let decodedPackets = 0;
-      try {
-        for await (const packet of input) {
-          await params.onChunk(packet, packet);
-          consumed[decodedPackets]!.resolve();
-          decodedPackets += 1;
-          if (decodedPackets === packetCount) {
-            processed.resolve();
-          }
-        }
-        if (decodedPackets < packetCount) {
-          processed.reject(new Error("Voice input ended before all test packets were processed"));
-        }
-      } catch (error) {
-        processed.reject(error);
-        params.onError?.(error);
+    let consumedPackets = 0;
+    const send = f.entry.audio.send.bind(f.entry.audio);
+    vi.spyOn(f.entry.audio, "send").mockImplementation((command, transferList) => {
+      send(command, transferList);
+      if (command.type === "capture-ack") {
+        consumed[consumedPackets]!.resolve();
+        consumedPackets += 1;
       }
     });
     await startTranscripts(f.manager, f.sink);
@@ -806,7 +839,6 @@ defineDiscordVoiceTests((harness) => {
         clock.mockRestore();
       }
       // Observe the real WAV write/queue work, not a one-second disk deadline.
-      await processed.promise;
       await f.entry.processingQueue;
       expect(transcribeAudioFileMock).toHaveBeenCalled();
     } finally {

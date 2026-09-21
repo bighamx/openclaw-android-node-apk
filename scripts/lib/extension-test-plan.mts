@@ -97,19 +97,17 @@ const EXTENSION_TEST_COST_MULTIPLIERS: Record<string, number> = {
   "test/vitest/vitest.extension-zalo.config.ts": 0.523,
   "test/vitest/vitest.extensions.config.ts": 0.642,
 };
-// A 34-file changed shard starved real-time watches and the no-output watchdog.
-// Keep serial, non-isolated Codex processes small enough for prompt output (#125768, #125839).
-const CODEX_EXTENSION_TEST_PROCESS_FILE_LIMIT = 12;
+// Isolated Codex workers retire each mocked graph instead of accumulating it (#125839).
+// Bound cold imports per envelope while sharing startup across parallel files.
+const CODEX_EXTENSION_TEST_PROCESS_FILE_LIMIT = 24;
+// Native app-server files already run in isolated forks. Preserve their measured
+// 12-file envelope boundary independently of the ordinary Codex lane.
+const CODEX_DATABASE_WORKER_TEST_PROCESS_FILE_LIMIT = 12;
 const MATRIX_EXTENSION_TEST_PROCESS_FILE_LIMIT = 40;
 const TELEGRAM_EXTENSION_TEST_PROCESS_FILE_LIMIT = 1;
 const TELEGRAM_EXTENSION_TEST_JOB_FILE_LIMIT = 10;
 const EXTENSION_TEST_PROCESS_FILE_LIMITS = new Map<string, number>([
-  [
-    "test/vitest/vitest.extension-codex.config.ts",
-    // This non-isolated fileParallelism:false lane accumulates every mocked module graph.
-    // At ~166 files, one worker exhausted its heap during teardown (#124413).
-    CODEX_EXTENSION_TEST_PROCESS_FILE_LIMIT,
-  ],
+  ["test/vitest/vitest.extension-codex.config.ts", CODEX_EXTENSION_TEST_PROCESS_FILE_LIMIT],
   // The non-isolated Matrix suite intentionally shares module state within a process.
   // Bound its lifetime so Vite's transformed module graph cannot grow across the whole suite.
   ["test/vitest/vitest.extension-matrix.config.ts", MATRIX_EXTENSION_TEST_PROCESS_FILE_LIMIT],
@@ -291,15 +289,15 @@ function splitTargetsByFileLimit(targets: string[], maxFilesPerChunk: number) {
   return chunks;
 }
 
-const DATABASE_WORKER_CONFIG = "test/vitest/vitest.extension-database-workers.config.ts";
+export const DATABASE_WORKER_CONFIG = "test/vitest/vitest.extension-database-workers.config.ts";
 // The 185-file native worker envelope was still running after 58 minutes in
-// run 35176277297. Bound jobs separately from the existing process lifetimes.
-export const NATIVE_DATABASE_WORKER_TEST_JOB_FILE_LIMIT = 20;
+// run 35176277297. Include migrated files too: run 35477485803 packed 149
+// database-worker files into one serial job that took 27 minutes.
+export const DATABASE_WORKER_TEST_JOB_FILE_LIMIT = 20;
 
 function splitWorkerTargetsByOriginalConfig(
   targets: string[],
   split: (config: string, files: string[]) => string[][],
-  nativeFileLimit?: number,
 ) {
   const groups = new Map<string, string[]>();
   for (const target of uniqueSortedTargets(targets)) {
@@ -308,13 +306,12 @@ function splitWorkerTargetsByOriginalConfig(
     group.push(target);
     groups.set(config, group);
   }
-  return [...groups].flatMap(([config, files]) =>
-    config === DATABASE_WORKER_CONFIG
-      ? nativeFileLimit
-        ? splitTargetsByFileLimit(files, nativeFileLimit)
-        : [files]
-      : split(config, files),
-  );
+  return [...groups].flatMap(([config, files]) => {
+    if (config === "test/vitest/vitest.extension-codex.config.ts") {
+      return splitTargetsByFileLimit(files, CODEX_DATABASE_WORKER_TEST_PROCESS_FILE_LIMIT);
+    }
+    return config === DATABASE_WORKER_CONFIG ? [files] : split(config, files);
+  });
 }
 
 function resolveExtensionTestJobFileLimit(config: string) {
@@ -337,10 +334,8 @@ export function splitExtensionTestProcessTargets(config: string, targets: string
 /** Split an extension config's test files into CI envelopes without changing process lifetime. */
 export function splitExtensionTestJobTargets(config: string, targets: string[]) {
   if (config === DATABASE_WORKER_CONFIG) {
-    return splitWorkerTargetsByOriginalConfig(
-      targets,
-      splitExtensionTestJobTargets,
-      NATIVE_DATABASE_WORKER_TEST_JOB_FILE_LIMIT,
+    return splitWorkerTargetsByOriginalConfig(targets, splitExtensionTestJobTargets).flatMap(
+      (files) => splitTargetsByFileLimit(files, DATABASE_WORKER_TEST_JOB_FILE_LIMIT),
     );
   }
   const maxFilesPerJob = resolveExtensionTestJobFileLimit(config);

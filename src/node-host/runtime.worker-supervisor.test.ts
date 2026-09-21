@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createDeferred } from "../../test/helpers/promise.js";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import {
   NODE_WORKER_PRIVATE_COMMANDS,
@@ -65,10 +66,8 @@ describe("node-host runtime worker supervisor lifetime", () => {
     fs.mkdirSync(fixture.stateDir, { recursive: true });
     fs.renameSync(fixture.bundleRoot, path.join(fixture.stateDir, "node-host"));
     const input = testWorkerLaunchInput(fixture.workspaceDir, "launch-runtime", "wait");
-    let releaseLaunchResponse!: () => void;
-    const launchResponseHeld = new Promise<void>((resolve) => {
-      releaseLaunchResponse = resolve;
-    });
+    const launchResponseEntered = createDeferred();
+    const launchResponseHeld = createDeferred();
     const responses: Array<{ method: string; params: unknown }> = [];
     const request: NodeHostClient["request"] = async <T = Record<string, unknown>>(
       method: string,
@@ -79,7 +78,8 @@ describe("node-host runtime worker supervisor lifetime", () => {
         method === "node.invoke.result" &&
         (params as { id?: string } | undefined)?.id === "invoke-launch"
       ) {
-        await launchResponseHeld;
+        launchResponseEntered.resolve();
+        await launchResponseHeld.promise;
       }
       return {} as T;
     };
@@ -95,34 +95,40 @@ describe("node-host runtime worker supervisor lifetime", () => {
       expect.arrayContaining([...NODE_WORKER_PRIVATE_COMMANDS]),
     );
     const capacitySnapshots: Array<{ total: number; available: number }> = [];
+    const capacityReady = createDeferred();
     const runtime = prepared.start({
       client: { request },
-      onRunnerCapacityChanged: (capacity) => capacitySnapshots.push(capacity),
+      onRunnerCapacityChanged: (capacity) => {
+        capacitySnapshots.push(capacity);
+        if (capacity.available === 2) {
+          capacityReady.resolve();
+        }
+      },
     });
-    await vi.waitFor(() =>
-      expect(capacitySnapshots).toEqual([
-        { total: 2, available: 0 },
-        { total: 2, available: 2 },
-      ]),
-    );
     runtime.updateGatewayConnection({ url: "ws://127.0.0.1:18789" });
     const store = new NodeWorkerLaunchStore(new NodeWorkerJournalWorker({ env: fixture.env }));
 
     try {
+      await capacityReady.promise;
+      expect(capacitySnapshots).toEqual([
+        { total: 2, available: 0 },
+        { total: 2, available: 2 },
+      ]);
       const launching = runtime.invoke({
         id: "invoke-launch",
         nodeId: "node-1",
         command: NODE_WORKER_SUPERVISOR_LAUNCH_COMMAND,
         paramsJSON: JSON.stringify(input),
       });
-      await vi.waitFor(async () =>
-        expect((await store.get(input.launchId))?.state).toBe("running"),
-      );
+      // The journal becomes running before startup settles. Hold the completed
+      // launch response so cancellation exercises the admitted worker's lifetime.
+      await launchResponseEntered.promise;
+      expect((await store.get(input.launchId))?.state).toBe("running");
 
       runtime.cancel("invoke-launch");
       runtime.cancelAll();
       expect((await store.get(input.launchId))?.state).toBe("running");
-      releaseLaunchResponse();
+      launchResponseHeld.resolve();
       await launching;
       expect(await runtime.tryPauseForUpdate()).toBe(false);
 
@@ -150,7 +156,7 @@ describe("node-host runtime worker supervisor lifetime", () => {
       });
       expect((await store.get(input.launchId))?.state).toBe("running");
     } finally {
-      releaseLaunchResponse();
+      launchResponseHeld.resolve();
       await runtime.close();
     }
 

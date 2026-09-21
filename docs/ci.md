@@ -13,7 +13,7 @@ job. Open the page that matches your task.
 
 For the published-upgrade regression gate, see [selection and routing](/ci/scope-and-routing#scope-and-routing), [runner budgets](/ci/capacity#runner-registration-budget), and [Package Acceptance baselines](/ci/release-validation#suite-profiles). Weekly validation is listed under [Update Migration](/ci/scheduled-workflows#update-migration).
 
-Docs-only `main` pushes skip CI. Docker seed and QA Smoke use the same owner-path selection on pull requests and `main`; manual CI and Full Release Validation retain their coverage. Control UI performance uses its own UI/build/import scope. See [scope selection](/ci/scope-and-routing/selection) for the coverage trade-off.
+Docs-only `main` pushes skip CI and cache warming. The cache warmer publishes dependencies independently of long builds and maintains a bounded hosted seed in hybrid mode. Docker seed, QA Smoke, real-Gateway browser checks, and named process proofs run on selected `main` pushes and manual/release validation. Pull requests and exact-head PR fallback dispatches retain unit, boundary, build, and mocked-Gateway coverage. Windows retains its complete inventory across five measured file shards. See [scope selection](/ci/scope-and-routing/selection) and [capacity](/ci/capacity#owner-path-and-release-coverage) for the coverage trade-off.
 
 Core-test-only PRs use targeted type checks only when every selected test exists in the checkout. Deleting a core test keeps the full type-check plan, including the existing core stripes on GitHub and hybrid profiles.
 
@@ -27,11 +27,15 @@ Native test builds retain coverage and source-line backtraces while omitting IDE
 
 Short hybrid jobs use a [40-row base threshold and 45-row hosted admission limit](/ci/capacity#bounded-hybrid-hosted-offload), with unchanged coverage and Blacksmith fallback when optional work does not fit.
 
-Windows keeps its complete explicit test inventory in two [project-aligned partitions](/ci/runners#runner-backend-modes), sharing each small project's setup within one job.
+Additional hybrid check offloads require [fresh hosted assignment evidence](/ci/runners#hybrid-hosted-assignment-guard). Eligible PRs can move five measured checks; main pushes can also move lint, central types, and artifact builds within the same hosted row limit.
+
+Windows keeps its complete explicit test inventory in five [measured project-aligned shards](/ci/runners#runner-backend-modes), sharing each small project's setup within one job.
 
 Real-Gateway browser checks use [job budgets matched to their selected runner](/ci/runners#blacksmith-runner-capacity).
 
 Control UI CI installs the Chromium revision pinned by Playwright even when the browser cache misses. Current targets use the installer's `--require-playwright-chromium` mode; historical targets retain their existing installer. Browser startup diagnostics include provider, page, WebSocket, and Chromium process events to diagnose a session-readiness timeout even when it is reported only after unrelated unit work finishes.
+
+Browser extension CI launches the installed, patched Chrome MCP dependency directly.
 
 Build, QA and test orchestration restore the same [protected Node compile cache](/ci/scope-and-routing/node-test-lanes). The trusted warmer populates build tools before collecting test imports; ordinary CI remains restore-only.
 

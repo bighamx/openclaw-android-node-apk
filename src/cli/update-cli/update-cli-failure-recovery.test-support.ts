@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import path from "node:path";
 import { expect, it, vi, type Mock } from "vitest";
 import type { readConfigFileSnapshot as ReadConfigFileSnapshot } from "../../config/config.js";
-import type { UpdateRunResult } from "../../infra/update-runner.js";
+import type { UpdateRunResult } from "../../infra/update-runner-types.js";
 import type { runUpdateFailureTriage as RunUpdateFailureTriage } from "../../infra/update-triage.js";
 import type {
   defaultRuntime as DefaultRuntime,

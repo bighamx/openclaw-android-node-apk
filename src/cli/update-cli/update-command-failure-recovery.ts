@@ -4,7 +4,7 @@ import { readPackageVersion } from "../../infra/package-json.js";
 import { createUpdateFailureFact } from "../../infra/update-failure-facts.js";
 import { readBuiltGatewayBuildId } from "../../infra/update-git-runtime.js";
 import { getUpdateRun, recordUpdateRunDiagnostics } from "../../infra/update-run-ledger.js";
-import type { UpdateRunResult, UpdateStepResult } from "../../infra/update-runner.js";
+import type { UpdateRunResult, UpdateStepResult } from "../../infra/update-runner-types.js";
 import { hasCommandProcessCleanupError } from "../../process/exec-result.js";
 import { withCommandProcessScope } from "../../process/exec-spawn.js";
 import { defaultRuntime } from "../../runtime.js";
