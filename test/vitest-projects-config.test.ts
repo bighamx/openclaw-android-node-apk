@@ -107,13 +107,14 @@ function requireTestConfig<T extends { test?: unknown }>(config: T): NonNullable
 
 const rootVitestProjects = requireTestConfig(baseConfig).projects as string[];
 
-function requireWebOptimizer(testConfig: unknown) {
-  const webOptimizer = (testConfig as { deps?: { optimizer?: { web?: { enabled?: boolean } } } })
-    .deps?.optimizer?.web;
-  if (!webOptimizer) {
-    throw new Error("expected vitest web optimizer config");
+function requireClientOptimizer(testConfig: unknown) {
+  const clientOptimizer = (
+    testConfig as { deps?: { optimizer?: { client?: { enabled?: boolean } } } }
+  ).deps?.optimizer?.client;
+  if (!clientOptimizer) {
+    throw new Error("expected vitest client optimizer config");
   }
-  return webOptimizer;
+  return clientOptimizer;
 }
 
 afterEach(() => {
@@ -239,7 +240,9 @@ describe("projects vitest config", () => {
     const methodsConfig = requireTestConfig(createGatewayMethodsVitestConfig({}));
     const methodsIsolatedConfig = requireTestConfig(createGatewayMethodsIsolatedVitestConfig({}));
     const serverIsolatedConfig = requireTestConfig(createGatewayServerIsolatedVitestConfig({}));
-    const serverConfig = requireTestConfig(createGatewayServerVitestConfig({}));
+    const serverConfig = requireTestConfig(
+      createGatewayServerVitestConfig({ OPENCLAW_VITEST_MAX_WORKERS: "2" }),
+    );
     const gatewayFallback = requireTestConfig(createGatewayVitestConfig());
 
     expect(rootVitestProjects).toContain(methodsIsolatedProject);
@@ -252,7 +255,11 @@ describe("projects vitest config", () => {
     expect(methodsIsolatedConfig.include).toEqual(scopedGatewayMethodsIsolatedTestFiles);
     expect(serverConfig.pool).toBe("forks");
     expect(serverConfig.isolate).toBe(false);
-    expect(serverConfig.fileParallelism).toBe(false);
+    expect(serverConfig.fileParallelism).toBe(true);
+    expect(
+      requireTestConfig(createGatewayServerVitestConfig({ OPENCLAW_VITEST_MAX_WORKERS: "1" }))
+        .fileParallelism,
+    ).toBe(false);
     expect(serverIsolatedConfig.isolate).toBe(true);
     expect(serverIsolatedConfig.pool).toBe("forks");
     expect(serverIsolatedConfig.runner).toBeUndefined();
@@ -725,7 +732,7 @@ describe("projects vitest config", () => {
     const setupFiles = normalizeConfigPaths(testConfig.setupFiles);
     expect(setupFiles).not.toContain("test/setup-openclaw-runtime.ts");
     expect(setupFiles).toContain("ui/src/test-helpers/lit-warnings.setup.ts");
-    expect(requireWebOptimizer(testConfig).enabled).toBe(true);
+    expect(requireClientOptimizer(testConfig).enabled).toBe(true);
   });
 
   it("registers the package Chromium owner in root and full runtime runs", async () => {

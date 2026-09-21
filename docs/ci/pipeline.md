@@ -74,6 +74,36 @@ the job's uploaded artifacts.
 | `openclaw-performance`           | Separate workflow: daily/on-demand Kova runtime performance reports with mock-provider, deep-profile, and GPT 5.6 live lanes                                                                                                                                                                             | Scheduled and manual dispatch                      |
 | `docs-external-links`            | Separate workflow: Docs External Link Audit checks external documentation links with lychee and uploads a report; it reports findings without failing, so it never blocks a pull request                                                                                                                 | Scheduled and manual dispatch                      |
 
+### Test runtime selection
+
+Linux test shards select Bun through `scripts/lib/ci-test-runtime.mts`. The
+ordinary and isolated unit-fast lanes partition their existing file inventories: files with known Bun
+failures or additional skips stay on Node, and the compatible remainder runs on
+Bun. Those Node files still execute; they are not excluded from CI. The complete
+fake-timer lane also supports Bun. UI and other families retain Node until they
+pass on the pinned fork within their existing CI resource budgets. Precise PR targets use the existing
+test-project planner to find their owners. Mixed or ambiguous selections retain
+Node, and no tests are removed from the selected inventory.
+
+Pull requests and their release-gate fallback run compatible selections on Bun.
+Ordinary manual CI, including Full Release Validation's `normal_ci` child, runs
+the complete original selection on Node and its compatible portion on Bun
+within the same job and worker slot. Other selections run on Node. Main pushes retain Node. Historical targets
+without the runtime-selection capability keep their original Node behavior.
+
+The test-runtime setup action installs a checksum-pinned build of the Bun fork
+only for jobs that need it. The source commit, archive checksum, and executable
+checksum live together in `.github/actions/setup-test-bun/action.yml`.
+Node continues to own orchestration, builds, compiler preparation, and cleanup;
+Vitest and its workers use the selected runtime. Bun and Node have separate
+transform-cache directories and timing identities. Either runtime failing fails
+the job. This adds no matrix rows or runner registrations.
+
+`NODE_OPTIONS` continues to limit Node heaps; Bun does not use that V8 heap
+limit. Compare observed memory use alongside elapsed time before admitting more
+lanes. Compatibility evidence must use the exact fork build installed by CI;
+stock Bun results and different fork revisions are separate measurements.
+
 ### macOS Swift phases
 
 `macos-swift (tests)` builds and runs the app's complete default- and named-profile
@@ -93,6 +123,12 @@ setup time, before treating the removed serial work as an observed speedup.
 Only the app phases restore the app build cache. SwiftPM dependency caches remain
 restore-only in `packages`; the existing primary phase owns shared cache writes.
 The aggregate gate requires every selected phase to succeed.
+
+Debug Swift CI builds omit the IDE index and use line-table debug information.
+Coverage instrumentation and source-line backtraces remain enabled; interactive
+debugger type/value inspection requires a normal local debug build. The app test
+cache uses a separate build profile so it cannot restore the old indexed products;
+Release build flags and caches remain unchanged.
 
 Ordinary Markdown and MDX pages under `docs/`, plus root `README.md`, retain
 their separate `check-docs` coverage beside precise pull-request Node tests.
@@ -382,6 +418,23 @@ Vitest. This profile builds runtime JavaScript, plugin assets, and freshness and
 provenance metadata. Private QA shards select their private runtime entries. The
 `build-artifacts` job owns Control UI and SDK declaration validation; release
 package builds still generate the full declarations.
+
+Source-only Linux Node 24 shards can restore compiled Vitest workers from the
+protected cache warmer. The warmer prepares one generation before SDK or runtime
+builds change package resolution, joins the preparation owner, and publishes only
+the retained cache. PR jobs restore it without publishing. Consumers enable
+reuse only when an archive exists; cold runners keep ordinary fresh compilation.
+The worker owner verifies source and dependency bytes, compiler identity,
+resolution topology, environment, output inventory, and the exact checkout and
+output-slot paths before lending a generation. Changed or incompatible inputs
+rebuild locally. Frozen targets, other Node versions, and runtime-building shards
+retain fresh preparation.
+
+The artifact job keeps its built outputs for its own smoke and boundary checks.
+It no longer packs or uploads the unused `dist-runtime-build` and
+`bundled-plugin-assets` archives. Runtime shards still start after preflight;
+they do not wait for SDK declarations, the Control UI build, or artifact checks.
+Diagnostic and proof uploads remain available.
 
 Declaration caches hash the selected writer's transitive generator imports,
 package and plugin metadata, explicit schema and build metadata inputs, and

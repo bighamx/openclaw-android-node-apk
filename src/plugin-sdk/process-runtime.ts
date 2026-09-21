@@ -17,8 +17,11 @@ export { withCommandProcessScope } from "../process/exec-spawn.js";
 export { prepareOomScoreAdjustedSpawn } from "../process/linux-oom-score.js";
 export type { OomScoreAdjustedSpawn, OomWrapOptions } from "../process/linux-oom-score.js";
 export { resolveRuntimeWorkerArgv, resolveRuntimeWorkerUrl } from "../infra/runtime-worker-url.js";
-export { WorkerTaskError, WorkerTaskPool, serveWorkerTasks } from "../infra/worker-task-pool.js";
-export type { WorkerTaskControl } from "../infra/worker-task-pool.js";
+export { WorkerTaskError, WorkerTaskPool } from "../infra/worker-task-pool.js";
+// Released official plugins retain these exports until their supported hosts
+// provide worker-task-server; bundled workers use that narrower entrypoint.
+export { serveWorkerTasks } from "../infra/worker-task-server.js";
+export type { WorkerTaskControl } from "../infra/worker-task-native-sections.js";
 export { killProcessTree, signalProcessTree } from "../process/kill-tree.js";
 export {
   spawnTerminalPty,

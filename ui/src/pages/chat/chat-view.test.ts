@@ -151,11 +151,7 @@ const buildChatItemsMock = vi.fn(
           key: "divider:compaction:test",
           icon: "foldVertical",
           label: "Compacted history",
-          description: "The compacted transcript is preserved as a checkpoint.",
-          action: {
-            kind: "session-checkpoints",
-            label: "Open checkpoints",
-          },
+          description: "Earlier messages were summarized to make room in the context window.",
           timestamp: 1,
         },
       ] as ReturnType<typeof chatThread.buildCachedChatItems>;
@@ -1025,25 +1021,17 @@ describe("chat run error", () => {
 });
 
 describe("chat compaction divider", () => {
-  it("renders checkpoint recovery copy and action", () => {
-    const onOpenSessionCheckpoints = vi.fn();
+  it("renders compaction copy without a checkpoint action", () => {
     const container = renderChatView({
       messages: [{ testDividerMarker: "compaction" }],
-      onOpenSessionCheckpoints,
     });
 
     expect(container.querySelector(".chat-divider__title")?.textContent).toBe("Compacted history");
     expect(container.querySelector(".chat-divider__description")?.textContent?.trim()).toBe(
-      "The compacted transcript is preserved as a checkpoint.",
+      "Earlier messages were summarized to make room in the context window.",
     );
     expect(container.querySelector(".chat-divider__icon svg")).not.toBeNull();
-    const button = container.querySelector<HTMLButtonElement>(".chat-divider__action");
-    expect(button?.textContent?.trim()).toBe("Open checkpoints");
-
-    expect(button).toBeInstanceOf(HTMLButtonElement);
-    button!.click();
-
-    expect(onOpenSessionCheckpoints).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(".chat-divider__action")).toBeNull();
   });
 
   it("renders the session reset divider title", () => {
@@ -2776,89 +2764,6 @@ describe("chat loading skeleton", () => {
     expect(replyCall?.[1].activeContinuation).toBeUndefined();
   });
 
-  it("keeps multi-part run usage current when only output tokens change", () => {
-    const runId = "run-composed";
-    const user = {
-      kind: "group",
-      key: "group:user:run-composed",
-      role: "user",
-      visibleContent: "text",
-      messages: [
-        {
-          key: "message:user:run-composed",
-          message: {
-            role: "user",
-            content: "Start the work.",
-            timestamp: 0,
-            __openclaw: { id: "user:run-composed", idempotencyKey: `${runId}:user` },
-          },
-        },
-      ],
-      timestamp: 0,
-      isStreaming: false,
-    };
-    const assistant = {
-      kind: "group",
-      key: "group:assistant:run-start",
-      role: "assistant",
-      visibleContent: "text",
-      messages: [
-        {
-          key: "message:assistant:run-start",
-          message: { role: "assistant", content: "Starting the work.", timestamp: 1 },
-        },
-      ],
-      timestamp: 1,
-      isStreaming: false,
-      runId,
-    };
-    const tool = {
-      kind: "group",
-      key: "group:tool:run-work",
-      role: "tool",
-      visibleContent: "text",
-      messages: [
-        {
-          key: "message:tool:run-work",
-          message: { role: "toolResult", content: "Tool complete.", timestamp: 2 },
-        },
-      ],
-      timestamp: 2,
-      isStreaming: false,
-      runId,
-    };
-    const reading = {
-      kind: "reading-indicator",
-      key: "reading:run-composed",
-      startedAt: 1,
-      runId,
-    };
-    vi.mocked(chatThread.buildCachedChatItems).mockReturnValue([
-      user,
-      assistant,
-      tool,
-      reading,
-    ] as ReturnType<typeof chatThread.buildCachedChatItems>);
-    const container = document.createElement("div");
-    const streamPartsSpy = vi.spyOn(chatMessage, "renderStreamGroupParts");
-
-    renderChatInto(container, {
-      canAbort: true,
-      runId,
-      runUsageById: new Map([[runId, { outputTokens: 5_500, seq: 1 }]]),
-      stream: null,
-    });
-    streamPartsSpy.mockClear();
-    renderChatInto(container, {
-      canAbort: true,
-      runId,
-      runUsageById: new Map([[runId, { outputTokens: 7_200, seq: 2 }]]),
-      stream: null,
-    });
-
-    expect(streamPartsSpy.mock.calls.at(-1)?.[1].runOutputTokens).toBe(7_200);
-  });
-
   it("keeps the completed recap on one composed multi-part run", () => {
     const runId = "run-composed";
     vi.mocked(chatThread.buildCachedChatItems).mockReturnValue([
@@ -3198,7 +3103,6 @@ describe("chat voice controls", () => {
       'video[aria-label="Camera preview"]',
       "camera preview",
     ) as HTMLVideoElement;
-
     expect(onToggleRealtimeCamera).toHaveBeenCalledTimes(2);
     expect(preview.srcObject).toBe(stream);
     expect(preview.autoplay).toBe(true);
@@ -3597,7 +3501,6 @@ describe("chat composer IME composition", () => {
     });
 
     textarea.dispatchEvent(arrowEvent);
-
     expect(arrowEvent.defaultPrevented).toBe(true);
     expect(onHistoryKeydown).toHaveBeenCalledOnce();
     expect(onRequestUpdate).toHaveBeenCalledOnce();
@@ -4398,7 +4301,6 @@ describe("chat slash menu accessibility", () => {
 
     inputDraftAtEnd(container, "Please /reset");
     keydownComposer(container, "Enter");
-
     expect(onSlashCommand).toHaveBeenCalledExactlyOnceWith("/reset");
     expect(draft).toBe("Please ");
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(draft);
@@ -8798,7 +8700,6 @@ describe("right-click Reply", () => {
     expect(document.querySelector(".chat-confirm-popover")).not.toBeNull();
 
     resetThreadPresentation("pane-a");
-
     expect(document.querySelector(".chat-reply-context-menu")).toBeNull();
     expect(document.querySelector(".chat-confirm-popover")).toBeNull();
     expect(onRewindMessage).not.toHaveBeenCalled();

@@ -68,8 +68,11 @@ const EXTENSION_TEST_COST_MULTIPLIERS: Record<string, number> = {
   // oxlint-disable-next-line oxc/approx-constant -- measured seconds per file, not Euler's constant.
   "test/vitest/vitest.extension-acpx.config.ts": 2.718,
   "test/vitest/vitest.extension-browser.config.ts": 0.478,
-  "test/vitest/vitest.extension-codex.config.ts": 2.567,
-  "test/vitest/vitest.extension-database-workers.config.ts": 7.582,
+  // Refreshed after #153539: median wrapper seconds/file in successful PR runs
+  // 35537834254, 35537743091 and 35537672782 (two CPUs, two-worker budget).
+  "test/vitest/vitest.extension-codex.config.ts": 2.49,
+  // Same refreshed cohort: 114 envelopes, including the Codex native fixtures.
+  "test/vitest/vitest.extension-database-workers.config.ts": 7.599,
   "test/vitest/vitest.extension-diffs.config.ts": 0.734,
   "test/vitest/vitest.extension-discord.config.ts": 0.55,
   "test/vitest/vitest.extension-feishu.config.ts": 0.411,
@@ -401,13 +404,14 @@ export function estimateExtensionTestCost(
   files: readonly string[] = [],
 ) {
   const multiplier = EXTENSION_TEST_COST_MULTIPLIERS[config] ?? 1;
-  // The 11-file app-server envelope reached 508.783s in the same cohort.
-  // Its rounded-up 46.26s/file floor must survive the mixed config's median.
+  // After #153539, the slowest pure app-server envelope in PR runs 35537834254,
+  // 35537743091 and 35537672782 took 190.394s / 11 files on two workers.
+  // Preserve its rounded-up wrapper wall/file floor over the mixed config median.
   const appServerFiles =
     config === DATABASE_WORKER_CONFIG
       ? files.filter((file) => file.startsWith("extensions/codex/src/app-server/")).length
       : 0;
-  return Math.max(1, Math.ceil(testFileCount * multiplier + appServerFiles * (46.26 - multiplier)));
+  return Math.max(1, Math.ceil(testFileCount * multiplier + appServerFiles * (17.31 - multiplier)));
 }
 
 /** Resolve the dedicated Vitest config for an extension root or test file. */

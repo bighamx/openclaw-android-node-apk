@@ -273,6 +273,9 @@ merge_outcome_write() {
 merge_rest() {
   local mode="$1" pr="$2" repo="${MERGE_REPO:-}"
   shift 2
+  if [ "$mode" = observe ] && [ "${MERGE_ADMISSION_ACTIVE:-false}" = true ] && [ "${MERGE_USE_CRABBOX_ADMIN_BYPASS:-false}" = false ]; then
+    mode=observe-admission
+  fi
   [ -n "$repo" ] || repo=$(pr_gh_plain repo view --json id,nameWithOwner,url) || return 1
   node "${BASH_SOURCE[0]%/*}/merge-rest.mjs" "$mode" "$repo" "$pr" "$@"
 }
@@ -339,6 +342,11 @@ merge_outcome_stable() {
   reread=$(merge_outcome_read_remote "$1") || {
     merge_outcome_stop "observation reread: observed=unavailable or invalid; expected=authoritative PR/main metadata"; return 1;
   }
+  # Ordinary admission pins the head; GitHub applies it to the current base. Keep
+  # the main used for local tree proof and intent while rechecking every PR fact.
+  if [ "${MERGE_ADMISSION_ACTIVE:-false}" = true ] && [ "${MERGE_USE_CRABBOX_ADMIN_BYPASS:-false}" = false ]; then
+    reread=$(printf '%s\n' "$reread" | jq -c --arg main "$(printf '%s\n' "$MERGE_OBSERVATION" | jq -r .main)" '.main=$main') || return 1
+  fi
   [ "$reread" = "$MERGE_OBSERVATION" ] && return 0
   # The first REST observation adds policy evidence without changing shared
   # PR/main facts. Retain it so subsequent stability reads compare that policy.

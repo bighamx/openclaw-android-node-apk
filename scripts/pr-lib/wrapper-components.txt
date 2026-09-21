@@ -79,6 +79,7 @@ packages/session-url-contract/package.json
 packages/session-url-contract/src/focus.ts
 packages/session-url-contract/src/grammar.ts
 packages/session-url-contract/src/index.ts
+packages/session-url-contract/src/session-key-normalization.ts
 packages/session-url-contract/src/session-key.ts
 packages/session-url-contract/src/share.ts
 packages/terminal-core/package.json
@@ -132,6 +133,7 @@ scripts/lib/vitest-process.mts
 scripts/lib/vitest-resource-ownership.mts
 scripts/lib/vitest-runtime-selection.mts
 scripts/lib/vitest-shard-metadata.mts
+scripts/lib/vitest-test-runtime.mts
 scripts/lib/vitest-unhandled-errors.mts
 scripts/lib/vitest-worker-artifacts.mts
 scripts/lib/vitest-worker-cache-policy.mts
@@ -276,6 +278,7 @@ src/commands/doctor/shared/legacy-config-migrations.qqbot.ts
 src/commands/doctor/shared/legacy-config-migrations.queue.ts
 src/commands/doctor/shared/legacy-config-migrations.runtime.agents.ts
 src/commands/doctor/shared/legacy-config-migrations.runtime.cli-backends.ts
+src/commands/doctor/shared/legacy-config-migrations.runtime.code-mode.ts
 src/commands/doctor/shared/legacy-config-migrations.runtime.config-tranche.ts
 src/commands/doctor/shared/legacy-config-migrations.runtime.cron.ts
 src/commands/doctor/shared/legacy-config-migrations.runtime.diagnostics.ts
@@ -717,6 +720,7 @@ src/infra/sqlite-worker-broker-admission.ts
 src/infra/sqlite-worker-broker-lifecycle.ts
 src/infra/sqlite-worker-broker-reply.ts
 src/infra/sqlite-worker-broker.ts
+src/infra/sqlite-worker-input-admission.ts
 src/infra/sqlite-worker-client.ts
 src/infra/sqlite-worker-contract.ts
 src/infra/sqlite-worker-identity.ts
@@ -825,6 +829,7 @@ src/plugin-sdk/facade-resolution-shared.ts
 src/plugin-sdk/file-lock.ts
 src/plugin-sdk/keyed-async-queue.ts
 src/plugin-sdk/message-tool-delivery-hints.ts
+src/plugin-state/plugin-blob-store.types.ts
 src/plugins/activation-planner.ts
 src/plugins/activation-source-config.ts
 src/plugins/bundle-manifest.ts
@@ -1042,6 +1047,7 @@ src/process/spawn-broker/host.ts
 src/process/spawn-broker/ipc.ts
 src/process/spawn-broker/pipe.ts
 src/process/spawn-broker/protocol.ts
+src/process/spawn-utils.ts
 src/process/supervisor/cancellation-policy.ts
 src/process/supervisor/service-child-windows-job-native.ts
 src/process/windows-command.ts
@@ -1176,6 +1182,7 @@ src/state/openclaw-state-lease-worker-owner.ts
 src/state/openclaw-state-lease-worker.ts
 src/state/openclaw-state-lease.ts
 src/state/openclaw-state-ownership.ts
+src/state/openclaw-state-read-error.ts
 src/state/openclaw-state-read-scope.ts
 src/state/openclaw-state-read-worker.ts
 src/state/openclaw-state-schema-compatibility.ts

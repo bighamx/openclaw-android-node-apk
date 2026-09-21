@@ -18,6 +18,7 @@ import {
   STARTUP_MIGRATION_HEARTBEAT_INTERVAL_MS,
   STARTUP_MIGRATION_LEASE_TTL_MS,
 } from "../../infra/startup-migration-checkpoint.js";
+import { hasCommandProcessCleanupError } from "../../process/exec-result.js";
 import { isPidAlive } from "../../shared/pid-alive.js";
 import { sleep } from "../../utils.js";
 import {
@@ -120,7 +121,13 @@ export async function inspectGatewayRestart(params: {
     params.probeHosts ??
     (await resolveGatewayServiceProbeHosts({
       env,
-      command: (await params.service.readCommand?.(env).catch(() => null)) ?? null,
+      command:
+        (await params.service.readCommand?.(env).catch((error: unknown) => {
+          if (hasCommandProcessCleanupError(error)) {
+            throw error;
+          }
+          return null;
+        })) ?? null,
     }));
   const expectedVersion = normalizeOptionalString(params.expectedVersion);
   const expectedBuildId = normalizeOptionalString(params.expectedBuildId);
@@ -162,6 +169,9 @@ export async function inspectGatewayRestart(params: {
         ? await params.service.readRuntime(env)
         : await params.service.readRuntime(env, { timeoutMs: remainingTimeoutMs() });
   } catch (err) {
+    if (hasCommandProcessCleanupError(err)) {
+      throw err;
+    }
     runtime = { status: "unknown", detail: String(err) };
   }
 
@@ -172,6 +182,9 @@ export async function inspectGatewayRestart(params: {
       probeHosts,
     });
   } catch (err) {
+    if (hasCommandProcessCleanupError(err)) {
+      throw err;
+    }
     portUsage = {
       port: params.port,
       status: "unknown",
@@ -424,7 +437,12 @@ export async function waitForGatewayHealthyRestart(
     params.probeHosts ??
     (await resolveGatewayServiceProbeHosts({
       env: params.env,
-      command: await service.readCommand(params.env ?? process.env).catch(() => null),
+      command: await service.readCommand(params.env ?? process.env).catch((error: unknown) => {
+        if (hasCommandProcessCleanupError(error)) {
+          throw error;
+        }
+        return null;
+      }),
     }));
   let snapshot = await inspectGatewayRestart({
     service,

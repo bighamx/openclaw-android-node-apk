@@ -58,6 +58,9 @@ describe("GraphQL primary quota fallback", () => {
     { stdout: response(JSON.stringify({ message }), "", 403) },
     { stderr: `gh: ${message}\n` },
     { stderr: Buffer.from("gh: API rate limit exceeded for fixture-user (HTTP 403)\n") },
+    { stderr: `GraphQL: ${message}\n` },
+    { stderr: Buffer.from("GraphQL: API rate limit exceeded for user ID 123.\n") },
+    { stderr: `GraphQL: ${message}, ${message}\n` },
   ])("recognizes native gh primary exhaustion: %j", (failure) => {
     expect(isGraphqlQuotaExhausted({ status: 1, ...failure })).toBe(true);
   });
@@ -83,6 +86,14 @@ describe("GraphQL primary quota fallback", () => {
     })),
     { name: "generic forbidden", stderr: "gh: Resource not accessible by integration (HTTP 403)" },
     { name: "plain 429", stderr: `gh: ${message} (HTTP 429)` },
+    { name: "GraphQL secondary throttle", stderr: `GraphQL: ${message}, secondary rate limit` },
+    { name: "GraphQL forbidden", stderr: "GraphQL: Resource not accessible by integration" },
+    {
+      name: "mixed rendered GraphQL errors",
+      stderr: `GraphQL: ${message}, Resource not accessible by integration`,
+    },
+    { name: "multiline GraphQL errors", stderr: `GraphQL: ${message}\nAccess denied` },
+    { name: "unrecognized CLI prefix", stderr: `proxy: ${message}` },
     {
       name: "plain proxy failure",
       stderr: 'Post "https://api.github.com/graphql": Proxy Authentication Required',

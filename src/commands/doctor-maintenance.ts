@@ -48,6 +48,7 @@ import {
   shouldManageGatewayService,
 } from "./doctor-service-repair-policy.js";
 import {
+  formatUpdateDoctorServiceStopRefusal,
   recordUpdateDoctorRefusal,
   resolveUpdateDoctorGitRecovery,
 } from "./doctor-update-refusal.js";
@@ -525,9 +526,7 @@ export async function beginDoctorMaintenance(params: {
           inspection.offline !== true
         ) {
           parentMustStopGateway = true;
-          throw new Error(
-            "The update parent must stop the managed Gateway before Doctor maintenance; Doctor left the service unchanged.",
-          );
+          throw new Error(await formatUpdateDoctorServiceStopRefusal(inspection.serviceEnv ?? env));
         }
         try {
           acquireMaintenanceResources();
