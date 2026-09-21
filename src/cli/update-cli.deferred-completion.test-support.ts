@@ -18,6 +18,9 @@ export const observeUpdateGatewayReadiness =
   vi.fn<typeof import("./update-cli/update-command-readiness.js").observeUpdateGatewayReadiness>();
 const { defaultRuntime: runtimeCapture, resetRuntimeCapture } = createCliRuntimeCapture();
 const sqliteHostPlatform = process.platform;
+const sourceRuntimeCompletion = vi.hoisted(() =>
+  vi.fn<typeof import("./update-cli/update-command-runtime.js").completeSourceUpdateRuntime>(),
+);
 
 vi.mock("node:child_process", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:child_process")>()),
@@ -34,6 +37,10 @@ vi.mock("../runtime.js", async (importOriginal) => ({
 }));
 vi.mock("../infra/update-runner-git.js", () => ({
   updateGitCheckout: vi.fn(),
+}));
+// Runtime publication has its own fixture; this suite owns deferred completion and config writes.
+vi.mock("./update-cli/update-command-runtime.js", () => ({
+  completeSourceUpdateRuntime: sourceRuntimeCompletion,
 }));
 vi.mock("../infra/update-check.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../infra/update-check.js")>()),
@@ -451,6 +458,7 @@ export function installDeferredCompletionFixture() {
     tempHome = await createTempHomeEnv("openclaw-deferred-completion-");
     fixtureRoot = dirs.make("openclaw-deferred-completion-fixtures-");
     vi.resetAllMocks();
+    sourceRuntimeCompletion.mockResolvedValue({ changed: false });
     resetRuntimeCapture();
     for (const key of [
       "OPENCLAW_COMPATIBILITY_HOST_VERSION",

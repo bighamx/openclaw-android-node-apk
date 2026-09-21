@@ -86,6 +86,9 @@ function readPool(): ReadPool {
 }
 
 function captureCommand(command: OpenClawStateReadCommand): OpenClawStateReadCommand {
+  if (command.type === "mcpOAuth.statuses") {
+    return { type: command.type, input: [...command.input] };
+  }
   if (command.type === "conversationBindings.inspect") {
     const { channel, accountId, conversationId, parentConversationId } = command.conversation;
     return {
@@ -108,6 +111,12 @@ function captureCommand(command: OpenClawStateReadCommand): OpenClawStateReadCom
         ...(runningAtMs === undefined ? {} : { runningAtMs }),
       })),
     };
+  }
+  if (command.type === "devicePairing.bootstrapContext") {
+    return { ...command, input: { ...command.input } };
+  }
+  if (command.type === "operatorApprovals.history") {
+    return { ...command, input: { ...command.input } };
   }
   if (command.type === "pluginBlob.lookup") {
     const { pluginId, namespace, key } = command.input;
@@ -157,6 +166,17 @@ function captureCommand(command: OpenClawStateReadCommand): OpenClawStateReadCom
 
 function commandBytes(command: OpenClawStateReadRequest["command"]): number {
   let bytes = Buffer.byteLength(command.type, "utf8");
+  if (command.type === "mcpOAuth.statuses") {
+    return command.input.reduce((total, key) => total + Buffer.byteLength(key, "utf8"), bytes);
+  }
+  if (
+    command.type === "mcpOAuth.readOnly" ||
+    command.type === "mcpOAuth.keys" ||
+    command.type === "mcpOAuth.pending" ||
+    command.type === "mcpOAuth.countPrincipals"
+  ) {
+    return bytes + Buffer.byteLength(command.input, "utf8");
+  }
   if (command.type === "conversationBindings.inspect") {
     return (
       bytes +
@@ -174,6 +194,32 @@ function commandBytes(command: OpenClawStateReadRequest["command"]): number {
         (proposal.queuedAtMs === undefined ? 0 : 8) +
         (proposal.runningAtMs === undefined ? 0 : 8),
       bytes + Buffer.byteLength(command.storeKey, "utf8"),
+    );
+  }
+  if (command.type === "devicePairing.bootstrapContext") {
+    return (
+      bytes +
+      Buffer.byteLength(command.input.token) +
+      Buffer.byteLength(command.input.deviceId) +
+      Buffer.byteLength(command.input.publicKey) +
+      8
+    );
+  }
+  if (command.type === "devicePairing.lookup") {
+    return bytes + Buffer.byteLength(command.deviceId);
+  }
+  if (command.type === "devicePairing.pending") {
+    return bytes + Buffer.byteLength(command.requestId) + 8;
+  }
+  if (command.type === "devicePairing.list") {
+    return bytes + 8 + Buffer.byteLength(command.publishedRevision ?? "");
+  }
+  if (command.type === "operatorApprovals.history") {
+    return (
+      bytes +
+      Buffer.byteLength(command.input.cursor ?? "", "utf8") +
+      Buffer.byteLength(command.input.kind ?? "", "utf8") +
+      16
     );
   }
   if (command.type === "pluginBlob.lookup" || command.type === "pluginBlob.entries") {
@@ -230,6 +276,9 @@ function commandBytes(command: OpenClawStateReadRequest["command"]): number {
   }
   if (command.type === "workspace.snapshot") {
     return bytes + Buffer.byteLength(command.workspaceDir, "utf8");
+  }
+  if (command.type === "workerEnvironments.hasSessionAttachment") {
+    return bytes + Buffer.byteLength(command.environmentId, "utf8");
   }
   if (command.type === "audit.run.inspect") {
     const input = command.input;

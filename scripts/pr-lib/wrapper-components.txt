@@ -20,6 +20,7 @@ packages/gateway-protocol/src/schema/since.ts
 packages/gateway-protocol/src/schema/worker-admission.ts
 packages/gateway-protocol/src/schema/worker-computer.ts
 packages/gateway-protocol/src/schema/worker-protocol-primitives.ts
+packages/gateway-protocol/src/svg-image.ts
 packages/gateway-protocol/src/theme-ids.ts
 packages/gateway-protocol/src/theme.ts
 packages/gateway-protocol/src/update-run-vocabulary.ts
@@ -168,6 +169,7 @@ src/agents/configured-provider-model.ts
 src/agents/defaults.ts
 src/agents/glob-pattern.ts
 src/agents/internal-runtime-context.ts
+src/agents/mcp-oauth-store-error.ts
 src/agents/model-catalog-lookup.ts
 src/agents/model-catalog-metadata.ts
 src/agents/model-compat-catalog.ts
@@ -223,6 +225,8 @@ src/agents/worktrees/git-worktree-operations.runtime.ts
 src/agents/worktrees/git.ts
 src/agents/worktrees/provisioned-file-inspection.ts
 src/agents/worktrees/repository-paths.ts
+src/agents/worktrees/snapshot-exact-state.ts
+src/agents/worktrees/snapshot-index-objects.ts
 src/agents/worktrees/snapshot-inventory.ts
 src/agents/worktrees/template-registry.ts
 src/auto-reply/reply/delivery-hints.ts
@@ -378,6 +382,7 @@ src/config/io.warnings.ts
 src/config/io.write-errors.ts
 src/config/io.write-prepare.ts
 src/config/io.write-safety.ts
+src/config/io.write-values.ts
 src/config/issue-format.ts
 src/config/json5-comments.ts
 src/config/legacy-codex-provider.ts
@@ -459,6 +464,7 @@ src/config/validation.types.ts
 src/config/value-tree.ts
 src/config/version.ts
 src/config/web-search-legacy-provider-keys.ts
+src/config/write-authority.ts
 src/config/write-lock.ts
 src/config/zod-schema.agent-defaults-base.ts
 src/config/zod-schema.agent-defaults.ts
@@ -706,6 +712,7 @@ src/infra/sqlite-schema-header.ts
 src/infra/sqlite-schema-issues.ts
 src/infra/sqlite-schema-sql.ts
 src/infra/sqlite-snapshot-policy.ts
+src/infra/sqlite-snapshot-retirement.ts
 src/infra/sqlite-snapshot-single-flight.ts
 src/infra/sqlite-snapshot-source.ts
 src/infra/sqlite-snapshot-staging-owner.ts
@@ -719,6 +726,7 @@ src/infra/sqlite-terminal-open-latch.ts
 src/infra/sqlite-transaction.ts
 src/infra/sqlite-user-version.ts
 src/infra/sqlite-wal-checkpoint.ts
+src/infra/sqlite-wal-reclamation.ts
 src/infra/sqlite-wal-split-brain.ts
 src/infra/sqlite-wal-write-admission.ts
 src/infra/sqlite-wal.ts
@@ -879,6 +887,7 @@ src/plugins/doctor-contract-relevance.ts
 src/plugins/doctor-session-route-state-owner-types.ts
 src/plugins/enable.ts
 src/plugins/hardlink-policy.ts
+src/plugins/host-hook-cleanup-result.ts
 src/plugins/host-hook-json.ts
 src/plugins/install-channel-specs.ts
 src/plugins/install-paths.ts
@@ -925,6 +934,7 @@ src/plugins/manifest-registry-build.ts
 src/plugins/manifest-registry-installed.ts
 src/plugins/manifest-registry.ts
 src/plugins/manifest-setup-normalizers.ts
+src/plugins/manifest-theme-definitions.ts
 src/plugins/manifest-themes.ts
 src/plugins/manifest.ts
 src/plugins/min-host-version.ts

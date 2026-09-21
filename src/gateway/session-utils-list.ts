@@ -162,11 +162,11 @@ function resolveSessionsListDefaultsAgentId(
 type RecordRow = ReturnType<SessionRowProjection["selectEntries"]>[number];
 const sentinel = (key: string) => key === "global" || key === "unknown";
 
-// Retain one broad selection per resident owner; keyed reads never displace it.
+// Publications release the token and stale row graphs without waiting for another list.
+// Retain one broad selection per revision; keyed reads never displace it.
 const sessionRowSelections = new WeakMap<
-  SessionRowProjection,
+  SessionRowProjection["state"]["revision"],
   {
-    revision: number;
     scope: ReturnType<SessionRowProjection["state"]["scope"]>;
     activeOnly: boolean;
     winners: Map<string, RecordRow>;
@@ -192,13 +192,8 @@ export function prepareSessionRowSelection(
   };
   const keyed = prepared?.key !== undefined || prepared?.sessionIdOrKey !== undefined;
   const activeOnly = opts.activeOnly === true;
-  let selection = keyed ? undefined : sessionRowSelections.get(projection);
-  if (
-    !selection ||
-    selection.revision !== revision ||
-    selection.scope !== selectedScope ||
-    selection.activeOnly !== activeOnly
-  ) {
+  let selection = keyed ? undefined : sessionRowSelections.get(revision);
+  if (!selection || selection.scope !== selectedScope || selection.activeOnly !== activeOnly) {
     const rows = projection
       .selectEntries({
         agentId: selectedScope.agentId,
@@ -244,9 +239,9 @@ export function prepareSessionRowSelection(
         entries.push([key, row.entry]);
       }
     }
-    selection = { revision, scope: selectedScope, activeOnly, winners, entries };
+    selection = { scope: selectedScope, activeOnly, winners, entries };
     if (!keyed) {
-      sessionRowSelections.set(projection, selection);
+      sessionRowSelections.set(projection.state.revision, selection);
     }
   }
   const { winners, entries } = selection;
@@ -293,8 +288,8 @@ export function filterAndSortSessionEntries(params: SessionListFilterParams): Se
 
 // One filter set per resident owner; never retain viewer decisions or time-dependent predicates.
 const sessionListCandidates = new WeakMap<
-  SessionRowProjection,
-  { revision: number; key: string; entries: SessionEntryPair[] }
+  SessionEntryPair[],
+  { key: string; entries: SessionEntryPair[] }
 >();
 
 /** Shared synchronous membership policy for list pages and full-roster transcript search. */
@@ -329,17 +324,15 @@ export function prepareProjectedSessionList(params: {
   let candidates: SessionEntryPair[] | undefined;
   // Person references resolve against the full visible roster before candidate filtering.
   if (!opts.spawnedBy && !opts.involvingProfileId) {
-    const { revision } = projection.state;
     const { limit: _limit, offset: _offset, ...candidateOptions } = opts;
     const key = JSON.stringify([exactKey, candidateOptions]);
-    let cached = sessionListCandidates.get(projection);
-    if (cached?.revision !== revision || cached.key !== key) {
+    let cached = sessionListCandidates.get(prepared.entries);
+    if (cached?.key !== key) {
       cached = {
-        revision,
         key,
         entries: runSynchronousWork(filterSessionCandidateEntries(prepared)),
       };
-      sessionListCandidates.set(projection, cached);
+      sessionListCandidates.set(prepared.entries, cached);
     }
     candidates = cached.entries;
   }

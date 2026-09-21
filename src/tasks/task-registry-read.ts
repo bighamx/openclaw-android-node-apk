@@ -13,6 +13,7 @@ import {
   compareTasksNewestFirst,
   listTasksFromIndex,
   selectTaskRecordsForOwnerTree,
+  selectTaskRecordsWithAncestors,
 } from "./task-registry-records.js";
 import {
   assertTaskRegistryOwnerCurrent,
@@ -44,6 +45,10 @@ export type TaskRegistryRead = {
   getTasksByRunId: (runId: string) => TaskRecord[];
   listTaskRecordsForChildSessionKey: (childSessionKey: string) => TaskRecord[];
   listTaskRecordsForOwnerTree: (rootOwnerKeys: ReadonlySet<string>) => TaskRecord[];
+  listTaskRecordsWithAncestors: (
+    taskIds: readonly string[],
+    isRootTask: (task: Readonly<TaskRecord>) => boolean,
+  ) => TaskRecord[];
   listTasksForRelatedSessionKey: (sessionKey: string, sessionAgentId?: string) => TaskRecord[];
   listTasksForAgentId: (agentId: string) => TaskRecord[];
 };
@@ -305,6 +310,20 @@ export async function prepareTaskRegistryRead(
         normalized,
         taskIdsByRelatedSessionKey.get(normalized) ?? [],
       );
+    },
+    listTaskRecordsWithAncestors(taskIds, isRootTask) {
+      assertCurrent();
+      return selectTaskRecordsWithAncestors(
+        tasks,
+        getTaskRegistryProcessState().taskIdsByChildSessionKey,
+        taskIds,
+        isRootTask,
+      ).map((task) => {
+        if (!isTaskCurrent(task.taskId)) {
+          throw new Error("Task registry read identity requires preparation");
+        }
+        return cloneTaskRecord(task);
+      });
     },
     listTaskRecordsForOwnerTree(rootOwnerKeys) {
       assertCurrent();

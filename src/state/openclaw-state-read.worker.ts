@@ -2,6 +2,13 @@ import { toStringifiedError } from "@openclaw/normalization-core/error-coercion"
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { SKILL_LIBRARY_MAX_SELECTIONS } from "../../packages/gateway-protocol/src/schema/skill-library.js";
 import {
+  countMcpOAuthPrincipalsInDatabase,
+  listMcpOAuthStoreKeysInDatabase,
+  readMcpOAuthPendingInDatabase,
+  readMcpOAuthStoreIfPresentInDatabase,
+  readMcpOAuthStatusesInDatabase,
+} from "../agents/mcp-oauth-store.kernel.js";
+import {
   readSandboxBrowserRegistryInDatabase,
   readSandboxRegistryEntryInDatabase,
   readSandboxRegistryInDatabase,
@@ -12,7 +19,11 @@ import { ExecutionDecisionCursorError } from "../audit/execution-decision-receip
 import { inspectExecutionIdentityRunInDatabase } from "../audit/execution-identity-context.js";
 import { observeCronRunRecoveryInDatabase } from "../cron/store/run-recovery.read.js";
 import { getFleetCellInDatabase, listFleetCellsInDatabase } from "../fleet/registry.kernel.js";
+import { listTerminalOperatorApprovalsInDatabase } from "../gateway/operator-approval-store.kernel.js";
 import { readWorkerSessionPlacementProjectionInDatabase } from "../gateway/worker-environments/placement-read-projection.js";
+import { readWorkerPlacementChangeSnapshotInDatabase } from "../gateway/worker-environments/placement-row-codec.js";
+import { hasWorkerEnvironmentSessionAttachment } from "../gateway/worker-environments/session-attachment-store.js";
+import { executeDevicePairingRead } from "../infra/device-pairing-read.kernel.js";
 import { readExecApprovalsConfigRow } from "../infra/exec-approvals-sqlite.js";
 import { inspectCurrentConversationBindingRecordInDatabase } from "../infra/outbound/current-conversation-bindings.kernel.js";
 import { runSqliteDeferredTransactionSync } from "../infra/sqlite-transaction.js";
@@ -67,7 +78,15 @@ function isReadRequest(input: unknown): input is OpenClawStateReadRequest {
     isRecord(coordinatorRuntime) &&
     typeof coordinatorRuntime.directory === "string" &&
     typeof coordinatorRuntime.keepAlive === "boolean" &&
-    (isPluginBlobReadCommand(input.command) ||
+    ((input.command.type === "mcpOAuth.statuses" &&
+      Array.isArray(input.command.input) &&
+      input.command.input.every((key) => typeof key === "string")) ||
+      ((input.command.type === "mcpOAuth.readOnly" ||
+        input.command.type === "mcpOAuth.keys" ||
+        input.command.type === "mcpOAuth.pending" ||
+        input.command.type === "mcpOAuth.countPrincipals") &&
+        typeof input.command.input === "string") ||
+      isPluginBlobReadCommand(input.command) ||
       (input.command.type === "conversationBindings.inspect" &&
         isRecord(input.command.conversation) &&
         typeof input.command.conversation.channel === "string" &&
@@ -85,6 +104,18 @@ function isReadRequest(input: unknown): input is OpenClawStateReadRequest {
             (proposal.queuedAtMs === undefined || typeof proposal.queuedAtMs === "number") &&
             (proposal.runningAtMs === undefined || typeof proposal.runningAtMs === "number"),
         )) ||
+      (input.command.type === "devicePairing.list" && typeof input.command.nowMs === "number") ||
+      (input.command.type === "devicePairing.lookup" &&
+        typeof input.command.deviceId === "string") ||
+      (input.command.type === "devicePairing.pending" &&
+        typeof input.command.requestId === "string" &&
+        typeof input.command.nowMs === "number") ||
+      (input.command.type === "devicePairing.bootstrapContext" &&
+        isRecord(input.command.input) &&
+        typeof input.command.input.token === "string" &&
+        typeof input.command.input.deviceId === "string" &&
+        typeof input.command.input.publicKey === "string" &&
+        typeof input.command.input.nowMs === "number") ||
       input.command.type === "admit" ||
       input.command.type === "exec-approvals.read" ||
       ((input.command.type === "skills.library.descriptions" ||
@@ -107,6 +138,8 @@ function isReadRequest(input: unknown): input is OpenClawStateReadRequest {
           typeof input.command.input.executionId === "string")) ||
       (input.command.type === "workspace.snapshot" &&
         typeof input.command.workspaceDir === "string") ||
+      (input.command.type === "workerEnvironments.hasSessionAttachment" &&
+        typeof input.command.environmentId === "string") ||
       (input.command.type === "updateRuns.get" && typeof input.command.runId === "string") ||
       (input.command.type === "updateRuns.list" &&
         isRecord(input.command.input) &&
@@ -119,6 +152,7 @@ function isReadRequest(input: unknown): input is OpenClawStateReadRequest {
         (input.command.input.includeRunId === undefined ||
           typeof input.command.input.includeRunId === "string")) ||
       input.command.type === "fleet.list" ||
+      (input.command.type === "operatorApprovals.history" && isRecord(input.command.input)) ||
       input.command.type === "nodeHost.config" ||
       (input.command.type === "onboardingRecommendations.read" &&
         typeof input.command.configKey === "string") ||
@@ -130,6 +164,7 @@ function isReadRequest(input: unknown): input is OpenClawStateReadRequest {
         typeof input.command.backendId === "string" &&
         typeof input.command.scopeKey === "string") ||
       (input.command.type === "fleet.get" && typeof input.command.tenantId === "string") ||
+      input.command.type === "workerPlacements.changeSnapshot" ||
       (input.command.type === "workers.placementProjection" &&
         Array.isArray(input.command.sessionIds) &&
         input.command.sessionIds.every((id) => typeof id === "string") &&
@@ -190,6 +225,46 @@ serveOwnedWorkerTasks(
             return withOpenClawStateReadOnlyLocation(
               ({ db }) => {
                 sourceAdmitted = true;
+                if (command.type === "mcpOAuth.statuses") {
+                  return {
+                    ok: true,
+                    type: command.type,
+                    sourceAdmitted,
+                    value: readMcpOAuthStatusesInDatabase(db, command.input),
+                  };
+                }
+                if (command.type === "mcpOAuth.readOnly") {
+                  return {
+                    ok: true,
+                    type: command.type,
+                    sourceAdmitted,
+                    value: readMcpOAuthStoreIfPresentInDatabase(db, command.input),
+                  };
+                }
+                if (command.type === "mcpOAuth.keys") {
+                  return {
+                    ok: true,
+                    type: command.type,
+                    sourceAdmitted,
+                    value: listMcpOAuthStoreKeysInDatabase(db, command.input),
+                  };
+                }
+                if (command.type === "mcpOAuth.pending") {
+                  return {
+                    ok: true,
+                    type: command.type,
+                    sourceAdmitted,
+                    value: readMcpOAuthPendingInDatabase(db, command.input),
+                  };
+                }
+                if (command.type === "mcpOAuth.countPrincipals") {
+                  return {
+                    ok: true,
+                    type: command.type,
+                    sourceAdmitted,
+                    value: countMcpOAuthPrincipalsInDatabase(db, command.input),
+                  };
+                }
                 if (command.type === "conversationBindings.inspect") {
                   return {
                     ok: true,
@@ -208,6 +283,14 @@ serveOwnedWorkerTasks(
                     sourceAdmitted,
                     observation: observeCronRunRecoveryInDatabase(db, command),
                   };
+                }
+                if (
+                  command.type === "devicePairing.list" ||
+                  command.type === "devicePairing.lookup" ||
+                  command.type === "devicePairing.pending" ||
+                  command.type === "devicePairing.bootstrapContext"
+                ) {
+                  return executeDevicePairingRead(db, input.databasePath, command);
                 }
                 if (command.type === "pluginBlob.lookup") {
                   return {
@@ -279,6 +362,14 @@ serveOwnedWorkerTasks(
                       : undefined,
                   };
                 }
+                if (command.type === "operatorApprovals.history") {
+                  return {
+                    ok: true,
+                    type: command.type,
+                    sourceAdmitted,
+                    history: listTerminalOperatorApprovalsInDatabase(command.input, db),
+                  };
+                }
                 if (command.type === "onboardingRecommendations.read") {
                   return {
                     ok: true,
@@ -327,6 +418,14 @@ serveOwnedWorkerTasks(
                       workspaceDir: command.workspaceDir,
                       database: { db, path: input.databasePath },
                     }),
+                  };
+                }
+                if (command.type === "workerEnvironments.hasSessionAttachment") {
+                  return {
+                    ok: true,
+                    type: command.type,
+                    sourceAdmitted,
+                    attached: hasWorkerEnvironmentSessionAttachment(db, command.environmentId),
                   };
                 }
                 if (command.type === "userProfiles.reconcile") {
@@ -380,6 +479,14 @@ serveOwnedWorkerTasks(
                     type: command.type,
                     sourceAdmitted,
                     entries: readSandboxBrowserRegistryInDatabase(db),
+                  };
+                }
+                if (command.type === "workerPlacements.changeSnapshot") {
+                  return {
+                    ok: true,
+                    type: command.type,
+                    sourceAdmitted,
+                    placements: readWorkerPlacementChangeSnapshotInDatabase(db),
                   };
                 }
                 if (command.type === "workers.placementProjection") {

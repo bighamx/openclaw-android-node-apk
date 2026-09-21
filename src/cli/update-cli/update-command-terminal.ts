@@ -20,7 +20,7 @@ import { printResult } from "./progress.js";
 import { parseUpdateTimeoutMs, type UpdateCommandOptions } from "./shared.js";
 import { UpdateActivationTimeoutError } from "./update-command-activation.js";
 import type { FinishUpdateParams } from "./update-command-finish-types.js";
-import { UpdateCommandRecoveryPendingError } from "./update-command-recovery.js";
+import { UpdateCommandRecoveryPendingError } from "./update-command-recovery-error.js";
 import {
   recordUpdateResultNextAction,
   failUpdateCommandRun,

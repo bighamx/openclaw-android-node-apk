@@ -61,7 +61,7 @@ import {
   writePostCorePluginUpdateResultFile,
   writePostCoreUpdateFailureFile,
 } from "./update-command-post-core.js";
-import { UpdateCommandRecoveryPendingError } from "./update-command-recovery.js";
+import { UpdateCommandRecoveryPendingError } from "./update-command-recovery-error.js";
 import { completeSourceUpdateRuntime } from "./update-command-runtime.js";
 
 type ResumePostCoreUpdateParams = {

@@ -6,7 +6,6 @@ import type { MediaImageLayout } from "../../../agents/embedded-agent-runner/run
 import { runAgentHarnessBeforeMessageWriteHook } from "../../../agents/harness/hook-helpers.js";
 import { runOutsidePreparedModelRuntimePluginGenerationScope } from "../../../agents/prepared-model-runtime-generation-scope.js";
 import { normalizeChatType } from "../../../channels/chat-type.js";
-import { compareChannelAdmissionParticipants } from "../../../channels/message-access/admission-evidence.js";
 import { resolveSessionStorePathCore } from "../../../config/sessions.js";
 import { loadSessionEntryReadOnly } from "../../../config/sessions/session-accessor.js";
 // Drains queued follow-up runs while preserving route and session identity.
@@ -39,8 +38,10 @@ import {
   waitForQueueDebounce,
 } from "../../../utils/queue-helpers.js";
 import { isRoutableChannel } from "../route-reply.js";
+import { resolveCollectedRun } from "./collected-run.js";
 import {
   collectRuntimeMetadata,
+  createOverflowSummaryRetrySource,
   hasExclusiveTurnAdmission,
   hasPreparedCurrentTurnImages,
   resolveFollowupDeliveryContextKey,
@@ -247,34 +248,6 @@ function resolveOriginRoutingMetadata(items: FollowupRun[]): OriginRoutingMetada
     originatingReplyToId: source.originatingReplyToId,
     originatingReplyToMode: source.originatingReplyToMode,
     originatingChatType: source.originatingChatType,
-  };
-}
-
-function hasVerifiedAdmissionParticipant(run: FollowupRun): boolean {
-  return compareChannelAdmissionParticipants([run.channelAdmissionEvidence]) === "same";
-}
-
-function resolveCollectedRun(items: readonly FollowupRun[], source: FollowupRun["run"]) {
-  const participantComparison = compareChannelAdmissionParticipants(
-    items.map((item) => item.channelAdmissionEvidence),
-  );
-  if (
-    participantComparison === "same" ||
-    !items.every((item) => hasVerifiedAdmissionParticipant(item))
-  ) {
-    return source;
-  }
-  // Mixed or unverifiable people share no downstream sender authority. The
-  // opaque admission aggregate records unknown identity at the run boundary.
-  return {
-    ...source,
-    senderId: undefined,
-    senderName: undefined,
-    senderUsername: undefined,
-    senderE164: undefined,
-    senderIsOwner: false,
-    traceAuthorized: false,
-    ownerNumbers: [],
   };
 }
 
@@ -953,42 +926,6 @@ async function drainProtectedPriorityFollowup(
   return true;
 }
 
-export function createOverflowSummaryRetrySource(source: FollowupRun): FollowupRun {
-  return {
-    prompt: source.prompt,
-    operatorAuthority: source.operatorAuthority,
-    queueAbortSignal: source.queueAbortSignal,
-    transcriptPrompt: source.transcriptPrompt,
-    userTurnTranscriptRecorder: source.userTurnTranscriptRecorder,
-    explicitSkillSelections: source.explicitSkillSelections,
-    toolsAllow: source.toolsAllow,
-    disableTools: source.disableTools,
-    images: source.images,
-    imageOrder: source.imageOrder,
-    media: source.media,
-    channelAdmissionEvidence: source.channelAdmissionEvidence,
-    messageId: source.messageId,
-    summaryLine: source.summaryLine,
-    enqueuedAt: source.enqueuedAt,
-    originatingChannel: source.originatingChannel,
-    originatingTo: source.originatingTo,
-    originatingAccountId: source.originatingAccountId,
-    originatingThreadId: source.originatingThreadId,
-    originatingChatId: source.originatingChatId,
-    originatingReplyToId: source.originatingReplyToId,
-    originatingReplyToMode: source.originatingReplyToMode,
-    originatingChatType: source.originatingChatType,
-    abortSignal: source.abortSignal,
-    turnAdoptionLifecycle: source.turnAdoptionLifecycle,
-    replyOperationRunStates: source.replyOperationRunStates,
-    queuedFollowupReplyDisposition: source.queuedFollowupReplyDisposition,
-    ...(source.currentInboundEventKind === "room_event"
-      ? { currentInboundEventKind: "room_event" }
-      : {}),
-    run: source.run,
-  };
-}
-
 function resolveOverflowSummaryInboundEventKind(sources: FollowupRun[]): "room_event" | undefined {
   return sources.length > 0 &&
     sources.every((source) => source.currentInboundEventKind === "room_event")
@@ -1049,6 +986,7 @@ async function runSyntheticOverflowSummary(params: {
     explicitSkillSelections: runtimeMetadata.explicitSkillSelections,
     channelAdmissionEvidence: runtimeMetadata.channelAdmissionEvidence,
     operatorAuthority: runtimeMetadata.operatorAuthority,
+    personalBootstrapEligible: runtimeMetadata.personalBootstrapEligible,
     toolsAllow: runtimeMetadata.toolsAllow,
     disableTools: runtimeMetadata.disableTools,
     queuedFollowupReplyDisposition: runtimeMetadata.queuedFollowupReplyDisposition,

@@ -76,7 +76,8 @@ export async function createSessionRowProjection(params: {
   let topologyDirty = true,
     disposed = false;
   let epoch = 0;
-  let rowRevision = 0;
+  // Releasing the token also releases weakly held list selections from the previous revision.
+  let revisionToken: object | undefined;
   let materializedCount = 0;
   let scope: ReturnType<typeof prepareSessionRowScopes>;
   let pending: Promise<void> | undefined;
@@ -88,6 +89,7 @@ export async function createSessionRowProjection(params: {
       if (changed) {
         // Rows served during renewal need new materializations only when their model facts changed.
         epoch++;
+        revisionToken = undefined;
         metadata.invalidate({ all: true, scope: "catalog" });
         archive.invalidateRows({ all: true, scope: "catalog" }, rows.values());
       }
@@ -140,7 +142,7 @@ export async function createSessionRowProjection(params: {
     transcriptUpdates.remove(id);
     const row = rows.get(id);
     if (row) {
-      rowRevision++;
+      revisionToken = undefined;
       markRelated(row);
       creators.update(row);
       records.index(row, indexes, true);
@@ -153,7 +155,7 @@ export async function createSessionRowProjection(params: {
     backfill.remove(id);
   }
   function put(row: records.Row) {
-    rowRevision++;
+    revisionToken = undefined;
     const previous = rows.get(records.identity(row));
     creators.update(previous, row);
     if (previous) {
@@ -281,6 +283,7 @@ export async function createSessionRowProjection(params: {
   }
   function mark(change: SessionRowChange) {
     epoch++;
+    revisionToken = undefined;
     const presentationOnly = metadata.invalidate(change);
     if ("all" in change) {
       placementFacts.invalidateChange(change);
@@ -402,6 +405,7 @@ export async function createSessionRowProjection(params: {
     if (!isIncognitoSessionKey(row.key)) {
       placementFacts.register(row.entry.sessionId);
     }
+    revisionToken = undefined;
     Object.assign(row, prepared, {
       materializedSequence: ++materializedCount,
       ...metadata.materializedRevisions,
@@ -505,6 +509,7 @@ export async function createSessionRowProjection(params: {
         return;
       }
       epoch++;
+      revisionToken = undefined;
       dirty.add(id);
       backfill.enqueue(id);
       void ensureMaterialized().catch(() => {});
@@ -544,15 +549,18 @@ export async function createSessionRowProjection(params: {
       : rows.get(records.identity(row));
     return records.isCurrentGeneration(row, current);
   }
+  function prepareRead() {
+    if (topologyDirty) {
+      inOwnerContext(topology);
+    }
+    metadata.prepare(epoch, cfg, matching, put);
+  }
   const describe = (query: records.Lookup, captured?: records.Row) =>
     inOwnerContext(() => {
       if (disposed) {
         return undefined;
       }
-      if (topologyDirty) {
-        topology();
-      }
-      metadata.prepare(epoch, cfg, matching, put);
+      prepareRead();
       let row = lookup(query);
       if (row && isIncognitoSessionKey(row.key)) {
         materialize(row);
@@ -575,7 +583,7 @@ export async function createSessionRowProjection(params: {
       return row;
     });
   function dispose() {
-    rowRevision++;
+    revisionToken = undefined;
     disposed = true;
     catalog.dispose();
     placementFacts.dispose();
@@ -584,10 +592,9 @@ export async function createSessionRowProjection(params: {
     for (const unsubscribe of stop) {
       unsubscribe();
     }
-    for (const map of [rows, stores, byStore, byAgent, byParent, byKey]) {
+    for (const map of [rows, stores, byStore, byAgent, byParent, byKey, dirty]) {
       map.clear();
     }
-    dirty.clear();
     creators.dispose();
     archive.clear();
   }
@@ -596,10 +603,7 @@ export async function createSessionRowProjection(params: {
       return [];
     }
     return inOwnerContext(() => {
-      if (topologyDirty) {
-        topology();
-      }
-      metadata.prepare(epoch, cfg, matching, put);
+      prepareRead();
       return withAgentRosterFactsBatch(cfg, () =>
         selectSessionRowEntries(
           {
@@ -673,15 +677,12 @@ export async function createSessionRowProjection(params: {
       return needsMaterialization();
     },
     get state() {
-      if (!disposed && topologyDirty) {
-        inOwnerContext(topology);
-      }
       if (!disposed) {
-        metadata.prepare(epoch, cfg, matching, put);
+        prepareRead();
       }
       return {
         // Include replacements and lifecycle-only removals as well as publications/materialization.
-        revision: epoch + rowRevision + materializedCount,
+        revision: (revisionToken ??= {}),
         cfg,
         modelCatalog: catalog.current,
         rowContext: metadata.current,

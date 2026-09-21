@@ -21,8 +21,14 @@ import {
 } from "../../../infra/diagnostic-trace-context.js";
 import { runOutsideGatewayRootWorkAdmission } from "../../../process/gateway-work-admission.js";
 import { createLazyPromise } from "../../../shared/lazy-runtime.js";
+import { isGatewayAuthPolicyCurrent } from "../../auth-policy.js";
 import { captureGatewayDeviceRevocation } from "../../device-revocation.js";
 import { createExpectedProfileBinding } from "../../expected-profile.js";
+import {
+  GATEWAY_OPERATOR_ACCESS_DENIED_MESSAGE,
+  hasCurrentGatewayOperatorAccess,
+} from "../../operator-access-policy.js";
+import { onOperatorRolePolicyChanged } from "../../operator-role-policy.js";
 import { bindWebSocketRequestMutationAuthority } from "../../server-methods/session-mutation-guards.js";
 import type { GatewayRequestEntry } from "../../server-request-entry.js";
 import {
@@ -60,6 +66,7 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
 }) {
   const {
     connId,
+    clients,
     getRequiredSharedGatewaySessionGeneration,
     extraHandlers,
     getMethodRegistry,
@@ -74,10 +81,12 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
   let deviceCredentialMutationBarrier: Promise<void> | undefined;
 
   const closeInvalidatedClient = (client: GatewayWsClient, method: string): boolean => {
-    if (!client.invalidated) {
+    const policyChanged = !isGatewayAuthPolicyCurrent(client.authPolicyGeneration);
+    if (!client.invalidated && !policyChanged) {
       return false;
     }
-    const reason = client.invalidatedReason ?? "invalidated";
+    const reason =
+      client.invalidatedReason ?? (policyChanged ? "gateway-policy-changed" : "invalidated");
     setCloseCause("client-invalidated", {
       reason,
       method,
@@ -120,11 +129,26 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
     const diagnostics = createGatewayRpcDiagnostics(req.method, getMethodRegistry, extraHandlers);
     logWs("in", "req", { connId, id: req.id, method: req.method });
     const context = buildRequestContext();
+    const sourceContext = context.resolveGatewayContext?.() ?? context;
+    const isCommittedPolicyCurrent = () =>
+      client.authPolicyGeneration === undefined ||
+      isGatewayAuthPolicyCurrent(
+        client.authPolicyGeneration,
+        sourceContext.getCommittedRuntimeConfig?.() ?? sourceContext.getRuntimeConfig(),
+      );
     const expectedProfileBinding = createExpectedProfileBinding(req.expectedProfileId, client);
     const clientAuthority = captureGatewayDeviceRevocation(
       context,
       { deviceId: client.connect.device?.id, role: client.connect.role },
       () => {
+        if (!hasCurrentGatewayOperatorAccess(client.internal?.operatorAccessAuthority)) {
+          invalidateGatewayPolicyClient(client, {
+            reason: "operator-access-closed",
+            code: 4001,
+            message: GATEWAY_OPERATOR_ACCESS_DENIED_MESSAGE,
+            close: () => close(4001, GATEWAY_OPERATOR_ACCESS_DENIED_MESSAGE),
+          });
+        }
         if (closeInvalidatedClient(client, req.method)) {
           return false;
         }
@@ -152,9 +176,19 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
         (!client.usesSharedGatewayAuth ||
           getSharedGatewaySessionGenerationReaderState(getRequiredSharedGatewaySessionGeneration))
         ? {
-            isCurrent: () => hasCurrentGatewayPolicyClientSource(client),
+            isCurrent: () =>
+              hasCurrentGatewayPolicyClientSource(client) && isCommittedPolicyCurrent(),
             subscribe: (onRevoked) => {
               const releaseClient = onGatewayPolicyClientInvalidated(client, onRevoked);
+              const releasePolicy = onOperatorRolePolicyChanged((change) => {
+                if (
+                  change.kind === "config" &&
+                  change.context === sourceContext &&
+                  !isCommittedPolicyCurrent()
+                ) {
+                  onRevoked();
+                }
+              });
               const releaseGeneration = client.usesSharedGatewayAuth
                 ? onSharedGatewayAuthInvalidated(
                     getRequiredSharedGatewaySessionGeneration,
@@ -164,6 +198,7 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
                 : undefined;
               return () => {
                 releaseClient();
+                releasePolicy();
                 releaseGeneration?.();
               };
             },
@@ -171,6 +206,9 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
         : undefined,
     );
     const hasCurrentClientAuthority = clientAuthority.isCurrent;
+    // Origin/profile policy still enumerates clients; keep this invocation visible
+    // after transport closure without adding it to presence or message fanout.
+    const releaseAuthority = clients.retainRequest(client);
     try {
       const publishResponse = (
         ok: boolean,
@@ -286,6 +324,12 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
             client.connect.client.id === GATEWAY_CLIENT_IDS.CLI &&
             client.connect.client.mode === GATEWAY_CLIENT_MODES.CLI);
         const requestController = cancelOnDisconnect ? new AbortController() : undefined;
+        const accessSignal = client.internal?.operatorAccessAuthority?.signal;
+        const signal = requestController
+          ? accessSignal
+            ? AbortSignal.any([requestController.signal, accessSignal])
+            : requestController.signal
+          : accessSignal;
         const cancelRequest = () => requestController?.abort();
         if (requestController) {
           client.socket.once("close", cancelRequest);
@@ -344,11 +388,7 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
           entry?.assertOpen();
           // Waiting never grants authority. Ordinary requests may outlive their socket;
           // only request-owned cancellation and current authority fence their start.
-          if (
-            requestController?.signal.aborted ||
-            !hasCurrentClientAuthority() ||
-            !hasCurrentRuntimeAuthority()
-          ) {
+          if (signal?.aborted || !hasCurrentClientAuthority() || !hasCurrentRuntimeAuthority()) {
             return;
           }
           await runOutsideGatewayRootWorkAdmission(() =>
@@ -366,7 +406,7 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
                   context,
                   ...(admission ? { admission } : {}),
                   requestEntry: entry,
-                  ...(requestController ? { signal: requestController.signal } : {}),
+                  ...(signal ? { signal } : {}),
                 },
                 client,
                 getRequiredSharedGatewaySessionGeneration,
@@ -386,7 +426,7 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
           );
         } finally {
           policyResponse?.finish();
-          diagnostics?.finish(requestController?.signal.aborted ? "cancelled" : dispatchOutcome);
+          diagnostics?.finish(signal?.aborted ? "cancelled" : dispatchOutcome);
           entry?.release();
           if (requestController) {
             client.socket.off("close", cancelRequest);
@@ -415,6 +455,7 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
       }
       await requestDispatch;
     } finally {
+      releaseAuthority();
       clientAuthority.release();
     }
   };

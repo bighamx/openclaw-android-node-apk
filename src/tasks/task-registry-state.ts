@@ -51,6 +51,7 @@ import {
   recordTaskRegistryProjectionWrite,
   selectLiveTaskFlowForSync,
   clearTaskProgressBatches,
+  clearTaskRegistryIndexes,
 } from "./task-registry.process-state.js";
 import {
   deliverTaskRegistryObserverEvent,
@@ -93,7 +94,6 @@ export function bumpTaskRegistryRevision(invalidateWorkerReads = true, changed =
 
 export const tasks = taskRegistryProcessState.tasks;
 export const taskDeliveryStates = taskRegistryProcessState.taskDeliveryStates;
-const taskIdsByRunId = taskRegistryProcessState.taskIdsByRunId;
 export const taskIdsByOwnerKey = taskRegistryProcessState.taskIdsByOwnerKey;
 export const taskIdsByParentFlowId = taskRegistryProcessState.taskIdsByParentFlowId;
 export const taskIdsByRelatedSessionKey = taskRegistryProcessState.taskIdsByRelatedSessionKey;
@@ -127,10 +127,7 @@ export function clearTaskRegistryMemory(): void {
   tasks.clear();
   bumpTaskRegistryRevision();
   taskDeliveryStates.clear();
-  taskIdsByRunId.clear();
-  taskIdsByOwnerKey.clear();
-  taskIdsByParentFlowId.clear();
-  taskIdsByRelatedSessionKey.clear();
+  clearTaskRegistryIndexes();
   recordTaskRegistryProjectionWrite("snapshot");
 }
 
@@ -143,10 +140,7 @@ function installRestoredTaskRegistrySnapshot(
   // Replace rows in snapshot order without disturbing live execution owners.
   tasks.clear();
   taskDeliveryStates.clear();
-  taskIdsByRunId.clear();
-  taskIdsByOwnerKey.clear();
-  taskIdsByParentFlowId.clear();
-  taskIdsByRelatedSessionKey.clear();
+  clearTaskRegistryIndexes();
   for (const [id, task] of snapshot.tasks) {
     tasks.set(id, task);
     addTaskIndexes(task);

@@ -477,7 +477,6 @@ src/commands/doctor-gateway-services.ts
 src/commands/doctor-legacy-config.migrations.test.ts
 src/commands/doctor-memory-search.test.ts
 src/commands/doctor-memory-search.ts
-src/commands/doctor-session-sqlite.test.ts
 src/commands/doctor-session-sqlite.ts
 src/commands/doctor-state-integrity.ts
 src/commands/doctor-state-migrations.test.ts
@@ -562,7 +561,6 @@ src/gateway/openai-http.test.ts
 src/gateway/openai-http.ts
 src/gateway/openresponses-http.test.ts
 src/gateway/openresponses-http.ts
-src/gateway/operator-approval-store.ts
 src/gateway/server-channels.test.ts
 src/gateway/server-channels.ts
 src/gateway/server-chat.agent-events.test.ts

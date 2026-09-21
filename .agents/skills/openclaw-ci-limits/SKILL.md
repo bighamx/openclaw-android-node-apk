@@ -270,8 +270,11 @@ These are intentionally guarded by `test/scripts/ci-workflow-guards.test.ts`:
   OpenClawKit test, and Swabble test graphs in `packages`.
   Ordinary full-scope manual validation adds independent release compilation,
   moves the guards to `release`, and retains health renders in `tests`.
-  All phases use GitHub-hosted `macos-26`, `max-parallel: 2`, and the existing
-  30-minute budget. This adds one hosted job and no Blacksmith registrations;
+  All phases use Xcode 27 on GitHub-hosted `xcode-27` (preview macOS 27),
+  `max-parallel: 2`, and the existing 30-minute budget. The toolchain rollout
+  changes no hosted/Blacksmith placement, job counts, coverage, or Swift 6.3
+  source-language minimum. Require complete native proof and old/new job timings.
+  The existing package split adds one hosted job and no Blacksmith registrations;
   measure complete hosted timing including duplicated setup. Packages do not
   restore or save app build products. Build caches stay phase-owned; the sole eligible shared
   SwiftPM cache writer is regular `tests` or full-validation `release`.
@@ -289,7 +292,11 @@ These are intentionally guarded by `test/scripts/ci-workflow-guards.test.ts`:
   and Debug/native-test phases, both screenshot shards, and the evidence reducer.
   Frozen full-manual targets keep their Debug-only contract without screenshots;
   npm qualification still defers native jobs. All iOS build phases and screenshot
-  shards use `macos-26` from the first attempt.
+  shards use Xcode 27 on GitHub-hosted `xcode-27` from the first attempt.
+  All four Periphery scans use the same toolchain and retain the checksum-pinned
+  3.8.0 release pending native compatibility proof for both app scans and both
+  shared consumers. Preserve zero findings and exact-USR intersection; selecting
+  the new runner is not compatibility proof.
   The conservative full-tier non-Node inventory, including Control UI performance, is
   87 rows, or 88 for historical UI targets. Excluding those four hosted rows
   plus all three macOS Swift phases and the always-hosted aggregate gate leaves at
@@ -361,6 +368,11 @@ These are intentionally guarded by `test/scripts/ci-workflow-guards.test.ts`:
   The canonical shard executor admits two CI children only with at least eight
   available CPUs and 24 GiB actual memory; otherwise it admits one. Inner project
   parallelism stays one and each overlapping child keeps two Vitest workers.
+  The measured Gateway server-isolated/database-worker family uses at most eight
+  workers only in a serial, non-frozen self-hosted job with at least eight actual
+  CPUs and 28 GiB memory. Its 20.70 GiB observed aggregate RSS leaves the existing
+  25% reserve at that floor. Preserve its two-worker fallback, other groups' pins,
+  hosted planning, complete inventory, and old timing generations until refit.
   The primary GitHub profile remains serial at 210s. Failed-job-only hybrid
   retries retain the original wider matrix on hosted Ubuntu, clamp to one child,
   and keep two workers per child; they can exceed the eight-minute normal-run
@@ -369,10 +381,11 @@ These are intentionally guarded by `test/scripts/ci-workflow-guards.test.ts`:
 - The whole Blacksmith agent-support group requests `blacksmith-32vcpu-ubuntu-2404`.
   Its file inventory and resource-derived worker policy remain unchanged.
 - Numbered Blacksmith tooling bins request the same 32-vCPU class after packing.
-  Keep their logical classes, names, file inventories, serial project/file
-  execution and two-worker pins. This adds no jobs and does not promote hosted
-  or hybrid tooling. The native two-CPU/8-GB tails require a larger-host timing
-  comparison; capacity alone is not a measured speedup.
+  Keep their logical classes, names, file inventories, serial project execution
+  and two-worker pins. Tooling files use the shared worker scheduler; price their
+  current file costs by effective workers without dividing the longest file.
+  Docker helper fixtures retain their separate serial config. This does not
+  promote hosted or hybrid tooling; capacity alone is not a measured speedup.
 - Numbered tooling measurements are collected in `toolingFileSeconds` ahead of
   planner activation, which remains blocked on hosted/hybrid row capacity. The daily refit samples the
   newest five successful PR CI runs because main-push plans omit this family.

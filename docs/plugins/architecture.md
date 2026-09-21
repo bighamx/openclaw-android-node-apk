@@ -146,6 +146,8 @@ Channel setup catalogs retain the requested workspace and load-path scope, inclu
 
 After startup, runtime readers reuse that inventory without filesystem discovery, manifest rereads, or freshness checks. Narrow plugin selections are in-memory views of the same inventory. Changing an account or an agent's run workspace does not invalidate it. Explicit plugin lifecycle operations prepare a new inventory for installs, updates, removals, source or manifest edits, and discovery-root changes before publishing it to the running Gateway.
 
+Plugin reload reconciles config watcher events after asynchronous metadata preparation. An unchanged source event does not cancel the operation; newer writes or changed config, install records, or source ownership still supersede it.
+
 Legacy session-key migration selects plugins that declare that capability before checking channel presence. Owners already eligible under migration policy do not need a channel-presence probe. Scoped selections probe persisted credentials only for their channel owners, so unrelated authentication modules stay unloaded during Doctor repairs. This credential scope does not limit environment-based presence signals: configured channels with missing plugins still produce installation and recovery hints.
 
 Model-id normalization policies are prepared with each snapshot or narrowed view. Model selection, catalogs, and runtime normalization carry that view forward instead of rebuilding policies from its plugin list. An empty view remains authoritative and cannot inherit policies from a broader process snapshot.
@@ -179,6 +181,8 @@ A failed replacement automatically tries to restore the previous code and config
 When recovery cannot safely finish, the operation settles as failed and releases its channel reload pauses. Channel health reads retain captured account facts without invoking unavailable plugin code; healthy registrations can restart normally. Detailed readiness reports `failing: ["plugin-reload"]` with the affected plugin IDs and an actionable recovery reason, instead of leaving an indefinite "reloading" state. Retry `openclaw plugins reload <id>` after admitted work and pending cleanup settle, or restart the Gateway. Permanent cleanup failures still prevent another registration from acquiring those resources.
 
 A later reload can retry after pending cleanup completes successfully, without capturing code from the disposed instance again. If draining fails after services or channels stop but before disposal starts, the quiesced registration retains its original loader for the next reload's recovery capture; ordinary plugin calls remain closed when recovery fails. Rejected replacements and failed recovery registrations retain the same cleanup barrier. Recovery preserves existing error records as diagnostics without executing their code. It never substitutes current package files for an already retired registration whose captured source has been released.
+
+Missing captured source files produce a replacement warning instead of preventing a fresh plugin load. Recovery snapshots must contain every previously captured input, including companion files. If replacement then fails, recovery restores only plugins with available captured code; it does not substitute changed installed files for a missing snapshot. Existing call-drain and resource-cleanup requirements still apply.
 
 Gateway shutdown also joins actual harness, MCP, LSP, embedding, and media cleanup after their initial grace periods. When clearing the active registry, plugin host cleanup can advance to later hooks after a timeout, but registry resets and shared database closure wait for its actual completion. These waits preserve resources for cleanup; they do not restore a retired plugin's runtime authority.
 
@@ -298,7 +302,8 @@ state temporary directory, `~/.openclaw/tmp` even when another state directory i
 selected, the current system temporary directory, `/tmp` on
 POSIX hosts, and recorded managed-service `TMPDIR` locations. It deduplicates
 directory aliases and reports each capture's path and regular-file size without
-following links inside captures.
+following links inside captures. Catalog roots include all nested
+`openclaw-plugin-build-*` trees in their reported size and removal receipt.
 
 `openclaw doctor --fix` reclaims these legacy roots only while Doctor holds Gateway
 maintenance and a complete host process census finds no other OpenClaw producer.
@@ -321,6 +326,9 @@ Configured Gateway agents share one model-catalog worker per plugin-inventory
 lifetime. Agent and authentication facts belong to each task; plugin registrations
 and captured source remain with the shared inventory. Standalone hosts that supply
 their own environment retain an isolated catalog worker for that environment.
+Provider-discovery entries use the exact selected runtime instance's captured
+source when it is already loaded, so discovery does not create a second copy of
+the same plugin package. Standalone discovery keeps its own setup lifetime.
 Each worker retains one prepared catalog generation. Replacement releases the
 previous generation's registrations after its work settles. Successfully disposed
 registrations leave their plugin caches; unchanged registrations remain reusable

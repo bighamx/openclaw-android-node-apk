@@ -166,7 +166,7 @@ const broadUnitFastCandidatePatterns = prepareGlobPatterns(
 const ownerRoutedUnitTestPatterns = [
   ...gatewayPluginTestFiles,
   ...cliProcessTestFiles,
-  // Real Git process-tree fixtures stay in serial tooling even when their
+  // Real Git process-tree fixtures stay in tooling even when their
   // subprocess harness moves into shared test support.
   "test/scripts/ci-git-owner.test.ts",
   "test/scripts/openclaw-performance-git-lifecycle.test.ts",

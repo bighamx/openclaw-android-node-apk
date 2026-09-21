@@ -30,6 +30,7 @@ import {
   resolveChangedTestTargetPlanForArgs,
   resolveChangedTestTargetPlan,
   resolveChangedTargetArgs,
+  resolveControlUiTestConsumers,
   resolveParallelFullSuiteConcurrency,
   shouldRetryVitestNoOutputTimeout,
   withRetryNoOutputTimeout,
@@ -49,7 +50,7 @@ import {
 const normalizeRepoPath = toRepoPath;
 const CODEX_TEST_PROCESS_FILE_LIMIT = 24;
 const MATRIX_TEST_PROCESS_FILE_LIMIT = 40;
-const TELEGRAM_TEST_PROCESS_FILE_LIMIT = 1;
+const TELEGRAM_TEST_PROCESS_FILE_LIMIT = 10;
 
 describe("Windows CI partitions", () => {
   it("keeps explicit coverage disjoint without repeating small project setup", () => {
@@ -785,12 +786,17 @@ describe("scripts/test-projects changed-target routing", () => {
     "scripts/pr-lib/merge.sh",
     "scripts/pr-lib/merge-outcome.sh",
     "scripts/pr-lib/merge-legacy-refusal.mjs",
+    "scripts/pr-lib/merge-pre-dispatch-refusal.mjs",
   ])("routes native merge changes through the outcome owner for %s", (scriptPath) => {
     expectChangedTargets(
       [scriptPath],
       [
         "test/scripts/pr-merge.test.ts",
         "test/scripts/pr-merge-outcome.test.ts",
+        ...(scriptPath !== "scripts/pr"
+          ? ["test/scripts/pr-merge-pre-dispatch-refusal.test.ts"]
+          : []),
+        "test/scripts/pr-merge-qualified-refusal.test.ts",
         ...(scriptPath === "scripts/pr"
           ? ["test/scripts/pr-operation-lock.test.ts", "test/scripts/pr-wrappers.test.ts"]
           : []),
@@ -1989,6 +1995,60 @@ describe("scripts/test-projects changed-target routing", () => {
     },
   );
 
+  it.each([
+    { name: "Git inventory", withRepo: withTinyGitRepo },
+    { name: "filesystem inventory", withRepo: withTinyFileTree },
+  ])("routes test helper and file-URL fixture consumers completely ($name)", ({ withRepo }) => {
+    const fixture = "test/scripts/fixtures/worker.mjs";
+    const helper = "test/scripts/runtime.test-support.ts";
+    const direct = "test/scripts/direct.consumer.test.ts";
+    const indirect = "test/scripts/indirect.consumer.test.ts";
+    const opaque = "test/scripts/opaque/index.mjs";
+    const explicitHelper = "test/scripts/source/input.test-support.ts";
+    const explicitConsumer = "test/scripts/outer/consumer.test.ts";
+    withRepo(
+      {
+        [fixture]: "export {};\n",
+        [helper]:
+          'export const worker = new URL("./fixtures/worker.mjs?generation=1#child", import.meta.url);\n',
+        "test/scripts/bridge.test-support.ts": 'export * from "./runtime.test-support.js";\n',
+        [direct]: 'import "./runtime.test-support.js";\n',
+        [indirect]: 'import "./bridge.test-support.js";\n',
+        "test/scripts/after-test.consumer.test.ts": 'import "./direct.consumer.test.js";\n',
+        "test/scripts/unrelated.consumer.test.ts": "export {};\n",
+        "test/scripts/live.consumer.live.test.ts": 'import "./runtime.test-support.js";\n',
+        [opaque]: "export {};\n",
+        "test/scripts/literal.opaque.consumer.test.ts": `const fixture = "${opaque}";\n`,
+        "test/scripts/relative.opaque.consumer.test.ts": 'import "./opaque/index.mjs";\n',
+        [explicitHelper]: "export const value = 1;\n",
+        "test/scripts/bridge/index.ts": 'export * from "../source/input.test-support.js";\n',
+        [explicitConsumer]: 'import "../bridge/index.js";\n',
+      },
+      (cwd) => {
+        const options = { cwd, broad: true, forceFullImportGraph: true };
+        for (const changed of [fixture, helper]) {
+          expect(resolveChangedTestTargetPlan([changed], options)).toEqual({
+            mode: "targets",
+            targets: [direct, indirect],
+          });
+        }
+        // A literal reference alone cannot prove an opaque helper's complete frontier.
+        expect(resolveChangedTestTargetPlan([opaque, direct], options)).toEqual({
+          mode: "targets",
+          targets: [opaque, direct],
+        });
+        expect(buildVitestRunPlans([explicitHelper], cwd)).toEqual([
+          {
+            config: "test/vitest/vitest.tooling.config.ts",
+            forwardedArgs: [],
+            includePatterns: [explicitConsumer],
+            watchMode: false,
+          },
+        ]);
+      },
+    );
+  });
+
   it.each([false, true])(
     "retains an unowned changed tooling test alongside its consumers (mixed input: %s)",
     (mixedInput) => {
@@ -2247,6 +2307,7 @@ describe("scripts/test-projects changed-target routing", () => {
   it.each([
     ["src/agents/**/*.test.ts", "test/vitest/vitest.agents.config.ts"],
     ["test/plugins", "test/vitest/vitest.tooling.config.ts"],
+    ["test/scripts", "test/vitest/vitest.tooling.config.ts"],
     ["src/plugin-state", "test/vitest/vitest.unit.config.ts"],
   ])("preserves watch selection across database ownership for %s", (target, owner) => {
     expect(buildVitestRunPlans(["--watch", target])).toEqual([
@@ -3059,14 +3120,6 @@ describe("scripts/test-projects changed-target routing", () => {
     );
   });
 
-  it("keeps broad shell helper watch targets in one tooling shard", () => {
-    expectSingleVitestRunPlan(buildVitestRunPlans(["--watch", "test/scripts"], process.cwd()), {
-      config: "test/vitest/vitest.tooling.config.ts",
-      includePatterns: ["test/scripts/**/*.test.ts"],
-      watchMode: true,
-    });
-  });
-
   it("preserves post-separator Vitest args without parsing them as targets", () => {
     for (const [arg, watchMode] of [
       ["--reporter=verbose", false],
@@ -3691,6 +3744,12 @@ describe("scripts/test-projects changed-target routing", () => {
     expect(selected.toSorted()).toEqual(listExtensionTestFilesForRoots([root]).toSorted());
     expect(new Set(selected).size).toBe(selected.length);
     for (const plan of plans) {
+      if (
+        name === "telegram" &&
+        plan.config === "test/vitest/vitest.extension-database-workers.config.ts"
+      ) {
+        expect(plan.includePatterns).toHaveLength(1);
+      }
       for (const file of plan.includePatterns ?? []) {
         expect(plan.config).toBe(
           databaseWorkerExtensionTestFiles.includes(file)
@@ -4104,9 +4163,19 @@ describe("scripts/test-projects changed-target routing", () => {
   });
 
   it.each([
-    ["ui/config/control-ui-chunking.ts", "ui/src/app/control-ui-chunking.test.ts"],
-    ["ui/config/control-ui-locales.ts", "ui/src/app/vite-config.node.test.ts"],
-  ])("routes changed ui build helper %s to its owner test", (changedPath, testPath) => {
+    {
+      changedPath: "ui/config/control-ui-chunking.ts",
+      tests: ["ui/src/app/control-ui-chunking.test.ts"],
+    },
+    {
+      changedPath: "ui/config/control-ui-locales.ts",
+      tests: ["ui/src/app/vite-config.node.test.ts"],
+    },
+    {
+      changedPath: "ui/config/control-ui-boot-modules.json",
+      tests: ["ui/src/app/control-ui-chunking.test.ts", "ui/src/app/vite-config.node.test.ts"],
+    },
+  ])("routes changed ui build helper $changedPath to its owner tests", ({ changedPath, tests }) => {
     const plans = buildVitestRunPlans(["--changed", "origin/main"], process.cwd(), () => [
       changedPath,
     ]);
@@ -4115,7 +4184,7 @@ describe("scripts/test-projects changed-target routing", () => {
       {
         config: "test/vitest/vitest.ui.config.ts",
         forwardedArgs: [],
-        includePatterns: [testPath],
+        includePatterns: tests,
         watchMode: false,
       },
     ]);
@@ -4635,10 +4704,84 @@ describe("scripts/test-projects changed-target routing", () => {
 });
 
 describe("test selector native source facts", () => {
+  it("keeps whole-area UI consumers and source readers across graph cache scopes", () => {
+    const pluginModule = "extensions/example/browser/view.ts";
+    const pluginConsumer = "test/plugin-browser-consumer.test.ts";
+    // This import belongs to the virtual repository, not this test's module graph.
+    const pluginImport = path.posix
+      .relative(path.posix.dirname(pluginConsumer), pluginModule)
+      .replace(/\.ts$/u, ".js");
+    withTinyGitRepo(
+      {
+        "src/owner/value.ts": "export const value = 1;\n",
+        "ui/src/presenter.ts": 'export { value } from "../../src/owner/value.js";\n',
+        "ui/src/catalog.json": '{"label":"Changed dynamically loaded data"}\n',
+        "ui/src/catalog-extra.json": '{"label":"Another dynamically loaded catalog"}\n',
+        "ui/src/presenter.test.ts": 'import { value } from "./presenter.js"; void value;\n',
+        [pluginModule]: "export const view = 1;\n",
+        "src/consumer.test.ts": 'import { value } from "../ui/src/presenter.js"; void value;\n',
+        "scripts/ui-consumer.mjs": 'export { value } from "../ui/src/presenter.js";\n',
+        "test/scripts/ui-consumer.test.ts":
+          'import { value } from "../../scripts/ui-consumer.mjs"; void value;\n',
+        [pluginConsumer]: `import { view } from ${JSON.stringify(pluginImport)}; void view;\n`,
+        "test/scripts/ui-catalog-reader.test.ts":
+          'import { readFileSync } from "node:fs"; readFileSync("ui/src/catalog.json", "utf8");\n',
+        "test/scripts/ui-extra-reader.test.ts":
+          'import { readFileSync } from "node:fs"; readFileSync("ui/src/catalog-extra.json", "utf8");\n',
+        "test/scripts/ui-shared-reader.test.ts":
+          'import { readFileSync } from "node:fs"; ["ui/src/catalog.json", "ui/src/catalog-extra.json"].map((file) => readFileSync(file, "utf8"));\n',
+        "test/ui-consumer.live.test.ts": 'import "../ui/src/presenter.js";\n',
+        "src/unrelated.test.ts": "export {};\n",
+      },
+      (cwd) => {
+        const sourcePlan = () =>
+          resolveChangedTestTargetPlan(["src/owner/value.ts"], {
+            cwd,
+            forceFullImportGraph: true,
+          });
+        const expectedSourcePlan = {
+          mode: "targets",
+          targets: ["src/consumer.test.ts", "ui/src/presenter.test.ts"],
+        };
+        expect(sourcePlan()).toEqual(expectedSourcePlan);
+        const graphConsumers = [
+          "src/consumer.test.ts",
+          "test/plugin-browser-consumer.test.ts",
+          "test/scripts/ui-consumer.test.ts",
+        ];
+        expect(resolveControlUiTestConsumers(["ui/src/catalog.json"], cwd)).toEqual([
+          ...graphConsumers,
+          "test/scripts/ui-catalog-reader.test.ts",
+          "test/scripts/ui-shared-reader.test.ts",
+        ]);
+        expect(
+          resolveControlUiTestConsumers(
+            ["ui/src/catalog.json", "ui/src/catalog-extra.json", "ui/src/catalog.json"],
+            cwd,
+          ),
+        ).toEqual([
+          ...graphConsumers,
+          "test/scripts/ui-catalog-reader.test.ts",
+          "test/scripts/ui-shared-reader.test.ts",
+          "test/scripts/ui-extra-reader.test.ts",
+        ]);
+        expect(
+          resolveControlUiTestConsumers(["ui/src/catalog-extra.json", "ui/src/catalog.json"], cwd),
+        ).toEqual([
+          ...graphConsumers,
+          "test/scripts/ui-extra-reader.test.ts",
+          "test/scripts/ui-shared-reader.test.ts",
+          "test/scripts/ui-catalog-reader.test.ts",
+        ]);
+        expect(sourcePlan()).toEqual(expectedSourcePlan);
+      },
+    );
+  });
+
   it("reads complete files without installed packages, inherited hooks, or reparsing cached imports", () => {
     withTinyFileTree(
       {
-        "large.mts": `${"// padding\n".repeat(220_000)}export type {\n Value\n } from "./barrel.js";\nimport(\n "./dynamic.mjs"\n);\nconst fixture = "scripts/tool.mts";`,
+        "large.mts": `${"// padding\n".repeat(220_000)}export type {\n Value\n } from "./barrel.js";\nimport(\n "./dynamic.mjs"\n);\nconst fixture = "scripts/tool.mts";\nnew URL(\n "./native-fixture.mjs?generation=1#child", import.meta.url,\n);\nnew URL("./other-base.mjs", "file:///elsewhere/");`,
       },
       (cwd) => {
         const files = [
@@ -4646,7 +4789,7 @@ describe("test selector native source facts", () => {
           { file: "deleted.ts", parseImports: true },
         ];
         const expectedFacts = {
-          imports: ["./barrel.js", "./dynamic.mjs"],
+          imports: ["./barrel.js", "./dynamic.mjs", "./native-fixture.mjs"],
           matches: ["scripts/tool.mts", "scripts/tool"],
           references: ["scripts/tool.mts"],
         };
