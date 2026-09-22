@@ -7,12 +7,14 @@ import {
   getNodeSqliteKysely,
   prepareSqliteQueryTakeFirstSync,
 } from "../infra/kysely-sync.js";
+import { generateSecureUuid } from "../infra/secure-random.js";
 import { USER_PROFILE_AVATAR_MIME_TYPES } from "../shared/avatar-limits.js";
 import { tableHasColumn } from "./openclaw-state-db-schema-helpers.js";
 import {
   openOpenClawStateDatabase,
   type OpenClawStateDatabaseOptions,
 } from "./openclaw-state-db.js";
+import type { UserProfileMutationContext } from "./user-profile-mutation.js";
 import {
   ensureUserProfilesSchema,
   hasEnsuredUserProfileRoleSchema,
@@ -28,6 +30,27 @@ const metadataReaders = new WeakMap<
   DatabaseSync,
   (profileId: string) => UserProfileMetadataRow | undefined
 >();
+
+export function insertUserProfile(
+  db: DatabaseSync,
+  displayName: string | null,
+  now: number,
+  mutation?: UserProfileMutationContext,
+): UserProfileRow {
+  const row: UserProfileRow = {
+    id: generateSecureUuid(),
+    display_name: displayName,
+    avatar: null,
+    avatar_mime: null,
+    avatar_sha256: null,
+    merged_into: null,
+    created_at: now,
+    updated_at: now,
+  };
+  mutation?.before(db, row.id);
+  executeSqliteQuerySync(db, userProfilesDb(db).insertInto("user_profiles").values(row));
+  return row;
+}
 
 export function toUserProfile(row: Omit<UserProfileMetadataRow, "avatar_sha256">): UserProfile {
   return {

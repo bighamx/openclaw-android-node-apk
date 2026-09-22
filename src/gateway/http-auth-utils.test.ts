@@ -7,7 +7,10 @@ import {
   registerVirtualTestPlugin,
 } from "openclaw/plugin-sdk/plugin-test-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../config/runtime-snapshot.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
 import {
@@ -37,10 +40,10 @@ vi.mock("./auth.js", async (importOriginal) => ({
 vi.mock("../infra/host-account-name.js", () => ({
   resolveHostAccountName: async () => "Gateway Person",
 }));
-vi.mock("../state/user-profiles.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../state/user-profiles.js")>();
-  ensureOwner.mockImplementation(actual.ensureGatewayOwnerProfile);
-  return { ...actual, ensureGatewayOwnerProfile: ensureOwner };
+vi.mock("../state/user-profile-writes.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../state/user-profile-writes.js")>();
+  ensureOwner.mockImplementation(actual.ensureCanonicalGatewayOwnerProfile);
+  return { ...actual, ensureCanonicalGatewayOwnerProfile: ensureOwner };
 });
 
 const roles = {
@@ -54,6 +57,7 @@ async function authenticate(
   cfg: OpenClawConfig = {},
   user?: string,
 ) {
+  setRuntimeConfigSnapshot(cfg);
   authorize.mockResolvedValueOnce({ ok: true, method, ...(user ? { user } : {}) });
   return checkGatewayHttpRequestAuth({
     req,
@@ -141,7 +145,10 @@ function registerPersonAccessFixture() {
 
 describe("HTTP gateway owner profiles", () => {
   beforeEach(() => vi.clearAllMocks());
-  afterEach(() => resetPluginRuntimeStateForTest());
+  afterEach(() => {
+    clearRuntimeConfigSnapshot();
+    resetPluginRuntimeStateForTest();
+  });
 
   it.each(["missing", "disabled", "failed", "unregistered", "inapplicable", "unrelated"] as const)(
     "denies a required %s policy while preserving independent staff and owner access",

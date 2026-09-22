@@ -261,6 +261,64 @@ describe("CI changed Node test plan", () => {
     expect(createChangedNodeTestShards([helper, "src/deleted-unowned-source.ts"])).toBeNull();
   });
 
+  it.each(["blacksmith", "github", "hybrid"])(
+    "defers owner-changing automatic PRs to complete tooling coverage (%s)",
+    (runnerBackend) => {
+      for (const changedPath of [
+        "test/scripts/vitest-report-owner.test.ts",
+        "scripts/lib/vitest-report-owner.mts",
+        "package.json",
+      ]) {
+        expect(
+          createChangedNodeTestShards([changedPath], {
+            runnerBackend,
+            includeReleaseOnlyToolingShards: false,
+          }),
+        ).toBeNull();
+      }
+    },
+  );
+
+  it("keeps product-only precise selections free of maintainer tooling", () => {
+    const shards = createChangedNodeTestShards(["src/infra/retry.test.ts"], {
+      includeReleaseOnlyToolingShards: false,
+    });
+    expect(shards).not.toBeNull();
+    expect(
+      shards?.flatMap((shard) => [
+        ...(shard.targets ?? shard.includePatterns ?? []),
+        ...(shard.groups?.flatMap((group) => group.includePatterns ?? []) ?? []),
+      ]),
+    ).toContain("src/infra/retry.test.ts");
+    expect(
+      shards?.some((shard) =>
+        [...shard.configs, ...(shard.groups?.flatMap((group) => group.configs) ?? [])].some(
+          (config) => config.includes("vitest.tooling"),
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it.each(["blacksmith", "github", "hybrid"])(
+    "retains a directly changed release-only report composition with its tooling owner (%s)",
+    (runnerBackend) => {
+      const target = "test/scripts/vitest-report-owner.test.ts";
+      const shards = createChangedNodeTestShards([target], { runnerBackend });
+      expect(shards).not.toBeNull();
+      const owners = shards?.flatMap((job) =>
+        (job.groups ?? []).filter((group) => group.includePatterns?.includes(target)),
+      );
+      expect(owners).toHaveLength(1);
+      const owner = expectDefined(owners?.[0], "report composition tooling owner");
+      expect(owner).toMatchObject({
+        configs: ["test/vitest/vitest.tooling.config.ts"],
+        env: { OPENCLAW_VITEST_MAX_WORKERS: "2" },
+        requiresDist: false,
+      });
+      expect(shards?.find((job) => job.groups?.includes(owner))?.planConcurrency).toBe(1);
+    },
+  );
+
   it("retains the paired tooling group for direct Docker helper selection", () => {
     const shards = createSelectedNodeTestShardBundles(["test/scripts/docker-build-helper.test.ts"]);
     expect(shards).not.toBeNull();
@@ -897,7 +955,7 @@ describe("CI changed Node test plan", () => {
         ).toEqual([
           "test/scripts/check-max-lines-ratchet.test.ts",
           "test/scripts/ci-changed-node-test-plan.test.ts",
-          "test/scripts/ci-workflow-guards.test.ts",
+          "test/scripts/ci-workflow-planning.test.ts",
         ]);
         expect(targets).toEqual(expect.arrayContaining(companions));
       }
@@ -929,6 +987,8 @@ describe("CI changed Node test plan", () => {
       tests: [
         "test/scripts/check-workflows.test.ts",
         "test/scripts/ci-workflow-guards.test.ts",
+        "test/scripts/ci-workflow-planning.test.ts",
+        "test/scripts/ci-workflow-evidence.test.ts",
         "test/scripts/ci-changed-node-test-plan.test.ts",
       ],
     },
@@ -1481,6 +1541,7 @@ describe("CI changed Node test plan", () => {
         compactMode: "pull-request",
         runnerBackend,
         includeReleaseOnlyPluginShards: false,
+        compactNodeJobCap: 130 - shards.filter((job) => !job.requiresDist).length,
         changedPaths: ["scripts/lib/ci-changed-node-test-plan.mts"],
       });
       expect(compact.length).toBeLessThanOrEqual(90);
@@ -2124,7 +2185,11 @@ describe("CI changed Node test plan", () => {
       "src/agents/live-provider-owner.ts",
       "ui/config/control-ui-boot-modules.json",
     ];
-    const options = { runnerBackend: "hybrid", dedicatedUiE2e: true };
+    const options = {
+      runnerBackend: "hybrid",
+      dedicatedUiE2e: true,
+      includeReleaseOnlyToolingShards: false,
+    };
     const shards = createChangedNodeTestShards(paths, options);
     expect(shards).not.toBeNull();
     expect(hasControlUiPerformanceAffectingChange([paths[2]!])).toBe(true);
@@ -2176,9 +2241,7 @@ describe("CI changed Node test plan", () => {
     expect(
       createChangedNodeTestShards([...paths, "package.json"], { ...options, onFallback }),
     ).toBeNull();
-    expect(onFallback).toHaveBeenCalledWith(
-      "core change reaches public SDK or extension consumers",
-    );
+    expect(onFallback).toHaveBeenCalledWith("tooling owner change requires full-family coverage");
   });
 
   it("chunks many targets into bounded parallel jobs", () => {

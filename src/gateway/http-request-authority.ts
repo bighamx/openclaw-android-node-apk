@@ -64,7 +64,7 @@ export function captureHttpRequestAuthority(
       authGeneration ===
         resolveSharedGatewaySessionGeneration(
           params.getResolvedAuth?.() ?? params.auth,
-          current.gateway?.trustedProxies ?? params.trustedProxies,
+          params.trustedProxies ?? current.gateway?.trustedProxies,
         )
     );
   };

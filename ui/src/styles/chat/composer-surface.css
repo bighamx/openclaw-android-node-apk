@@ -622,13 +622,6 @@
   background: var(--bg-hover);
 }
 
-.agent-chat__attach-menu::part(menu) {
-  width: 176px;
-  min-width: 176px;
-  max-width: min(176px, calc(100vw - 24px));
-  padding: var(--menu-padding);
-}
-
 /* Send is the primary action of the whole surface, so it gets the same solid
    accent treatment as .btn.primary; variants (--stop, --voice*) override the
    fill instead of reintroducing borders. */

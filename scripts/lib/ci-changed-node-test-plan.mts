@@ -28,8 +28,11 @@ import {
   createSelectedNodeTestShardBundles,
   isPolicyTestOwnedPath,
   nodeTestConfigRequiresCanonicalMetadata,
+  isToolingTestOwnerPath,
   packNodeTestGroups,
   resolvePolicyTestTargets,
+  RELEASE_ONLY_TOOLING_CONFIGS,
+  isReleaseOnlyToolingTestFile,
   type NodeTestShardGroup,
 } from "./ci-node-test-plan.mts";
 import { isCiProofTestFile } from "./ci-proof-test-inventory.mts";
@@ -666,6 +669,7 @@ export function createChangedNodeTestShards(
   changedPaths: string[],
   options: CwdOptions & {
     runnerBackend?: string;
+    includeReleaseOnlyToolingShards?: boolean;
     dedicatedContractShards?: readonly { task: string; includePatterns: readonly string[] }[];
     dedicatedUiE2e?: boolean;
     dedicatedMaxLinesRatchet?: boolean;
@@ -679,6 +683,13 @@ export function createChangedNodeTestShards(
   };
   if (!Array.isArray(changedPaths) || changedPaths.length === 0) {
     return fallback("missing changed paths");
+  }
+
+  if (
+    options.includeReleaseOnlyToolingShards === false &&
+    changedPaths.some(isToolingTestOwnerPath)
+  ) {
+    return fallback("tooling owner change requires full-family coverage");
   }
 
   // Packing changes and their policy guard need the complete compact plan on
@@ -772,6 +783,8 @@ export function createChangedNodeTestShards(
     ? createNodeTestShardBundles({
         changedPaths,
         includeReleaseOnlyPluginShards: false,
+        // Explicit UI consumers retain their complete canonical host-contract rows.
+        includeReleaseOnlyToolingShards: true,
         compactMode: "pull-request",
         runnerBackend: options.runnerBackend,
       })
@@ -817,6 +830,9 @@ export function createChangedNodeTestShards(
   }
   const targetPlans = resolvedTargetPlans.filter(
     ({ target, plans }) =>
+      (options.includeReleaseOnlyToolingShards !== false ||
+        (!isReleaseOnlyToolingTestFile(target) &&
+          !plans.every((plan) => RELEASE_ONLY_TOOLING_CONFIGS.has(plan.config)))) &&
       !plans.every(({ config }) =>
         uiShards.some((shard) =>
           shard.groups?.some(
@@ -906,7 +922,7 @@ export function createChangedNodeTestShards(
     ...boundaryShards,
   ];
   // Covered source targets keep build-artifacts ownership even with no Node rows.
-  return shards.length > 0 || targets.length < targetPlans.length
+  return shards.length > 0 || targets.length < resolvedTargetPlans.length
     ? shards
     : fallback("no executable Node owner");
 }

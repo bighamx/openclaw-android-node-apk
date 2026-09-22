@@ -58,7 +58,11 @@ const approvalNotice = {
   body: `<!-- openclaw:dependency-graph-guard -->\n<!-- openclaw:approval-request ${JSON.stringify({ head: headSha, base: "main", requestedAt: "2026-01-01T00:00:00Z" })} -->\n`,
 };
 
-function runDependencyGuard(routes: Record<string, unknown> = {}, mode = "enforce") {
+function runDependencyGuard(
+  routes: Record<string, unknown> = {},
+  mode = "enforce",
+  autoscrubToken: string | null = "fixture-autoscrub-token",
+) {
   const dir = tempDirs.make("openclaw-dependency-guard-");
   const eventPath = path.join(dir, "event.json");
   const fixturePath = path.join(dir, "fixture.json");
@@ -110,7 +114,7 @@ function runDependencyGuard(routes: Record<string, unknown> = {}, mode = "enforc
         GITHUB_OUTPUT: outputPath,
         OPENCLAW_GUARD_TEST_FIXTURE: fixturePath,
         OPENCLAW_DEPENDENCY_GUARD_MODE: mode,
-        OPENCLAW_DEPENDENCY_GUARD_AUTOSCRUB_TOKEN: "fixture-autoscrub-token",
+        ...(autoscrubToken ? { OPENCLAW_DEPENDENCY_GUARD_AUTOSCRUB_TOKEN: autoscrubToken } : {}),
       },
     },
   );
@@ -368,6 +372,30 @@ describe("dependency guard script", () => {
       expect(result.statuses.map((call) => call.body?.state)).toEqual(["failure"]);
     },
   );
+
+  it("keeps dependency approval required when an editable fork has no autoscrub token", () => {
+    const routes = {
+      [`GET ${pullPath}`]: {
+        ...pullRequest,
+        maintainer_can_modify: true,
+        head: { ...pullRequest.head, repo: { id: 2, full_name: "contributor/openclaw" } },
+      },
+      [`GET ${pullPath}/files`]: [{ filename: "pnpm-lock.yaml" }],
+      [`GET /repos/openclaw/openclaw/dependency-graph/compare/${staleSha}...${headSha}`]: [],
+    };
+    const autoscrub = runDependencyGuard(routes, "autoscrub", null);
+    expect(autoscrub.status, autoscrub.stderr).toBe(0);
+    expect(autoscrub.calls.some((call) => call.path === "/graphql")).toBe(false);
+    expect(autoscrub.statuses.map((call) => call.body?.state)).toEqual(["failure"]);
+    expect(autoscrub.stdout).toContain("unavailable");
+    expect(autoscrub.stdout).toContain("approval");
+    expect(autoscrub.stdout).toContain("manually");
+
+    const enforcement = runDependencyGuard(routes, "enforce", null);
+    expect(enforcement.status, enforcement.stderr).toBe(0);
+    expect(enforcement.statuses.at(-1)?.body?.state).toBe("failure");
+    expect(enforcement.stdout).toContain("/allow-dependencies-change");
+  });
 
   it.each(["detect", "autoscrub", "enforce"])(
     "does not approve or autoscrub a grandfathered lockfile PR in %s mode",
@@ -894,6 +922,96 @@ describe("dependency guard script", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    { method: "GET", code: "ECONNRESET" },
+    { method: "GET", code: "EAI_AGAIN" },
+    { method: "GET", code: "ENOTFOUND" },
+    { method: "HEAD", code: "UND_ERR_SOCKET" },
+  ])("recovers from $code on $method requests", async ({ method, code }) => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(
+        new TypeError("fetch failed", { cause: Object.assign(new Error(), { code }) }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await expect(
+      githubApi("token", { fetchImpl, retryDelaysMs: [0] }).request(pullPath, { method }),
+    ).resolves.toBeNull();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("shares the bounded retry budget between connection and HTTP failures", async () => {
+    const error = new TypeError("fetch failed", {
+      cause: Object.assign(new Error("connection reset"), { code: "ECONNRESET" }),
+    });
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockRejectedValue(error);
+
+    await expect(
+      githubApi("token", { fetchImpl, retryDelaysMs: [0, 0, 0] }).request(pullPath),
+    ).rejects.toMatchObject({
+      message: expect.stringContaining(`GitHub API GET ${pullPath} failed: ECONNRESET`),
+      cause: error,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  it.each(["POST", "PATCH", "DELETE"])(
+    "does not retry connection failures on %s writes",
+    async (method) => {
+      const error = new TypeError("fetch failed", {
+        cause: Object.assign(new Error("connection reset"), { code: "ECONNRESET" }),
+      });
+      const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(error);
+      await expect(
+        githubApi("token", { fetchImpl }).request(issuePath, { method, body: "{}" }),
+      ).rejects.toMatchObject({
+        message: expect.stringContaining(`GitHub API ${method} ${issuePath} failed: ECONNRESET`),
+        cause: error,
+      });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    new DOMException("aborted", "AbortError"),
+    new TypeError("fetch failed", {
+      cause: Object.assign(new Error("certificate expired"), { code: "CERT_HAS_EXPIRED" }),
+    }),
+    new TypeError("invalid request"),
+  ])("does not retry non-transient fetch rejection %s", async (error) => {
+    const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(error);
+    await expect(githubApi("token", { fetchImpl }).request(pullPath)).rejects.toMatchObject({
+      cause: error,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["GET", "POST"])(
+    "does not retry or mark an aborted %s connection error for recovery",
+    async (method) => {
+      const controller = new AbortController();
+      const error = new TypeError("fetch failed", {
+        cause: Object.assign(new Error(), { code: "ECONNRESET" }),
+      });
+      const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async () => {
+        controller.abort();
+        throw error;
+      });
+      const request = githubApi("token", { fetchImpl }).request(pullPath, {
+        method,
+        signal: controller.signal,
+      });
+      await expect(request).rejects.toMatchObject({ cause: error });
+      await expect(request).rejects.not.toHaveProperty("code");
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("bounds successful GitHub API response bodies", async () => {
     const request = githubApi("token", {
       responseMaxBodyBytes: 64,
@@ -907,6 +1025,30 @@ describe("dependency guard script", () => {
 
     await expect(request).rejects.toThrow("GitHub response body exceeded 64 bytes");
     expect(GITHUB_RESPONSE_BODY_MAX_BYTES).toBeGreaterThan(64);
+  });
+
+  it("keeps the original request timeout active during connection retry backoff", async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+      signal = init?.signal ?? undefined;
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error(), { code: "ECONNRESET" }),
+      });
+    });
+    const request = githubApi("token", {
+      fetchImpl,
+      timeoutMs: 5,
+      retryDelaysMs: [10_000],
+    }).request(pullPath);
+    const rejection = expect(request).rejects.toThrow(
+      `GitHub API GET ${pullPath} exceeded timeout 5ms`,
+    );
+
+    await vi.advanceTimersByTimeAsync(5);
+    await rejection;
+    expect(signal?.aborted).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("aborts stalled GitHub API fetches at the request timeout", async () => {

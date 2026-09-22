@@ -13,7 +13,6 @@ import {
   type ReportEnvelope,
   type RunnerResolvedPlan,
   type RunnerSelection,
-  type TabId,
   type CaptureEventsEnvelope,
   type CaptureCoverageEnvelope,
   type CaptureQueryEnvelope,
@@ -24,6 +23,7 @@ import {
   renderQaLabUi,
 } from "./ui-render.js";
 import { stateFingerprint } from "./ui-state-fingerprint.js";
+import { bindTabNavigation } from "./ui-tab-navigation.js";
 
 function formatErrorMessage(error: unknown): string {
   return redactSensitiveText(formatSharedErrorMessage(error));
@@ -742,14 +742,9 @@ export async function createQaLabApp(root: HTMLDivElement) {
 
   function bindEvents() {
     /* Tabs */
-    root.querySelectorAll<HTMLElement>("[data-tab]").forEach((node) => {
-      node.addEventListener("click", () => {
-        const nextTab = node.dataset.tab as TabId | undefined;
-        if (nextTab) {
-          state.activeTab = nextTab;
-          render();
-        }
-      });
+    bindTabNavigation(root, (nextTab) => {
+      state.activeTab = nextTab;
+      render();
     });
 
     /* Conversation chips */

@@ -101,8 +101,16 @@ export async function settleTaskRecordTransitionAsync(
   if (settled?.deliver && settled.task.deliveryStatus !== "not_applicable") {
     try {
       assertTaskRegistryOwnerCurrent(context, store);
-      void maybeDeliverTaskStateChangeUpdate(settled.task, settled.nextEvent);
-      void maybeDeliverTaskTerminalUpdate(taskId);
+      const observePublication = (publication: Promise<TaskRecord | null>) => {
+        void publication.catch((error: unknown) => {
+          log.warn("Committed task transition could not complete delivery publication", {
+            taskId,
+            error,
+          });
+        });
+      };
+      observePublication(maybeDeliverTaskStateChangeUpdate(settled.task, settled.nextEvent));
+      observePublication(maybeDeliverTaskTerminalUpdate(taskId));
     } catch (error) {
       log.warn("Committed task transition could not admit delivery publication", { taskId, error });
     }

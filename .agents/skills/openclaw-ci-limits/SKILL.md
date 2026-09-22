@@ -92,6 +92,8 @@ Read:
 - `.github/workflows/codeql-critical-quality.yml`
 - `docs/ci.md`
 - `test/scripts/ci-workflow-guards.test.ts`
+- `test/scripts/ci-workflow-planning.test.ts`
+- `test/scripts/ci-workflow-evidence.test.ts`
 - touched planner files under `scripts/lib/*ci*`, `scripts/lib/*test-plan*`, or
   `scripts/ci-changed-scope.mjs`
 
@@ -189,7 +191,8 @@ Do not:
 
 ## Current OpenClaw Knobs
 
-These are intentionally guarded by `test/scripts/ci-workflow-guards.test.ts`:
+These are intentionally guarded by the `ci-workflow-guards`,
+`ci-workflow-planning`, and `ci-workflow-evidence` tests under `test/scripts/`:
 
 - `CI` concurrency key version, PR cancellation, and canonical `main`'s two
   non-canceling parity slots, each with one coalesced pending tip.
@@ -316,6 +319,37 @@ These are intentionally guarded by `test/scripts/ci-workflow-guards.test.ts`:
   Targeted plans retain the full built-artifact
   boundary gate. `main` uses compact integration; manual and release runs use
   full named shards.
+- `RELEASE_ONLY_TOOLING_SHARDS` in the Node planner owns the complete
+  `core-tooling` family: ordinary tooling stripes plus the isolated/Docker
+  catalogs. Matching non-E2E/non-live maintainer leaves in mixed fast configs
+  join the same tier. Preserve their ordinary, isolated or fake-timer config,
+  process pins and product neighbors; reduced groups need subset timing identities.
+  The five `test/scripts/*.e2e.test.ts` product integration gates stay outside
+  this tier. Product-only canonical PRs omit the family in precise and compact
+  fallback plans. Tooling tests or owners select the full family: `scripts/**`,
+  `src/scripts/**`, `test/**`, `.github/**`, `config/**`, root package/pnpm inputs,
+  tooling configs, and other tooling facts owned by
+  `scripts/test-projects.test-support.mts`, including Docker, agent/Crabbox,
+  app script/Fastlane and extension script/package inputs. Directly changed
+  tooling tests therefore retain PR coverage. Keep each config's complete
+  inventory, exclusions, process metadata, timing floors and runner policy.
+  Every CI manual dispatch includes the family; Full Release Validation's
+  frozen-candidate `normal_ci` child executes it before regular publication
+  admission. An independent duplicate release test is not required: these same
+  tests supply that proof. Fork repositories retain full tooling because they
+  do not use canonical targeting. Main already omitted named tooling shards;
+  it now also omits maintainer leaves formerly retained by fast configs,
+  including on tooling-owner changes. A regression introduced by a later main
+  merge is invisible to main CI until an affected PR or full validation runs it. Existing
+  `ci-gate` aggregates selected jobs, without requiring tooling proof against a
+  later main revision. Report historical file-seconds, emitted rows, runner-class
+  counts and predicted longest jobs separately; fewer test-seconds do not prove
+  a workflow wall-time saving.
+  CI's plugin flag stays false even on dispatch because Plugin Prerelease owns
+  that separate sweep. Do not infer release inclusion from a shard name or
+  conflate regular full-campaign publication with approved preflight-only beta
+  exceptions. Product security, migration, storage, protocol, SDK and
+  update-correctness tests are outside this move.
 - The combined Node matrix admits compact and plugin descriptors by estimated
   duration within the same cap. Catch-all, QA and provider configs use the
   existing 90-file envelope budget with native Vitest sharding; retain complete
@@ -517,10 +551,10 @@ the current circuit breaker.
 For workflow-only or docs/skill-only changes in a Codex worktree:
 
 ```bash
-node scripts/run-vitest.mjs test/scripts/ci-workflow-guards.test.ts
+node scripts/run-vitest.mjs test/scripts/ci-workflow-guards.test.ts test/scripts/ci-workflow-planning.test.ts test/scripts/ci-workflow-evidence.test.ts
 node --import tsx scripts/check-workflows.mts
 node scripts/docs-list.js
-./node_modules/.bin/oxfmt --check .github/workflows/ci.yml .github/workflows/codeql-critical-quality.yml docs/ci.md test/scripts/ci-workflow-guards.test.ts .agents/skills/openclaw-ci-limits/SKILL.md .agents/skills/openclaw-ci-limits/agents/openai.yaml
+./node_modules/.bin/oxfmt --check .github/workflows/ci.yml .github/workflows/codeql-critical-quality.yml docs/ci.md test/scripts/ci-workflow-guards.test.ts test/scripts/ci-workflow-planning.test.ts test/scripts/ci-workflow-evidence.test.ts test/scripts/ci-workflow.test-support.ts .agents/skills/openclaw-ci-limits/SKILL.md .agents/skills/openclaw-ci-limits/agents/openai.yaml
 git diff --check
 ```
 

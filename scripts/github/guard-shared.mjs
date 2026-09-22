@@ -7,11 +7,22 @@ export const GITHUB_RESPONSE_BODY_MAX_BYTES = 4 * 1024 * 1024;
 export const GITHUB_API_REQUEST_TIMEOUT_MS = 30_000;
 
 const githubApiRetryStatuses = new Set([500, 502, 503, 504]);
+const githubApiRetryCodes = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "EPIPE",
+  "ETIMEDOUT",
+  "EAI_AGAIN",
+  "ENOTFOUND",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
 const githubApiRetryDelaysMs = [1_000, 2_000, 4_000];
 // One primary quota window plus room for a fresh evaluation. Persist the deadline
 // across detect/autoscrub/enforce so each step cannot start another hour of waits.
-const githubRateLimitBudgetMs = 65 * 60_000;
-const rateLimitDeadlineEnv = "OPENCLAW_SECURITY_REVIEW_DEADLINE_MS";
+const securityReviewBudgetMs = 65 * 60_000;
+const recoveryDeadlineEnv = "OPENCLAW_SECURITY_REVIEW_DEADLINE_MS";
 
 export class GitHubRateLimitError extends Error {
   constructor(message, response) {
@@ -31,36 +42,44 @@ export class GitHubRateLimitError extends Error {
   }
 }
 
-export async function withGitHubRateLimitRecovery(evaluate) {
-  const recorded = process.env[rateLimitDeadlineEnv];
-  const deadline = recorded === undefined ? Date.now() + githubRateLimitBudgetMs : Number(recorded);
+export class GitHubStatusPublicationError extends Error {
+  constructor(cause) {
+    super(cause.message, { cause });
+  }
+}
+
+export async function withSecurityReviewRecovery(evaluate) {
+  const recorded = process.env[recoveryDeadlineEnv];
+  const deadline = recorded === undefined ? Date.now() + securityReviewBudgetMs : Number(recorded);
   if (!Number.isSafeInteger(deadline) || deadline <= 0) {
     throw new Error("Invalid Security Review recovery deadline.");
   }
   if (recorded === undefined && process.env.GITHUB_ENV) {
-    await appendFile(process.env.GITHUB_ENV, `${rateLimitDeadlineEnv}=${deadline}\n`);
+    await appendFile(process.env.GITHUB_ENV, `${recoveryDeadlineEnv}=${deadline}\n`);
   }
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await evaluate();
     } catch (error) {
-      if (!(error instanceof GitHubRateLimitError)) {
+      const rateLimited = error instanceof GitHubRateLimitError;
+      if (!rateLimited && !(error instanceof GitHubStatusPublicationError)) {
         throw error;
       }
       // Do not resume a status write with stale authority after waiting. The
       // caller restarts from live PR, file, comment, role, and CI observations.
-      const delay =
-        Math.max(error.retryAt - Date.now(), 60_000 * 2 ** attempt) +
-        1_000 +
-        Math.floor(Math.random() * 15_000);
+      const delay = rateLimited
+        ? Math.max(error.retryAt - Date.now(), 60_000 * 2 ** attempt) +
+          1_000 +
+          Math.floor(Math.random() * 15_000)
+        : githubApiRetryDelaysMs[attempt];
       if (attempt >= 3 || Date.now() + delay + GITHUB_API_REQUEST_TIMEOUT_MS > deadline) {
         throw new Error(
-          "GitHub API rate-limit recovery budget exhausted; security review remains incomplete.",
+          "GitHub API recovery budget exhausted; security review remains incomplete.",
           { cause: error },
         );
       }
       console.warn(
-        `GitHub API rate limited (${error.status}); retrying the complete evaluation in ${Math.ceil(delay / 1_000)}s (attempt ${attempt + 1}/3).`,
+        `${rateLimited ? `GitHub API rate limited (${error.status})` : `GitHub status publication failed (${error.message})`}; retrying the complete evaluation in ${Math.ceil(delay / 1_000)}s (attempt ${attempt + 1}/3).`,
       );
       await wait(delay);
     }
@@ -152,18 +171,25 @@ export async function publishGuardStatus(guard, state, description) {
       }
     }
   }
-  await guard.api.request(
-    `/repos/${guard.owner}/${guard.repo}/statuses/${guard.pullRequest.head.sha}`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        context: guard.context,
-        state,
-        description: `PR #${guard.pullRequest.number}: ${description}`,
-        target_url: guard.runUrl,
-      }),
-    },
-  );
+  try {
+    await guard.api.request(
+      `/repos/${guard.owner}/${guard.repo}/statuses/${guard.pullRequest.head.sha}`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          context: guard.context,
+          state,
+          description: `PR #${guard.pullRequest.number}: ${description}`,
+          target_url: guard.runUrl,
+        }),
+      },
+    );
+  } catch (error) {
+    if (githubApiRetryStatuses.has(error?.status) || githubApiRetryCodes.has(error?.code)) {
+      throw new GitHubStatusPublicationError(error);
+    }
+    throw error;
+  }
 }
 
 export function sanitizeGuardDisplayValue(value) {
@@ -332,11 +358,36 @@ export function createGitHubApi(token, options = {}) {
     });
     const operationPromise = (async () => {
       for (let attempt = 0; ; attempt += 1) {
-        const response = await fetchImpl(`https://api.github.com${path}`, {
-          ...requestOptions,
-          signal: requestSignal,
-          headers: { ...baseHeaders, ...requestOptions.headers },
-        });
+        let response;
+        try {
+          response = await fetchImpl(`https://api.github.com${path}`, {
+            ...requestOptions,
+            signal: requestSignal,
+            headers: { ...baseHeaders, ...requestOptions.headers },
+          });
+        } catch (error) {
+          // Node fetch wraps transport failures in a TypeError with the socket
+          // or resolver error as its cause. Unknown failures must not be retried.
+          const code = error?.cause?.code ?? error?.code;
+          if (
+            (method === "GET" || method === "HEAD") &&
+            !requestSignal.aborted &&
+            githubApiRetryCodes.has(code) &&
+            attempt < retryDelaysMs.length
+          ) {
+            await wait(retryDelaysMs[attempt], undefined, { signal: requestSignal });
+            continue;
+          }
+          const detail = error instanceof Error ? error.message : String(error);
+          const requestError = new Error(
+            `GitHub API ${method} ${path} failed: ${code ? `${code}: ` : ""}${detail}`,
+            { cause: error },
+          );
+          if (!requestSignal.aborted) {
+            requestError.code = code;
+          }
+          throw requestError;
+        }
         if (response.status === 204) {
           return null;
         }

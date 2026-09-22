@@ -102,6 +102,10 @@ type GatewayHttpRequestAuthParams = GatewayHttpRequestAuthOptions & {
   req: IncomingMessage;
   res: ServerResponse;
 };
+
+type GatewayHttpRequestAuthCheckParams = Omit<GatewayHttpRequestAuthParams, "res"> & {
+  res?: ServerResponse;
+};
 export type AuthorizedControlUiReadRequest = AuthenticatedHttpUserProfile &
   Pick<AuthorizedGatewayHttpRequest, "hasCurrentClientAuthority" | "revalidate"> & {
     authMethod: NonNullable<GatewayAuthResult["method"]>;
@@ -309,14 +313,20 @@ export async function authorizeControlUiReadRequestOrReply(
   }
   const token = resolveControlUiReadAuthToken(params.req, params.allowQueryToken);
   const { authResult, authGeneration, deviceOperatorScopes } = await checkHttpOperatorCredentials(
-    { ...params, auth, token, rateLimiter: token ? params.rateLimiter : undefined },
+    { ...params, cfg, auth, token, rateLimiter: token ? params.rateLimiter : undefined },
     authorizeControlUiReadHttpGatewayConnect,
   );
   if (!authResult.ok) {
     sendGatewayAuthFailure(params.res, authResult);
     return null;
   }
-  const profileAuth = await checkAuthenticatedHttpUserProfile({ authResult, cfg, req: params.req });
+  const profileAuth = await checkAuthenticatedHttpUserProfile({
+    authResult,
+    cfg,
+    getRuntimeConfig: params.getRuntimeConfig,
+    req: params.req,
+    res: params.res,
+  });
   if (!profileAuth.ok) {
     sendGatewayHttpAuthFailure(params.res, profileAuth.authResult);
     return null;
@@ -494,14 +504,14 @@ export async function authorizePluginGatewayHttpRequestOrReply(
 }
 
 export async function checkGatewayHttpRequestAuth(
-  params: Omit<GatewayHttpRequestAuthParams, "res">,
+  params: GatewayHttpRequestAuthCheckParams,
   allowDeviceToken = false,
 ): Promise<GatewayHttpRequestAuthCheckResult> {
   const cfg = params.cfg ?? getRuntimeConfig();
   const hasCurrentClientAuthority = captureHttpRequestAuthority(params);
   const token = getBearerToken(params.req);
   const { authResult, deviceOperatorScopes }: HttpOperatorCredentialResult = allowDeviceToken
-    ? await checkHttpOperatorCredentials({ ...params, token }, authorizeHttpGatewayConnect)
+    ? await checkHttpOperatorCredentials({ ...params, cfg, token }, authorizeHttpGatewayConnect)
     : {
         authResult: await authorizeHttpGatewayConnect({
           auth: params.auth,
@@ -510,7 +520,7 @@ export async function checkGatewayHttpRequestAuth(
           trustedProxies: params.trustedProxies,
           allowRealIpFallback: params.allowRealIpFallback,
           rateLimiter: params.rateLimiter,
-          browserOriginPolicy: resolveHttpBrowserOriginPolicy(params.req, params.cfg),
+          browserOriginPolicy: resolveHttpBrowserOriginPolicy(params.req, cfg),
         }),
       };
   if (!authResult.ok) {
@@ -519,7 +529,13 @@ export async function checkGatewayHttpRequestAuth(
   if (!hasCurrentClientAuthority()) {
     return { ok: false, authResult: { ok: false, reason: "unauthorized" } };
   }
-  const profileAuth = await checkAuthenticatedHttpUserProfile({ authResult, cfg, req: params.req });
+  const profileAuth = await checkAuthenticatedHttpUserProfile({
+    authResult,
+    cfg,
+    getRuntimeConfig: params.getRuntimeConfig,
+    req: params.req,
+    res: params.res,
+  });
   if (!profileAuth.ok) {
     return profileAuth;
   }
