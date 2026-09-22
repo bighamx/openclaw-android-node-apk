@@ -263,7 +263,6 @@ describe("Code Mode live VM", () => {
     const workers = pool();
     const entered = Promise.withResolvers<void>();
     const yielded = vi.fn();
-    const start = performance.now();
     const waiting = workers.run(await payload(`${sleep} return 1;`), {
       timeoutMs: 15_000,
       onRequest: async (_value, { yieldSignal }) => {
@@ -278,6 +277,7 @@ describe("Code Mode live VM", () => {
       },
     });
     await entered.promise;
+    const start = performance.now();
     const quick = workers.run(await payload("return 2;"), { timeoutMs: 2000 });
     expect(await waiting).toMatchObject({ status: "waiting" });
     expect(await quick).toMatchObject({ status: "completed", value: { json: "2" } });
@@ -398,7 +398,8 @@ describe("Code Mode live VM", () => {
     const firstEntered = Promise.withResolvers<void>();
     const firstPressured = Promise.withResolvers<void>();
     const releaseFirst = Promise.withResolvers<void>();
-    const prepareSecond = Promise.withResolvers<unknown>();
+    const secondEntered = Promise.withResolvers<void>();
+    let secondBoundaries = 0;
     const first = workers.run(await payload(`${sleep} return 1;`), {
       timeoutMs: 15_000,
       onRequest: async (_value, { yieldSignal }) => {
@@ -409,9 +410,14 @@ describe("Code Mode live VM", () => {
       },
     });
     await firstEntered.promise;
-    const second = workers.run(() => prepareSecond.promise, {
+    const second = workers.run(await payload(`${sleep} ${sleep} return 2;`), {
       timeoutMs: 15_000,
-      onRequest: async (_value, { signal, yieldSignal }) => {
+      onRequest: async (value, { signal, yieldSignal }) => {
+        if (++secondBoundaries === 1) {
+          secondEntered.resolve();
+          await firstPressured.promise;
+          return response(resume(boundary(value), performance.now() + config.timeoutMs));
+        }
         if (!yieldSignal.aborted && !signal.aborted) {
           await new Promise<void>((resolve) => {
             yieldSignal.addEventListener("abort", () => resolve(), { once: true });
@@ -421,13 +427,15 @@ describe("Code Mode live VM", () => {
         return response({ kind: "checkpoint" });
       },
     });
+    // Cold worker startup completes before measuring queued work under pressure.
+    await secondEntered.promise;
     const quick = workers.run(await payload("return 3;"), { timeoutMs: 2000 });
     const outcomes = Promise.allSettled([first, second, quick]);
     try {
       await firstPressured.promise;
-      prepareSecond.resolve(await payload(`${sleep} return 2;`));
       await expect(quick).resolves.toMatchObject({ status: "completed", value: { json: "3" } });
       expect(await second).toMatchObject({ status: "waiting" });
+      expect(secondBoundaries).toBe(2);
     } finally {
       releaseFirst.resolve();
       await workers.close();

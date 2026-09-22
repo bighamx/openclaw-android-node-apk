@@ -87,15 +87,20 @@ async function write<Key extends keyof UserProfileWriteOperations>(
               if (entry.published) {
                 continue;
               }
-              entry.publication.reconcile(facts.after);
-              if (facts.changes.identities.length || facts.changes.channels.length) {
-                publishUserProfileAliasChange();
-              }
-              if (facts.changes.profiles.length && isDeepStrictEqual(facts.before, facts.after)) {
+              entry.publication.reconcile(facts.after, facts.emailBindings, () => {
+                if (facts.changes.identities.length || facts.changes.channels.length) {
+                  publishUserProfileAliasChange();
+                }
+                entry.published = true;
+                entry.fence.settle(true);
+              });
+              if (
+                facts.changes.profiles.length &&
+                facts.emailBindings.length === 0 &&
+                isDeepStrictEqual(facts.before, facts.after)
+              ) {
                 emitUserProfilesChanged();
               }
-              entry.published = true;
-              entry.fence.settle(true);
             }
           };
           const admission = createSqliteWorkerOperationAdmission((request, grant) => {
@@ -128,6 +133,7 @@ async function write<Key extends keyof UserProfileWriteOperations>(
             const publication = retainUserProfileMutationPublication(
               context.admission.identity,
               facts.before,
+              facts.emailBindings,
             );
             const fence = fenceUserProfileMutationAuthority(context.admission, facts.changes);
             const entry = { facts, publication, fence, granted: false, published: false };
@@ -148,9 +154,11 @@ async function write<Key extends keyof UserProfileWriteOperations>(
                   (receiptsValid && settlement.kind === "completed");
                 if (!entry.published && entry.granted) {
                   if (known) {
-                    entry.publication.reconcile(entry.facts.before);
+                    entry.publication.reconcile(entry.facts.before, [], () =>
+                      entry.fence.settle(true),
+                    );
                   } else {
-                    entry.publication.invalidate();
+                    entry.publication.invalidate(() => entry.fence.settle(false));
                   }
                 }
                 entry.fence.settle(known);

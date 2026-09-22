@@ -95,6 +95,17 @@ export function isReadRequest(input: unknown): input is OpenClawStateReadRequest
           (isRecord(input.command.input.cursor) &&
             typeof input.command.input.cursor.changedAtMs === "number" &&
             typeof input.command.input.cursor.environmentId === "string"))) ||
+      input.command.type === "userProfiles.catalog" ||
+      (input.command.type === "githubPublication.lifecycle" &&
+        (input.command.publicationKind === "shared" ||
+          input.command.publicationKind === "personal") &&
+        typeof input.command.requestId === "string") ||
+      ((input.command.type === "githubPublication.request" ||
+        input.command.type === "githubRepository.request") &&
+        typeof input.command.requestId === "string") ||
+      ((input.command.type === "githubPublication.knownPullRequestUrls" ||
+        input.command.type === "githubRepository.knownPullRequestUrls") &&
+        isRecord(input.command.input)) ||
       (input.command.type === "userProfiles.reconcile" &&
         typeof input.command.profileId === "string") ||
       (input.command.type === "userProfiles.channelIdentity.list" &&

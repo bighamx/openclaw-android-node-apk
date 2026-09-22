@@ -2,9 +2,9 @@ import type { EventEmitter } from "node:events";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
+import { useAutoCleanupTempDirTracker } from "openclaw/plugin-sdk/test-env";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { useAutoCleanupTempDirTracker } from "../../../../../test/helpers/temp-dir.js";
 import type { DiscordE2eNativeMessage } from "./channel-e2e-recorder.js";
 import { createDiscordChannelE2eSession, type DiscordChannelE2eSession } from "./channel-e2e.js";
 

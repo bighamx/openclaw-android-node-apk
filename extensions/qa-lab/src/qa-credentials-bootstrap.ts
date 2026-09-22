@@ -5,7 +5,7 @@ const BROKER_DEPLOYMENT = "reminiscent-ibex-847";
 const BROKER_SITE_URL = `https://${BROKER_DEPLOYMENT}.convex.site`;
 const CLI_LOOKUP_TIMEOUT_MS = 15_000;
 
-export type QaConvexLauncher = { command: string; prefix: string[]; label: string };
+type QaConvexLauncher = { command: string; prefix: string[]; label: string };
 export type QaConvexLookupOptions = {
   cwd: string;
   env: NodeJS.ProcessEnv;
@@ -13,7 +13,7 @@ export type QaConvexLookupOptions = {
   launcher: QaConvexLauncher;
 };
 export type QaConvexLookup = (args: string[], options: QaConvexLookupOptions) => Promise<string>;
-export type QaConvexCommandResult = {
+type QaConvexCommandResult = {
   status: number | null;
   stdout: string;
   stderr: string;

@@ -162,9 +162,9 @@ export function resolveSessionPatchModelSelection(params: {
   };
 }
 
-/** Model selection and send admission expose the same per-chat recovery contract. */
+/** Native selection and session operations expose the same per-chat recovery contract. */
 export function resolveSessionNativeRuntimeRestriction(params: {
-  operation: "selection" | "send";
+  operation: "fork" | "selection" | "send";
   cfg: OpenClawConfig;
   agentId: string;
   sessionKey: string;

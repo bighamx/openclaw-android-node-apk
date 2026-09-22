@@ -58,7 +58,6 @@ import {
   CHAT_HISTORY_MAX_SINGLE_MESSAGE_BYTES,
   createChatHistoryByteCounter,
   createChatHistoryActivityProjection,
-  chatHistoryActivityBytes,
   replaceOversizedChatHistoryMessages,
   reportOmittedChatHistory,
   trimChatHistoryActivity,
@@ -668,7 +667,8 @@ export async function handleChatHistoryRequest({
           const boundedInFlightRun = boundInFlightRunSnapshotForChatHistory({
             snapshot: inFlightRun,
             messages: delta.messages,
-            maxBytes: maxHistoryBytes - chatHistoryActivityBytes(delta.activity),
+            getMessagesBytes: () => delta.messagesBytes,
+            maxBytes: maxHistoryBytes - delta.activityBytes,
           });
           respond(true, {
             kind: "delta",

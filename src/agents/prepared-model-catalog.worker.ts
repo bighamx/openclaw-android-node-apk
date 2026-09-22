@@ -392,13 +392,11 @@ async function runCatalogRequest(
         providerStaticModels: undefined,
       });
     }
-    const configuredProviderModelIds = new Map<string, readonly string[]>();
     const { value: source, providerExpiries } = await captureProviderCatalogExpiries(() =>
       prepareAgentCatalogSource(exactAgentFacts, catalogGeneration, "live", false, {
         authStore,
         providerDiscoveryProviderIds: request.providerIds,
         providerDiscoveryTimeoutMs: PREPARED_MODEL_CATALOG_WORKER_TIMEOUT_MS,
-        providerCatalogInventory: { agentId: value.input.agentId, configuredProviderModelIds },
       }),
     );
     const facts = await prepareFullCatalogFacts(
@@ -449,7 +447,6 @@ async function runCatalogRequest(
       snapshot: facts.modelCatalog,
       runtimeModels,
       providerExpiries,
-      configuredProviderModelIds,
       configuredRuntimeModels: facts.configuredRuntimeModels,
       credentials: catalogCredentials,
       providerAuthLabels: withPluginRuntimeGenerationScope(pluginGenerationScope, () =>
@@ -473,7 +470,8 @@ async function runCatalogRequest(
       authStore,
       authModes: resolveUsableAgentCredentialModes(catalogCredentials),
     };
-    await work.drain();
+    work.beginClose();
+    await work.runWhenIdle(() => undefined);
     if (acquiredDiscovery) {
       const previous = prepared.discovery;
       prepared.discovery = acquiredDiscovery;
@@ -490,7 +488,8 @@ async function runCatalogRequest(
     try {
       // A catalog deadline can finish observing OAuth before its credential write settles.
       // Join that admitted work before releasing its plugin generation and source context.
-      await work.drain();
+      work.beginClose();
+      await work.runWhenIdle(() => undefined);
       if (acquiredDiscovery && !completed) {
         if (prepared?.discovery === acquiredDiscovery) {
           prepared.discovery = undefined;
@@ -505,6 +504,8 @@ async function runCatalogRequest(
         }
       }
     } finally {
+      // Registry retirement is admitted cleanup in this request; close only after it settles.
+      await work.drain();
       if (directoryOwner && registeredDirectoryOwner) {
         unregisterResolvedAgentDir(directoryOwner);
       }

@@ -7,7 +7,7 @@ export type QaChannelE2eMessage = {
   attachments?: Array<{ id: string; name?: string; contentType?: string; url?: string }>;
 };
 
-export type QaChannelE2eCapabilities = {
+type QaChannelE2eCapabilities = {
   automated: string[];
   observationOnly: string[];
   manualClient: string[];
