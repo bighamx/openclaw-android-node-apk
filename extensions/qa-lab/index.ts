@@ -3,6 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 // Keep plugin registration independent of private QA transports, which packaged runtimes omit.
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { jsonResult } from "openclaw/plugin-sdk/tool-results";
+import { QA_SESSION_OBSERVER_HEADER } from "./src/providers/shared/session-observer-registry.js";
 import { createQaLabWebSearchProvider } from "./src/qa-web-search-provider.js";
 import { createStaticSshWorkerProvider } from "./src/static-ssh-worker-provider.js";
 
@@ -17,6 +18,26 @@ export default definePluginEntry({
   name: "QA Lab",
   description: "Private QA automation harness and debugger UI",
   register(api) {
+    const sessionObserverUrl =
+      api.config.models?.providers?.["mock-openai"]?.request?.headers?.[QA_SESSION_OBSERVER_HEADER];
+    if (typeof sessionObserverUrl === "string") {
+      // This awaited QA gate observes full identities, including hidden/raw runs,
+      // before a provider can truncate them for cache affinity.
+      api.on("before_agent_run", async (_event, context) => {
+        if (!context.sessionId) {
+          return;
+        }
+        const response = await fetch(sessionObserverUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sessionId: context.sessionId }),
+        });
+        await response.text();
+        if (!response.ok) {
+          throw new Error(`QA mock session observation failed: HTTP ${response.status}`);
+        }
+      });
+    }
     api.registerTool(
       {
         name: "qa_restart_wait",

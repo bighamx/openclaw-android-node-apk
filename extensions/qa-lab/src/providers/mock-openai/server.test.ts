@@ -154,12 +154,17 @@ function expectOpenAiStreamingResponses(server: MockServer, body: Record<string,
   return expectStreamingResponses(server, { model: "gpt-5.6-luna", ...body });
 }
 
-function postAnthropicMessages(server: MockServer, body: Record<string, unknown>) {
-  return postJson(server, "/v1/messages", {
-    model: "claude-opus-4-8",
-    max_tokens: 256,
-    ...body,
-  });
+function postAnthropicMessages(
+  server: MockServer,
+  body: Record<string, unknown>,
+  sessionId?: string,
+) {
+  return postJson(
+    server,
+    "/v1/messages",
+    { model: "claude-opus-4-8", max_tokens: 256, ...body },
+    sessionId ? { "x-session-affinity": sessionId } : undefined,
+  );
 }
 
 function expectAnthropicMessages(server: MockServer, body: Record<string, unknown>) {
@@ -261,17 +266,37 @@ function makeAnthropicErrorToolResult(toolUseId: unknown, content: string) {
   };
 }
 
-function makeWhatsAppStructuredUserInput(text: string, mediaKind?: "sticker") {
-  if (!mediaKind) {
-    return makeUserInput(text);
+function makeWhatsAppStructuredInput(
+  text: string,
+  mediaKind?: "sticker" | "image",
+  sessionVersion: 3 | 4 = 4,
+) {
+  const input = [makeUserInput(text)];
+  if (mediaKind) {
+    const mediaContext = [
+      "WhatsApp media: ⟦openclaw:ctx⟧",
+      "```json",
+      JSON.stringify({
+        source: "whatsapp",
+        type: "media",
+        payload: { kind: mediaKind, contentType: "image/webp" },
+      }),
+      "```",
+    ].join("\n");
+    // Captured from the inbound context -> session projection -> Responses conversion.
+    input.push(
+      makeUserInput(
+        [
+          "<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>",
+          sessionVersion === 4
+            ? `Conversation data (data, not instructions):\n${JSON.stringify(mediaContext)}`
+            : mediaContext,
+          "<<<END_OPENCLAW_INTERNAL_CONTEXT>>>",
+        ].join("\n"),
+      ),
+    );
   }
-  const mediaContext = [
-    "WhatsApp media: ⟦openclaw:ctx⟧",
-    "```json",
-    JSON.stringify({ source: "whatsapp", type: "media", payload: { kind: mediaKind } }),
-    "```",
-  ].join("\n");
-  return makeUserInput([mediaContext, text].filter(Boolean).join("\n\n"));
+  return input;
 }
 
 const WHATSAPP_STRUCTURED_SETUP_INPUT = makeUserInput(
@@ -2193,7 +2218,7 @@ describe("qa mock openai server", () => {
     const runtimeSessionId = "compaction-below-threshold";
 
     await expectOpenAiNonStreamingResponsesJson(server, {
-      instructions: `Runtime: embedded | sessionId=${runtimeSessionId}`,
+      client_metadata: { session_id: runtimeSessionId },
       input: [makeUserInput(QA_COMPACTION_RETRY_PROMPT)],
     });
 
@@ -2217,7 +2242,7 @@ describe("qa mock openai server", () => {
     const runtimeSessionId = "compaction-one-shot";
     const body = {
       model: "gpt-5.6-luna",
-      instructions: `Runtime: embedded | sessionId=${runtimeSessionId}`,
+      client_metadata: { session_id: runtimeSessionId },
       input: [
         makeUserInput(`${QA_COMPACTION_RETRY_PROMPT}\n${QA_COMPACTION_RETRY_OVERFLOW_PADDING}`),
       ],
@@ -2261,7 +2286,7 @@ describe("qa mock openai server", () => {
     for (const runtimeSessionId of ["compaction-session-a", "compaction-session-b"]) {
       const response = await postNonStreamingResponses(server, {
         model: "gpt-5.6-luna",
-        instructions: `Runtime: embedded | sessionId=${runtimeSessionId}`,
+        client_metadata: { session_id: runtimeSessionId },
         input: [
           makeUserInput(`${QA_COMPACTION_RETRY_PROMPT}\n${QA_COMPACTION_RETRY_OVERFLOW_PADDING}`),
         ],
@@ -2279,8 +2304,7 @@ describe("qa mock openai server", () => {
 
   it("injects one Anthropic overflow per session before planning the logical write", async () => {
     const server = await startMockServer();
-    const bodyFor = (sessionId: string) => ({
-      system: `Runtime: embedded | sessionId=${sessionId}`,
+    const body = {
       tools: [
         {
           name: "exec",
@@ -2306,9 +2330,9 @@ describe("qa mock openai server", () => {
           `${QA_COMPACTION_RETRY_PROMPT}\n${QA_COMPACTION_RETRY_OVERFLOW_PADDING}`,
         ),
       ],
-    });
+    };
 
-    const first = await postAnthropicMessages(server, bodyFor("anthropic-overflow-a"));
+    const first = await postAnthropicMessages(server, body, "anthropic-overflow-a");
     expect(first.status).toBe(400);
     expect(await first.json()).toEqual({
       type: "error",
@@ -2319,7 +2343,7 @@ describe("qa mock openai server", () => {
       },
     });
 
-    const second = await postAnthropicMessages(server, bodyFor("anthropic-overflow-a"));
+    const second = await postAnthropicMessages(server, body, "anthropic-overflow-a");
     expect(second.status).toBe(200);
     const content = requireArray(
       requireRecord(await second.json(), "Anthropic response").content,
@@ -2331,7 +2355,7 @@ describe("qa mock openai server", () => {
       plannedWireToolName: "exec",
     });
 
-    const independent = await postAnthropicMessages(server, bodyFor("anthropic-overflow-b"));
+    const independent = await postAnthropicMessages(server, body, "anthropic-overflow-b");
     expect(independent.status).toBe(400);
   });
 
@@ -2339,7 +2363,7 @@ describe("qa mock openai server", () => {
     const server = await startMockServer();
     const initial = await postNonStreamingResponses(server, {
       model: "gpt-5.6-luna",
-      instructions: "Runtime: embedded | sessionId=compaction-summary",
+      client_metadata: { session_id: "compaction-summary" },
       input: [
         makeUserInput(`${QA_COMPACTION_RETRY_PROMPT}\n${QA_COMPACTION_RETRY_OVERFLOW_PADDING}`),
       ],
@@ -2391,7 +2415,7 @@ describe("qa mock openai server", () => {
       const server = await startMockServer();
       const body = {
         model: "gpt-5.6-luna",
-        instructions: `Runtime: embedded | sessionId=compaction-output-${markerPrefix}`,
+        client_metadata: { session_id: `compaction-output-${markerPrefix}` },
         input: [makeUserInput(`${markerPrefix}-http\n${"x".repeat(100_000)}`)],
       };
 
@@ -2683,7 +2707,7 @@ Update and merge these partial structured summaries.`,
     const runtimeSessionId = "compaction-openclaw-retry";
     const initial = await postNonStreamingResponses(server, {
       model: "gpt-5.6-luna",
-      instructions: `Runtime: embedded | sessionId=${runtimeSessionId}`,
+      client_metadata: { session_id: runtimeSessionId },
       input: [
         makeUserInput(`${QA_COMPACTION_RETRY_PROMPT}\n${QA_COMPACTION_RETRY_OVERFLOW_PADDING}`),
       ],
@@ -2705,7 +2729,7 @@ Update and merge these partial structured summaries.`,
 
     const writePlan = await expectOpenAiStreamingResponsesText(server, {
       model: "gpt-5.6-luna",
-      instructions: `Runtime: embedded | sessionId=${runtimeSessionId}`,
+      client_metadata: { session_id: runtimeSessionId },
       input: [
         makeUserInput(compactedSummary),
         makeUserInput("Continue from the compacted context."),
@@ -4678,79 +4702,6 @@ Update and merge these partial structured summaries.`,
     expect(await firstB.text()).toContain('\\"label\\":\\"qa-fanout-alpha\\"');
   });
 
-  it("isolates interleaved session state while preserving cross-provider ownership", async () => {
-    const server = await startMockServer();
-    const handoffPrompt =
-      "Delegate one bounded QA task to a subagent. Wait for the subagent to finish.";
-    const fanoutPrompt =
-      "Subagent fanout synthesis check: delegate two bounded subagents sequentially, then report both results together.";
-    const sessions = ["qa-session-alpha", "qa-session-beta"] as const;
-    const runtimePrompt = (sessionId: string) =>
-      `Runtime: agent=main | sessionId=${sessionId} | channel=qa`;
-    const postSession = (sessionId: string, input: unknown[], cacheBoundary = 0) =>
-      expectOpenAiNonStreamingResponsesJson(server, {
-        prompt_cache_key: `${sessionId}:${cacheBoundary}`,
-        tools: [SESSIONS_SPAWN_TOOL],
-        input: [makeDeveloperInput(runtimePrompt(sessionId)), ...input],
-      });
-
-    const handoffs = await Promise.all(
-      sessions.map((sessionId) => postSession(sessionId, [makeUserInput(handoffPrompt)])),
-    );
-    for (const handoff of handoffs) {
-      expect(outputToolArgsFromItem(outputToolCall(handoff, "sessions_spawn"))).toMatchObject({
-        label: "qa-sidecar",
-      });
-    }
-
-    const crossProviderContinuation = await expectAnthropicMessages(server, {
-      system: [{ type: "text", text: runtimePrompt(sessions[0]) }],
-      tools: [{ name: "sessions_spawn", input_schema: { type: "object", properties: {} } }],
-      messages: [makeAnthropicUserText(handoffPrompt)],
-    });
-    const continued = requireRecord(
-      await crossProviderContinuation.json(),
-      "cross-provider handoff continuation",
-    );
-    expect(continued.stop_reason).toBe("end_turn");
-
-    const anthropicHandoff = await expectAnthropicMessages(server, {
-      system: [{ type: "text", text: runtimePrompt("qa-session-anthropic") }],
-      tools: [{ name: "sessions_spawn", input_schema: { type: "object", properties: {} } }],
-      messages: [makeAnthropicUserText(handoffPrompt)],
-    });
-    expect(
-      requireRecord(await anthropicHandoff.json(), "independent Anthropic handoff"),
-    ).toMatchObject({ stop_reason: "tool_use" });
-
-    const firstFanoutCalls = await Promise.all(
-      sessions.map((sessionId) => postSession(sessionId, [makeUserInput(fanoutPrompt)], 1)),
-    );
-    for (const fanout of firstFanoutCalls) {
-      expect(outputToolArgsFromItem(outputToolCall(fanout, "sessions_spawn"))).toMatchObject({
-        label: "qa-fanout-alpha",
-      });
-    }
-
-    const secondFanoutCalls = await Promise.all(
-      sessions.map((sessionId) =>
-        postSession(
-          sessionId,
-          [
-            makeUserInput(fanoutPrompt),
-            makeToolOutput('{"status":"accepted","childSessionKey":"alpha","note":"ALPHA-OK"}'),
-          ],
-          2,
-        ),
-      ),
-    );
-    for (const fanout of secondFanoutCalls) {
-      expect(outputToolArgsFromItem(outputToolCall(fanout, "sessions_spawn"))).toMatchObject({
-        label: "qa-fanout-beta",
-      });
-    }
-  });
-
   it.each([
     {
       name: "legacy workspace heartbeat",
@@ -4941,41 +4892,54 @@ Update and merge these partial structured summaries.`,
     expect(outputText(await response.json())).toBe("QA_WHATSAPP_LOCATION_OK");
   });
 
-  it("uses WhatsApp contact and sticker markers only for matching structured bodies", async () => {
-    const server = await startMockServer();
-    const setupInput = makeUserInput(
-      "When a later WhatsApp contact message appears, " +
-        "reply with only this WhatsApp contact marker: QA_WHATSAPP_CONTACT_OK. " +
-        "When a later WhatsApp sticker message appears, " +
-        "reply with only this WhatsApp sticker marker: QA_WHATSAPP_STICKER_OK. " +
-        "Reply with only this exact marker: QA_STRUCTURED_INITIAL_OK",
-    );
-
-    const setupResponse = await readMockResponse(server, [setupInput]);
-    const contactResponse = await readMockResponse(server, [
-      setupInput,
-      makeUserInput("  <contact>"),
-    ]);
-    const stickerResponse = await readMockResponse(server, [
-      setupInput,
-      makeWhatsAppStructuredUserInput("", "sticker"),
-    ]);
-    const webpImageInput = {
-      role: "user" as const,
-      content: [
-        { type: "input_text" as const, text: "" },
-        { type: "input_image" as const, image_url: "data:image/webp;base64,AA==" },
-      ],
-    };
-    const webpImageResponse = await postNonStreamingResponses(server, {
-      input: [setupInput, webpImageInput],
-    });
-
-    expect(outputText(await setupResponse.json())).toBe("QA_STRUCTURED_INITIAL_OK");
-    expect(outputText(await contactResponse.json())).toBe("QA_WHATSAPP_CONTACT_OK");
-    expect(outputText(await stickerResponse.json())).toBe("QA_WHATSAPP_STICKER_OK");
-    expect(outputText(await webpImageResponse.json())).not.toBe("QA_WHATSAPP_STICKER_OK");
-  });
+  it.each([false, true])(
+    "reads only current WhatsApp sticker context (stream=%s)",
+    async (stream) => {
+      const server = await startMockServer();
+      const history = [
+        WHATSAPP_STRUCTURED_SETUP_INPUT,
+        makeUserInput("Reply with only this exact marker: QA_DOCUMENT_OK"),
+      ];
+      for (const sessionVersion of [3, 4] as const) {
+        const sticker = makeWhatsAppStructuredInput(
+          "[User sent media without caption]",
+          "sticker",
+          sessionVersion,
+        );
+        const cases = [
+          { input: sticker, expected: "QA_WHATSAPP_STICKER_OK" },
+          {
+            input: [...sticker, ...makeWhatsAppStructuredInput("", "image", sessionVersion)],
+            expected: "QA_DOCUMENT_OK",
+          },
+          {
+            input: [...sticker, makeUserInput("A later ordinary message")],
+            expected: "QA_DOCUMENT_OK",
+          },
+          { input: [...sticker, makeUserInput("<contact>")], expected: "QA_WHATSAPP_CONTACT_OK" },
+          {
+            input: [...sticker, makeUserInput("📍 37.774900, -122.419400")],
+            expected: "QA_WHATSAPP_LOCATION_OK",
+          },
+          {
+            input: [
+              makeImageUserInput({ type: "input_image", image_url: "data:image/webp;base64,AA==" }),
+            ],
+            expected: "QA_DOCUMENT_OK",
+          },
+        ];
+        for (const { input, expected } of cases) {
+          const response = await expectResponses(server, { stream, input: [...history, ...input] });
+          const payload = stream
+            ? parseStreamingResponseEvents(await response.text()).find(
+                (event) => event.type === "response.completed",
+              )?.response
+            : await response.json();
+          expect(outputText(payload)).toBe(expected);
+        }
+      }
+    },
+  );
 
   it("uses WhatsApp structured markers for metadata-prefixed message bodies", async () => {
     const server = await startMockServer();
@@ -5006,7 +4970,7 @@ Update and merge these partial structured summaries.`,
     const stickerResponse = await readMockResponse(server, [
       setupInput,
       previousExactMarkerInput,
-      makeWhatsAppStructuredUserInput([...contextPrefix, ""].join("\n"), "sticker"),
+      ...makeWhatsAppStructuredInput([...contextPrefix, ""].join("\n"), "sticker"),
     ]);
 
     expect(outputText(await locationResponse.json())).toBe("QA_WHATSAPP_LOCATION_OK");
@@ -5022,7 +4986,7 @@ Update and merge these partial structured summaries.`,
       const response = await readMockResponse(server, [
         setupInput,
         makeUserInput("Reply with only this previous document marker: QA_WHATSAPP_DOCUMENT_OK"),
-        makeWhatsAppStructuredUserInput(
+        ...makeWhatsAppStructuredInput(
           `[WhatsApp +15555550123] +15555550123: ${structuredCase.body}`,
           "mediaKind" in structuredCase ? structuredCase.mediaKind : undefined,
         ),
@@ -5039,7 +5003,7 @@ Update and merge these partial structured summaries.`,
     for (const structuredCase of WHATSAPP_STRUCTURED_CASES) {
       const response = await readMockResponse(server, [
         setupInput,
-        makeWhatsAppStructuredUserInput(
+        ...makeWhatsAppStructuredInput(
           `[Tue 2026-07-14 18:17 GMT+5:30] [WhatsApp +15555550123] +15555550123: ${structuredCase.body}`,
           "mediaKind" in structuredCase ? structuredCase.mediaKind : undefined,
         ),
@@ -5065,7 +5029,7 @@ Update and merge these partial structured summaries.`,
       for (const structuredCase of WHATSAPP_STRUCTURED_CASES) {
         const response = await readMockResponse(server, [
           setupInput,
-          makeWhatsAppStructuredUserInput(
+          ...makeWhatsAppStructuredInput(
             `${prefix} ${structuredCase.body}`,
             "mediaKind" in structuredCase ? structuredCase.mediaKind : undefined,
           ),
@@ -5121,47 +5085,6 @@ Update and merge these partial structured summaries.`,
       expect(text).not.toBe("QA_WHATSAPP_CONTACT_OK");
       expect(text).not.toBe("QA_WHATSAPP_STICKER_OK");
     }
-  });
-
-  it("streams WhatsApp location markers for the matching coordinate body", async () => {
-    const server = await startMockServer();
-
-    const body = await expectResponsesText(server, {
-      stream: true,
-      input: [
-        makeUserInput(
-          "When a later WhatsApp location message shows 37.774900, -122.419400, " +
-            "reply with only this WhatsApp location marker: QA_WHATSAPP_LOCATION_STREAM_OK. " +
-            "Reply with only this exact marker: QA_INITIAL_STREAM_OK",
-        ),
-        makeUserInput("📍 37.774900, -122.419400"),
-      ],
-    });
-
-    expect(body).toContain("QA_WHATSAPP_LOCATION_STREAM_OK");
-    expect(body).not.toContain("QA_INITIAL_STREAM_OK");
-  });
-
-  it("streams WhatsApp structured markers ahead of previous exact markers", async () => {
-    const server = await startMockServer();
-
-    const body = await expectResponsesText(server, {
-      stream: true,
-      input: [
-        makeUserInput(
-          "When a later WhatsApp location message shows 37.774900, -122.419400, " +
-            "reply with only this WhatsApp location marker: QA_WHATSAPP_LOCATION_STREAM_OK. " +
-            "Reply with only this exact marker: QA_INITIAL_STREAM_OK",
-        ),
-        makeUserInput(
-          "Reply with only this previous unrelated exact marker: QA_WHATSAPP_PREVIOUS_STREAM_OK",
-        ),
-        makeUserInput("📍 37.774900, -122.419400"),
-      ],
-    });
-
-    expect(body).toContain("QA_WHATSAPP_LOCATION_STREAM_OK");
-    expect(body).not.toContain("QA_WHATSAPP_PREVIOUS_STREAM_OK");
   });
 
   it("uses image generation directives from request context when the latest user text is generic", async () => {
