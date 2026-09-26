@@ -26,6 +26,21 @@ or `withOpenClawAgentDatabaseReadOnly` alone, does not move execution off thread
 `readWithCanonicalSessionAdmission` validates session reads on the executing
 thread; invoke it inside the worker's admitted reader.
 
+Channel setup awaits a fresh policy read after the agent-selection prompt.
+Deferred plugin migration rows are read by the shared-state worker, and setup
+rechecks its config owner after the read before using the selected agent. Each
+policy read obtains current rows; it does not retain migration exclusions across
+later operations. The updater and plugin source-cleanup synchronous effect guards
+retain their existing fresh-read contracts in their CLI or child-process owners.
+
+Plugin requirement batches prepare their final installed index through the existing
+metadata worker after installation and compensation settle. Preparation seals
+collection, reads an uncached row from the captured database, and retains the
+original lifecycle lease until the read settles. It rechecks lease ownership and
+batch closure before publishing runtime targets. Synchronous lease primitives and
+repeated source-cleanup reads remain unchanged migration work; this one-shot
+preparation does not replace their fresh authority checks.
+
 Writers use the SQLite worker broker's `state.write` or `agent.write` operation
 through their existing domain adapter, such as
 `runOpenClawStateWorkerOperation`. The connection-bound Kysely kernel and
@@ -33,6 +48,17 @@ transaction callback remain synchronous **inside the worker**. Complete
 asynchronous planning first, then reread authoritative rows inside the admitted
 transaction. Preserve FIFO order, coordinator custody, transaction/commit grants,
 and settlement of accepted write-capable work.
+
+Published agent and shared-state database timers dispatch periodic WAL checkpoints
+and bounded page reclamation through those same writers. The existing timer keeps
+its cadence and page budget, releases writer custody between units, and installs
+the worker's checkpoint health only while its original database owner is current.
+Native checkpoint work and file-size diagnostics run in the worker. Linux
+sidecar containment retains its synchronous scan at timer entry, before identity
+admission can refuse dispatch or close can clean up the original handle. Host
+admission and physical-identity checks remain on the host.
+Existing worker-local maintenance and synchronous offline/close checkpoints retain
+their owners; durability, schemas, retention, and update behavior are unchanged.
 
 Worker authority requests wait for the retained host owner's grant or refusal;
 host scheduling delays do not expire that authority. The host still checks current
@@ -112,6 +138,14 @@ result or native worker exit before releasing writer admission, publishing facts
 or releasing request custody. The parent does not open SQLite or synchronously
 wait for the worker's commit. This changes no schema, retention, or update behavior.
 
+Ordinary lifecycle upserts read their selected rows and pending-archive fact in
+one read-worker snapshot. A matching physical database with no pending archives
+skips recovery; archive-producing mutations, native scopes, and Doctor transfers
+retain publication. Later foreign archive commits are visible to the next snapshot.
+Standalone recovery probes reuse the read worker without archive or writer admission.
+Maintenance finalization takes writer admission only when its worker requests native
+access, then rechecks current entries and retains admission through commit publication.
+
 Physical page reclamation releases the session writer permit between vacuum units,
 so queued foreground writers receive their FIFO turn before the next unit. Each
 connection starts with eight-page units and adjusts toward a 25 ms hold target,
@@ -166,6 +200,14 @@ pass until a newer completed checkpoint. Exact lifecycle removal and logical
 maintenance planning limit reference results to the generations they might
 delete. No new cache, index, schema, retention policy, or update step is required.
 
+ACP session listing scans metadata in the shared-state read worker and joins
+file-backed entries through the canonical session reader. The reader owns physical
+store selection, snapshot continuations, and cleanup; listing preserves row order,
+lifecycle filtering, complete entry metadata, and missing-store behavior. Cold
+configuration reads also use their asynchronous owner. Process-held incognito
+stores retain their existing native reader and remain separate migration work.
+Schemas, stored bytes, retention, public APIs, and update behavior are unchanged.
+
 ## Migrate a caller
 
 1. Trace the registered request, event, or timer through the store owner. Check
@@ -198,6 +240,15 @@ transcript-session keys, and SSE inline subagent visibility reads remain migrati
 debt. Process-held incognito databases and the existing
 CLI-import history path still need their owner/lifetime migration; they are not
 new synchronous exceptions or fallbacks for a failed durable worker read.
+
+Artifact lists, image pages, and exact transcript-image selection use that same
+history worker. The worker scans and decodes transcript payloads and returns
+selected artifacts; connection-owned cursors and current access checks stay on
+the Gateway. General transcript pages, anchored visibility reads, and public
+share pages also use the worker facade. Read-only image discovery does not
+restore cold history, while ordinary reads retain their existing restoration
+owner. Process-held incognito data and native callback visitors retain their
+current owners. Schemas, stored bytes, retention, and update behavior are unchanged.
 
 Exact message membership reads for managed attachments also use the history
 worker. The worker validates the entire visible JSON range on every lookup,
@@ -447,8 +498,12 @@ Secret-store expiry runs in that worker for scheduled Gateway cleanup and
 post-mutation cleanup. The caller captures the database and expiry cutoffs before
 yielding; the worker retains the existing SQL and expiry rules and returns only
 the deleted count. Scheduled sweeps coalesce while one is active, and Gateway
-shutdown stops scheduling and joins accepted cleanup. Ordinary secret-store
-set/delete operations remain separate synchronous migration debt.
+shutdown stops scheduling and joins accepted cleanup. An OpenClaw chat that saves
+a key for a config path writes its store entry in the same worker: one
+transaction mints a random entry name, inserts a new row without touching
+existing ones, and admits the write through the requester's live
+authority at transaction and commit. Other secret-store set/delete operations
+remain separate synchronous migration debt.
 
 Placement change reporting reads its before/after snapshots in the shared-state
 read worker using the placement store's row codec. It transfers only session
