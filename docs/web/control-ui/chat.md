@@ -454,6 +454,8 @@ Code blocks keep your expansion and wrapping choices when their closing fence
 arrives and later paragraphs stream into the same assistant reply. Replacing the
 message, correcting earlier content, or changing rendering options starts a fresh
 view. References that change earlier Markdown can also reset the view.
+Completed lists also stay cached as later blocks arrive; loose or nested list
+continuations remain together until the list ends.
 
 **Copy URL** in browser tab cards also works on plain HTTP connections where the
 browser does not provide its Clipboard API.
@@ -699,7 +701,9 @@ Automation task transcripts stay tied to the recorded run, including after its
 temporary continuation session is removed or the automation runs again. If that
 recorded transcript is unavailable, the viewer reports an error instead of
 showing a newer run. Select **View transcript** under **Automations → Run history**
-to read that exact run without opening its temporary session.
+to read that exact run without opening its temporary session. Selecting **All
+automations**, opening another automation, or starting a new automation closes the
+run viewer; refreshing the same panel keeps it open.
 
 The automation run viewer displays the supplied transcript. Core session transcripts
 are currently capped at 8,000 characters per text block. The Chat panel's full-text recovery may be unavailable
