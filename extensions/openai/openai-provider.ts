@@ -3,7 +3,6 @@ import type {
   ProviderRuntimeModel,
 } from "openclaw/plugin-sdk/plugin-entry";
 import type { LiveModelCatalogFetchGuard } from "openclaw/plugin-sdk/provider-catalog-live-runtime";
-import type { ProviderCatalogOutcome } from "openclaw/plugin-sdk/provider-catalog-shared";
 import { createProviderApiKeyAuthMethod } from "openclaw/plugin-sdk/provider-entry";
 import {
   buildFamilyForwardCompatModel,
@@ -43,8 +42,9 @@ import {
   OPENAI_DEFAULT_MODEL,
 } from "./default-models.js";
 import {
+  buildOpenAIUnknownModelHint,
   OPENAI_CHAT_LATEST_MODEL_ID,
-  OPENAI_GPT_53_CODEX_SPARK_MODEL_ID,
+  OPENAI_DAYBREAK_MODEL_IDS,
   OPENAI_GPT_54_MINI_MODEL_ID,
   OPENAI_GPT_54_MODEL_ID,
   OPENAI_GPT_54_NANO_MODEL_ID,
@@ -62,6 +62,11 @@ import {
   normalizeOpenAIModelRouteId,
   resolveOpenAICodexReasoningEfforts,
 } from "./model-route-contract.js";
+import {
+  type OpenAILiveProviderCatalog,
+  projectOpenAICatalog,
+  readOpenAICodexServiceTiers,
+} from "./model-service-tiers.js";
 import {
   buildOpenAIChatGPTAuthMethodRuns,
   buildOpenAICodexProviderHooks,
@@ -162,11 +167,6 @@ function buildOpenAIManifestModelsForBaseUrl(baseUrl: string): ModelDefinitionCo
   );
 }
 
-type OpenAILiveProviderCatalog = {
-  provider: ModelProviderConfig;
-  outcome?: ProviderCatalogOutcome;
-};
-
 function buildOpenAIStaticPlatformProviderConfig(
   apiKey?: string,
   baseUrl = resolveOpenAIDefaultBaseUrl(),
@@ -176,20 +176,6 @@ function buildOpenAIStaticPlatformProviderConfig(
     api: "openai-responses",
     ...(apiKey ? { apiKey } : {}),
     models: buildOpenAIManifestModelsForBaseUrl(baseUrl),
-  };
-}
-
-function projectOpenAICatalog(catalog: OpenAILiveProviderCatalog, profileId?: string) {
-  const scopedProfileId = profileId?.trim();
-  return {
-    providers: { [PROVIDER_ID]: catalog.provider },
-    ...(catalog.outcome
-      ? {
-          outcomes: [
-            scopedProfileId ? { ...catalog.outcome, profileId: scopedProfileId } : catalog.outcome,
-          ],
-        }
-      : {}),
   };
 }
 
@@ -412,6 +398,7 @@ function buildOpenAICodexStaticProviderConfig(): ModelProviderConfig {
       // New model availability comes from successful account discovery.
       if (
         OPENAI_GPT_6_MODEL_IDS.some((id) => id === modelId) ||
+        OPENAI_DAYBREAK_MODEL_IDS.some((id) => id === modelId) ||
         (modelId.startsWith("gpt-5.6") && modelId !== OPENAI_GPT_56_SOL_MODEL_ID)
       ) {
         return [];
@@ -455,6 +442,7 @@ async function buildOpenAICodexLiveProviderConfig(params: {
     const models = rows
       .map((row) => buildOpenAICodexModelFromLiveRow(row, catalogRuntime))
       .filter((model): model is ModelDefinitionConfig => Boolean(model));
+    const modelServiceTiers = readOpenAICodexServiceTiers(rows);
     // A successful account-scoped response is authoritative even when all
     // rows are hidden; static hints must not invent subscription access.
     return {
@@ -464,7 +452,11 @@ async function buildOpenAICodexLiveProviderConfig(params: {
         auth: "oauth",
         models,
       },
-      outcome: { provider: PROVIDER_ID, status: "ready" },
+      outcome: {
+        provider: PROVIDER_ID,
+        status: "ready",
+        ...(modelServiceTiers.length ? { modelServiceTiers } : {}),
+      },
     };
   } catch (error) {
     if (
@@ -615,15 +607,11 @@ function shouldResolveDynamicModelThroughCodex(ctx: ProviderResolveDynamicModelC
   return ctx.agentRuntimeId === "codex";
 }
 
-function buildOpenAIUnknownModelHint(modelId: string): string | undefined {
-  const normalized = normalizeLowercaseStringOrEmpty(modelId);
-  if (normalized !== OPENAI_GPT_53_CODEX_SPARK_MODEL_ID) {
-    return undefined;
-  }
-  return "gpt-5.3-codex-spark is available only through ChatGPT/Codex OAuth. Run `openclaw models auth login --provider openai` and use openai/gpt-5.3-codex-spark with that OAuth profile; OpenAI API-key auth cannot use this model.";
-}
-
 const OPENAI_GPT_FORWARD_COMPAT_CASES = [
+  {
+    match: OPENAI_DAYBREAK_MODEL_IDS,
+    templateIds: [OPENAI_GPT_56_SOL_MODEL_ID],
+  },
   {
     match: OPENAI_GPT_6_MODEL_IDS,
     templateIds: [OPENAI_GPT_56_SOL_MODEL_ID, OPENAI_GPT_55_MODEL_ID],
@@ -673,6 +661,7 @@ function resolveOpenAIGptForwardCompatModel(ctx: ProviderResolveDynamicModelCont
   const modelId = normalizeLowercaseStringOrEmpty(trimmedModelId);
   const exactModel = ctx.modelRegistry.find(PROVIDER_ID, trimmedModelId);
   if (
+    OPENAI_DAYBREAK_MODEL_IDS.some((id) => id === modelId) ||
     OPENAI_GPT_6_MODEL_IDS.some((id) => id === modelId) ||
     modelId === OPENAI_GPT_56_SOL_MODEL_ID ||
     modelId === OPENAI_GPT_56_TERRA_MODEL_ID ||

@@ -130,6 +130,7 @@ import {
   resolveSessionDeliveryRoute,
 } from "./session-delivery.js";
 import { createReplySessionEntryHandle } from "./session-entry-handle.js";
+import { projectSessionEntryLifecycleCarry } from "./session-entry-lifecycle-carry.js";
 import {
   buildSessionEndHookPayload,
   buildSessionStartHookPayload,
@@ -146,7 +147,7 @@ import {
   prepareReplySessionParentFork,
 } from "./session-parent-fork-prepare.js";
 import {
-  clearSessionResetRuntimeState,
+  clearCommittedSessionResetRuntimeState,
   createSessionResetCleanupGuard,
   stopSessionResetSubagents,
 } from "./session-reset-cleanup.js";
@@ -304,6 +305,7 @@ function resolveReplySessionRolloverState(
     label: entry.label,
     autoLabel: entry.autoLabel,
     displayName: entry.displayName,
+    category: entry.category,
     // Notice debt survives rollover: erasing it here would recreate the
     // silent ambiguous-loss outcome the debt exists to prevent.
     pendingDeliveryNotice: entry.pendingDeliveryNotice,
@@ -334,16 +336,12 @@ function resolveReplySessionRolloverState(
 /** Initializes or reuses the reply session state for one inbound turn. */
 export async function initSessionState(params: InitSessionStateParams): Promise<SessionInitResult> {
   prepareChannelParticipantObservation(params.ctx);
-  return await runWithSessionInitConflictRetry(
-    async () => await initSessionStateAttempt(params, false),
-    { signal: params.signal },
-  );
+  return await runWithSessionInitConflictRetry(async () => await initSessionStateAttempt(params), {
+    signal: params.signal,
+  });
 }
 
-async function initSessionStateAttempt(
-  params: InitSessionStateParams,
-  staleSnapshotRetried: boolean,
-): Promise<SessionInitResult> {
+async function initSessionStateAttempt(params: InitSessionStateParams): Promise<SessionInitResult> {
   const attemptContext = await resolveInitSessionStateAttemptContext(params, "initialization");
   params.signal?.throwIfAborted();
   const binding = attemptContext.conversationBinding;
@@ -415,7 +413,7 @@ async function initSessionStateAttempt(
       await initSessionStateAttemptLocked(
         params,
         { ...attemptContext, storeWriterIdentity },
-        staleSnapshotRetried,
+        false,
         undefined,
       ),
     { identities: storeWriterIdentity ? [storeWriterIdentity] : undefined },
@@ -912,11 +910,9 @@ async function initSessionStateAttemptLocked(
     sessionStartedAt: isNewSession
       ? now
       : (baseEntry?.sessionStartedAt ?? lifecycleTimestamps.sessionStartedAt),
-    lastInteractionAt: isSystemEvent ? baseEntry?.lastInteractionAt : now,
-    agentStatus: isSystemEvent ? baseEntry?.agentStatus : undefined,
+    ...projectSessionEntryLifecycleCarry({ entry, baseEntry, isSystemEvent, now }),
     systemSent,
     abortedLastRun: recoveredTerminalEntry ? undefined : abortedLastRun,
-    pinnedAt: entry?.pinnedAt,
     usageFamilyKey,
     usageFamilySessionIds,
     previousSessionId: baseEntry?.previousSessionId,
@@ -1114,18 +1110,14 @@ async function initSessionStateAttemptLocked(
     // outside the store writer lane instead of surfacing this to the caller.
     throw new ReplySessionInitConflictError(sessionKey);
   }
-  if (previousSessionEntry) {
-    try {
-      clearSessionResetRuntimeState([sessionKey, previousSessionEntry.sessionId], {
-        activeReplySessionId: previousSessionEntry.sessionId,
-        agentId,
-      });
-    } catch (error) {
-      // The replacement is already durable. Runtime cleanup is best-effort and
-      // must not turn a committed reset into a reported initialization failure.
-      log.warn(`failed to clear reset runtime state for session ${sessionKey}: ${String(error)}`);
-    }
-  }
+  clearCommittedSessionResetRuntimeState({
+    previousSessionEntry,
+    agentId,
+    sessionKey,
+    signal: params.signal,
+    onError: (error) =>
+      log.warn(`failed to clear reset runtime state for session ${sessionKey}: ${String(error)}`),
+  });
   sessionEntry = committed.sessionEntry;
   sessionId = sessionEntry.sessionId;
   // Admission may commit the first row before dispatch. Preserve its Goal and generation

@@ -210,6 +210,7 @@ describe("lazy protocol validators", () => {
       ttlMinutes: 30,
       archived: false,
       pinned: true,
+      snoozedUntil: 1_800_000_000_000,
       unread: true,
       contextWindow: "1m",
       thinkingLevel: "high",
@@ -232,6 +233,7 @@ describe("lazy protocol validators", () => {
     } as const;
     expectAccepted(validateSessionsPatchManyParams, [
       { targets: [target], patch: fullPatch },
+      { targets: [target], patch: { fastMode: "ultrafast" } },
       {
         targets: Array.from({ length: 100 }, (_, index) => ({
           key: `agent:main:patch-${index}`,
@@ -926,6 +928,7 @@ describe("validateChatSendParams", () => {
 
     expectAccepted(validateChatSendParams, [
       base,
+      { ...base, fastMode: "ultrafast" },
       {
         ...base,
         expectedSessionRoutingContract: "per-sender|main|main",

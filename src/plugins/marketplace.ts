@@ -1,4 +1,3 @@
-// Loads plugin marketplace entries for install and discovery flows.
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -263,18 +262,14 @@ function marketplaceEntryGitRef(source: MarketplaceEntrySource): string | undefi
   }
 }
 
-function isMutableGitDerivedSource(ref: string | undefined): boolean {
-  return !isImmutableGitCommitRef(ref);
-}
-
 function marketplaceInstallPolicySource(params: {
   marketplaceOrigin: MarketplaceManifestOrigin;
   marketplaceRef?: string;
   resolvedPath: string;
   source: MarketplaceEntrySource;
 }): InstallPolicySource {
-  const marketplaceMutable = isMutableGitDerivedSource(params.marketplaceRef);
-  const entryMutable = isMutableGitDerivedSource(marketplaceEntryGitRef(params.source));
+  const marketplaceMutable = !isImmutableGitCommitRef(params.marketplaceRef);
+  const entryMutable = !isImmutableGitCommitRef(marketplaceEntryGitRef(params.source));
   if (resolveArchiveKind(params.resolvedPath)) {
     if (
       params.marketplaceOrigin === "remote" &&
@@ -432,6 +427,16 @@ function deriveMarketplaceRootFromManifestPath(manifestPath: string): string {
   return path.basename(manifestDir) === ".claude-plugin" ? path.dirname(manifestDir) : manifestDir;
 }
 
+async function findMarketplaceManifestPath(rootDir: string): Promise<string | undefined> {
+  for (const candidate of MARKETPLACE_MANIFEST_CANDIDATES) {
+    const manifestPath = path.join(rootDir, candidate);
+    if (await pathExists(manifestPath)) {
+      return manifestPath;
+    }
+  }
+  return undefined;
+}
+
 async function resolveLocalMarketplaceSource(
   input: string,
 ): Promise<
@@ -457,11 +462,9 @@ async function resolveLocalMarketplaceSource(
   }
 
   const rootDir = path.basename(resolved) === ".claude-plugin" ? path.dirname(resolved) : resolved;
-  for (const candidate of MARKETPLACE_MANIFEST_CANDIDATES) {
-    const manifestPath = path.join(rootDir, candidate);
-    if (await pathExists(manifestPath)) {
-      return { ok: true, rootDir, manifestPath };
-    }
+  const manifestPath = await findMarketplaceManifestPath(rootDir);
+  if (manifestPath) {
+    return { ok: true, rootDir, manifestPath };
   }
 
   return { ok: false, error: `marketplace manifest not found under ${resolved}` };
@@ -630,18 +633,6 @@ async function loadMarketplace(params: {
       origin: "local",
     });
 
-  const resolveClonedMarketplaceManifestPath = async (
-    rootDir: string,
-  ): Promise<string | undefined> => {
-    for (const candidate of MARKETPLACE_MANIFEST_CANDIDATES) {
-      const next = path.join(rootDir, candidate);
-      if (await pathExists(next)) {
-        return next;
-      }
-    }
-    return undefined;
-  };
-
   // Resolve aliases against one snapshot so a cycle cannot retain a plugin lifecycle lease.
   const knownMarketplaces = await readClaudeKnownMarketplaces();
   const visitedKnownMarketplaces = new Set<string>();
@@ -692,7 +683,7 @@ async function loadMarketplace(params: {
     return cloned;
   }
 
-  const manifestPath = await resolveClonedMarketplaceManifestPath(cloned.rootDir);
+  const manifestPath = await findMarketplaceManifestPath(cloned.rootDir);
   if (!manifestPath) {
     await cloned.cleanup();
     return { ok: false, error: `marketplace manifest not found in ${cloned.label}` };
