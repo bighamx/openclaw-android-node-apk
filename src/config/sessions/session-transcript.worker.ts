@@ -468,6 +468,14 @@ serveOwnedWorkerTasks(
           suggestions: result.found ? result.value : [],
         };
       }
+      if (request.kind === "session-pending-input-history") {
+        const { readPendingInputHistoryInWorker } =
+          await import("./session-pending-input-history-read.worker.js");
+        return {
+          kind: "session-pending-input-history",
+          snapshot: readPendingInputHistoryInWorker(request),
+        };
+      }
       if (request.kind === "session-pending-input-receipts") {
         const { listSessionPendingInputReceipts } =
           await import("./session-accessor.sqlite-pending-input-receipts.js");
@@ -551,7 +559,7 @@ serveOwnedWorkerTasks(
       }
       if (request.kind === "session-row-presence") {
         const { loadSessionEntryReadOnlyInScope } =
-          await import("./session-accessor.sqlite-entry.js");
+          await import("./session-accessor.sqlite-exact-read.js");
         return (
           loadSessionEntryReadOnlyInScope({ ...request.scope, projection: "list" }) !== undefined
         );
