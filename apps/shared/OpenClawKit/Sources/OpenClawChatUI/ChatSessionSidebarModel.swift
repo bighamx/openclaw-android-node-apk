@@ -167,9 +167,13 @@ public enum ChatSessionSidebarModel {
         groups: [OpenClawChatSessionGroup] = [],
         excludesMainSession: Bool = false,
         query: String,
+        rankedSearch: Bool = false,
         sessionRoutingContract: String? = nil,
         viewOptions: ViewOptions? = nil,
-        observedOrder: ObservedOrder = .init()) -> [Section]
+        observedOrder: ObservedOrder = .init(),
+        owners: [OpenClawChatSessionEntry.CreatedActor]? = nil,
+        selfOwnerID: String? = nil,
+        sectionOrder: [String] = []) -> [Section]
     {
         let entries = self.visibleSessions(
             sessions: sessions,
@@ -179,15 +183,33 @@ public enum ChatSessionSidebarModel {
             excludesMainSession: excludesMainSession,
             sessionRoutingContract: sessionRoutingContract,
             viewOptions: viewOptions)
+        if rankedSearch {
+            // Apply sidebar visibility before the palette's ten-result cap, preserving incoming relevance order.
+            // ui/src/components/command-palette-session-search.ts:63.
+            let visible = Set(entries.map(OpenClawChatSessionSidebarData.identity))
+            let nodes = sessions.filter { visible.contains(OpenClawChatSessionSidebarData.identity($0)) }
+                .prefix(10).flatMap { self.tree(from: [$0]) }
+            return nodes.isEmpty ? [] : [.init(id: "search", title: String(localized: "Search results"), nodes: nodes)]
+        }
         let ordered: [OpenClawChatSessionEntry]
-        if viewOptions?.sort == .created {
+        let sort = viewOptions?.sort == .people && owners.map { $0.count < 2 } == true ? .created : viewOptions?.sort
+        if sort == .created || sort == .people {
             var order = observedOrder
             order.observe(sessions.map(\.key))
-            ordered = order.sortedByCreation(entries)
+            ordered = order.sortedByCreation(entries, owners: sort == .people ? owners ?? [] : nil)
         } else {
             ordered = OpenClawChatSessionListOrganizer.organize(entries)
         }
         let visible = OpenClawChatSessionListOrganizer.filter(ordered, search: query)
+        if let viewOptions {
+            return self.groupedSections(
+                visible,
+                groups: groups,
+                options: viewOptions,
+                peopleAvailable: owners.map { $0.count >= 2 } ?? true,
+                selfOwnerID: selfOwnerID,
+                sectionOrder: sectionOrder)
+        }
         // Pin state owns first placement. Group sections then preserve the
         // same tree builder, so grouped parent/child rosters still nest.
         let pinned = self.tree(from: OpenClawChatSessionListOrganizer.organize(visible.filter { $0.pinned == true }))
@@ -678,11 +700,15 @@ public enum ChatSessionSidebarModel {
             if selectedIsResolvedAlias, entry.key.lowercased() == normalizedCurrent {
                 return false
             }
-            return entry.key == selectedSessionKey ||
-                (!self.isHiddenInternalSession(entry.key) && entry.archived != true &&
+            let status = viewOptions?.status ?? .active
+            return (entry.key == selectedSessionKey && (status != .archived || entry.isArchived)) ||
+                (!self
+                    .isHiddenInternalSession(entry.key) &&
+                    (status == .all || entry.isArchived == (status == .archived)) &&
                     (viewOptions?.includes(entry) ?? true))
         }
-        if !(excludesMainSession && selectedIsMain),
+        if viewOptions?.status != .archived, viewOptions?.ownerFilter.isEmpty != false,
+           !(excludesMainSession && selectedIsMain),
            !entries.contains(where: { $0.key == selectedSessionKey }),
            self.isSessionInActiveAgentScope(key: selectedSessionKey, activeAgentID: activeAgentID),
            !currentSessionKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

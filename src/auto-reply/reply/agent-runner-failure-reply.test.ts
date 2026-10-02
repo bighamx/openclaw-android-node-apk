@@ -171,6 +171,11 @@ describe("buildExternalRunFailureReply", () => {
       localWorker: false,
     },
     {
+      name: "local request timeout with a synthesized status",
+      makeError: () => new Error("LLM request timed out."),
+      localWorker: false,
+    },
+    {
       name: "typed local worker timeout",
       makeError: () => new WorkerTaskError("worker task timed out: secret-canary", "timeout"),
       localWorker: true,
@@ -218,12 +223,44 @@ describe("buildExternalRunFailureReply", () => {
     if (localWorker) {
       expect(reply.text).toMatch(/local worker/i);
       expect(reply.text).not.toMatch(/HTTP|openai\/test-model|context preparation/);
+    } else if (error.reason === "timeout") {
+      expect(reply.text).toBe(
+        "⚠️ The request timed out. Please try again. If it keeps happening, try a shorter request or a different model.",
+      );
+      expect(error).toMatchObject({
+        reason: "timeout",
+        status: 408,
+        provider: "openai",
+        model: "test-model",
+      });
     } else {
       expect(reply.text).toContain("openai/test-model");
       expect(reply.text).not.toMatch(/local worker/i);
-      if (error.reason === "timeout") {
-        expect(reply.text).toContain("HTTP 408");
-      }
     }
+  });
+
+  it("uses generic copy when useHeartbeatFailureCopy is false even if isHeartbeat is true", () => {
+    const reply = buildExternalRunFailureReply(
+      { message: "test error", error: new Error("test") },
+      { isHeartbeat: true, useHeartbeatFailureCopy: false },
+    );
+    expect(reply.text).toBe(GENERIC_EXTERNAL_RUN_FAILURE_TEXT);
+    expect(reply.isGenericRunnerFailure).toBe(false);
+  });
+
+  it("uses heartbeat copy when useHeartbeatFailureCopy is true", () => {
+    const reply = buildExternalRunFailureReply(
+      { message: "test error", error: new Error("test") },
+      { isHeartbeat: true, useHeartbeatFailureCopy: true },
+    );
+    expect(reply.text).toBe(HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT);
+  });
+
+  it("falls back to isHeartbeat when useHeartbeatFailureCopy is undefined", () => {
+    const reply = buildExternalRunFailureReply(
+      { message: "test error", error: new Error("test") },
+      { isHeartbeat: true },
+    );
+    expect(reply.text).toBe(HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT);
   });
 });
