@@ -1,5 +1,6 @@
 // These consumers need the host-owned SQLite broker, which runs in forked processes.
 export const databaseWorkerCoreTestFiles = [
+  "src/agents/subagents/spawn/acp-parent-stream-store.sqlite.test.ts",
   "src/state/openclaw-agent-execution-incognito.compute.test.ts",
   "src/state/openclaw-agent-execution-incognito.lifecycle.test.ts",
   "src/state/openclaw-agent-execution-incognito.history.test.ts",
@@ -21,6 +22,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/agents/embedded-agent-runner/run/attempt-bundle-tools.test.ts",
   "src/agents/embedded-agent-runner/run/attempt-transcript-recovery.test.ts",
   "src/agents/embedded-agent-runner/run.compaction-runtime.test.ts",
+  "src/agents/embedded-agent-subscribe.handlers.compaction.test.ts",
   "src/agents/embedded-agent-runner/wait-for-idle-before-flush.test.ts",
   "src/agents/embedded-agent-runner/run/attempt-session-identity.worker.test.ts",
   "src/agents/embedded-agent-runner/run-entry.cleanup.test.ts",
@@ -281,7 +283,9 @@ export const databaseWorkerCoreTestFiles = [
   "src/auto-reply/reply/get-reply.dashboard.test.ts",
   "src/auto-reply/reply/get-reply.delivery-format.test.ts",
   "src/auto-reply/reply/get-reply.explicit-owner.test.ts",
+  "src/auto-reply/reply/get-reply.fast-path.test.ts",
   "src/auto-reply/reply/get-reply.timeout.test.ts",
+  "src/auto-reply/reply/get-reply.workspace-failure.test.ts",
   "src/auto-reply/reply/restart-recovery-claim.test.ts",
   "src/auto-reply/reply/restart-recovery-claim.lifecycle.test.ts",
   "src/auto-reply/reply/agent-runner-memory.private-transcript.test.ts",
@@ -447,6 +451,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/agents/embedded-agent-runner/run/attempt-execution-settle.test.ts",
   "src/agents/embedded-agent-runner/run/attempt-stream-custody.test.ts",
   "src/agents/embedded-agent-runner/run/attempt-stream-prepare.test.ts",
+  "src/agents/embedded-agent-runner/run/attempt-nested-tool-activity.test.ts",
   "src/agents/embedded-agent-runner/run/attempt-stream-settle.test.ts",
   "src/agents/embedded-agent-runner/run/attempt-yield-handoff.test.ts",
   "src/agents/embedded-agent-runner/run-entry.test.ts",
