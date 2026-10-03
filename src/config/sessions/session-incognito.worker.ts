@@ -23,6 +23,14 @@ import type {
   IncognitoSessionOperations,
   IncognitoSessionSnapshot,
 } from "./session-incognito-contract.js";
+import { isIncognitoHistoryCommand } from "./session-incognito-history-contract.js";
+import { createIncognitoHistoryWorker } from "./session-incognito-history.worker.js";
+import {
+  incognitoLifecycleKeys,
+  isIncognitoLifecycleCommand,
+  isIncognitoLifecycleWrite,
+} from "./session-incognito-lifecycle-contract.js";
+import { createIncognitoLifecycleWorker } from "./session-incognito-lifecycle.worker.js";
 import { isIncognitoOutboxCommand } from "./session-incognito-outbox-contract.js";
 import { createIncognitoOutboxWorker } from "./session-incognito-outbox.worker.js";
 import {
@@ -96,6 +104,8 @@ export function createIncognitoSessionWorker(
   const sideData = createIncognitoSideDataWorker(database, env, admit);
   const transcript = createIncognitoTranscriptWorker(database, env, admit);
   const outbox = createIncognitoOutboxWorker(database, admit);
+  const lifecycle = createIncognitoLifecycleWorker(database, identity, env, admit);
+  const history = createIncognitoHistoryWorker(database, env);
   const readOnly = <T>(operation: () => T): T => {
     // sqlite-allow-raw -- Guard reads on the retained writable memory connection.
     database.db.exec("PRAGMA query_only = ON");
@@ -108,15 +118,41 @@ export function createIncognitoSessionWorker(
   };
   return {
     async prepare(command: SqliteWorkerCommand<IncognitoSessionOperations>) {
-      if (isIncognitoTranscriptCommand(command)) {
+      if (isIncognitoHistoryCommand(command)) {
+        await history.prepare(command);
+      } else if (isIncognitoTranscriptCommand(command)) {
         await transcript.prepare(command);
       } else if (isIncognitoOutboxCommand(command)) {
         await outbox.prepare(command);
-      } else if (command.type !== "session.entry.create" && command.type !== "session.entry.read") {
+      } else if (
+        !isIncognitoLifecycleCommand(command) &&
+        command.type !== "session.entry.create" &&
+        command.type !== "session.entry.read"
+      ) {
         await sideData.prepare(command);
       }
     },
     execute(command: SqliteWorkerCommand<IncognitoSessionOperations>) {
+      if (isIncognitoHistoryCommand(command)) {
+        assertKey(command.input.sessionKey);
+        return readOnly(() => {
+          const facts = read(command.input.sessionKey).facts;
+          requestSqliteWorkerOperationAdmission({
+            stage: "prepare",
+            facts: { identity, sessions: facts },
+          });
+          return { value: history.execute(command.input), facts };
+        });
+      }
+      if (isIncognitoLifecycleCommand(command)) {
+        incognitoLifecycleKeys(command, identity).forEach(assertKey);
+        const execute = () => {
+          const { value, keys } = lifecycle.execute(command);
+          keys.forEach(assertKey);
+          return { value, facts: keys.flatMap((key) => read(key).facts) };
+        };
+        return isIncognitoLifecycleWrite(command.type) ? execute() : readOnly(execute);
+      }
       if (isIncognitoTranscriptCommand(command) || isIncognitoOutboxCommand(command)) {
         assertKey(command.input.sessionKey);
         const execute = () => {
@@ -197,6 +233,7 @@ export function createIncognitoSessionWorker(
       return result;
     },
     assertSettled() {
+      history.assertSettled();
       sideData.assertSettled();
       transcript.assertSettled();
       outbox.assertSettled();

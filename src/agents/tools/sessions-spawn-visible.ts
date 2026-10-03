@@ -69,6 +69,8 @@ export type SessionsSpawnToolOptions = {
   registerRun?: typeof registerSubagentRun;
   countActiveRuns?: typeof countActiveRunsForSession;
   agentSessionKey?: string;
+  /** Trusted parent invocation fact, not a model-facing spawn parameter. */
+  senderIsOwner?: boolean;
   requesterTurnRunId?: string;
   /** Separate key used only for completion routing (registerSubagentRun requesterSessionKey). */
   completionOwnerKey?: string;
@@ -422,6 +424,7 @@ export async function maybeSpawnVisibleSession(params: {
             via: "spawn",
             actor: { type: "agent", id: requesterAgentId },
             requesterSessionKey: requesterKey,
+            requesterSenderIsOwner: params.options?.senderIsOwner === true,
             completionOwnerSessionKey: ownership.completionRequesterSessionKey,
             ...(params.options?.sessionPermissionPolicy
               ? { inheritedPermissionMode: params.options.sessionPermissionPolicy.mode }
