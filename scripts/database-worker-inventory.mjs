@@ -548,7 +548,7 @@ const reviewedOperations = new Map([
         operations: [
           "ensureSkillLibrarySchema",
           "requireSelectedSkillLibraryUpload",
-          "selectSkillLibraryRow",
+          "selectSkillLibraryEntries",
           "selectSkillLibraryRevision",
           "selectSkillLibraryRevisionMetadata",
           "assertSkillLibraryNameAvailable",
@@ -921,6 +921,12 @@ const reviewedOperations = new Map([
   [
     "src/gateway/operator-approval-standing-grants.ts",
     [
+      {
+        tier: "W",
+        operations: ["lookupCronStandingGrantInDatabase", "consumeCronStandingGrantInDatabase"],
+        evidence:
+          "Only openclaw-state-read.worker.ts validates and operator-approval-store.operations.ts consumes through the existing workers; bash-tools.exec-cron-grant.ts awaits operator-approval-store.ts while retaining the Gateway authority interval. No native lookup/consume facade remains.",
+      },
       {
         tier: "W",
         operations: ["listCronStandingGrantsInDatabase"],
