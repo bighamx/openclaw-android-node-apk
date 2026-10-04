@@ -2,13 +2,11 @@ import path from "node:path";
 import { normalizeAgentId } from "@openclaw/normalization-core/agent-id";
 import {
   listAgentEntries,
-  tryResolveRawLegacyDefaultAgentId,
-} from "../../../../src/agents/agent-roster.js";
-import {
   resolveDefaultAgentWorkspaceDir,
   resolveStateDir,
   resolveUserPath,
   tryResolveLegacyDataOwner,
+  tryResolveRawLegacyDefaultAgentId,
 } from "./openclaw-runtime-paths.js";
 import type { MemoryExtraPath } from "./types.js";
 export { normalizeAgentId };
@@ -186,7 +184,8 @@ export function resolveMemoryHostAgentContextLimits(
   if (!cfg || !agentId) {
     return defaults;
   }
-  return resolveAgentConfig(cfg, agentId)?.contextLimits ?? defaults;
+  const overrides = resolveAgentConfig(cfg, agentId)?.contextLimits;
+  return overrides ? { ...defaults, ...overrides } : defaults;
 }
 
 /** Resolve enabled memory search config plus deduplicated extra paths for an agent. */
