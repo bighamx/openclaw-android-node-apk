@@ -172,6 +172,17 @@ const reviewed = new Map([
 // Match lexical operation paths, not moving line numbers or whole mixed modules.
 const reviewedOperations = new Map([
   [
+    "src/state/openclaw-state-db.ts",
+    [
+      {
+        tier: "T2",
+        operations: ["withOpenClawStateStartupMigrationCheckpointDatabase"],
+        evidence:
+          "Startup checkpoint callers only: startup-migration-checkpoint.ts:84,157 serves CLI startup-config-preflight.ts admission/heartbeat/release; gateway-owner-lease.ts:253,282 claims/releases the process lock, whose runtime heartbeat already uses openclaw-state-lease-heartbeat.ts. Other shared-state writes remain T1.",
+      },
+    ],
+  ],
+  [
     "src/config/sessions/session-accessor.sqlite-reset.ts",
     [
       {
@@ -267,9 +278,12 @@ const reviewedOperations = new Map([
     [
       {
         tier: "W",
-        operations: ["createPlacementPendingFailureOps.failWorkspaceResultAndReleaseTurn"],
+        operations: [
+          "createPlacementPendingFailureOps.failWorkspaceResultAndReleaseTurn",
+          "createPlacementPendingFailureOps.failWorkspaceResultAndReleaseTurn.transition",
+        ],
         evidence:
-          "Only placementTurns.failResult in placement-turn-claims.worker.ts constructs the terminal-failure kernel; all runtime callers await its worker facade",
+          "Only placementTurns.failResult in placement-turn-claims.worker.ts constructs the terminal-failure kernel, including its transaction-local transition helper; all runtime callers await its worker facade",
       },
     ],
   ],
@@ -1552,15 +1566,22 @@ const reviewedOperations = new Map([
     [
       {
         tier: "W",
-        operations: ["createSqliteAuditRecordKernel.deleteRecord"],
+        operations: [
+          "createSqliteAuditRecordKernel.deleteRecord",
+          "createSqliteAuditRecordKernel.compareAndSet",
+        ],
         evidence:
-          "src/config/config-journal-snapshot.worker.ts:11 → config-journal-snapshot.kernel.ts:38,43. Native greeting callbacks (src/system-agent/greeting.ts:424,554) never return delete, retaining their SQL T1.",
+          "src/config/config-journal-snapshot.worker.ts → config-journal-snapshot.kernel.ts; greeting comparisons use diagnostic.compareAndSet in src/infra/sqlite-audit-record.worker.ts. No native comparison adapter remains.",
       },
       {
         tier: "T2",
-        operations: ["createSqliteAuditRecordKernel.entries"],
+        operations: [
+          "createSqliteAuditRecordKernel.entries",
+          "createSqliteAuditRecordKernel.upsertPreparedRecord",
+          "createSqliteAuditRecordKernel.latest",
+        ],
         evidence:
-          "Migration readers src/infra/state-migrations.audit-checkpoints.ts:53,146, audit-recovery.ts:577, audit-logs.ts:416,436; CLI backup via backup-create.ts:350,360 → audit-backup.ts:113,141; worker diagnostics openclaw-state-read.worker.ts:401.",
+          "Native entries/upsert serve state-migrations.audit-checkpoints.ts, audit-recovery.ts, audit-logs.ts and CLI audit-backup.ts. Native latest serves readRecentConfigAuditRecords in Doctor config flow and update-immutable-protection.ts. Transcript/greeting reads and CAS, plus config-journal snapshots, use the existing workers. Native config observation still reaches register/count/next/prune, which remain T1.",
       },
     ],
   ],

@@ -29,6 +29,7 @@ import {
   loadSubagentBrowserCleanupModule,
   resetSubagentRegistryRuntimeLoadersForTests,
 } from "./subagent-registry-deps.js";
+import { recoverSubagentRunGatewayOwner } from "./subagent-registry-gateway-owner.js";
 import { ANNOUNCE_EXPIRY_MS } from "./subagent-registry-helpers.js";
 import { suspendReplacedStoreNotifications } from "./subagent-registry-lifecycle-cleanup.js";
 import { SubagentLifecycleController } from "./subagent-registry-lifecycle.js";
@@ -47,10 +48,7 @@ import {
   countPendingDescendantRuns,
   getLatestLiveSubagentRunByChildSessionKey,
 } from "./subagent-registry-read.js";
-import {
-  createSubagentRegistryRestorer,
-  recoverSubagentRunGatewayOwner,
-} from "./subagent-registry-restore.js";
+import { createSubagentRegistryRestorer } from "./subagent-registry-restore.js";
 import type { RegisterSubagentRunParams } from "./subagent-registry-run-launch-record.js";
 import { createSubagentRunManager } from "./subagent-registry-run-manager.js";
 import { clearSubagentRunsReadCacheForTest } from "./subagent-registry-state.js";
@@ -459,6 +457,7 @@ const subagentRestorer = createSubagentRegistryRestorer({
     return true;
   },
   settleRequesterTurn: settleRequesterTurnAfterSessionSpawns,
+  retireSupersededRun: retireSupersededSubagentRun,
   ensureListener: () => subagentListener.ensure(),
   startSweeper: () => subagentSweeper.start(),
   scheduleSweep: scheduleSubagentRegistrySweep,
@@ -489,9 +488,18 @@ const subagentRestorer = createSubagentRegistryRestorer({
   warn,
 });
 
-function retireSupersededSubagentRun(runId: string, expected: SubagentRunRecord): Promise<void> {
+function retireSupersededSubagentRun(
+  runId: string,
+  expected: SubagentRunRecord,
+  assertCurrent?: () => void,
+): Promise<void> {
+  assertCurrent?.();
   const entry = subagentRuns.get(runId);
-  if (!entry || !isSameSubagentRunOwner(entry, expected)) {
+  if (
+    !entry ||
+    !isSameSubagentRunOwner(entry, expected) ||
+    !isRequesterRetirementCustodyCurrent(entry, expected)
+  ) {
     return Promise.resolve();
   }
   const wake = entry.requesterSettleWake;
@@ -535,7 +543,11 @@ function retireSupersededSubagentRun(runId: string, expected: SubagentRunRecord)
     entry,
     runs: subagentRuns,
     clearPendingLifecycleError,
-    isCurrent: (current) => isRequesterRetirementCustodyCurrent(current, entry),
+    assertCurrent,
+    isCurrent: (current) => {
+      assertCurrent?.();
+      return isRequesterRetirementCustodyCurrent(current, entry);
+    },
   });
 }
 
