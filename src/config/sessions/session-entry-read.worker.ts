@@ -355,7 +355,7 @@ export function readExactSessionEntriesWithLifecycle(
             const entry = readExactSessionEntryRow(
               database,
               sessionKey,
-              "full",
+              request.snapshotFields ?? "full",
               "canonical",
             )?.entry;
             return entry ? [{ sessionKey, entry }] : [];
@@ -363,6 +363,9 @@ export function readExactSessionEntriesWithLifecycle(
         ),
       { ...request.database, env: request.env },
     );
+    if (!read.found && read.reason !== "database-missing") {
+      throw new SessionMetadataUnavailableError(read.reason);
+    }
     return {
       kind: "session-exact-entries",
       entries: read.found ? read.value : [],
@@ -459,7 +462,9 @@ export function readExactSessionEntriesWithLifecycle(
                     readExactSessionEntryCandidatesInDatabase(
                       database,
                       [request.sessionKeys],
-                      request.projection === "sharing" ? "list" : "full",
+                      request.projection === "sharing"
+                        ? "list"
+                        : (request.snapshotFields ?? "full"),
                     )[0],
                     "exact session read result",
                   );
@@ -476,7 +481,11 @@ export function readExactSessionEntriesWithLifecycle(
                   !selected.value.some(({ sessionKey }) => sessionKey === parentKey)
                 ) {
                   const related = expectDefined(
-                    readExactSessionEntryCandidatesInDatabase(database, [[parentKey]], "full")[0],
+                    readExactSessionEntryCandidatesInDatabase(
+                      database,
+                      [[parentKey]],
+                      request.snapshotFields ?? "full",
+                    )[0],
                     "reply initialization parent read result",
                   );
                   if (!related.ok) {
@@ -623,40 +632,41 @@ export function readSessionRowDatabaseFacts(
   }
   const result = withOpenClawAgentDatabaseReadOnly(
     (database) =>
-      readWithCanonicalSessionReaderContinuation(database, request.continuation, () =>
-        withSqlitePostCommitPublications(database.db, () =>
-          runSqliteDeferredTransactionSync(database.db, () => {
-            const readRow = prepareExactSessionEntryRowReads(
-              database,
-              request.sessionKeys,
-              "list",
-              "canonical",
-            );
-            const boardKeys = readBoardSessionKeys(database, request.sessionKeys);
-            return {
-              kind: "session-row-facts" as const,
-              rows: request.sessionKeys.flatMap((sessionKey) => {
-                const entry = readRow(sessionKey)?.entry;
-                if (!entry) {
-                  return [];
-                }
-                const facts: SessionRowDatabaseFacts = {
-                  sessionKey,
-                  entry,
-                  hasBoard: boardKeys.has(sessionKey),
-                };
-                if (readSessionActivitySummary(entry)) {
-                  facts.activitySummaryWatermark = readSessionTranscriptWatermarkInDatabase(
-                    database,
-                    entry.sessionId,
-                  );
-                }
-                return facts;
-              }),
-            };
-          }),
-        ),
-      ),
+      readWithCanonicalSessionReaderContinuation(database, request.continuation, () => {
+        const read = () => {
+          const readRow = prepareExactSessionEntryRowReads(
+            database,
+            request.sessionKeys,
+            "list",
+            "canonical",
+          );
+          const boardKeys = readBoardSessionKeys(database, request.sessionKeys);
+          return {
+            kind: "session-row-facts" as const,
+            rows: request.sessionKeys.flatMap((sessionKey) => {
+              const entry = readRow(sessionKey)?.entry;
+              if (!entry) {
+                return [];
+              }
+              const facts: SessionRowDatabaseFacts = {
+                sessionKey,
+                entry,
+                hasBoard: boardKeys.has(sessionKey),
+              };
+              if (readSessionActivitySummary(entry)) {
+                facts.activitySummaryWatermark = readSessionTranscriptWatermarkInDatabase(
+                  database,
+                  entry.sessionId,
+                );
+              }
+              return facts;
+            }),
+          };
+        };
+        return withSqlitePostCommitPublications(database.db, () =>
+          database.db.isTransaction ? read() : runSqliteDeferredTransactionSync(database.db, read),
+        );
+      }),
     { ...request.database, env: request.env },
   );
   if (result.found) {
