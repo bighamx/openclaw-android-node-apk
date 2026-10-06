@@ -127,6 +127,17 @@ facts when the source changes. Transaction and commit admission recheck those
 guards; accepted writes retain settlement and committed identity publication.
 These cutovers change no schema, stored bytes, retention, or update behavior.
 
+Strict harness transcript appends prepare messages outside the existing agent
+writer transaction. The writer rereads idempotency and pending-input custody
+before checking fresh-message source predicates. A message committed by another
+connection during source preparation remains a replay, while fresh writes recheck
+their source rows and current host grants. Awaited message preparation retains its
+transcript version until commit and never retries an uncertain outcome. This
+awaited preparation is limited to a single message without transaction predicates;
+compound turns retain their existing synchronous preparation contract. Released
+synchronous preparation retains native callback ordering until the next Plugin SDK
+major. Schemas, stored bytes, retention, and update behavior are unchanged.
+
 ## Keep one store owner
 
 Sandbox reservation and removal-intent transactions run in the existing shared-state
@@ -851,6 +862,15 @@ retain native transactions and yielding writer admission. Arbitrary async plugin
 updaters retain their existing nested-admission behavior. Schemas, durability,
 public callback contracts, and update behavior are unchanged.
 
+First-turn diff-baseline claims and settlement, reply skill snapshots, and child
+agent admission and bookkeeping use that same entry writer. Preparation retains
+the selected physical store; the transaction rereads its entry and same-store
+source predicates before writing. Spawn and operator wrappers preserve prepared
+source authority through admission and commit, including parent/child linkage.
+The existing FIFO joins accepted writes and publishes acknowledged facts before
+release. Opaque SDK guards and cross-store sources retain their documented native
+contracts. No schema, retention, durability, or update migration is required.
+
 Embedded writer claims, live-model-switch consolidation, and pending-final delivery
 preparation, settlement, and cleanup explicitly select that worker patch path.
 Their reducers prepare outside the transaction; the worker rereads the selected
@@ -1273,7 +1293,7 @@ an explicit retry still uses the durable tombstones and retained lineage. Index
 planning and vector inspection use the same retrieval worker and captured store
 target. Indexed memory text stays with that reader; the host receives only selected
 chunk identities, source paths, and counts. Preview remains noncreating, and native
-vector inspection closes its probe and read-only connection before replying.
+vector inspection closes its check and read-only connection before replying.
 Forget's corpus discovery requests read-only metadata without unused transcript
 revisions. Durable session summaries use the existing retained history worker,
 preserving captured store selection and classification without writable bootstrap.
@@ -1517,7 +1537,7 @@ publish after the enclosing transaction commits and are discarded on rollback.
 
 Personal model-account success and failover-failure bookkeeping use typed reductions
 in the existing `authProfiles` shared-state worker. The host captures the physical
-store before provider probes or writer admission; the synchronous transaction
+store before provider checks or writer admission; the synchronous transaction
 rereads current usage and refuses changed credentials. Both host and worker use
 the same usage reducers, and provider observations retain their credential and
 block-generation checks. Transaction and commit grants recheck live host authority
@@ -1646,6 +1666,12 @@ reads remain separate migration work; the released synchronous placement SDK
 contract is unchanged. No schema, retention,
 durability, or update change is required.
 
+Environment reconciliation reads only its exact placement owner through the
+shared-state worker and existing environment index. Each queued environment takes
+a current read and rejects duplicate owners before provider inspection; idle
+passes no longer materialize the full placement projection for every environment.
+Schemas, stored bytes, and update behavior are unchanged.
+
 Session maintenance prepares placement preservation through the shared-state
 reader before lifecycle or entry-replacement worker admission. A scan-wide
 observation from the placement authority owner fences newly created placements,
@@ -1734,11 +1760,11 @@ session work, and the exact placement before draining. Those synchronous guards
 remain separate migration work; suspension policy and teardown are unchanged.
 
 Disk-space monitoring discovers placement identities in the same reader, then
-hydrates their current records through the existing placement projection. Probe
+hydrates their current records through the existing placement projection. Check
 order remains the database's session-ID order. Live row checks still prune old
-observations and reject samples from an owner replaced during a tunnel probe;
+observations and reject samples from an owner replaced during a tunnel check;
 those synchronous checks remain separate migration work. Disk-pressure thresholds,
-probe limits, and notification behavior are unchanged.
+check limits, and notification behavior are unchanged.
 
 Worker session-tool grants and operation journals use the same shared-state
 writer. The placement authority owner publishes committed tool grants and fences
@@ -1842,7 +1868,7 @@ Ordinary lifecycle upserts read their selected rows and pending-archive fact in
 one read-worker snapshot. A matching physical database with no pending archives
 skips recovery; archive-producing mutations, native scopes, and Doctor transfers
 retain publication. Later foreign archive commits are visible to the next snapshot.
-Standalone recovery probes reuse the read worker without archive or writer admission.
+Standalone recovery checks reuse the read worker without archive or writer admission.
 Maintenance finalization takes writer admission only when its worker requests native
 access, then rechecks current entries and retains admission through commit publication.
 
@@ -1913,7 +1939,7 @@ work. Schemas, stored data, retention, and update behavior are unchanged. See
 [await session upstream links](/plugins/sdk-migration/how-to-migrate#await-session-upstream-links).
 
 Watched human-turn signals and upstream observations use the shared-state writer,
-including their watcher probe and pruning. Producers await settlement and recheck
+including their watcher check and pruning. Producers await settlement and recheck
 current session authority; upstream observations compare the captured source in
 the committing transaction. Goal events and normalized child-run terminal outcomes
 share that recording command. Child completion joins recording and rechecks its
@@ -1933,7 +1959,7 @@ advances only the frozen notification watermark. Version enrichment and bounded 
 pages use the shared-state reader, preserving composite session identity and per-session
 pruned watermarks. Accepted operations retain the existing worker's FIFO and settlement
 owner. Schemas, retention, and update behavior are unchanged.
-The public SDK's synchronous ambient prompt probe remains compatibility debt.
+The public SDK's synchronous ambient prompt check remains compatibility debt.
 Creation, compaction, adoption, reset, deletion, and the restart notice sweep use
 the signal worker.
 
@@ -2362,6 +2388,43 @@ Recording a cron result selects the matching run ID inside the existing write
 transaction before decoding history. Store partition checks, released-row
 fallbacks, and first-terminal-result protection still apply; unrelated runs are
 not materialized while the writer lock is held.
+
+Subagent registry readers prepare durable facts through the existing shared-state
+worker. Cold child and replay queries select compact facts before
+hydrating the records they need; synchronous admission calculations consume those
+prepared facts instead of opening SQLite. Cancellation selects current live owners
+and holds their queued launches before awaiting session facts or worker-backed
+descendant discovery. Maintenance captures durable protection
+before entering native transactions, including native lifecycle and replacement
+paths. Committed publications retain their existing source and revision fences.
+Native maintenance retains a private live read-only connection and samples its
+`PRAGMA data_version` before the worker snapshot. Immediately before changing
+selected sessions, it checks that same unpinned connection again. A foreign
+commit triggers indexed child-session protection reads in batches of 64 selected
+keys; unchanged sources reuse the prepared facts. Newly protected candidates
+refuse the transaction, including its companion callbacks, while unrelated
+shared-state writes do not prevent pruning. The reader retains the original
+physical source and schema admission through cleanup; existing-schema integrity
+proof comes from the worker and never falls back to a native integrity scan.
+
+Initial registry restoration streams one read-only SQLite transaction through the
+existing read worker, in batches bounded to 128 rows and 1 MiB of stored payload;
+one oversized record remains whole. The worker waits for each host acknowledgment
+before reading another batch. Ordinary startup no longer copies the shared database
+or reopens a reader for each batch. Artifact-preserving scopes retain their existing
+snapshot owner. Quarantine and schema admission precede the read; the host rechecks
+live source authority before accepting each batch. Cancellation joins reader cleanup
+and discards partial results. The host installs the complete decoded registry and
+physical row versions only after the read settles, preserving creation order and
+refusing unreadable canonical rows. Hydration still precedes Gateway readiness;
+activation and recovery remain post-ready.
+Session-list facts are prepared with each immutable row and reused at publication.
+A replacement row owns new facts; the cache does not retain retired rows.
+Completion acknowledgments also carry decoded records and worker-computed physical
+versions; the host does not parse or hash the retained JSON again. Transaction and
+commit authority, terminal-event
+atomicity, uncertain-write recovery, schemas, retention, and update behavior are
+unchanged. No migration or configuration change is required.
 
 Cron execution, descendant follow-up, and delivery observations use the existing
 subagent registry worker snapshot. Descendant closure selection and the existing
