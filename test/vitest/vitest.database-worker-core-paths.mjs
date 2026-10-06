@@ -1,5 +1,8 @@
 // These consumers need the host-owned SQLite broker, which runs in forked processes.
 export const databaseWorkerCoreTestFiles = [
+  "src/plugin-sdk/session-transcript-lock.native.test.ts",
+  "src/gateway/worker-environments/worker-turn-transcript-target.test.ts",
+  "src/state/openclaw-agent-db.worker-admission.test.ts",
   "test/e2e/qa-lab/runtime/gateway-codex-delivery-cache.test.ts",
   "src/channels/feedback-reflection.worker.test.ts",
   "src/config/sessions/session-accessor.sqlite-bounded-context.test.ts",
@@ -392,6 +395,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/auto-reply/reply/memory-flush-session.test.ts",
   "src/agents/sessions/session-manager-hydration.test.ts",
   "src/agents/sessions/session-manager-hydration-stream.test.ts",
+  "src/agents/sessions/session-manager-incognito.test.ts",
   "src/channels/join-intro/report-channel-room-join.test.ts",
   "src/plugin-sdk/ingress-effect-once.test.ts",
   "src/plugin-sdk/session-transcript-runtime.test.ts",
@@ -619,6 +623,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/plugins/update-cohort.test.ts",
   "src/plugins/update.test.ts",
   "src/plugins/update.work-deadline.test.ts",
+  "src/state/agent-database-admission.test.ts",
   "src/state/openclaw-agent-canonical-validation-schema.test.ts",
   "src/state/openclaw-agent-db-maintenance.test.ts",
   "src/state/openclaw-agent-db-retired-lease-repair.test.ts",
@@ -709,6 +714,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/state/openclaw-agent-execution.integrity.test.ts",
   "src/state/openclaw-agent-execution-incognito.test.ts",
   "src/state/openclaw-agent-execution-incognito.sessions.test.ts",
+  "src/state/openclaw-agent-execution-incognito.completion-lineage.test.ts",
   "src/state/openclaw-agent-execution-incognito.entry-patch.test.ts",
   "src/state/openclaw-agent-execution-incognito.creation.test.ts",
   "src/plugin-sdk/codex-session-transcript-runtime.incognito.test.ts",
