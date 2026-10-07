@@ -7,7 +7,6 @@ import { isSqliteLockError } from "../infra/sqlite-error-diagnostics.js";
 import { SQLITE_IDLE_HANDLE_TTL_MS } from "../infra/sqlite-handle-lifecycle.js";
 import { retainSqliteWorkerErrorCode } from "../infra/sqlite-worker-contract.js";
 import {
-  assertExistingDatabaseIdentity,
   readDatabasePathIdentitySync,
   type DatabasePathIdentity,
 } from "../infra/sqlite-worker-identity.js";
@@ -39,6 +38,7 @@ import {
 import { createAgentDatabaseNativeGeneration } from "./openclaw-agent-execution-native.js";
 import {
   assertAgentDatabaseExecutionSharedState,
+  assertBorrowedAgentDatabaseFileIdentity,
   captureBorrowedAgentDatabaseGenerationClaim,
   supportsAgentDatabaseExecutionScope,
   supportsOpenClawAgentDatabaseExecution,
@@ -165,6 +165,7 @@ function createAgentDatabaseExecution(
   const assertAgentAdmitted = captureAgentDatabaseAdmission(agentId, { env: context.environment });
   let retired = false;
   let revoked = false;
+  let retainIdle = true;
   let borrowers = 0;
   let creationIdentity = expectedCreationIdentity;
   let creationBorrowers = 0;
@@ -404,46 +405,14 @@ function createAgentDatabaseExecution(
       const creatingTarget = creating ? Object.freeze({ ...creating }) : undefined;
       const assertReferenceCurrent = (nativeIdentity?: AgentDatabaseExecutionFileIdentity) => {
         assertCurrent();
-        if (!fileIdentity || creatingTarget) {
-          const current = readDatabasePathIdentitySync(borrowedPath);
-          if (
-            current.canonicalPath !== identity.canonicalPath ||
-            (creatingTarget?.key.startsWith("file:") &&
-              (current.key !== creatingTarget.key ||
-                current.birthtime !== creatingTarget.birthtime))
-          ) {
-            throw new Error("Agent database borrower changed its originally observed target");
-          }
-        }
-        if (
-          fileIdentity &&
-          expectedIdentity &&
-          (fileIdentity.physicalIdentity !== expectedIdentity.physicalIdentity ||
-            (fileIdentity.birthtime !== undefined &&
-              expectedIdentity.birthtime !== undefined &&
-              fileIdentity.birthtime !== expectedIdentity.birthtime))
-        ) {
-          throw new Error("Agent database borrower belongs to another physical file");
-        }
-        const file = fileIdentity ?? expectedIdentity;
-        const birthtime = fileIdentity?.birthtime ?? expectedIdentity?.birthtime;
-        if (file) {
-          if (
-            nativeIdentity &&
-            (nativeIdentity.physicalIdentity !== file.physicalIdentity ||
-              (birthtime !== undefined && nativeIdentity.birthtime !== birthtime))
-          ) {
-            throw new Error("Agent database borrower belongs to another physical file");
-          }
-          // The native owner validates its own path last; a borrowed alias has a separate lifetime.
-          if (!nativeIdentity || borrowedPath !== nativeIdentity.nativeLocation) {
-            assertExistingDatabaseIdentity(
-              borrowedPath,
-              `file:${file.physicalIdentity}`,
-              birthtime,
-            );
-          }
-        }
+        assertBorrowedAgentDatabaseFileIdentity({
+          borrowedPath,
+          identity,
+          creatingTarget,
+          fileIdentity,
+          expectedIdentity,
+          nativeIdentity,
+        });
       };
       assertReferenceCurrent();
       if (creatingTarget && !creationIdentity && !fileIdentity && generation) {
@@ -529,7 +498,7 @@ function createAgentDatabaseExecution(
           await result;
         },
         async runExisting(source, operation, runOptions) {
-          const capturedGeneration = generation;
+          const capturedGeneration = released ? undefined : generation;
           const completion = createDeferredCore();
           pending.add(completion.promise);
           try {
@@ -590,7 +559,8 @@ function createAgentDatabaseExecution(
               return;
             }
             const drainSignal = getGatewayRestartDrainSignal();
-            const canRetain = () => generation && !nativeClosing && !drainSignal.aborted;
+            const canRetain = () =>
+              retainIdle && generation && !nativeClosing && !drainSignal.aborted;
             try {
               for (const idle of executionState.idle) {
                 if (!canRetain() || executionState.idle.size < MAX_IDLE_EXECUTORS) {
@@ -696,8 +666,12 @@ function createAgentDatabaseExecution(
     retainAlias(pathname);
     retainAlias(identity.canonicalPath);
     unregisterConfig = watchAgentDatabaseExecutionConfig(agentId, context.environment, () => {
-      revoke();
-      void owner.close().catch(reportCleanupFailure);
+      // Routing changes retire warm retention, not borrowers of the captured physical store.
+      // Keep the owner registered until native cleanup settles so pinned reborrows can join it.
+      retainIdle = false;
+      if (borrowers === 0) {
+        void owner.closeIdle().catch(reportCleanupFailure);
+      }
     });
     unregisterShared = registerOpenClawStateDatabaseAsyncResource({
       close: async (sharedIdentity) => {
