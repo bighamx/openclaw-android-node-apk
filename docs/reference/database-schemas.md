@@ -50,6 +50,14 @@ Progress-card writes reuse the transaction's admitted table facts. The schema ow
 
 The agent-database execution owner retains up to four idle physical-agent executors in least-recently-used order. Borrowing an executor refreshes its independent 30-minute idle timeout; a fifth idle executor evicts the least recently used one. Configuration changes to the agent roster or storage paths stop warm retention and drain affected executors after their last borrower settles. Already-admitted work retains its original physical store; new requests resolve the current configuration. Explicit database closure and Gateway shutdown still revoke and drain the existing lifecycle resources. This changes no schema, stored bytes, or update behavior.
 
+Creating an agent database at an admitted absent path revokes the previous file's
+retained validation before worker preparation. A recreated file cannot borrow that
+proof even if Linux reuses its inode. Ordinary reopen still reuses live proof,
+and fresh stores keep their canonical certification. Receipt identifiers survive
+worker transfers so alias publication revokes superseded proof while preserving
+acknowledged copies. Later revocation still refuses publication. Schemas, stored
+bytes, and update behavior are unchanged.
+
 Retaining an already-open agent handle holds its lifetime without querying SQLite. Its read or transaction owner refreshes schema facts when consuming data; canonical readiness owns the freshness check before reusing its clean-store decision.
 
 Agent ownership metadata follows that admitted read revision as well. Unchanged
@@ -57,6 +65,12 @@ reads reuse the handle's metadata; foreign commits, local mutations, and schema
 changes require a new ownership read. Transactions, pinned snapshots, and dynamic
 authorizers keep querying the metadata. This changes no schema, stored bytes, or
 update behavior.
+
+The shared-state content-version marker uses the same admitted read revision.
+Unchanged reads reuse its successful result; foreign commits, local writes,
+rollback, schema changes, and connection disposal invalidate reuse. Transactions,
+pinned snapshots, and authorizer-controlled reads still query the marker. Version
+validation and upgrade or downgrade behavior are unchanged.
 
 Registry discovery reuses successful migration checks for the admitted schema
 generation. The minute retention sweep reads deletion history in a worker and
@@ -94,6 +108,10 @@ Returned entries and participant identities remain caller-owned. Transcript
 watermark reads select the hot generation and the retained cold or hot sequence
 in one statement; hot-only readers keep their existing meaning. These query
 changes preserve schemas, stored bytes, live authority, and update behavior.
+
+Display-history readers resolve selected activity anchors by session and event ID,
+retaining the sequence fence inside the same read snapshot. These point lookups
+use the existing primary key and require no schema or data migration.
 
 Session entry writes batch their saved snapshot fields in one upsert, preserving
 per-field revision triggers and rollback.
