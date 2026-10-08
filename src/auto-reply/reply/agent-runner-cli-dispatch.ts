@@ -4,6 +4,7 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { Value } from "typebox/value";
 import { AgentActivityItemSchema } from "../../../packages/gateway-protocol/src/schema/logs-chat.js";
 import { runCliAgent } from "../../agents/cli-runner.js";
+import { cliAssistantItemId } from "../../agents/cli-runner/assistant-identity.js";
 import { stripOpenClawMcpToolPrefix } from "../../agents/cli-runner/tool-policy.js";
 import type { RunCliAgentParams } from "../../agents/cli-runner/types.js";
 import type { MediaImageLayout } from "../../agents/embedded-agent-runner/run/prompt-image-metadata.js";
@@ -484,7 +485,7 @@ async function runCliAgentWithLifecycleInternal(
       emitAgentEvent({
         runId: params.runId,
         stream: "assistant",
-        data: { text: cliText },
+        data: { itemId: cliAssistantItemId(params.runId), text: cliText },
       });
     }
 

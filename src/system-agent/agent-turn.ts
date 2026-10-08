@@ -1,4 +1,3 @@
-// OpenClaw agent turns run the real embedded agent loop with the ring-zero tool.
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -25,6 +24,7 @@ import { buildAgentMainSessionKey, toAgentStoreSessionKey } from "../routing/ses
 import { SYSTEM_AGENT_ID } from "./agent-id.js";
 import { buildSystemAgentSystemPrompt } from "./assistant-prompts.js";
 import { SystemAgentInferenceUnavailableError } from "./inference-error.js";
+import { requireSystemAgentInferenceRoute } from "./inference-guard.js";
 import type { SystemAgentConfiguredRoute } from "./inference-route.js";
 import type { SystemAgentProposalRef } from "./operator-approval.js";
 import {
@@ -111,18 +111,14 @@ export async function cleanupSystemAgentSession(session: SystemAgentSession): Pr
 
 type SystemAgentTurnParams = Parameters<SystemAgentTurnRunner>[0];
 
-function clearFailedSystemAgentSessionState(session: SystemAgentSession): void {
-  session.proposalRef.current = undefined;
-  session.proposalRef.operation = undefined;
-  delete session.cliSession;
-}
-
 function throwSystemAgentInferenceUnavailable(params: {
   session: SystemAgentSession;
   failures?: unknown[];
   guidance?: ConstructorParameters<typeof SystemAgentInferenceUnavailableError>[2];
 }): never {
-  clearFailedSystemAgentSessionState(params.session);
+  params.session.proposalRef.current = undefined;
+  params.session.proposalRef.operation = undefined;
+  delete params.session.cliSession;
   throw new SystemAgentInferenceUnavailableError("agent-turn", params.failures, params.guidance);
 }
 
@@ -249,25 +245,9 @@ async function runSystemAgentTurnWithDeps(
   deps: SystemAgentTurnDeps = {},
 ): Promise<SystemAgentTurnReply | null> {
   const binding = params.session.verifiedInference;
-  if (!binding) {
-    return throwSystemAgentInferenceUnavailable({ session: params.session, guidance: "setup" });
-  }
-  let plan: SystemAgentConfiguredRoute | null;
-  try {
-    plan = await resolveSystemAgentVerifiedInferenceRoute(binding, deps);
-  } catch (error) {
-    return throwSystemAgentInferenceUnavailable({
-      session: params.session,
-      failures: [error],
-      guidance: "route-changed",
-    });
-  }
-  if (!plan) {
-    return throwSystemAgentInferenceUnavailable({
-      session: params.session,
-      guidance: "route-changed",
-    });
-  }
+  const plan = await requireSystemAgentInferenceRoute(binding, deps, "agent-turn", () =>
+    clearFailedSystemAgentSessionState(params.session),
+  );
   let expectedAgentHarnessRuntimeArtifact: ReturnType<
     typeof resolveSystemAgentExpectedAgentHarnessRuntimeArtifact
   >;

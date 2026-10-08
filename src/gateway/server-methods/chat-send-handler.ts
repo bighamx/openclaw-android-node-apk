@@ -28,7 +28,6 @@ import { recordSessionCreated } from "../../sessions/session-created.js";
 import type { PersistedUserTurnMessage } from "../../sessions/user-turn-transcript.js";
 import { extractTextFromChatContent } from "../../shared/chat-content.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
-import type { SkillWorkshopProposalRevisionConstraint } from "../../skills/workshop/types.js";
 import { resolveChatAbortDiagnosticReason } from "../chat-abort-diagnostics.js";
 import {
   resolveSessionMutationAuthorization,
@@ -70,7 +69,6 @@ type ChatSendInternalOptions = {
   transcript?: Parameters<typeof createGatewayChatUserTurnController>[0]["transcript"];
   prepareAssistantTranscriptMessage?: PrepareAssistantTranscriptMessage;
   toolsAllow?: string[];
-  skillWorkshopProposalRevision?: SkillWorkshopProposalRevisionConstraint;
 };
 
 const mediaDocumentContextLoader = createLazyImportLoader(
@@ -135,14 +133,18 @@ async function handleChatSendWithOptions(
     admission,
     attachments: preparedAttachments.value,
   });
-  if (activeRunAbort.controller.signal.aborted) {
-    finishAbortedChatSend();
-    return;
-  }
-  // Attachment preparation can suspend. Recheck immediately before the
-  // synchronous ACK path so aborts and hot routing reloads cannot cross it.
-  if (sessionRoutingChanged(context.getRuntimeConfig())) {
-    admission.rejectSessionRoutingChanged();
+  const settleInterruptedPreparation = () => {
+    if (activeRunAbort.controller.signal.aborted) {
+      finishAbortedChatSend();
+    } else if (sessionRoutingChanged(context.getRuntimeConfig())) {
+      admission.rejectSessionRoutingChanged();
+    } else {
+      return false;
+    }
+    return true;
+  };
+  // Attachment preparation can suspend; settle cancellation before the synchronous ACK path.
+  if (settleInterruptedPreparation()) {
     return;
   }
   const { imageOrder, prepareAttachmentsMs } = preparedAttachments.value;
@@ -512,11 +514,8 @@ async function handleChatSendWithOptions(
               return { status: "failed" as const };
             })
         : undefined;
-    if (activeRunAbort.controller.signal.aborted) {
-      return finishAbortedChatSend();
-    }
-    if (sessionRoutingChanged(context.getRuntimeConfig())) {
-      return admission.rejectSessionRoutingChanged();
+    if (settleInterruptedPreparation()) {
+      return;
     }
     const beginCapturedMessageInjection = createChatSendMessageInjectionStarter({
       operatorAuthority: admission.operatorAuthority,
@@ -544,11 +543,8 @@ async function handleChatSendWithOptions(
     phase?.mark("replyContext");
     if (preAckReplyContextPromise) {
       applyChatSendReplyContextFields(ctx, await preAckReplyContextPromise);
-      if (activeRunAbort.controller.signal.aborted) {
-        return finishAbortedChatSend();
-      }
-      if (sessionRoutingChanged(context.getRuntimeConfig())) {
-        return admission.rejectSessionRoutingChanged();
+      if (settleInterruptedPreparation()) {
+        return;
       }
     }
     assertInputAdmissionCurrent();
@@ -616,7 +612,6 @@ async function handleChatSendWithOptions(
       context,
       toolsAllow: options?.toolsAllow,
       prepareAssistantTranscriptMessage: options?.prepareAssistantTranscriptMessage,
-      skillWorkshopProposalRevision: options?.skillWorkshopProposalRevision,
       prepareSkillLibraryAuthoring: () =>
         prepareGatewaySkillAuthoring(
           {
@@ -705,17 +700,6 @@ export async function handleSessionGoalResumeChat(
   operation: SessionGoalOperation & { action: "resume" },
 ): Promise<void> {
   await handleChatSendWithOptions(options, undefined, undefined, { goalResume: operation });
-}
-
-/** Dispatches an operator-requested proposal revision with its reviewed revision bound to the run. */
-export async function handleChatSendWithSkillWorkshopProposalRevision(
-  options: GatewayRequestHandlerOptions,
-  proposalRevision: SkillWorkshopProposalRevisionConstraint,
-): Promise<void> {
-  await handleChatSendWithOptions(options, undefined, undefined, {
-    toolsAllow: ["skill_workshop"],
-    skillWorkshopProposalRevision: { ...proposalRevision },
-  });
 }
 
 /** Dispatches Gateway-authored system input without widening the public chat-send contract. */
