@@ -105,6 +105,7 @@ import { createReplyTimingTracker, isReplyProfilerEnabled } from "./reply-timing
 import { prepareReplyWorkspace } from "./reply-workspace.js";
 import { resolveRuntimePolicySessionKey } from "./runtime-policy-session-key.js";
 import { prepareReplySessionDiffBaseline } from "./session-diff-baseline.js";
+import { resolveReplySessionInitializationOptions } from "./session-initialization-admission.js";
 import { SessionResetCleanupError } from "./session-reset-cleanup.js";
 import { initSessionState, resolveReplySessionPreprocessingState } from "./session.js";
 import { mergeSkillFilters } from "./skill-filter.js";
@@ -188,31 +189,6 @@ function canSelfServeLocalPaths(params: {
       warn: () => {},
     }).length === 1
   );
-}
-
-/**
- * A sender who may not run commands is owed no reply when command handling ends without one;
- * the refusal is the answer. Authorized commands keep their requirement: a failure throws or
- * returns an error, and an empty result (such as unsent streamed blocks) still gets the notice.
- */
-function finishCommandTurn(params: {
-  opts: GetReplyOptions | undefined;
-  ctx: MsgContext;
-  cfg: OpenClawConfig;
-  reply: ReplyPayload | ReplyPayload[] | undefined;
-}): ReplyPayload | ReplyPayload[] | undefined {
-  const { opts, ctx, cfg, reply } = params;
-  const runState = resolveReplyOperationRunState(opts);
-  if (
-    runState &&
-    runState.replyCompletion?.outcome !== "blocked" &&
-    (Array.isArray(reply) ? reply.length === 0 : !reply) &&
-    !resolveCommandAuthorization({ ctx, cfg, commandAuthorized: ctx.CommandAuthorized === true })
-      .isAuthorizedSender
-  ) {
-    runState.replyCompletion = resolveReplyCompletion("optional", "empty");
-  }
-  return reply;
 }
 
 export async function getReplyFromConfig(
@@ -305,6 +281,23 @@ export async function getReplyFromConfig(
         agentId,
       },
     });
+  // Unauthorized commands owe no further reply; authorized empty results still do.
+  const finishCommandTurn = (reply: ReplyPayload | ReplyPayload[] | undefined) => {
+    const runState = resolveReplyOperationRunState(opts);
+    if (
+      runState &&
+      runState.replyCompletion?.outcome !== "blocked" &&
+      (Array.isArray(reply) ? reply.length === 0 : !reply) &&
+      !resolveCommandAuthorization({
+        ctx: finalized,
+        cfg,
+        commandAuthorized: finalized.CommandAuthorized,
+      }).isAuthorizedSender
+    ) {
+      runState.replyCompletion = resolveReplyCompletion("optional", "empty");
+    }
+    return reply;
+  };
   const traceGetReplyPhase = <T>(name: string, run: () => Promise<T> | T): Promise<T> =>
     resolverTiming.measure(name, () =>
       measureDiagnosticsTimelineSpan(name, run, {
@@ -430,12 +423,7 @@ export async function getReplyFromConfig(
   );
   if (nativeSlashCommandFastReply.handled) {
     logResolverTiming("completed", "native_slash_command_fast_path");
-    return finishCommandTurn({
-      opts,
-      ctx: finalized,
-      cfg,
-      reply: nativeSlashCommandFastReply.reply,
-    });
+    return finishCommandTurn(nativeSlashCommandFastReply.reply);
   }
   const optsWithCommandQueueOverride = nativeSlashCommandFastReply.queueModeOverride
     ? { ...optsWithSkillFilter, queueModeOverride: nativeSlashCommandFastReply.queueModeOverride }
@@ -605,18 +593,10 @@ export async function getReplyFromConfig(
         })
       : await traceGetReplyPhase("reply.init_session_state", () =>
           initSessionState({
-            providerReviewAcknowledgment: optsWithSkillFilter?.providerReviewAcknowledgment,
+            ...resolveReplySessionInitializationOptions(optsWithSkillFilter),
             ctx: finalized,
             cfg,
             commandAuthorized,
-            ...(optsWithSkillFilter?.expectedExistingSessionId
-              ? { expectedExistingSessionId: optsWithSkillFilter.expectedExistingSessionId }
-              : {}),
-            pinExpectedExistingSession: optsWithSkillFilter?.pinExpectedExistingSession === true,
-            newlyCreatedSessionId: optsWithSkillFilter?.newlyCreatedSessionId,
-            requestedSessionId: optsWithSkillFilter?.requestedSessionId,
-            resumeRequestedSession: optsWithSkillFilter?.resumeRequestedSession,
-            signal: optsWithSkillFilter?.abortSignal,
           }),
         );
   } catch (error) {
@@ -886,7 +866,7 @@ export async function getReplyFromConfig(
   );
   if (directiveResult.kind === "reply") {
     logResolverTiming("completed", "directive_reply");
-    return finishCommandTurn({ opts, ctx: finalized, cfg, reply: directiveResult.reply });
+    return finishCommandTurn(directiveResult.reply);
   }
   const {
     command,
@@ -998,7 +978,7 @@ export async function getReplyFromConfig(
   await maybeEmitMissingResetHooks();
   if (inlineActionResult.kind === "reply") {
     logResolverTiming("completed", "inline_action_reply");
-    return finishCommandTurn({ opts, ctx: finalized, cfg, reply: inlineActionResult.reply });
+    return finishCommandTurn(inlineActionResult.reply);
   }
   directives = inlineActionResult.directives;
   cleanedBody = inlineActionResult.cleanedBody;

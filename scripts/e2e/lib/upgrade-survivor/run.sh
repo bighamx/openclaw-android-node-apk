@@ -4,8 +4,7 @@ if [[ ${OSTYPE:-} == darwin* && $BASH != /bin/bash ]] && ((BASH_VERSINFO[0] > 5 
   exec /bin/bash "$0" "$@"
 fi
 set -Eeuo pipefail
-# Signal traps inherit the foreground command's redirections. Keep harness stdout separate so the
-# final summary location cannot corrupt a command artifact when the run is interrupted.
+# Phase markers and signal diagnostics must not corrupt redirected command artifacts.
 exec 3>&1
 
 source scripts/lib/openclaw-e2e-instance.sh
@@ -142,6 +141,7 @@ initial_update_observation_root=""
 last_update_observation_root=""
 workshop_doctor_observation_root=""
 idempotence_seconds=""
+idempotence_budget_seconds=""
 run_completed="0"
 update_exit_code=""
 
@@ -276,6 +276,7 @@ write_summary() {
     SUMMARY_START_SECONDS="$start_seconds" \
     SUMMARY_UPDATE_RESTART_SECONDS="$update_restart_seconds" \
     SUMMARY_IDEMPOTENCE_SECONDS="$idempotence_seconds" \
+    SUMMARY_IDEMPOTENCE_BUDGET_SECONDS="$idempotence_budget_seconds" \
     SUMMARY_HEALTHZ_SECONDS="$healthz_seconds" \
     SUMMARY_READYZ_SECONDS="$readyz_seconds" \
     SUMMARY_STATUS_SECONDS="$status_seconds" \
@@ -358,6 +359,7 @@ const summary = {
   backupSchedule: process.env.SUMMARY_SCENARIO === "backup-schedule"
     ? readJsonOrNull(path.join(path.dirname(process.env.SUMMARY_JSON), "backup-schedule.json"))
     : undefined,
+  packageActivationRecovery: readJsonOrNull(path.join(path.dirname(process.env.SUMMARY_JSON), "package-activation-recovery.json")),
   nativeAssignmentEligibility: readJsonOrNull(path.join(path.dirname(process.env.SUMMARY_JSON), "native-assignment-eligibility.json")),
   nativeAssignments: process.env.SUMMARY_SCENARIO === "legacy-operator-state"
     ? readJsonOrNull(path.join(path.dirname(process.env.SUMMARY_JSON), "native-assignment-proof.json"))
@@ -369,6 +371,7 @@ const summary = {
     startupSeconds: numberOrNull(process.env.SUMMARY_START_SECONDS),
     updateRestartSeconds: numberOrNull(process.env.SUMMARY_UPDATE_RESTART_SECONDS),
     idempotenceSeconds: numberOrNull(process.env.SUMMARY_IDEMPOTENCE_SECONDS),
+    idempotenceBudgetSeconds: numberOrNull(process.env.SUMMARY_IDEMPOTENCE_BUDGET_SECONDS),
     healthzSeconds: numberOrNull(process.env.SUMMARY_HEALTHZ_SECONDS),
     readyzSeconds: numberOrNull(process.env.SUMMARY_READYZ_SECONDS),
     statusSeconds: numberOrNull(process.env.SUMMARY_STATUS_SECONDS),
@@ -573,16 +576,16 @@ trap 'on_signal SIGINT 130' INT
 trap 'on_signal SIGTERM 143' TERM
 
 phase() {
-  local name="$1" phase_status
+  local name="$1" phase_status previous_phase="$CURRENT_PHASE"
   shift
   CURRENT_PHASE="$name"
-  echo "==> upgrade-survivor:$name"
+  echo "==> upgrade-survivor:$name" >&3
   json_event "$name" started
   "$@"
   phase_status=$?
   [ "$phase_status" -eq 0 ] || return "$phase_status"
   json_event "$name" passed
-  CURRENT_PHASE=""
+  CURRENT_PHASE="$previous_phase"
 }
 
 companion_survivor_scenario() {
@@ -1806,7 +1809,8 @@ prepare_restart_fixture() {
   local fixture_dir fixture_package runtime_source
   fixture_dir="$(mktemp -d "$RUNTIME_ROOT/restart-fixture.XXXXXX")" || return "$?"
   fixture_package="$fixture_dir/future.tgz"
-  node scripts/e2e/lib/update-first-hop-package-fixtures.mjs future-tarball \
+  phase prepare-restart-package openclaw_e2e_maybe_timeout "$COMMAND_TIMEOUT" \
+    node scripts/e2e/lib/update-first-hop-package-fixtures.mjs future-tarball \
     "$candidate_tarball" "$fixture_package" >"$fixture_dir/receipt.json" || return "$?"
   restart_fixture_version="$(node -p 'require(process.argv[1]).targetVersion' "$fixture_dir/receipt.json")" || return "$?"
   mv "$fixture_dir/receipt.json" "$ARTIFACT_ROOT/restart-fixture.json" || return "$?"
@@ -1827,7 +1831,8 @@ if (crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex") !== 
 process.stdout.write(file);
 NODE
   )" || return "$?"
-  node scripts/e2e/lib/update-first-hop-package-fixtures.mjs future-runtime-tarball \
+  phase prepare-restart-runtime openclaw_e2e_maybe_timeout "$COMMAND_TIMEOUT" \
+    node scripts/e2e/lib/update-first-hop-package-fixtures.mjs future-runtime-tarball \
     "$runtime_source" "$fixture_dir/codex.tgz" >"$fixture_dir/runtime-receipt.json" || return "$?"
   mv "$fixture_dir/runtime-receipt.json" "$ARTIFACT_ROOT/restart-runtime-fixture.json" || return "$?"
   restart_runtime_evidence="$ARTIFACT_ROOT/restart-runtime-fixture.json"
@@ -1933,7 +1938,9 @@ repair_fixture_plugin_consent() {
 }
 
 assert_volume_idempotence() {
-  local started_at budget
+  local started_at
+  idempotence_budget_seconds="$(node scripts/e2e/lib/upgrade-survivor/assertions.mjs \
+    volume-doctor-budget "$ARTIFACT_ROOT/volume-doctor-budget.json")" || return "$?"
   started_at="$(date +%s)"
   if ! openclaw_e2e_maybe_timeout "$COMMAND_TIMEOUT" openclaw doctor --fix --non-interactive >>"$DOCTOR_LOG" 2>&1; then
     echo "openclaw idempotence doctor failed" >&2
@@ -1941,10 +1948,9 @@ assert_volume_idempotence() {
     return 1
   fi
   idempotence_seconds=$(($(date +%s) - started_at))
-  budget="$(openclaw_e2e_read_positive_int_env OPENCLAW_UPGRADE_SURVIVOR_VOLUME_IDEMPOTENCE_BUDGET_SECONDS 60)"
-  echo "SQLite volume idempotence doctor completed in ${idempotence_seconds}s (budget ${budget}s)."
-  if [ "$idempotence_seconds" -gt "$budget" ]; then
-    node scripts/lib/check-limits.mts scripts/e2e/lib/upgrade-survivor/run.sh "Upgrade idempotence budget" "SQLite volume idempotence exceeded budget: ${idempotence_seconds}s > ${budget}s" || return "$?"
+  echo "SQLite volume idempotence doctor completed in ${idempotence_seconds}s (budget ${idempotence_budget_seconds}s)."
+  if [ "$idempotence_seconds" -gt "$idempotence_budget_seconds" ]; then
+    node scripts/lib/check-limits.mts scripts/e2e/lib/upgrade-survivor/run.sh "Upgrade idempotence budget" "SQLite volume idempotence exceeded budget: ${idempotence_seconds}s > ${idempotence_budget_seconds}s" || return "$?"
   fi
   OPENCLAW_UPGRADE_SURVIVOR_ASSERT_STAGE="$survival_assert_stage" \
     node scripts/e2e/lib/upgrade-survivor/assertions.mjs assert-state
@@ -2232,6 +2238,11 @@ phase validate-worker-cell validate_worker_cell
 phase reset-run-state reset_run_state
 phase install-baseline install_baseline
 phase initialize-state initialize_state
+if [ "$SCENARIO" = "package-publication-recovery" ] || [ "$SCENARIO" = "package-verification-recovery" ] || [ "$SCENARIO" = "package-stranded-first-hop" ]; then
+  source scripts/e2e/lib/upgrade-survivor/package-activation-recovery.sh
+  run_package_activation_recovery_survivor
+  exit 0
+fi
 if [ "$SCENARIO" = "backup-schedule" ]; then
   if [ "$baseline_spec" != "openclaw@2026.9.7" ] || [ "$CANDIDATE_KIND" != "tarball" ] ||
     [ "$UPDATE_RESTART_MODE" != "manual" ] || [ "$ROOT_MANAGED_VPS" != "0" ] || [ "$LIVE_ENABLED" != "0" ]; then

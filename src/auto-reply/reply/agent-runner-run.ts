@@ -45,6 +45,7 @@ import {
 } from "./agent-runner-helpers.js";
 import { deliverPreparedBlockReply } from "./agent-runner-presentation.js";
 import { runReplyQuestionInput } from "./agent-runner-question-input.js";
+import { buildReplyMediaContextParams } from "./agent-runner-run-params.js";
 import { runActiveReplySteer } from "./agent-runner-steer-adoption.js";
 import { resolveQueuedReplyExecutionConfig } from "./agent-runner-utils.js";
 import { createBlockReplyPipeline } from "./block-reply-pipeline.js";
@@ -64,6 +65,10 @@ import { REPLY_ADMISSION_TICKET } from "./reply-admission-ticket.js";
 import { createReplyMediaContext } from "./reply-media-paths.js";
 import * as replyRunState from "./reply-operation-run-state.js";
 import { type ReplyOperation, replyRunRegistry } from "./reply-run-registry.js";
+import {
+  captureReplyOperationSessionReader,
+  getReplyOperationSessionReader,
+} from "./reply-run-registry.state.js";
 import { bindReplyOperationTyping } from "./reply-run-typing.js";
 import { createReplyToModeFilterForChannel, resolveReplyToMode } from "./reply-threading.js";
 import { prepareReplyToolAuthority } from "./reply-tool-authority.js";
@@ -92,7 +97,7 @@ export async function runReplyAgent(
     opts,
     typing,
     sessionEntry,
-    sessionStore,
+    sessionStore: activeSessionStore,
     sessionKey,
     runtimePolicySessionKey,
     storePath,
@@ -120,7 +125,6 @@ export async function runReplyAgent(
     typing.cleanup();
   };
   let activeSessionEntry = sessionEntry;
-  const activeSessionStore = sessionStore;
   const effectiveResetTriggered = resetTriggered === true;
 
   const isHeartbeat = opts?.isHeartbeat === true;
@@ -198,6 +202,7 @@ export async function runReplyAgent(
             (target) => {
               restartRecoveryTarget = target;
             },
+            getReplyOperationSessionReader(providedReplyOperation),
           )) ?? activeSessionEntry)
         : activeSessionEntry;
     assertReadCurrent();
@@ -470,22 +475,9 @@ export async function runReplyAgent(
     );
   const applyReplyToMode = createReplyToModeFilterForChannel(replyToMode, replyToChannel);
   const cfg = followupRun.run.config;
-  const replyMediaContext = createReplyMediaContext({
-    cfg,
-    agentId: followupRun.run.agentId,
-    sessionKey,
-    workspaceDir: followupRun.run.workspaceDir,
-    mediaNormalizationOwner: followupRun.run.mediaNormalizationOwner,
-    messageProvider: followupRun.run.messageProvider,
-    accountId: followupRun.originatingAccountId ?? followupRun.run.agentAccountId,
-    groupId: followupRun.run.groupId,
-    groupChannel: followupRun.run.groupChannel,
-    groupSpace: followupRun.run.groupSpace,
-    requesterSenderId: followupRun.run.senderId,
-    requesterSenderName: followupRun.run.senderName,
-    requesterSenderUsername: followupRun.run.senderUsername,
-    requesterSenderE164: followupRun.run.senderE164,
-  });
+  const replyMediaContext = createReplyMediaContext(
+    buildReplyMediaContextParams(followupRun, sessionKey, cfg),
+  );
   const compactionNoticeMessageId = sessionCtx.MessageSidFull ?? sessionCtx.MessageSid;
   const sendDirectCompactionNotice = shouldNotifyUserAboutCompaction(cfg)
     ? async (phase: CompactionNoticePhase, text?: string) => {
@@ -644,7 +636,13 @@ export async function runReplyAgent(
     storePath,
   });
   try {
-    await replyOperation.bindToolAuthoritySnapshotAsync(prepareReplyToolAuthority(followupRun));
+    await replyOperation.bindToolAuthoritySnapshotAsync(
+      prepareReplyToolAuthority(
+        followupRun,
+        undefined,
+        captureReplyOperationSessionReader(replyOperation),
+      ),
+    );
     return await executePreparedReplyAgentRun({
       ...params,
       activeSessionStore,
