@@ -31,6 +31,7 @@ import {
   planReleaseChildRerun,
   releaseChildSpec,
   releaseChildSpecs,
+  releaseGhRateLimitRetryAt,
   terminalPolicyPass,
   validateReleaseChildDispatchBinding,
   validateReleaseChildRunProvenance,
@@ -240,7 +241,7 @@ async function execCommand(command, args, options = {}) {
     maxBuffer: 64 * 1024 * 1024,
     timeout: options.timeoutMs ?? 60_000,
   });
-  return result.stdout.trim();
+  return result.stdout;
 }
 
 function execGh(args, options = {}) {
@@ -284,7 +285,11 @@ async function execGhRead(args, options = {}) {
         timeoutMs: Math.min(options.timeoutMs ?? 60_000, remaining),
       });
     } catch (error) {
-      if (attempt === 4 || classifyReleaseGhTransportError(error) !== "transient") {
+      if (
+        attempt === 4 ||
+        releaseGhRateLimitRetryAt(error) !== undefined ||
+        classifyReleaseGhTransportError(error) !== "transient"
+      ) {
         throw error;
       }
       await sleep(
@@ -300,18 +305,25 @@ async function execGhRead(args, options = {}) {
   }
 }
 
-function readGhApi(repository, path, args = [], options = {}, fresh = true) {
+async function readGhApi(repository, path, args = [], options = {}, fresh = true) {
   // Rerun decisions require current attempts and jobs, not a relay's earlier snapshot.
   // Polling watchers keep the relay's own freshness policy.
-  return execGhRead(
+  const include = !path.endsWith("/logs");
+  const output = await execGhRead(
     [
       "api",
+      ...(include ? ["--include"] : []),
       `repos/${repository}/${path}`,
       ...(fresh ? ["-H", "Cache-Control: max-age=0"] : []),
       ...args,
     ],
     options,
   );
+  // gh emits a header block for each paginated response, even with --jq.
+  // Keep successful JSON rows intact while retaining failed-response retry headers.
+  return include
+    ? output.replace(/^HTTP\/\d+(?:\.\d+)? [^\r\n]+\r?\n(?:[^\r\n]+\r?\n)*\r?\n/gmu, "").trim()
+    : output.trim();
 }
 
 async function ghJson(repository, path, options, fresh) {
@@ -2513,6 +2525,9 @@ function readWatchState(path, repository, parentRunId) {
   return {
     children: saved?.children ?? {},
     parentRunId,
+    nextCheckAt: saved?.nextCheckAt ?? 0,
+    rateLimitFailures: saved?.rateLimitFailures ?? 0,
+    failedReadFingerprint: saved?.failedReadFingerprint ?? "",
     reported: new Set(saved?.reported),
     repository,
   };
@@ -2565,9 +2580,17 @@ async function pollRelease(state, client, pending, readOptions) {
   };
   // Transient GitHub failures, including HTML 5xx bodies, never become job results.
   const read = async (label, operation) => {
+    if (state.nextCheckAt > Date.now()) {
+      return undefined;
+    }
     try {
       return await operation();
     } catch (error) {
+      const retryAt = releaseGhRateLimitRetryAt(error, Date.now(), state.rateLimitFailures);
+      if (retryAt !== undefined) {
+        state.nextCheckAt = Math.max(state.nextCheckAt, retryAt);
+        state.rateLimitFailures += 1;
+      }
       const text = String(error?.stderr ?? error?.message ?? error);
       if (classifyReleaseGhTransportError(error) === "hard" && !/HTTP 404\b/u.test(text)) {
         throw error;
@@ -2703,15 +2726,29 @@ export async function watchRelease(parentRunId, client, options = {}) {
   const state = readWatchState(statePath, repository, String(parentRunId));
   const pending = new Set();
   while (true) {
-    const { complete, events, failedReads } = await pollRelease(state, client, pending, {
-      operationDeadline,
-    });
+    const { complete, events, failedReads } =
+      state.nextCheckAt > Date.now()
+        ? { complete: false, events: [], failedReads: [] }
+        : await pollRelease(state, client, pending, { operationDeadline });
+    if (failedReads.length > 0) {
+      const fingerprint = `${failedReads.join(", ")}:${state.nextCheckAt}`;
+      if (state.failedReadFingerprint !== fingerprint) {
+        events.push({
+          message:
+            state.nextCheckAt > Date.now()
+              ? `GitHub rate limited (${failedReads.join(", ")}); next check at ${new Date(state.nextCheckAt).toISOString()}`
+              : `GitHub reads failed (${failedReads.join(", ")}); retrying next poll`,
+        });
+        state.failedReadFingerprint = fingerprint;
+      }
+    } else if (state.nextCheckAt <= Date.now()) {
+      state.nextCheckAt = 0;
+      state.rateLimitFailures = 0;
+      state.failedReadFingerprint = "";
+    }
     writeWatchState(statePath, state);
     for (const event of events) {
       emit(event);
-    }
-    if (failedReads.length > 0) {
-      emit({ message: `GitHub reads failed (${failedReads.join(", ")}); retrying next poll` });
     }
     if (complete) {
       emit({ message: `parent ${parentRunId} and every dispatched child are terminal` });
@@ -2721,7 +2758,7 @@ export async function watchRelease(parentRunId, client, options = {}) {
     if (options.once || remaining < 1) {
       return { complete, statePath };
     }
-    await sleep(Math.min(intervalMs, remaining));
+    await sleep(Math.min(Math.max(intervalMs, state.nextCheckAt - Date.now()), remaining));
   }
 }
 

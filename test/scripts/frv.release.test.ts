@@ -49,12 +49,31 @@ describe("FRV protected gh evidence reads", () => {
       [{ id: 1 }, { id: 2 }],
     ],
     ["getJobLog", [1], "actions/jobs/1/logs", "job evidence"],
-  ])("revalidates %s through the default protected route", (method, args, endpoint, expected) => {
-    const result = runProtectedFrv(method, args as Array<string | number>, endpoint);
-    expect(result.status, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual(expected);
-    expect(result.calls).toHaveLength(1);
-  });
+    ["getParentJobs", ["77"], "actions/runs/77/jobs?filter=all&per_page=100", [], "empty"],
+  ] as const)(
+    "revalidates %s through the default protected route",
+    (method, args, endpoint, expected, failure?: "empty") => {
+      const result = runProtectedFrv(method, [...args], endpoint, failure);
+      expect(result.status, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual(expected);
+      expect(result.calls).toHaveLength(1);
+    },
+  );
+
+  it.each(["403", "429"] as const)(
+    "retains a later-page %s throttle deadline without fast transport retries",
+    (status) => {
+      const result = runProtectedFrv(
+        "getParentJobs",
+        ["77"],
+        "actions/runs/77/jobs?filter=all&per_page=100",
+        status,
+      );
+      expect(result.status).toBe(1);
+      expect(JSON.parse(result.stderr)).toEqual({ retryAt: 130_000, classification: "transient" });
+      expect(result.calls).toHaveLength(1);
+    },
+  );
 
   it.each(["getRun", "getAttemptJobs"])(
     "bounds the protected %s transport retries by the read deadline",
@@ -105,7 +124,15 @@ function runProtectedFrv(
   method: string,
   args: Array<string | number | Record<string, unknown>>,
   endpoint: string,
-  failure: "none" | "legacy-flag" | "protected" | "unrelated" | "transient-deadline" = "none",
+  failure:
+    | "none"
+    | "legacy-flag"
+    | "protected"
+    | "unrelated"
+    | "transient-deadline"
+    | "empty"
+    | "403"
+    | "429" = "none",
 ) {
   const root = mkdtempSync(join(tmpdir(), "frv-protected-"));
   const gh = join(root, "gh");
@@ -124,9 +151,17 @@ if (!args.some((arg, i) => ["-H", "--header"].includes(arg) && args[i+1] === "Ca
 if (${endpoint.endsWith("/logs")} && failure === "legacy-flag" && args.includes("--allow-escape-sequences")) fail("unknown flag: --allow-escape-sequences", 1);
 if (${endpoint.endsWith("/logs")} && failure === "unrelated") fail("unrelated log failure", 23);
 if (${endpoint.endsWith("/logs")} && failure === "none" && !args.includes("--allow-escape-sequences")) fail("missing escape-sequence flag", 20);
+if (!${endpoint.endsWith("/logs")}) {
+  if (!args.includes("--include")) fail("missing included headers", 17);
+  process.stdout.write("HTTP/2.0 200 OK\\nContent-Type: application/json\\r\\n\\r\\n");
+}
+if (failure === "403" || failure === "429") {
+  process.stdout.write('{"id":1}\\n\\nHTTP/2.0 ' + failure + ' Rate limited\\nRetry-After: 120\\r\\n\\r\\n{"message":"API rate limit exceeded"}');
+  fail("gh: API rate limit exceeded (HTTP " + failure + ")", 1);
+}
 if (${endpoint.includes("/jobs?")}) {
   if (!args.includes("--paginate") || !args.includes(".jobs[] | @json")) fail("missing pagination", 17);
-  console.log('{"id":1}\\n{"id":2}');
+  if (failure !== "empty") console.log('{"id":1}\\n{"id":2}');
 } else console.log(${endpoint.endsWith("/logs") ? JSON.stringify("job evidence") : JSON.stringify('{"run_attempt":2}')});
 `,
   );
@@ -141,6 +176,9 @@ if (${endpoint.includes("/jobs?")}) {
         `
       import {createClient} from ${JSON.stringify(moduleUrl)};
       import {existsSync} from "node:fs";
+      import {releaseGhRateLimitRetryAt, classifyReleaseGhTransportError} from ${JSON.stringify(pathToFileURL(join(process.cwd(), "scripts/full-release-validation-policy.mjs")).href)};
+      const throttled = ["403", "429"].includes(${JSON.stringify(failure)});
+      if (throttled) Date.now = () => 10_000;
       if (${JSON.stringify(failure)} === "transient-deadline") {
         Date.now = () => existsSync("calls.jsonl") ? 20_000 : 10_000;
         const nativeSetTimeout = globalThis.setTimeout;
@@ -151,7 +189,10 @@ if (${endpoint.includes("/jobs?")}) {
       }
       try {
         console.log(JSON.stringify(await createClient(${JSON.stringify(REPOSITORY)})[${JSON.stringify(method)}](...${JSON.stringify(args)})));
-      } catch (error) { console.error(error.message); process.exitCode = typeof error.code === "number" ? error.code : 1; }
+      } catch (error) {
+        console.error(throttled ? JSON.stringify({ retryAt: releaseGhRateLimitRetryAt(error), classification: classifyReleaseGhTransportError(error) }) : error.message);
+        process.exitCode = typeof error.code === "number" ? error.code : 1;
+      }
     `,
       ],
       {
@@ -527,7 +568,7 @@ if (legacy && args[0] === "run" && args[1] === "download" && args[2] === "77") {
   process.exit(0);
 }
 if (args[0] !== "api" || (!legacy && (!args.includes("GET") || !args.includes("github.com"))) || !args.includes("Cache-Control: max-age=0")) reject();
-if (args.includes("--include") || (!legacy && args.includes("--paginate"))) reject();
+if (!legacy && (args.includes("--include") || args.includes("--paginate"))) reject();
 let path = args.find(a => a.startsWith("repos/"));
 if (legacy && path.endsWith("/jobs?per_page=100")) path += "&page=1";
 const table = JSON.parse(fs.readFileSync("responses.json", "utf8"));
@@ -538,6 +579,7 @@ if (value.sequence) {
   value = value.sequence[Math.min(reads - 1, value.sequence.length - 1)];
 }
 if (value.failure) { console.error(value.failure); process.exit(1); }
+if (legacy && args.includes("--include")) process.stdout.write("HTTP/2.0 200 OK\\r\\nContent-Type: application/json\\r\\n\\r\\n");
 if (legacy && value.jobs) process.stdout.write(value.jobs.map(job => JSON.stringify(job)).join("\\n"));
 else if (value.binary) process.stdout.write(Buffer.from(value.binary, "base64"));
 else if (value.raw) process.stdout.write(value.raw);
