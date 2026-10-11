@@ -76,6 +76,13 @@ that process stops, restart the host with `openclaw node run --session-host`,
 which reuses the saved pairing. See
 [Reconnect a paired node](/cli/connect#reconnect-a-paired-node).
 
+After a host reboot, the node releases interrupted native worker slots and records
+the interrupted turn when its saved launch boot identity differs from the current
+OS boot identity. The next turn can start normally after the node reconnects.
+Older launch records and hosts whose boot identity cannot be read keep the existing
+conservative cleanup checks. Container workers still require their container
+engine to confirm cleanup, including when that engine runs on another host.
+
 In Control UI New Session, a
 write-scoped operator chooses either a specific paired device or **Auto**.
 Without an explicit project or folder selection, **New workspace** starts an
@@ -85,6 +92,22 @@ session-owned managed workspace, dispatches it with the exact
 `deviceId` or `autoDevice: true`, and sends the first turn only after the chosen
 device placement becomes active. New Session does not bind `execNode` or browse
 the device filesystem.
+
+The selected model's **harness** must also support the chosen device. OpenAI
+models using the Codex harness require the official Codex plugin on that node;
+installing it only on the Gateway is not enough. On the node, run:
+
+```bash
+openclaw plugins install @openclaw/codex
+openclaw node restart
+```
+
+If the plugin is already installed but disabled, explicitly enable it with
+`openclaw plugins enable codex` before restarting. Approve the node's updated
+command surface on the Gateway. The picker keeps the device unavailable for
+Codex until it advertises the command and approval is complete. Alternatively,
+choose a model using the OpenClaw harness; OpenClaw does not switch harnesses
+silently or install Codex when you enable session hosting.
 
 On POSIX hosts, OpenClaw keeps its managed workspace directories private (`0700`),
 including when the host uses umask `0002`. Existing node-owned workspace ancestry
