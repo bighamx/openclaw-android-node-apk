@@ -63,7 +63,6 @@ import type { IncognitoAgentDatabaseOperations } from "./openclaw-agent-executio
 import { createIncognitoAgentDatabaseBackend } from "./openclaw-agent-execution-incognito.worker.js";
 import { createAgentDatabaseMaintenanceOwner } from "./openclaw-agent-execution-maintenance.js";
 import {
-  loadAgentTranscriptOperations,
   loadAgentTranscriptReadOperations,
   loadAgentReplacementOperations,
   loadAgentRestartRecoveryOperations,
@@ -85,9 +84,12 @@ import {
   loadAgentPendingInputOperations,
   loadAgentArchivePruningOperations,
   loadUsageCacheOperations,
-  prepareAgentTranscript,
   type RegisteredAgentWorkerOperations,
 } from "./openclaw-agent-execution-operations.js";
+import {
+  loadAgentTranscriptOperations,
+  prepareAgentTranscript,
+} from "./openclaw-agent-execution-transcript.worker.js";
 import { loadAgentVoiceSessionOperations } from "./openclaw-agent-execution-voice-operations.js";
 import type { AgentWorkerOperationContext } from "./openclaw-agent-operation-context.js";
 import {
@@ -296,8 +298,10 @@ function openAgentDatabaseBackend(
         releaseBorrow = retainAgentDatabase(opened.db);
         openingResult = { ok: true, value: opened };
       } catch (error) {
-        // The opener can retain a failed native handle before returning one to this actor.
-        openingFailure = { error };
+        // An explicit pre-open refusal cannot retain a native handle.
+        if (!(error instanceof SqliteWorkerOpenRefusedError)) {
+          openingFailure = { error };
+        }
         openingResult = { ok: false, error };
       }
       if (registration) {
