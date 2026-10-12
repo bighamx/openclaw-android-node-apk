@@ -399,7 +399,10 @@ it.each(["committed", "unknown"] as const)(
       await expect(ack).rejects.toThrow();
     }
     expect(corrupted()).toBe(1);
-    expect(placements.get(claim.sessionId)?.lastLiveEventAckCursor).toBe(1);
+    if (outcome === "unknown") {
+      expect(() => placements.get(claim.sessionId)).toThrow("Await getAsync");
+    }
+    expect((await placements.getAsync(claim.sessionId))?.lastLiveEventAckCursor).toBe(1);
     expect(await placements.listPendingWorkspaceResultsAsync(claim.sessionId)).toMatchObject([
       { claimId: claim.claimId, gatewayInstanceId: placements.workspaceResultInstanceId() },
     ]);
@@ -440,6 +443,7 @@ it.each(["committed", "unknown"] as const)(
     const requested = input(`projection-${outcome}`);
     // The fault belongs to the claim admission, not the worker's first open admission.
     await placements.releaseTurn(await placements.claimTurn(requested));
+    await placements.readProjection([requested.sessionId]);
     const snapshots: ReturnType<typeof placements.readPublishedProjection>[] = [];
     const changes: SessionRowChange[] = [];
     const stop = sessionChanges.subscribeProjection((change) => {
@@ -518,7 +522,7 @@ it.each(["new local", "existing local", "worker"] as const)(
     await expect(placements.claimTurn(requested)).rejects.toThrow(
       "The session workspace is being published",
     );
-    expect(placements.get(requested.sessionId)?.turnClaim ?? null).toBeNull();
+    expect((await placements.getAsync(requested.sessionId))?.turnClaim ?? null).toBeNull();
     runOpenClawStateWriteTransaction(
       ({ db }) => {
         releaseOpenClawStateLeaseInTransaction(db, lease);
@@ -572,7 +576,7 @@ it("rolls back claim admission when live authority is revoked at commit", async 
     }),
   ).rejects.toThrow("synthetic placement admission revoked");
   expect(revoked).toBe(true);
-  expect(placements.get("placement-worker-refused")).toBeUndefined();
+  expect(await placements.getAsync("placement-worker-refused")).toBeUndefined();
 });
 
 it("fences retained authority before release commit and closes observers after settlement", async () => {

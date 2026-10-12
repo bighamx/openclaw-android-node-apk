@@ -5,6 +5,7 @@ import { makeAssistantMessageFixture } from "../agents/test-helpers/assistant-me
 import {
   loadSessionEntryReadOnly,
   persistSessionTranscriptTurn,
+  readSessionTranscriptWatermark,
   upsertSessionEntryCore,
 } from "../config/sessions/session-accessor.js";
 import { prewarmSessionHistoryWorker } from "../config/sessions/session-transcript-worker-runtime.js";
@@ -132,7 +133,7 @@ describe("utility completion with an unavailable implicit harness", () => {
       expect(transport).toHaveBeenCalledWith(
         expect.objectContaining({
           context: expect.objectContaining({ tools: [] }),
-          options: expect.objectContaining({ maxTokens: 8_492, temperature: 0.2 }),
+          options: expect.objectContaining({ maxTokens: 300, temperature: 0.2, reasoning: "off" }),
         }),
       );
       expect(runtimeMocks.runEmbeddedAttempt).not.toHaveBeenCalled();
@@ -176,14 +177,21 @@ describe("utility completion with an unavailable implicit harness", () => {
       completeModel: complete,
     });
     try {
-      recaps.ensure(target);
+      await recaps.ensure(target);
       await vi.waitFor(() => expect(complete).toHaveBeenCalledOnce());
       await expect(complete.mock.results[0]?.value).resolves.toMatchObject({
         owner: { kind: "harness", id: "openclaw" },
       });
       await vi.waitFor(() => {
         const entry = loadSessionEntryReadOnly(scope);
-        expect(projectSessionActivitySummary({ ...target, cfg: config, entry })).toMatchObject({
+        expect(
+          projectSessionActivitySummary({
+            ...target,
+            cfg: config,
+            entry,
+            watermark: readSessionTranscriptWatermark(scope),
+          }),
+        ).toMatchObject({
           state: "current",
           text,
         });
@@ -191,7 +199,7 @@ describe("utility completion with an unavailable implicit harness", () => {
       expect(transport).toHaveBeenCalledWith(
         expect.objectContaining({
           context: expect.objectContaining({ tools: [] }),
-          options: expect.objectContaining({ maxTokens: 8_432, temperature: 0.2 }),
+          options: expect.objectContaining({ maxTokens: 240, temperature: 0.2, reasoning: "off" }),
         }),
       );
       expect(runtimeMocks.runEmbeddedAttempt).not.toHaveBeenCalled();
