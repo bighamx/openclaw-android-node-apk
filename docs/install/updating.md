@@ -26,6 +26,10 @@ Before a significant update, [create a verified backup](#before-updating-create-
 Automatic config copies and migration recovery originals are not a full-state
 backup.
 
+## Update implementation contract
+
+**Updates always work** (`openclaw update` finishes best effort everywhere). Changes to update, Doctor, service lifecycle, migrations, plugin loading: state their update behavior. Installed updater runs first, can't be patched; candidate fixes key on markers shipped drivers set; existing operator state = input. Recoverable hiccups → recorded warnings; back up before mutating, let rollback restore it; refuse only for named data risk with previous Gateway kept running. Timeouts and budgets: generous, derived from measured state, sized for slow hardware. Proof: published-driver × candidate cell.
+
 ## Retired tenant-container management
 
 The experimental `openclaw fleet` command has been removed. Updating the host
@@ -440,10 +444,14 @@ For versions that support checks before installation, health checks, config and 
 test Gateway boot on copied state finish before the service stops. The stopped interval
 contains the swap, required migrations, plugin downloads and convergence, and
 service start. Plugin work uses the installed target without requiring a serving
-Gateway. A changed plugin snapshot runs fresh Doctor migrations before restart;
-unchanged plugins do not run another full Doctor pass. The final report records
-downtime through convergence and final verification, plus verification
-results. See
+Gateway. Changed plugins, pending plugin migrations, or deferred model retirement
+run fresh Doctor repairs before restart; required repair failures still block startup.
+After the candidate takes ownership of finalization, optional diagnostics with
+complete lint coverage can run after verified readiness. Their warnings and retry
+commands remain in the update report while the Gateway serves. Missing diagnostic
+selectors cause the checks to run before startup instead.
+The final report records downtime through convergence and final verification,
+plus verification results. See
 [Validation and activation](/cli/update#validation-and-activation) for the checks.
 
 Source updates also admit build-artifact ownership and runtime staging access in
@@ -838,6 +846,9 @@ restarts the Gateway.
 
 Missing state metadata or unverified backup coverage can still produce
 `update-schema-bump-unfenced` with database versions and recovery instructions.
+If npm postinstall emits this typed refusal, the updater reports it without
+retrying the install with optional dependencies omitted. Other install failures
+retain their existing retry behavior.
 Before package commit, let the failed update finish restoring the previous
 package. OpenClaw 2026.9.2 leaves the Gateway service stopped after failed
 post-install verification. After package commit, the old package backup is gone:
