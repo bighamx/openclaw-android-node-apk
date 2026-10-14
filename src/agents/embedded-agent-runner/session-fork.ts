@@ -22,11 +22,11 @@ export type EmbeddedSessionForkIdentity = { sessionId: string; agentId: string; 
 type SessionForkAuthority = { active: boolean; capture: object };
 type Snapshot = EmbeddedSessionForkIdentity & {
   model: Model;
-  context: Parameters<StreamFn>[1];
-  publishedMessageStart: number;
+  context: Buffer;
+  publications: Message[];
   options: StreamOptions;
   streamFn: StreamFn;
-  payload: string;
+  payload: Buffer;
   expires: number;
   bytes: number;
   expiryTimer: NodeJS.Timeout;
@@ -100,7 +100,7 @@ export function recordEmbeddedSessionForkMessage(
   try {
     const completed = structuredClone(message);
     const bytes = Buffer.byteLength(JSON.stringify(completed));
-    snapshot.context.messages.push(completed);
+    snapshot.publications.push(completed);
     snapshot.bytes += bytes;
     retainedBytes += bytes;
     prune();
@@ -137,18 +137,26 @@ export function wrapStreamFnWithSessionFork(
       headers,
       ...requestOptions
     } = options ?? {};
-    // Clone before the stream starts: an agent may append a partial assistant while it runs.
-    const savedContext = structuredClone({
-      systemPrompt: context.systemPrompt,
-      messages: context.messages,
-      // AgentTool objects also carry executors. Retain only the transport's Tool contract.
-      tools: context.tools?.map(({ name, description, parameters, async }) => ({
-        name,
-        description,
-        parameters,
-        ...(async === false ? { async } : {}),
-      })),
-    });
+    // Retain UTF-8 bytes before streaming mutates history; Unicode must not widen the entire cache.
+    let savedContext: Buffer;
+    try {
+      savedContext = Buffer.from(
+        JSON.stringify({
+          systemPrompt: context.systemPrompt,
+          messages: context.messages,
+          // AgentTool objects also carry executors. Retain only the transport's Tool contract.
+          tools: context.tools?.map(({ name, description, parameters, async }) => ({
+            name,
+            description,
+            parameters,
+            ...(async === false ? { async } : {}),
+          })),
+        }),
+      );
+    } catch {
+      // Skip this capture without revoking running forks; the old snapshot is already forgotten.
+      return streamFn(model, context, options);
+    }
     const savedModel = structuredClone({ ...model, headers: safeHeaders(model.headers) });
     const savedOptions = { ...requestOptions, headers: safeHeaders(headers) };
     // Internal symbol carriers belong to the parent run, not the independent request.
@@ -167,20 +175,19 @@ export function wrapStreamFnWithSessionFork(
         const finalPayload = replacement === undefined ? payload : replacement;
         if (isRecord(finalPayload) && authority.active && authority.capture === capture) {
           // Retain wire data once; only forks need a mutable decoded request.
-          const savedPayload = JSON.stringify(finalPayload);
+          const savedPayload = Buffer.from(JSON.stringify(finalPayload));
           const bytes =
-            Buffer.byteLength(savedPayload) +
-            Buffer.byteLength(
-              JSON.stringify({ context: savedContext, model: savedModel, options: savedOptions }),
-            ) +
-            11; // ,"payload": within the accounted envelope
+            savedPayload.length +
+            savedContext.length +
+            Buffer.byteLength(JSON.stringify({ model: savedModel, options: savedOptions })) +
+            22; // ,"context": and ,"payload": within the accounted envelope
           forgetSnapshot(identity.sessionId);
           if (bytes <= MAX_BYTES) {
             snapshots.set(identity.sessionId, {
               ...identity,
               model: savedModel,
               context: savedContext,
-              publishedMessageStart: savedContext.messages.length,
+              publications: [],
               options: savedOptions,
               payload: savedPayload,
               streamFn,
@@ -267,12 +274,14 @@ export async function runEmbeddedSessionFork(params: {
       "Cache-parity session fork requires the parent's prepared model. Send a normal message first.",
     );
   }
-  const context = structuredClone(snapshot.context);
+  const context: Parameters<StreamFn>[1] = JSON.parse(snapshot.context.toString("utf8"));
+  const publishedMessageStart = context.messages.length;
+  context.messages = context.messages.concat(structuredClone(snapshot.publications));
   // Only publications after the prepared request can still be in flight. Pair them
   // before provider replay repair can mistake a missing result for an aborted call.
   // These placeholders belong to this fork, never the parent's retained history.
   const completedCalls = new Set<string>();
-  for (let index = context.messages.length - 1; index >= snapshot.publishedMessageStart; index--) {
+  for (let index = context.messages.length - 1; index >= publishedMessageStart; index--) {
     const message = context.messages[index]!;
     if (message.role === "toolResult") {
       completedCalls.add(message.toolCallId);
@@ -313,7 +322,7 @@ export async function runEmbeddedSessionFork(params: {
       asyncToolExecution: false,
       onPayload: (payload) => {
         assertCurrent();
-        const parentPayload: unknown = JSON.parse(snapshot.payload);
+        const parentPayload: unknown = JSON.parse(snapshot.payload.toString("utf8"));
         if (!isRecord(payload) || !isRecord(parentPayload)) {
           throw new Error("Cache-parity session fork requires an object provider request.");
         }

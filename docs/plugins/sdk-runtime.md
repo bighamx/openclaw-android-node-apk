@@ -305,6 +305,14 @@ instance may omit them; feature-detect them before relying on instance cleanup.
 The existing `api.lifecycle.registerRuntimeLifecycle(...)` contract remains
 available for plugin-owned host state.
 
+Diagnostic subscriptions made while a managed plugin is loading, registering,
+or running belong to that instance. OpenClaw automatically unsubscribes them
+when the instance is disposed, including after a failed load or replacement.
+The unsubscribe handle still releases a subscription early and removes its
+cleanup registration. This covers `onDiagnosticEvent` and
+`onInternalDiagnosticEvent` from `openclaw/plugin-sdk/diagnostic-runtime`, as well
+as host-owned diagnostic subscriptions created on the plugin's behalf.
+
 ### Instance-bound background context
 
 Managed instances also expose the additive
@@ -684,6 +692,16 @@ after consumer retirement. See [decision models](/plugins/sdk-overview/capabilit
 for provider selection, lifecycle, failure handling, limits, and diagnostics.
 
 ## Setup secret egress
+
+Worker providers can optionally implement `runSetupCommand` to run repository
+binding lifecycle commands over their owned lease transport. The host supplies
+the prepared workspace and HOME, a script factory accepting only the bounded
+remote environment, and a live attached-environment/repository authority guard.
+The provider rechecks that guard after awaits and immediately before launch.
+Returning `undefined` retains the normal node tunnel; a protected transport error
+must reject instead of falling back. Project preparation's script factory accepts
+the same bounded prepared environment. Secrets and host proxy credentials remain
+owned by the setup-egress capability below.
 
 The private official-plugin entrypoint `openclaw/plugin-sdk/secret-egress-runtime`
 exports `withSetupSecretEgress(options, run)` alongside `withConfiguredModelEgress`.
