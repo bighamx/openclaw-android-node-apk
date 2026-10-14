@@ -73,7 +73,10 @@ flush and await pending updates, so a completed turn does not need to wait for
 that timer. This display batching does not delay Goal budgets or provider billing
 limits. A restart or pricing change can require background backfill;
 the page shows partial totals while it advances. Sessions without a cached
-projection remain pending without waiting for transcript statistics. Transcripts
+projection remain pending without waiting for transcript statistics. Background
+backfill yields between completed transcripts after ten seconds of scanning or
+50 transcripts, whichever comes first. One large transcript or the initial
+inventory can take longer. Transcripts
 remain the source of truth. Detailed reports retain exact timestamp boundaries and the recorded
 order of floating-point cost additions.
 
@@ -173,6 +176,8 @@ renders the richer footer described below.
 `/usage full` shows a built-in compact footer with model, reasoning, fast/slow,
 context window, and cost when those fields are available. No template file is
 required for the built-in footer.
+Context windows of one million tokens or more use `m` units, such as `1.0m` or
+`2.0m`; smaller windows keep `k` units, such as `200k`.
 
 `messages.usageTemplate` is only for advanced custom layouts. The value is a
 JSON file path (supports `~`) or an inline object, and it replaces the built-in
