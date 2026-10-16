@@ -3342,8 +3342,11 @@ export const en: TranslationMap & {
     incognitoExpiredBody:
       "Incognito sessions last for 24 hours or until the Gateway restarts. Your unsent input stays in this tab.",
     newIncognitoSession: "New Incognito session",
-    restartRecoveryTitle: "This session ended during a restart.",
-    restartRecoveryDisabled: "Its transcript is safe.",
+    restartRecoveryTitle: "This task was interrupted by a restart.",
+    restartRecoveryDisabled: "Your transcript is safe. Resume to continue in this session.",
+    restartRecoveryNewSession:
+      "This provider cannot safely resume tool work here. Your transcript can continue in a new session.",
+    resumeSession: "Resume",
     resumeInNewSession: "Resume in new session",
     resumingSession: "Resuming…",
     systemNotice: {
@@ -3379,7 +3382,11 @@ export const en: TranslationMap & {
       claudeCliTaskNotification: {
         label: "System · background task",
       },
+      pluginSteering: {
+        label: "{plugin} guidance",
+      },
       showContent: "Show content",
+      hideContent: "Hide content",
     },
     skillLearned: {
       label: "Learned",
@@ -3952,6 +3959,8 @@ export const en: TranslationMap & {
         "No transcription provider is configured for dictation. Choose one in Settings to dictate.",
       realtimeTalkCancellationRejected: "Realtime output cancellation was not accepted.",
       realtimeTalkMissingTurnIdentity: "Realtime output is missing its turn identity.",
+      realtimeTalkRelayUnresponsive:
+        "Talk ended because the Gateway has not acknowledged microphone audio for 30 seconds. Check the connection and start Talk again.",
       realtimeTalkRequiresMicrophone: "Realtime voice input requires browser microphone access.",
       selectedMicrophoneUnavailable:
         "The selected microphone is unavailable. Choose another input or System default.",

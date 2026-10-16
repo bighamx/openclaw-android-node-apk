@@ -821,6 +821,10 @@ Measured phases log both their start and elapsed
 duration; `total` is elapsed time from process startup (or the current in-process
 restart). These are wall times, including asynchronous waits, not CPU measurements.
 Nested durations overlap their parent phases; do not add them to the parent total.
+Plugin service starts taking at least 250 ms always log one compact
+`sidecars.plugin-services.<plugin>.<service>` span with elapsed time and a
+`success` or `failure` outcome, even without opt-in tracing. Plugin and service IDs
+use encoded diagnostic segments; the record contains no service payload or error text.
 Set `OPENCLAW_GATEWAY_STARTUP_TRACE=1` for the complete breakdown and per-plugin
 import and registration timings.
 
@@ -1221,6 +1225,11 @@ diagnostics. Built-in structural protections for form bodies, structured
 authorization headers, and bare AWS secret access keys always apply, including
 when this list is customized. Redaction is best-effort; review diagnostic
 exports before sharing them.
+
+If the list contains malformed or rejected patterns, OpenClaw skips those entries,
+keeps valid patterns, and adds the default protections. It warns once per process
+without printing the rejected values. Correct `logging.redactPatterns` in your
+config; directory inspection and Doctor can still report the config error.
 
 Tool arguments and results are not secret-masked. This includes model context,
 session transcripts, tool events and summaries in the Control UI, session-history

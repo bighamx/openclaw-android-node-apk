@@ -55,16 +55,17 @@ that scan.
 
 ## What survives a restart
 
-| State                          | Storage                                            | Behavior across restart                                                 |
-| ------------------------------ | -------------------------------------------------- | ----------------------------------------------------------------------- |
-| Conversation history           | Per-agent SQLite database                          | Untouched; sessions continue from the stored transcript                 |
-| Accepted Control UI follow-ups | Per-agent SQLite pending inputs and browser outbox | Matching interrupted inputs are re-admitted when the browser reconnects |
-| Interrupted main-session turn  | Per-agent SQLite session row and transcript        | Automatically resumed or reconciled a few seconds after startup         |
-| Subagent runs                  | SQLite (shared state database)                     | Interrupted runs settle; the parent decides how to continue             |
-| Queued outbound deliveries     | SQLite delivery queue                              | Drained after restart; undelivered replies are retried                  |
-| Scheduled (cron) jobs          | SQLite cron store                                  | Schedules persist; the scheduler re-arms on boot                        |
-| Restart continuation           | SQLite restart sentinel                            | One-shot follow-up dispatched to the session that asked for the restart |
-| Gateway terminal PTYs          | Process memory                                     | End with the old process; terminal sessions are not recovered           |
+| State                          | Storage                                                | Behavior across restart                                                   |
+| ------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------- |
+| Conversation history           | Per-agent SQLite database                              | Untouched; sessions continue from the stored transcript                   |
+| Accepted Control UI follow-ups | Per-agent SQLite pending inputs and browser outbox     | Matching interrupted inputs are re-admitted when the browser reconnects   |
+| Interrupted main-session turn  | Per-agent SQLite session row and transcript            | Automatically resumed or reconciled a few seconds after startup           |
+| Subagent runs                  | SQLite (shared state database)                         | Interrupted runs settle; the parent decides how to continue               |
+| Queued outbound deliveries     | SQLite delivery queue                                  | Drained after restart; undelivered replies are retried                    |
+| Scheduled (cron) jobs          | SQLite cron store                                      | Schedules persist; the scheduler re-arms on boot                          |
+| Restart continuation           | SQLite restart sentinel                                | One-shot follow-up dispatched to the session that asked for the restart   |
+| Background exec processes      | Process memory; notification obligation in session row | Processes end; eligible owning sessions wake once with an unknown outcome |
+| Gateway terminal PTYs          | Process memory                                         | End with the old process; terminal sessions are not recovered             |
 
 The Control UI retains accepted text and attachments in its outbox until the
 Gateway confirms transcript consumption. After reconnecting, it checks the saved
@@ -913,16 +914,20 @@ clear this residue from older sessions, so it cannot block a completed subagent'
 requester turn. Interrupted work and pending delivery keep their recovery custody.
 
 After the durable budget is exhausted, the session is tombstoned instead of
-looping forever. Inspect the failed session and use `/new` or `/reset` to start a
-replacement. `openclaw doctor --fix` can repair a stale aborted flag that
-conflicts with a tombstone, but it does not re-enable that recovery cycle.
+looping forever. The unfinished task remains available: inspect the failed
+session and use **Resume** in WebChat to continue in place with current operator
+authority. In other channels, `/new` or `/reset` starts a replacement.
+`openclaw doctor --fix` can repair a stale aborted flag that conflicts with a
+tombstone, but it does not re-enable that automatic recovery cycle. See
+[Session recovery](/concepts/session#gateway-restart-recovery) for tool-safety restrictions
+and the CLI-runtime replacement fallback.
 
 If you message the failed session again in a channel, OpenClaw sends a short
 recovery reminder through that channel and logs each rejected message at warn
 level with the session key, recovery reason, and recovery command. Repeated
 reminders are suppressed in a bounded memory cache. Resetting or deleting the
 session, or restarting the Gateway, clears that suppression. Sessions with locked
-model selection instead direct you to **Resume in new session** in WebChat.
+model selection instead direct you to **Resume** in WebChat.
 
 Every retry reuses one durable dispatch identifier, so an ambiguous connection
 failure cannot start the same recovery twice. Completed Control UI turns also
