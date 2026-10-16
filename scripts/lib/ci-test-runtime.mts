@@ -210,6 +210,7 @@ const bunCompatibleScopedOwners = new Map([
         "src/cli/admin-state-owner.process.test.ts",
         "src/infra/update-managed-service-handoff-reclamation.test.ts",
         "src/infra/worker-cpu.test.ts",
+        "src/state/openclaw-state-lease.retention.test.ts",
       ],
     },
   ],
@@ -302,6 +303,10 @@ const nodeRequiredFiles = new Set([
   "src/infra/owned-directory-observation.test.ts",
   // Bun does not settle a pending IPC send callback when its parent disconnects.
   "src/infra/tailscale-route-owner.worker.test.ts",
+  // Bun leaves a Proxy-closed FileHandle's finalizer armed (ERR_INVALID_STATE); fork repro reported.
+  "src/gateway/session-utils.fs.display-position.test.ts",
+  // Bun reports peer ECONNRESET when destroying a socket with a pending reply; fork compat review pending.
+  "src/infra/exec-host.socket.test.ts",
   // Bun throws ENOTDIR despite statSync's throwIfNoEntry: false option.
   "src/state/openclaw-database-preflight.startup-prepared.test.ts",
   // Bun Worker termination leaves unmanaged fs.openSync descriptors open.
@@ -339,8 +344,6 @@ const unitRequiresNode = (file: string) =>
       !file.startsWith("src/security/")) ||
     file === "packages/normalization-core/src/grapheme.test.ts"
   );
-// State-lease retention stays with its separate infra owner on Node: the completed
-// worker-heartbeat case still retains caller async context on the pinned Bun fork.
 const runtimePartitions = new Map<
   string,
   {
