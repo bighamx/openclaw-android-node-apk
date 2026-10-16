@@ -2,6 +2,7 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import type { SessionObserverDigest } from "../../../packages/gateway-protocol/src/schema/sessions.js";
 import type { GatewaySessionRow, SessionsListResult } from "../api/types.ts";
 import { serializeSidebarEntry } from "../app-navigation.ts";
+import { createQuestionPromptState } from "../app/question-prompt.ts";
 import type { PresencePayload } from "../app/user-profile.ts";
 import { t } from "../i18n/index.ts";
 import { rosterActivityStore } from "../lib/agents/roster-activity-store.ts";
@@ -30,7 +31,7 @@ import {
 import { AppSidebarBase } from "./app-sidebar-base.ts";
 import {
   personalSidebarZone,
-  SidebarPinnedSessions,
+  createSidebarPinnedSessions,
   personalSidebarOwnerProjection,
   personalSidebarOwnerFilterId,
   projectUnpinnedSessionRows,
@@ -83,7 +84,7 @@ import {
   type SidebarSessionSortMode,
   type SidebarSessionStatusFilter,
 } from "./app-sidebar-session-types.ts";
-import { SessionAttentionController } from "./session-attention-controller.ts";
+import type { SessionAttention } from "./session-attention.ts";
 import { SessionDataController } from "./session-data-controller.ts";
 import type { SessionOrganizerController } from "./session-organizer-controller.ts";
 import { SessionOwnerFilter } from "./session-owner-filter.ts";
@@ -144,7 +145,7 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
 
   sessionSortMode: SidebarSessionSortMode = loadStoredSidebarSessionSortMode();
 
-  readonly pinnedSessions = new SidebarPinnedSessions(this);
+  readonly pinnedSessions = createSidebarPinnedSessions(this);
   readonly sessionProjection = new SidebarSessionProjection();
   private readonly navigationMemo = new SidebarProjectionMemo<SidebarSessionNavigationState>();
   private readonly rowsMemo = new SidebarProjectionMemo<SidebarRecentSession[]>();
@@ -276,17 +277,14 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
 
   private sessionSelectionAnchor: string | null = null;
   private readonly runtimeSampledAtByRow = new WeakMap<GatewaySessionRow, number>();
-  private readonly attention = new SessionAttentionController(this);
+  readonly attentionQuestions = createQuestionPromptState(() => {});
+  declare attention: SessionAttention;
 
   declare readonly sidebarNarrationLines: ReadonlyMap<string, string>;
   declare readonly sidebarTools: ReadonlyMap<string, SidebarToolActivity>;
   declare readonly sidebarObserverDigests: ReadonlyMap<string, SessionObserverDigest>;
   declare readonly sessionOrganizer: SessionOrganizerController;
   declare readonly sidebarMenus: SidebarMenusController;
-
-  get sessionAttentionContext() {
-    return this.context;
-  }
 
   get sessionDataContext() {
     return this.context;
@@ -720,7 +718,7 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
   }
 
   get resolveSessionAttention() {
-    return this.attention.createResolver();
+    return this.attention.resolve();
   }
 
   projectHomeSession(row: GatewaySessionRow, agentId: string): SidebarHomeSession {
