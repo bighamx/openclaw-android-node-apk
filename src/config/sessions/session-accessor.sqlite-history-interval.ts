@@ -2,6 +2,7 @@ import { sql, type Expression, type RawBuilder, type SqlBool } from "kysely";
 import { OPENCLAW_RUNTIME_CONTEXT_CUSTOM_TYPE } from "../../agents/internal-runtime-context.js";
 import { SOURCE_PAGE_MAX_BYTES } from "../../gateway/session-transcript-source-pages.js";
 import { engineIndexHint } from "../../infra/database-engine/index-hint.js";
+import { jsonArrayElements } from "../../infra/database-engine/json-values.js";
 import {
   executeSqliteQuerySync,
   executeSqliteQueryTakeFirstSync,
@@ -10,6 +11,10 @@ import {
   resolveHistoryAnchorPageRange,
   type TranscriptAnchorPageOptions,
 } from "../../sessions/transcript-anchor-page.js";
+import {
+  resolveClosedResetInterval,
+  type ClosedResetInterval,
+} from "./session-accessor.sqlite-closed-reset-interval.js";
 import type { TranscriptEvent } from "./session-accessor.sqlite-contract.js";
 import { positionTranscriptDisplayEvents } from "./session-accessor.sqlite-display-position.js";
 import { findUnindexedActiveTranscriptEntry } from "./session-accessor.sqlite-history-navigation.js";
@@ -19,11 +24,7 @@ import {
   type CurrentTranscriptProjection,
   type SessionTranscriptMessageEvent,
 } from "./session-accessor.sqlite-projection-read.js";
-import {
-  readUnindexedHistoryControls,
-  resolveClosedResetInterval,
-  type ClosedResetInterval,
-} from "./session-accessor.sqlite-reset-window.js";
+import { readUnindexedHistoryControls } from "./session-accessor.sqlite-reset-window.js";
 import { isVisibleHistoryNonMessageEvent } from "./session-history-visibility.js";
 import { transcriptEventReadBytesSql } from "./session-transcript-read-bytes.js";
 import { transcriptEventJsonSql } from "./transcript-payload.js";
@@ -111,7 +112,7 @@ function selectHistoricalDisplayEvents(
                 "active.event_seq",
                 "in",
                 /* kysely-allow-raw: one bounded binding carries recovered control sequences. */
-                sql<number>`(SELECT value FROM json_each(${JSON.stringify(unindexedControls)}))`,
+                sql<number>`(SELECT CAST(value AS BIGINT) FROM ${jsonArrayElements(projection.database.db, sql.val(JSON.stringify(unindexedControls)))})`,
               ),
             ]
           : []),
