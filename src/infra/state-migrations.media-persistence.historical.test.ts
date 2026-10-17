@@ -7,7 +7,7 @@ import { cleanupTempDirs, makeTempDir } from "../../test/helpers/temp-dir.js";
 import { listSessionEntriesCore } from "../config/sessions/session-accessor.js";
 import * as transcriptFts from "../config/sessions/session-transcript-fts.js";
 import { createTranscriptEventInserter } from "../config/sessions/transcript-payload.js";
-import { assertAgentDatabaseMaintenanceAuthority } from "../state/openclaw-agent-db-lease.js";
+import { assertAgentDatabaseMaintenanceAuthority } from "../state/openclaw-agent-db-maintenance-authority.js";
 import { registerOpenClawAgentDatabase } from "../state/openclaw-agent-db-registry.js";
 import {
   closeOpenClawAgentDatabasesForTest,
@@ -16,7 +16,7 @@ import {
   resolveOpenClawAgentSqlitePath,
 } from "../state/openclaw-agent-db.js";
 import { OPENCLAW_AGENT_SCHEMA_V24_SQL } from "../state/openclaw-agent-schema-v24.test-support.js";
-import { recordOpenClawDatabaseQuarantine } from "../state/openclaw-quarantine-store.js";
+import { seedOpenClawDatabaseQuarantine } from "../state/openclaw-quarantine-store.test-support.js";
 import { createOpenClawDatabaseMaintenanceScope } from "../state/openclaw-state-db-async-lifecycle.js";
 import {
   closeOpenClawStateDatabaseForTest,
@@ -136,14 +136,12 @@ it.each([
           count: scenario === "unrelated violation" ? 3 : 2,
         });
       }
-      expect(
-        recordOpenClawDatabaseQuarantine({
-          env: state.env,
-          kind: "agent",
-          path: pathname,
-          reason: "fixture orphan session windows",
-        }),
-      ).toBe(true);
+      seedOpenClawDatabaseQuarantine({
+        env: state.env,
+        kind: "agent",
+        path: pathname,
+        reason: "fixture orphan session windows",
+      });
 
       let removedSearchRows: number | undefined;
       if (scenario === "cleanup failure") {
@@ -658,14 +656,12 @@ it.each([true])(
       const index = "sqlite_autoindex_session_nodes_1";
       corruptSqliteIndexKey(initial.path, index, "index-original", "index-damaged!");
       if (quarantined) {
-        expect(
-          recordOpenClawDatabaseQuarantine({
-            env: state.env,
-            kind: "agent",
-            path: initial.path,
-            reason: `row 1 missing from index ${index}`,
-          }),
-        ).toBe(true);
+        seedOpenClawDatabaseQuarantine({
+          env: state.env,
+          kind: "agent",
+          path: initial.path,
+          reason: `row 1 missing from index ${index}`,
+        });
       }
 
       const result = await migrateLegacyMediaPersistence({ env: state.env });
@@ -699,14 +695,12 @@ it.each([true])(
       expect(repaired.db.prepare(payloadSql).all()).toEqual(rows);
 
       closeOpenClawAgentDatabasesForTest();
-      expect(
-        recordOpenClawDatabaseQuarantine({
-          env: state.env,
-          kind: "agent",
-          path: initial.path,
-          reason: `row 1 missing from index ${index}`,
-        }),
-      ).toBe(true);
+      seedOpenClawDatabaseQuarantine({
+        env: state.env,
+        kind: "agent",
+        path: initial.path,
+        reason: `row 1 missing from index ${index}`,
+      });
       const resumed = await migrateLegacyMediaPersistence({ env: state.env });
       expect(resumed).toEqual({ changes: [], warnings: [] });
       expect(openOpenClawAgentDatabase(options).db.prepare(payloadSql).all()).toEqual(rows);

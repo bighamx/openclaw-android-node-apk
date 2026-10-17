@@ -15,7 +15,6 @@ import { formatUiError } from "../../lib/format-error.ts";
 import { clampText } from "../../lib/format.ts";
 import { isGatewayAvailable } from "../../lib/gateway-availability.ts";
 import { canCallGatewayMethod } from "../../lib/gateway-methods.ts";
-import { projectsForGateway } from "../../lib/projects.ts";
 import { readSessionMethodAccess } from "../../lib/session-method-access.ts";
 import {
   summarizeSessionPullRequests,
@@ -82,9 +81,6 @@ export abstract class ChatPaneSession extends ChatPaneTaskSuggestions {
   }
 
   protected subscribeSessionRepositoryContext(): void {
-    this.chatState.addCleanup(
-      projectsForGateway(this.context.gateway).subscribe(() => this.requestUpdate()),
-    );
     const sessionPullRequests = sessionPullRequestsForGateway(this.context.gateway);
     this.chatState.addCleanup(
       sessionPullRequests.subscribe(() => {
@@ -127,7 +123,7 @@ export abstract class ChatPaneSession extends ChatPaneTaskSuggestions {
     this.sessionPullRequestsStatus = status;
     this.dismissedSessionPullRequestIds = dismissed;
     if (changed) {
-      this.requestUpdate();
+      this.invalidate();
     }
   }
 
@@ -243,7 +239,7 @@ export abstract class ChatPaneSession extends ChatPaneTaskSuggestions {
       return;
     }
     this.dismissedSessionPullRequestIds = dismissChatPullRequest(sessionKey, id);
-    this.requestUpdate();
+    this.invalidate();
   }
 
   protected deferSessionHydrationUntilTranscript(
@@ -574,6 +570,7 @@ export abstract class ChatPaneSession extends ChatPaneTaskSuggestions {
       resolveChatAgentId(state) === agentId;
     if (!older) {
       this.catalogLoading = true;
+      this.invalidate();
       this.catalogCursor = undefined;
       this.olderCursorsSeen.clear();
       this.historyObserverArmed = false;
@@ -625,6 +622,7 @@ export abstract class ChatPaneSession extends ChatPaneTaskSuggestions {
           page.nextCursor === requestedOlderCursor ||
           this.olderCursorsSeen.has(page.nextCursor));
       this.catalogMessages = nextMessages;
+      this.invalidate();
       this.catalogCursor = olderExhausted ? undefined : page.nextCursor;
       state.lastError = null;
       scheduleChatScroll(state, !older);
