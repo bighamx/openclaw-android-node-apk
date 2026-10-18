@@ -1684,6 +1684,8 @@ export const en: TranslationMap & {
     sessionAttached: "attached",
     attachSession: "Attach session",
     attachFailed: "Could not attach terminal session",
+    deliveryFailed: "Terminal delivery could not be confirmed. Reconnect before trying again.",
+    inputPaused: "Terminal input is paused until the Gateway reconnects.",
     startCancelled: "Terminal start was cancelled. Try again.",
     connecting: "Connecting to session…",
     connectionTimedOut: "Session did not connect within 30 seconds.",
@@ -2536,6 +2538,7 @@ export const en: TranslationMap & {
     suspending: "Suspending…",
     suspended: "Suspended",
     retryNow: "Retry now",
+    queued: "{count} queued",
     sessionMoveRefreshFailed: "The session move was saved, but refreshing the list failed: {error}",
     sessionMoveUncertain:
       "The session move could not be confirmed. Refresh and check its group before retrying. {error}",

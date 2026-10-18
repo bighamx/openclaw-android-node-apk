@@ -159,7 +159,7 @@ before checking the live source, then preserves that receipt through its
 committed version and additive schema phases. Only a full source verification
 can satisfy a later runtime full-integrity gate; a quick migration still needs
 that full check. Updater backups verify private images and do not supply a live
-source receipt; inline quick migrations also retain the later full-check requirement.
+full source receipt; inline quick migrations also retain the later full-check requirement.
 A separate Doctor invocation continues to inspect current bytes. These are
 candidate-side changes; the installed updater still runs first
 under its own version's behavior.
@@ -188,12 +188,31 @@ publishes full-verification facts. Recorded corruption still requires full
 verification before its quarantine is cleared. See
 [migration integrity checks](/install/updating#migration-integrity-checks).
 
+Within the same exclusive Doctor maintenance operation, a recovery-free raw
+backup can supply the pre-mutation QUICK proof once: capture must compare the
+private bytes with the source, and the source must remain unchanged until
+migration admission. Pending writes or recovery data prevent reuse. The
+transformed backup is verified independently, and touched tables still receive
+scoped FULL checks after migration, followed by foreign-key checks. This does not
+supply a runtime FULL receipt or change explicit `--full-integrity-check` behavior.
+The optimization runs in the candidate; the installed updater retains its own
+version's capture and verification behavior.
+
 Canonical index repair checks each rebuilt table and its indexes once after
 DDL, instead of scanning the whole database again. Its source integrity check
 still follows the policy above, including a full scan when requested, and the
 migration finalizer keeps its data and foreign-key checks. This changes
 candidate-side Doctor and schema preparation; the installed updater still runs
 first under its own version's behavior.
+
+Once the schema is current, later Doctor admissions scope table integrity to
+their own repair callback. Read-only admissions do not inherit historical
+migration tables. Within one QUICK maintenance operation, passing table checks
+reuse the existing physical write receipt until a write occurs. Transaction-local
+checks also expire on row writes, DDL, or rollback and never authorize another
+connection. This reuse is conservative: an unrelated write can require another
+table check. Explicit FULL, foreign-key checks, private-image certification, and
+rollback validation retain their existing coverage.
 
 Gateway agent inspections share a five-second foreground wait. Unfinished stores
 remain unavailable while the startup admission owner completes their inspection
@@ -655,10 +674,10 @@ and different concurrency.
 Session startup certification reuses up to two worker threads for databases that
 need fresh session-validation proof. Valid receipts retain their existing fast path. Each
 certification task has fresh admission, its own commit gate, and full session
-validation. The task closes its database handles and leases and waits
-for the parent's close request to finish before releasing the thread for another
-database. If native cleanup is uncertain, writer admission and cleanup custody
-remain held until execution ends.
+validation. The parent's close request closes the task's database handles and
+leases. Task completion carries that cleanup and releases the thread for another
+database; the parent holds writer admission until completion. If native cleanup
+is uncertain, writer admission and cleanup custody remain held until execution ends.
 
 During startup, reaching the inspection's foreground deadline records pending
 preparation and marks that agent **degraded** while the Gateway continues with healthy agents.
@@ -848,6 +867,15 @@ Modern version migrations leave unrelated planner statistics unchanged.
 `SQLite read-only worker` failures append `code` and numeric SQLite `errcode` diagnostics when the underlying error supplies valid values, including through a bounded cause chain. Report the full code suffix when investigating a failure. Snapshot and integrity-child timeout errors include the applied budget and source file size; snapshot timeouts report an unknown size if the source stat failed. Integrity-child timeouts also retain `lastObservedPhase`. A generic `disk I/O error` or `SQLITE_IOERR` alone does not prove the disk is full.
 
 Shared-state database admission also preserves native SQLite result codes across worker transport. Lease and managed-worktree provisioning diagnostics retain the underlying storage failure even when acquisition fails before a lease is created.
+
+### A migrated agent remains unavailable with a serialization error
+
+`DataCloneError` or `Cannot serialize catalog.read request field input.env` during
+agent preparation indicates a worker request problem, not a failed SQLite
+migration. Update OpenClaw and restart the Gateway. Repeating `doctor --fix`
+cannot repair a request that contains a non-serializable value. Keep the operation
+and field names from the diagnostic when reporting the problem; do not include
+environment values or credentials.
 
 ### The state database is busy
 
