@@ -1574,6 +1574,9 @@ update_candidate() {
     update_env+=(OPENCLAW_ALLOW_ROOT=1)
   fi
   local update_node_options="${NODE_OPTIONS:+$NODE_OPTIONS }--import=$PWD/scripts/e2e/lib/upgrade-survivor/diagnostics.mjs"
+  if [ -n "${OPENCLAW_UPGRADE_SURVIVOR_NPM_REGISTRY:-}" ]; then
+    update_node_options+=" --import=$PWD/scripts/e2e/lib/upgrade-survivor/plugin-registry-redirect.mjs"
+  fi
   if [ "$SCENARIO" = "custom-plugin-siblings" ]; then
     update_node_options+=" --import=$ARTIFACT_ROOT/sibling-refusal-preload.mjs"
   fi
@@ -1926,12 +1929,17 @@ NODE
   # Installed official plugins, not just the runtime, follow the synthetic host
   # cohort. Keep the sealed candidate bytes and deliberately absent packages intact.
   OPENCLAW_NPM_REGISTRY_UPSTREAM="$NPM_CONFIG_REGISTRY" \
+    OPENCLAW_NPM_REGISTRY_DIST_TAGS="beta=$restart_fixture_version,latest=$restart_fixture_version" \
     openclaw_prepublish_plugin_registry_start \
       "$OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DIR" \
       "${OPENCLAW_DOCKER_E2E_SELECTED_SHA:-}" "$candidate_version" \
       "${OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_MANIFEST_SHA256:-}" \
       "$fixture_dir/registry" restart_registry_pid \
       "${registry_args[@]}" || return "$?"
+  # Product diagnostics deliberately resolve official packages from public npm.
+  # Project those reads onto this survivor-only synthetic future cohort without
+  # weakening the production registry trust boundary.
+  export OPENCLAW_UPGRADE_SURVIVOR_NPM_REGISTRY="$NPM_CONFIG_REGISTRY"
 }
 
 repair_update_restart_auth() {
@@ -2579,6 +2587,7 @@ if [ "$SCENARIO" = "custom-plugin-siblings" ]; then
   phase validate-baseline-config validate_baseline_config
   phase baseline-sibling-runtime node scripts/e2e/lib/upgrade-survivor/custom-plugin-siblings.mjs baseline
   phase resolve-sibling-candidate resolve_candidate_version
+  phase configure-sibling-plugin-registry configure_plugin_registry
   if [ "$baseline_version" = "2026.9.6" ]; then
     phase refuse-sibling-candidate assert_sibling_published_refusal
   fi

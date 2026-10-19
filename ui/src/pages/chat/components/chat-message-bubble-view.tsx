@@ -27,7 +27,6 @@ import { usePanePresentation } from "../chat-pane-presentation.ts";
 import { AsyncQuestionSummary } from "./chat-async-question-summary.tsx";
 import "../../../components/solid/person-reference.tsx";
 import { ChatBubbleActivity } from "./chat-bubble-activity-view.tsx";
-import { ChatPermissionCard } from "./chat-divider.tsx";
 import { ActivityOperation } from "./chat-message-activity-operation.tsx";
 import { OmittedMedia } from "./chat-message-attachment-status-solid.tsx";
 import { AssistantAttachments, MessageAttachment } from "./chat-message-attachments-solid.tsx";
@@ -41,8 +40,8 @@ import {
 } from "./chat-message-bubble-presentation.ts";
 import { MessageWorkContext } from "./chat-message-context-view.tsx";
 import { MessageImages } from "./chat-message-images-solid.tsx";
-import "./chat-clawhub-card.ts";
 import type { ChatMessageRenderPreparation } from "./chat-message-markdown-view.tsx";
+import "./chat-clawhub-card.ts";
 import type { MarkdownMedia, PositionedMedia } from "./chat-message-media-markdown.ts";
 import { prepareMarkdownMedia } from "./chat-message-media-markdown.ts";
 import {
@@ -52,16 +51,21 @@ import {
   releaseChatMediaResourceOwner,
 } from "./chat-message-media.ts";
 import { MarkdownText, MessageJson, MessageMarkdown } from "./chat-message-text-view.tsx";
+import { ChatPermissionCard } from "./chat-permission-card.tsx";
 import { ReplyLineView } from "./chat-reply-attribution.tsx";
 import type { SidebarContent } from "./chat-sidebar-content-types.ts";
 import {
-  ChatToolApprovalReviews,
+  ToolApprovalReviews,
   ChatToolCard,
   ChatToolIcon,
   syncToolDisclosureOverflow,
   type ToolCardOptions,
 } from "./chat-tool-cards.solid.tsx";
-import { ChatToolContent, ChatToolRawOutput, ChatToolOutcome } from "./chat-tool-content.solid.tsx";
+import {
+  ExpandedToolCardContent,
+  RawOutputToggle,
+  ToolOutcome,
+} from "./chat-tool-content.solid.tsx";
 import { toolResultSurfaceProps } from "./chat-tool-render-model.ts";
 import { TranscriptMessageElementsContext } from "./chat-transcript-message-elements.ts";
 import { WorkspaceConflictTranscriptMessage } from "./chat-workspace-conflict.ts";
@@ -312,11 +316,12 @@ function AssistantViews(props: ContentProps) {
               />
               <Show when={block().rawText}>
                 <div class="chat-tool-card__widget-raw">
-                  <ChatToolRawOutput
-                    text={block().rawText!}
-                    toggleRef={(element) => (rawToggle = element)}
-                    style={{ display: "contents" }}
-                  />
+                  <openclaw-chat-tool-raw style={{ display: "contents" }}>
+                    <RawOutputToggle
+                      text={block().rawText!}
+                      toggleRef={(element) => (rawToggle = element)}
+                    />
+                  </openclaw-chat-tool-raw>
                 </div>
               </Show>
             </div>
@@ -515,19 +520,18 @@ function BubbleContents(props: ContentProps) {
             />
           }
         >
-          <ChatToolContent
-            card={props.state().singleToolCard!}
-            options={props.state().toolRenderOptions}
-            style={{ display: "contents" }}
-          />
+          <openclaw-chat-tool-content style={{ display: "contents" }}>
+            <ExpandedToolCardContent
+              card={props.state().singleToolCard!}
+              options={props.state().toolRenderOptions}
+            />
+          </openclaw-chat-tool-content>
         </Show>
       </Show>
       <Show when={props.state().isStandaloneToolMessage && props.state().failedToolCard}>
-        <ChatToolOutcome
-          outcome="failed"
-          exitCode={props.state().failedToolCard!.exitCode}
-          style={{ display: "contents" }}
-        />
+        <openclaw-chat-tool-outcome style={{ display: "contents" }}>
+          <ToolOutcome outcome="failed" exitCode={props.state().failedToolCard!.exitCode} />
+        </openclaw-chat-tool-outcome>
       </Show>
     </>
   );
@@ -597,7 +601,11 @@ function ToolMessageFallback(props: ContentProps) {
         </div>
       </Show>
       <For each={props.state().toolCards} keyed={(card) => card.callId ?? card}>
-        {(card) => <ChatToolApprovalReviews card={card()} style={{ display: "contents" }} />}
+        {(card) => (
+          <openclaw-chat-tool-reviews style={{ display: "contents" }}>
+            <ToolApprovalReviews card={card()} />
+          </openclaw-chat-tool-reviews>
+        )}
       </For>
     </div>
   );

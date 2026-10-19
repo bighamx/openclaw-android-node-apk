@@ -150,6 +150,11 @@ import fs from "node:fs";
 import path from "node:path";
 const [registry, root] = process.argv.slice(2);
 for (const name of ["@openclaw/codex", "@openclaw/discord", "@openclaw/whatsapp"]) {
+  const packageResponse = await fetch(registry + "/" + encodeURIComponent(name));
+  assert.equal(packageResponse.status, 200, name + " metadata must be available");
+  const packageMetadata = await packageResponse.json();
+  assert.equal(packageMetadata["dist-tags"].beta, "2026.10.6-first-hop.0");
+  assert.equal(packageMetadata["dist-tags"].latest, "2026.10.6-first-hop.0");
   for (const version of ["2026.10.5", "2026.10.6-first-hop.0"]) {
     const response = await fetch(registry + "/" + encodeURIComponent(name) + "/" + version);
     assert.equal(response.status, 200, name + "@" + version + " must converge");
@@ -162,6 +167,11 @@ for (const name of ["@openclaw/codex", "@openclaw/discord", "@openclaw/whatsapp"
     fs.writeFileSync(file, Buffer.from(await archive.arrayBuffer()));
   }
 }
+const redirected = await fetch(
+  "https://registry.npmjs.org/%40openclaw%2Fdiscord/2026.10.6-first-hop.0",
+);
+assert.equal(redirected.status, 200, "public npm diagnostics must use the synthetic cohort");
+assert.equal((await redirected.json()).version, "2026.10.6-first-hop.0");
 for (const name of ["@openclaw/matrix", "@openclaw/missing-control"]) {
   const response = await fetch(registry + "/" + encodeURIComponent(name) + "/2026.10.6-first-hop.0");
   assert.equal(response.status, 404, "inactive/missing packages must stay unavailable");
@@ -184,6 +194,10 @@ NODE
           OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_DIR: registry,
           OPENCLAW_DOCKER_E2E_SELECTED_SHA: sourceSha,
           OPENCLAW_PREPUBLISH_PLUGIN_REGISTRY_MANIFEST_SHA256: hash(manifest),
+          NODE_OPTIONS:
+            "--import=" +
+            path.resolve("scripts/e2e/lib/upgrade-survivor/plugin-registry-redirect.mjs"),
+          OPENCLAW_UPGRADE_SURVIVOR_NPM_REGISTRY: "http://127.0.0.1:" + port,
         },
       });
       expect(result.status, result.stdout + result.stderr).toBe(0);

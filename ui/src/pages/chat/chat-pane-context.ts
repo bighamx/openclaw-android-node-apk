@@ -443,10 +443,11 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
     ) {
       this.cancelHeaderRename();
     }
-    const metadataOwnerChanged =
-      draftOwnerChanged ||
+    const reactionOwnerChanged =
+      pairingOwnerChanged ||
       snapshot.client?.offlineRecoveryRetired === true ||
       (snapshot.phase === "connected" && !hasOperatorSelfReadAccess(snapshot.hello?.auth ?? null));
+    const metadataOwnerChanged = state.client !== snapshot.client || reactionOwnerChanged;
     if (sourceChanged || metadataOwnerChanged) {
       retireChatMetadataRequests(state, { keepPresentation: !metadataOwnerChanged });
     }
@@ -471,7 +472,9 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       state.assistantIdentityRequestVersion += 1;
       this.taskSuggestionsRequestVersion += 1;
       this.resetSessionSuggestions();
-      this.resetSessionReactions();
+      if (reactionOwnerChanged) {
+        this.resetSessionReactions();
+      }
       this.clearTypingActors();
       this.sessionDiscussion.clear();
       this.sessionDiscussionPanels.clear();
@@ -581,9 +584,6 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       } else if (sidebarKeyChanged && state.sidebarLayout.columns.length > 0) {
         state.updateSidebarLayout(state.sidebarLayout);
       }
-      state.sidebarFocusPanelId =
-        sidebarSettings.sidebarSessionActivePanels?.[sidebarSessionKey] ?? "";
-      state.sidebarFocusVersion += 1;
     }
     if (state.connected && state.pendingAbort) {
       void replayPendingChatAbort(state);
