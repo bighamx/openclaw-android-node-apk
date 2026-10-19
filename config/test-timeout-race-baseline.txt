@@ -28,7 +28,7 @@ src/agents/workspace.test.ts	1
 src/auto-reply/dispatch.question-input.test.ts	2
 src/auto-reply/reply/agent-runner-steer-adoption.question-recovery.test.ts	1
 src/auto-reply/reply/dispatch-acp-delivery.test.ts	1
-src/auto-reply/reply/dispatch-from-config.active-command.test.ts	2
+src/auto-reply/reply/dispatch-from-config.active-command.test.ts	1
 src/auto-reply/reply/reply-run-registry.question-registration.test.ts	2
 src/cli/gateway-cli/run-loop-startup.test-support.ts	4
 src/cli/update-cli/update-command-retained-custody.test.ts	2
@@ -112,7 +112,7 @@ test/helpers/gateway-client.test.ts	2
 test/helpers/gateway/config-rpc-gateway.ts	1
 test/helpers/openclaw-test-instance.acquisition.test.ts	1
 test/helpers/qa-gateway-test-lifetime.test.ts	2
-test/plugins/browser-session-authority.gateway.test.ts	2
+test/plugins/browser-session-authority.gateway.test.ts	1
 test/plugins/team-reports-http.gateway.test.ts	1
 test/scripts/ci-run-node-test-shard.test.ts	3
 test/scripts/test-projects-build-admission.test.ts	7
