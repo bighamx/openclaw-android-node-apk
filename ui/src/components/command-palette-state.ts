@@ -147,7 +147,17 @@ export class CommandPaletteState {
     promise: Promise<void>;
     loadedAt?: number;
   };
-  private readonly modelReader = new ModelCatalogReader(this.changed);
+  private modelItems: readonly CommandPaletteItem[] = [];
+  private readonly modelReader = new ModelCatalogReader(() => {
+    const snapshot = this.modelReader.snapshot;
+    if (snapshot.hasSnapshot) {
+      this.settledModels = snapshot;
+      // Project accepted catalog publications, not every rendering/selection read.
+      this.modelItems = getCommandPaletteModelItems(snapshot);
+    }
+    this.changed();
+  });
+  private settledModels = this.modelReader.snapshot;
   private readonly gateway: GatewayPageBinding;
 
   constructor(
@@ -181,7 +191,18 @@ export class CommandPaletteState {
     );
     this.gateway = new GatewayPageBinding(this.changed, {
       getGateway: () => this.context?.gateway,
-      invalidateRequests: this.handleAgentSelection,
+      invalidateRequests: (change) => {
+        this.invalidateSessionSearch();
+        this.sessionSearchPending = false;
+        this.catalogLoad = undefined;
+        this.modelReader.clear();
+        if (change.identityChanged) {
+          this.clearSessionSearch();
+          this.clearCatalogSearch();
+        } else if (change.snapshot.phase !== "connected") {
+          this.scheduleSessionSearch(this.draft.message);
+        }
+      },
       onSnapshot: () => this.synchronizePresentationScope(),
       ensureInitialData: () => this.scheduleSessionSearch(this.draft.message),
     });
@@ -196,6 +217,8 @@ export class CommandPaletteState {
       if (invalidation === "clear") {
         this.catalogLoad = undefined;
         this.catalogItems = [];
+        this.settledModels = this.modelReader.snapshot;
+        this.modelItems = getCommandPaletteModelItems(this.settledModels);
       }
       if (this.open) {
         void this.ensureCatalogItems(true);
@@ -279,6 +302,14 @@ export class CommandPaletteState {
       // transport reconnects keep the canonical presentation scope and query.
       this.closePalette();
       this.activeId = null;
+      this.clearCatalogSearch();
+    }
+    if (
+      gateway?.snapshot.phase === "connected" &&
+      gateway.snapshot.hello &&
+      !hasOperatorReadAccess(gateway.snapshot.hello.auth ?? null)
+    ) {
+      this.clearSessionSearch();
       this.clearCatalogSearch();
     }
     this.presentationScope = scope;
@@ -389,6 +420,8 @@ export class CommandPaletteState {
 
   private clearCatalogSearch() {
     this.modelReader.clear();
+    this.modelItems = [];
+    this.settledModels = this.modelReader.snapshot;
     this.catalogLoad = undefined;
     this.catalogItems = [];
     this.pluginIcons.reset();
@@ -483,8 +516,8 @@ export class CommandPaletteState {
       return;
     }
     const applySearch = () => {
-      this.clearSessionSearch();
       if (this.searchQuery !== query) {
+        this.clearSessionSearch();
         this.activeId = null;
       }
       this.searchQuery = query;
@@ -516,6 +549,7 @@ export class CommandPaletteState {
       return;
     }
     const requestId = ++this.sessionSearchId;
+    this.sessionSearchFailed = false;
     const scope = gatewayPresentationScope(gateway);
     const isCurrent = () =>
       requestId === this.sessionSearchId &&
@@ -617,7 +651,7 @@ export class CommandPaletteState {
   }
 
   readProps(): CommandPaletteProps {
-    const models = this.modelReader.snapshot;
+    const models = this.settledModels;
     return {
       basePath: this.context?.basePath ?? "",
       open: this.open,
@@ -670,7 +704,10 @@ export class CommandPaletteState {
         this.context?.agentSelection.state.selectedId ??
         resolveUiSelectedGlobalAgentId(this.context?.gateway.snapshot ?? {}),
       sessionItems: this.sessionItems,
-      modelSearchError: this.modelReader.failed ? t("palette.modelSearchFailed") : null,
+      remoteSearchOffline:
+        !this.gateway.connected && Boolean(normalizeOptionalString(this.searchQuery)),
+      modelSearchError:
+        this.gateway.connected && this.modelReader.failed ? t("palette.modelSearchFailed") : null,
       primaryModelSearch: models.hasSnapshot && !models.modelSelectionPolicy?.restricted,
       catalogItems: [
         ...getStaticCommandPaletteCatalogItems(
@@ -678,7 +715,7 @@ export class CommandPaletteState {
           this.context?.nativeDeviceSettings,
         ),
         ...this.catalogItems,
-        ...getCommandPaletteModelItems(models),
+        ...this.modelItems,
       ],
       sessionSearchPending: this.sessionSearchPending,
       catalogSearchPending: Boolean(

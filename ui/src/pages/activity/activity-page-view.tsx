@@ -548,7 +548,6 @@ export function ActivityPageView(pageProps: { page: ActivityPageState }) {
           <Switch>
             <Match when={route()?.mode === "sessions"}>
               <SessionActivityView
-                context={state().context}
                 expandedAutomationDays={expandedAutomationDays()}
                 filters={{
                   ...(sessionRoute()?.filters ?? {
@@ -605,6 +604,7 @@ export function ActivityPageView(pageProps: { page: ActivityPageState }) {
                 </a>
                 <RunInspector
                   basePath={state().context.basePath}
+                  connected={state().context.gateway.snapshot.phase === "connected"}
                   state={state().runInspector}
                   selector={runRoute()?.selector ?? null}
                   selectorId={runRoute()?.selectorId ?? null}

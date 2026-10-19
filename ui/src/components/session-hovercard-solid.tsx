@@ -1,5 +1,5 @@
 import type { ProgressCard } from "@openclaw/gateway-protocol";
-import { createMemo, For, Show, untrack } from "solid-js";
+import { createMemo, For, Show, useContext } from "solid-js";
 import type { SessionParticipant } from "../../../packages/gateway-protocol/src/schema/session-participant.js";
 import { normalizeSessionColorValue } from "../../../packages/gateway-protocol/src/session-agent-status.js";
 import type {
@@ -17,6 +17,7 @@ import type { SidebarSessionHovercardRow } from "./app-sidebar-session-types.ts"
 import { formatGitHubItemReference } from "./github-link-target.ts";
 import { PersonAvatarLink, PersonName } from "./person-activity-link-solid.tsx";
 import { personActivityLink, type PersonActivityRouting } from "./person-activity-link.ts";
+import { createHovercardControlRef, HovercardControlsContext } from "./portaled-hovercard-focus.ts";
 import { sessionAttentionSubtitle } from "./session-attention-presentation.ts";
 import { SessionGitDiff } from "./session-git-diff.tsx";
 import {
@@ -28,7 +29,7 @@ import { ProgressCardMarkdown } from "./session-progress-card-view.tsx";
 import { progressCardHeadsUp } from "./session-progress-card.ts";
 import { ChannelAvatar } from "./solid/channel-avatar.tsx";
 import { Icon } from "./solid/icon.tsx";
-import { ViewerAvatar } from "./solid/viewer-facepile.tsx";
+import { ViewerAvatar, ViewerFacepile } from "./solid/viewer-facepile.tsx";
 import "./session-hovercard.css";
 import "./tooltip.ts";
 
@@ -85,6 +86,7 @@ function ParticipantLink(props: {
   return (
     <div role="listitem">
       <PersonName
+        ref={createHovercardControlRef()}
         label={label()}
         link={activity()}
         class="session-menu__item learn-more-link session-hovercard__participant-link"
@@ -122,48 +124,66 @@ function ParticipantMenu(props: {
 type Attribution = NonNullable<ReturnType<typeof sessionAttribution>>;
 
 function AttributionContent(props: {
-  attribution: Attribution;
+  attribution?: Attribution;
   row?: SidebarSessionHovercardRow;
   auth?: SessionHovercardAvatarAuth;
   routing?: PersonActivityRouting;
 }) {
+  const controls = useContext(HovercardControlsContext);
+  const registerLink = (element: HTMLAnchorElement) => controls?.registerSource(() => [element]);
   const creatorInitials = createMemo(() => {
-    const creator = props.attribution.creator;
+    const creator = props.attribution?.creator;
     return creator ? sessionOwnerInitials(creator) : "";
   });
-  const primaryActivity = () =>
-    props.attribution.primaryIdentity?.type === "profile"
-      ? personActivityLink(
-          props.attribution.primaryIdentity.id,
-          props.routing,
-          props.attribution.primaryLabel,
-        )
+  const primaryActivity = () => {
+    const attribution = props.attribution;
+    return attribution?.primaryIdentity?.type === "profile"
+      ? personActivityLink(attribution.primaryIdentity.id, props.routing, attribution.primaryLabel)
       : null;
-  const avatarPerson = () =>
-    props.attribution.creator ??
-    (props.attribution.participants[0]
-      ? { ...props.attribution.participants[0], id: props.attribution.participants[0].identity.id }
-      : undefined);
-  const remaining = createMemo(() =>
-    props.attribution.creator
-      ? props.attribution.participants
-      : props.attribution.participants.slice(1),
-  );
+  };
+  const avatarPerson = () => {
+    const attribution = props.attribution;
+    const participant = attribution?.participants[0];
+    return (
+      attribution?.creator ??
+      (participant ? { ...participant, id: participant.identity.id } : undefined)
+    );
+  };
+  const avatarUser = createMemo(() => {
+    const person = avatarPerson();
+    return person
+      ? {
+          id: person.id ?? person.identity?.id ?? "",
+          name: person.label,
+          avatarUrl: person.avatarUrl,
+          watchedSessions: [],
+        }
+      : undefined;
+  });
+  const remaining = createMemo(() => {
+    const attribution = props.attribution;
+    return attribution
+      ? attribution.creator
+        ? attribution.participants
+        : attribution.participants.slice(1)
+      : [];
+  });
+  const otherCount = () => props.attribution?.otherCount ?? 0;
   const otherLabel = () =>
-    props.attribution.otherCount > 0
+    otherCount() > 0
       ? t(
-          props.attribution.otherCount === 1
+          otherCount() === 1
             ? "sessionHovercard.attributionOther"
             : "sessionHovercard.attributionOthers",
-          { count: String(props.attribution.otherCount) },
+          { count: String(otherCount()) },
         )
       : "";
   const attributionLabel = () =>
     [
-      props.attribution.primaryLabel,
-      props.attribution.otherCount > 0
+      props.attribution?.primaryLabel ?? "",
+      otherCount() > 0
         ? t("sessionHovercard.moreParticipantsLabel", {
-            count: String(props.attribution.otherCount),
+            count: String(otherCount()),
           })
         : "",
     ]
@@ -173,11 +193,12 @@ function AttributionContent(props: {
     <div class="session-hovercard__attribution" aria-label={attributionLabel()}>
       <span class="session-hovercard__attribution-copy">
         <PersonName
-          label={props.attribution.primaryLabel}
+          ref={createHovercardControlRef()}
+          label={props.attribution?.primaryLabel ?? ""}
           link={primaryActivity()}
           class="session-hovercard__attribution-name"
         />
-        <Show when={props.attribution.otherCount > 0}>
+        <Show when={otherCount() > 0}>
           <Show
             when={remaining().length > 0}
             fallback={<span class="session-hovercard__attribution-others">{otherLabel()}</span>}
@@ -188,6 +209,7 @@ function AttributionContent(props: {
               open-on-click
             >
               <button
+                ref={createHovercardControlRef()}
                 type="button"
                 class="session-hovercard__attribution-others"
                 style={{
@@ -198,14 +220,14 @@ function AttributionContent(props: {
                   font: "inherit",
                 }}
                 aria-label={t("sessionHovercard.moreParticipantsLabel", {
-                  count: String(props.attribution.otherCount),
+                  count: String(otherCount()),
                 })}
               >
                 {otherLabel()}
               </button>
               <ParticipantMenu
                 participants={remaining()}
-                count={props.attribution.otherCount}
+                count={otherCount()}
                 routing={props.routing}
               />
             </openclaw-tooltip>
@@ -215,28 +237,17 @@ function AttributionContent(props: {
       <span class="session-hovercard__attribution-avatars">
         <PersonAvatarLink link={primaryActivity()}>
           <Show
-            when={Boolean(props.attribution.creator && props.row?.channelAvatarUrl)}
+            when={Boolean(props.attribution?.creator && props.row?.channelAvatarUrl)}
             fallback={
               <Show when={avatarPerson()}>
-                {(person) => {
-                  const initial = untrack(person);
-                  const current = () => avatarPerson() ?? initial;
-                  return (
-                    <ViewerAvatar
-                      class="session-hovercard__creator-avatar"
-                      user={{
-                        id: current().id ?? current().identity?.id ?? "",
-                        name: current().label,
-                        avatarUrl: current().avatarUrl,
-                        watchedSessions: [],
-                      }}
-                      markAsViewer={false}
-                      identity={current().identity}
-                      variant="session"
-                      aria-hidden="true"
-                    />
-                  );
-                }}
+                <ViewerAvatar
+                  class="session-hovercard__creator-avatar"
+                  user={avatarUser()}
+                  markAsViewer={false}
+                  identity={avatarPerson()?.identity}
+                  variant="session"
+                  aria-hidden="true"
+                />
               </Show>
             }
           >
@@ -256,11 +267,12 @@ function AttributionContent(props: {
           </Show>
         </PersonAvatarLink>
         <Show when={remaining().length > 0}>
-          <openclaw-viewer-facepile
-            prop:staticParticipants={remaining()}
-            prop:totalCount={props.attribution.otherCount}
-            prop:maxVisible={Math.min(remaining().length, MAX_VISIBLE_ATTRIBUTION_PARTICIPANTS)}
-            prop:personActivity={props.routing}
+          <ViewerFacepile
+            registerLink={registerLink}
+            staticParticipants={remaining()}
+            totalCount={otherCount()}
+            maxVisible={Math.min(remaining().length, MAX_VISIBLE_ATTRIBUTION_PARTICIPANTS)}
+            personActivity={props.routing}
           />
         </Show>
       </span>
@@ -274,55 +286,43 @@ function SessionAttribution(props: SessionHovercardInput) {
   );
   return (
     <Show when={attribution()}>
-      {(current) => {
-        const initial = untrack(current);
-        return (
-          <AttributionContent
-            attribution={attribution() ?? initial}
-            row={props.row}
-            auth={props.avatarAuth}
-            routing={props.personActivity}
-          />
-        );
-      }}
+      <AttributionContent
+        attribution={attribution()}
+        row={props.row}
+        auth={props.avatarAuth}
+        routing={props.personActivity}
+      />
     </Show>
   );
 }
 
-function Header(props: SessionHovercardInput & { row: SidebarSessionHovercardRow }) {
-  const channel = () => props.row.channelPresentation;
+function Header(props: SessionHovercardInput) {
+  const channel = () => props.row?.channelPresentation;
   const details = createMemo(() => [
     ...new Set(
       [channel()?.conversation, channel()?.address].filter(
-        (value) => value && value !== props.row.label,
+        (value) => value && value !== props.row?.label,
       ),
     ),
   ]);
   const age = (suffix = false) => {
     i18nRevision();
-    return formatSessionAge(props.row.createdAt, suffix);
+    return formatSessionAge(props.row?.createdAt, suffix);
   };
   return (
     <header class="session-hovercard__header">
       <span class="session-hovercard__heading">
         <Show when={channel()}>
-          {(current) => {
-            const initial = untrack(current);
-            return (
-              <span class="session-hovercard__channel">
-                <span aria-hidden="true">
-                  <Icon name="link" />
-                </span>
-                {t("sessionHovercard.linkedChannel", {
-                  channel: (channel() ?? initial).channelLabel,
-                })}
-              </span>
-            );
-          }}
+          <span class="session-hovercard__channel">
+            <span aria-hidden="true">
+              <Icon name="link" />
+            </span>
+            {t("sessionHovercard.linkedChannel", { channel: channel()?.channelLabel ?? "" })}
+          </span>
         </Show>
         <span class="session-hovercard__title">
-          <SessionColorDot color={props.row.color} />
-          {props.row.label}
+          <SessionColorDot color={props.row?.color} />
+          {props.row?.label}
         </span>
         <Show
           when={channel()}
@@ -335,25 +335,21 @@ function Header(props: SessionHovercardInput & { row: SidebarSessionHovercardRow
             />
           }
         >
-          {(current) => {
-            const initial = untrack(current);
-            const value = () => channel() ?? initial;
-            return (
-              <span class="session-hovercard__conversation">
-                <Show when={value().kind}>
-                  <span>
-                    {value().topicId
-                      ? t("sessionHovercard.topicNumber", { id: value().topicId! })
-                      : t(`sessionHovercard.chatKinds.${value().kind}`)}
-                  </span>
-                </Show>
-                <For each={details()}>{(detail) => <span>{detail}</span>}</For>
-                <Show when={value().account}>
-                  <span>{t("sessionHovercard.viaAccount", { account: value().account! })}</span>
-                </Show>
-              </span>
-            );
-          }}
+          <span class="session-hovercard__conversation">
+            <Show when={channel()?.kind} keyed>
+              {(kind) => (
+                <span>
+                  {channel()?.topicId
+                    ? t("sessionHovercard.topicNumber", { id: channel()?.topicId ?? "" })
+                    : t(`sessionHovercard.chatKinds.${kind}`)}
+                </span>
+              )}
+            </Show>
+            <For each={details()}>{(detail) => <span>{detail}</span>}</For>
+            <Show when={channel()?.account} keyed>
+              {(account) => <span>{t("sessionHovercard.viaAccount", { account })}</span>}
+            </Show>
+          </span>
         </Show>
       </span>
       <Show when={age()}>
@@ -382,6 +378,7 @@ function PullRequestRow(props: { request: SessionDisplayPullRequest }) {
   const stateLabel = () => (checks() ? `${state()} · ${checks()}` : state());
   return (
     <a
+      ref={createHovercardControlRef()}
       class="session-hovercard__pr-row"
       data-state={props.request.state}
       href={props.request.url}
@@ -453,6 +450,7 @@ function PullRequestDetails(props: { snapshot?: ControlUiSessionPullRequestSnaps
             }
           >
             <a
+              ref={createHovercardControlRef()}
               class="session-hovercard__branch-action"
               href={branch()?.createUrl}
               target="_blank"
@@ -491,26 +489,23 @@ function PullRequestDetails(props: { snapshot?: ControlUiSessionPullRequestSnaps
 function SessionColorDot(props: { color: string | null | undefined }) {
   const color = () => normalizeSessionColorValue(props.color ?? "");
   return (
-    <Show when={color()}>
-      {(current) => {
-        const initial = untrack(current);
-        const value = () => color() ?? initial;
-        return (
-          <span
-            class="session-color-dot"
-            style={{ "--session-color": `var(--session-color-${value()})` }}
-            role="img"
-            aria-label={t("sessionsView.sessionColor", {
-              color: t(`sessionsView.colors.${value()}`),
-            })}
-          />
-        );
-      }}
+    <Show when={color()} keyed>
+      {(value) => (
+        <span
+          class="session-color-dot"
+          style={{ "--session-color": `var(--session-color-${value})` }}
+          role="img"
+          aria-label={t("sessionsView.sessionColor", {
+            color: t(`sessionsView.colors.${value}`),
+          })}
+        />
+      )}
     </Show>
   );
 }
 
 export function SessionHovercard(props: SessionHovercardInput) {
+  const controls = useContext(HovercardControlsContext);
   const headsUp = createMemo(() =>
     progressCardHeadsUp(
       props.progressCard,
@@ -541,20 +536,14 @@ export function SessionHovercard(props: SessionHovercardInput) {
     <Show when={Boolean(props.row || hasPullRequests() || props.progressCard)}>
       <div class="session-hovercard">
         <Show when={props.row}>
-          {(row) => {
-            // Retiring descendants can read after the parent clears its row.
-            const initial = untrack(row);
-            return (
-              <section class="session-hovercard__section session-hovercard__section--header">
-                <Header
-                  row={props.row ?? initial}
-                  selfUserId={props.selfUserId}
-                  avatarAuth={props.avatarAuth}
-                  personActivity={props.personActivity}
-                />
-              </section>
-            );
-          }}
+          <section class="session-hovercard__section session-hovercard__section--header">
+            <Header
+              row={props.row}
+              selfUserId={props.selfUserId}
+              avatarAuth={props.avatarAuth}
+              personActivity={props.personActivity}
+            />
+          </section>
         </Show>
         <Show when={hasContext()}>
           <section class="session-hovercard__section session-hovercard__section--metadata">
@@ -600,7 +589,11 @@ export function SessionHovercard(props: SessionHovercardInput) {
             aria-label={t("sessionHovercard.agentNotepad")}
           >
             <div class="session-hovercard__notepad-title">{t("sessionHovercard.agentNotepad")}</div>
-            <ProgressCardMarkdown markdown={props.progressCard?.markdown} promoteProgress />
+            <ProgressCardMarkdown
+              markdown={props.progressCard?.markdown}
+              promoteProgress
+              registerControls={controls?.registerSource}
+            />
           </section>
         </Show>
         <Show
