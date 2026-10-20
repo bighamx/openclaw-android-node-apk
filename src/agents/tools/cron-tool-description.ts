@@ -1,6 +1,6 @@
 export function buildCronToolDescription(params: { triggersEnabled: boolean }): string {
   const streamScheduleLine = params.triggersEnabled
-    ? '\n- {kind:"stream",command:[argv],mode:"match",match:"ERROR"}: persistent source on the Gateway. Match output with a regex; omit mode/match for every line. Matching lines trigger the payload and its delivery without another user turn.'
+    ? '\n- {kind:"stream",command:[argv],mode:"match",match:"ERROR"}: persistent source in the creator\'s supported Docker sandbox or on the Gateway. Match output with a regex; omit mode/match for every line. Matching lines trigger the payload and its delivery without another user turn.'
     : "";
   const watcherSetup = params.triggersEnabled
     ? `

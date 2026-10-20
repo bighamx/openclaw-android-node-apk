@@ -472,11 +472,13 @@ function* createOpenClawToolsSteps(
               }),
           createCronTool({
             ...options,
+            readOnly: options?.forceRestartSafeTools,
             // Use the durable runSessionKey; cleanup-retired policy keys leave cron jobs dangling.
             agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
             agentId: sessionAgentId,
             agentAccountId: gatewayCallerAccountId,
             currentDeliveryContext: deliveryContext,
+            sandboxContext: options?.cronSandboxContext,
             creatorToolAllowlist: options?.cronCreatorToolAllowlist,
             creatorToolAllowlistCaptureRef: options?.cronCreatorToolAllowlistCaptureRef,
             resolveCreatorToolAuthority: options?.resolveCronCreatorToolAuthority,
@@ -571,6 +573,7 @@ function* createOpenClawToolsSteps(
           sessionKey: options?.runSessionKey ?? options?.agentSessionKey,
           runId: options?.runId,
           run: options?.skillWorkshop,
+          sandboxed: options?.sandboxed,
         }),
     progressCardTool,
     ...swarmToolGroups.structuredOutput,

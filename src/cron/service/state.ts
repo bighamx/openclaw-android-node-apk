@@ -447,6 +447,8 @@ export type CronAddOptions = {
   operatorSource?: NonNullable<CronStoredJob["operatorSource"]>["source"];
   inferenceBinding?: CronStoredJob["inferenceBinding"];
   sourceConversation?: CronStoredJob["sourceConversation"];
+  /** Logical sandbox target captured from the admitted creator, never public input. */
+  streamSandbox?: CronStoredJob["streamSandbox"];
   /** Selected revisions captured from a validated caller session, never public input. */
   skillLibrarySelections?: CronStoredJob["skillLibrarySelections"];
   matchesExisting?: (job: CronJob) => boolean;
@@ -482,6 +484,7 @@ export type CronUpdateOptions = Pick<
   | "inferenceBinding"
   | "execPolicy"
   | "streamExecApproval"
+  | "streamSandbox"
   | "sessionEntryCurrent"
 > & {
   /** Null forbids policy adoption; undefined retains in-process operator defaults. */

@@ -26,6 +26,14 @@ import {
 vi.mock("../../agents/node-exec-availability.js", () => ({
   loadNodeExecAvailability: async () => ({ cacheKey: "no-nodes", isAvailable: () => false }),
 }));
+// mock-isolation: Approval tests use captured sandbox facts without contacting a real Docker daemon.
+vi.mock("../../agents/sandbox/docker-persistent-target.js", () => ({
+  assertDockerPersistentTargetCurrent: async () => ({ id: "docker" }),
+  readDockerPersistentContainer: async () => ({
+    kind: "running",
+    startedAt: "2026-01-01T00:00:00.000Z",
+  }),
+}));
 
 installRequesterCronAuthorityTestHooks();
 
@@ -163,6 +171,96 @@ describe("agent stream approval through the automation tool", () => {
     } finally {
       warnings.mockRestore();
     }
+  });
+
+  it.each(["allow-once", "deny"] as const)(
+    "carries the admitted sandbox through %s without creating a host stream",
+    async (decision) => {
+      await withStreamApprovalFixture(
+        async ({ tools, read, takeApproval, decide, runSandboxShell }) => {
+          const create = tools.invoke(AUTOMATIONS_TOOL_NAME, {
+            action: "add",
+            job: {
+              ...approvedStreamJob(),
+              schedule: { kind: "stream", command: ["python3", "watch.py"], cwd: "/workspace" },
+            },
+          });
+          const request = await takeApproval(create);
+          expect(request.request).toMatchObject({
+            host: "sandbox",
+            cwd: "/workspace",
+            commandArgv: ["python3", "watch.py"],
+          });
+          expect(request.request.warningText).toContain("fresh Docker container");
+          expect(await read()).toEqual([]);
+          await decide(request.id, decision);
+          expect(runSandboxShell).not.toHaveBeenCalled();
+          if (decision === "deny") {
+            expect(await create).toMatchObject({
+              details: {
+                code: "CRON_STREAM_APPROVAL_ENDED",
+                saved: false,
+                action: "add",
+                approvalId: request.id,
+                outcome: "operator-denied",
+              },
+            });
+            expect(await read()).toEqual([]);
+          } else {
+            expect(await create).toMatchObject({
+              details: {
+                streamExecutionHost: "sandbox",
+                streamExecutionApproval: {
+                  approvalId: request.id,
+                  decision: "allow-once",
+                  source: "operator",
+                  message: expect.stringMatching(
+                    /human operator approved[\s\S]*identity is not supplied/i,
+                  ),
+                },
+              },
+            });
+            expect(await read()).toMatchObject([
+              {
+                schedule: { kind: "stream" },
+                streamSandbox: {
+                  backendId: "docker",
+                  sessionKey: SESSION,
+                  configLabel: "fixture-config",
+                  containerWorkdir: "/workspace",
+                },
+              },
+            ]);
+          }
+        },
+        { sandbox: true },
+      );
+    },
+  );
+
+  it("rejects sandbox image tag replacement while the user considers the question", async () => {
+    await withStreamApprovalFixture(
+      async ({ tools, read, takeApproval, decide, changeSandboxImage, runSandboxShell }) => {
+        const create = tools.invoke(AUTOMATIONS_TOOL_NAME, {
+          action: "add",
+          job: {
+            ...approvedStreamJob(),
+            schedule: { kind: "stream", command: ["python3", "watch.py"], cwd: "/workspace" },
+          },
+        });
+        const outcome = create.then(
+          () => true,
+          () => false,
+        );
+        const request = await takeApproval(create);
+        changeSandboxImage();
+        await decide(request.id, "allow-once");
+        expect(await outcome).toBe(false);
+        expect(await read()).toEqual([]);
+        expect(runSandboxShell).not.toHaveBeenCalled();
+      },
+      { sandbox: true },
+    );
   });
 
   it("creates only after consent and asks again when the creator reactivates or changes its watcher", async () => {
@@ -557,81 +655,120 @@ describe("agent stream approval through the automation tool", () => {
   });
 
   it.each([
-    { change: "exec config" },
-    { change: "tool policy" },
-    { change: "session permission" },
-    { change: "session permission update" },
-    { change: "inherited tool policy" },
-    { change: "unrelated config" },
-  ] as const)("rechecks $change after a delivered approval question", async ({ change }) => {
-    await withStreamApprovalFixture(async ({ tools, read, takeApproval, decide, setConfig }) => {
-      const job = approvedStreamJob();
-      let savedId: string | undefined;
-      if (change === "session permission update") {
-        const initial = tools.invoke(AUTOMATIONS_TOOL_NAME, { action: "add", job });
-        const initialRequest = await takeApproval(initial);
-        await decide(initialRequest.id, "allow-once");
-        await initial;
-        savedId = expectDefined((await read())[0], "created stream").id;
-        await tools.invoke(AUTOMATIONS_TOOL_NAME, {
-          action: "update",
-          jobId: savedId,
-          job: { enabled: false },
-        });
-      }
-      const before = await read();
-      const mutation = tools.invoke(
-        AUTOMATIONS_TOOL_NAME,
-        savedId
-          ? { action: "update", jobId: savedId, job: { enabled: true } }
-          : { action: "add", job },
+    { change: "exec config", sandbox: false },
+    { change: "tool policy", sandbox: false },
+    { change: "session permission", sandbox: false },
+    { change: "session permission update", sandbox: false },
+    { change: "sandbox config", sandbox: true },
+    { change: "sandbox workspace", sandbox: true },
+    { change: "session sandbox", sandbox: true },
+    { change: "inherited tool policy", sandbox: true },
+    { change: "unrelated config", sandbox: true },
+  ] as const)(
+    "rechecks $change after a delivered approval question",
+    async ({ change, sandbox }) => {
+      await withStreamApprovalFixture(
+        async ({ tools, read, takeApproval, decide, setConfig }) => {
+          const job = {
+            ...approvedStreamJob(),
+            ...(sandbox
+              ? {
+                  schedule: { kind: "stream", command: ["python3", "watch.py"], cwd: "/workspace" },
+                }
+              : {}),
+          };
+          let savedId: string | undefined;
+          if (change === "session permission update") {
+            const initial = tools.invoke(AUTOMATIONS_TOOL_NAME, { action: "add", job });
+            const initialRequest = await takeApproval(initial);
+            await decide(initialRequest.id, "allow-once");
+            await initial;
+            savedId = expectDefined((await read())[0], "created stream").id;
+            await tools.invoke(AUTOMATIONS_TOOL_NAME, {
+              action: "update",
+              jobId: savedId,
+              job: { enabled: false },
+            });
+          }
+          const before = await read();
+          const mutation = tools.invoke(
+            AUTOMATIONS_TOOL_NAME,
+            savedId
+              ? { action: "update", jobId: savedId, job: { enabled: true } }
+              : { action: "add", job },
+          );
+          const outcome = mutation.then(
+            () => ({ ok: true as const }),
+            (error: unknown) => ({ ok: false as const, error }),
+          );
+          const request = await takeApproval(mutation);
+          expect(await read()).toEqual(before);
+          if (change === "exec config") {
+            setConfig((current) => ({
+              ...current,
+              tools: { ...current.tools, exec: { ...current.tools?.exec, security: "deny" } },
+            }));
+          } else if (change === "tool policy") {
+            setConfig((current) => ({
+              ...current,
+              tools: { ...current.tools, allow: [AUTOMATIONS_TOOL_NAME] },
+            }));
+          } else if (change === "sandbox config") {
+            setConfig((current) => ({
+              ...current,
+              agents: {
+                ...current.agents,
+                defaults: { ...current.agents?.defaults, sandbox: { mode: "off" } },
+              },
+            }));
+          } else if (change === "sandbox workspace") {
+            setConfig((current) => ({
+              ...current,
+              agents: {
+                ...current.agents,
+                defaults: {
+                  ...current.agents?.defaults,
+                  workspace: path.join(stateDir, "changed-workspace"),
+                },
+              },
+            }));
+          } else if (change === "unrelated config") {
+            setConfig((current) => ({ ...current, gateway: { ...current.gateway, port: 19001 } }));
+          } else {
+            replaceSessionEntrySync(
+              { sessionKey: SESSION },
+              {
+                sessionId: SESSION_ID,
+                updatedAt: 1,
+                lifecycleRevision: "original",
+                createdActor: CREATOR,
+                ...(change === "session sandbox"
+                  ? { sandboxMode: "off" }
+                  : change === "inherited tool policy"
+                    ? { inheritedToolPolicyVersion: 1, inheritedToolDeny: ["exec"] }
+                    : { permissionMode: "read-only" }),
+              },
+            );
+          }
+          // Config revocation can close the question before the operator resolver consumes it.
+          await Promise.allSettled([decide(request.id, "allow-once")]);
+          const settled = await outcome;
+          if (change === "unrelated config") {
+            if (!settled.ok) {
+              throw settled.error;
+            }
+            expect(await read()).toMatchObject([
+              { enabled: true, streamSandbox: { backendId: "docker" } },
+            ]);
+          } else {
+            expect(settled.ok).toBe(false);
+            expect(await read()).toEqual(before);
+          }
+        },
+        { sandbox },
       );
-      const outcome = mutation.then(
-        () => ({ ok: true as const }),
-        (error: unknown) => ({ ok: false as const, error }),
-      );
-      const request = await takeApproval(mutation);
-      expect(await read()).toEqual(before);
-      if (change === "exec config") {
-        setConfig((current) => ({
-          ...current,
-          tools: { ...current.tools, exec: { ...current.tools?.exec, security: "deny" } },
-        }));
-      } else if (change === "tool policy") {
-        setConfig((current) => ({
-          ...current,
-          tools: { ...current.tools, allow: [AUTOMATIONS_TOOL_NAME] },
-        }));
-      } else if (change === "unrelated config") {
-        setConfig((current) => ({ ...current, gateway: { ...current.gateway, port: 19001 } }));
-      } else {
-        replaceSessionEntrySync(
-          { sessionKey: SESSION },
-          {
-            sessionId: SESSION_ID,
-            updatedAt: 1,
-            lifecycleRevision: "original",
-            createdActor: CREATOR,
-            ...(change === "inherited tool policy"
-              ? { inheritedToolPolicyVersion: 1, inheritedToolDeny: ["exec"] }
-              : { permissionMode: "read-only" }),
-          },
-        );
-      }
-      // Config revocation can close the question before the operator resolver consumes it.
-      await Promise.allSettled([decide(request.id, "allow-once")]);
-      const settled = await outcome;
-      if (change === "unrelated config") {
-        if (!settled.ok) {
-          throw settled.error;
-        }
-        expect(await read()).toMatchObject([{ enabled: true }]);
-      } else {
-        expect(settled.ok).toBe(false);
-        expect(await read()).toEqual(before);
-      }
-    });
-  });
+    },
+  );
 
   it("asks when policy tightens during validation and refuses a later hard denial", async () => {
     const entered = createDeferred();

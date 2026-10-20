@@ -1,8 +1,10 @@
 import { readFile } from "node:fs/promises";
-import type { QaDockerRunCommand as RunCommand } from "openclaw/plugin-sdk/qa-runtime";
+import type {
+  QaDockerFetchLike as FetchLike,
+  QaDockerRunCommand as RunCommand,
+} from "openclaw/plugin-sdk/qa-runtime";
 import { withTempDir } from "openclaw/plugin-sdk/test-env";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import type { FetchLike } from "../../../docker-runtime.js";
 import {
   MATRIX_QA_CLEANUP_TIMEOUT_MS,
   isMatrixVersionsReachable as isMatrixVersionsReachableDefault,

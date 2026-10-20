@@ -103,7 +103,7 @@ describe("cron stream creator exec policy", () => {
   it.each([
     { label: "exec is absent", tools: ["read"] },
     {
-      label: "exec is sandboxed",
+      label: "sandbox execution context is missing",
       tools: [{ name: "exec", execOrigin: "openclaw" }],
       exec: { host: "auto", ask: "always" },
       sandboxed: true,

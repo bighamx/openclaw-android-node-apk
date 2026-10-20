@@ -1263,6 +1263,23 @@ with and without this option; require identical response hashes, immediate edit
 visibility, and the same cache eligibility as the root-directory case. The
 267,000-file fixture remains a detached linked worktree with a separate Git dir.
 
+At seed time, add `--nested-repository` to replace one untracked text file with a
+small committed `agent-clone/` checkout (`--untracked` must be at least five).
+RPC warmup requires that checkout to remain one opaque untracked entry, with no
+nested file contents. Add `--excludes-file` to configure `core.excludesFile`
+pointing outside the checkout and ignore a synthetic file through it. The
+config contains 1,000 synthetic branch sections (more than 64 KiB),
+matching a repository shared by many agent worktrees. After the
+measured RPC window, the driver clears that ignore file, verifies the newly
+visible file reaches every tab immediately, and restores the ignore rule.
+Measure these scenarios separately with full diffs, for example `--tracked 5000
+--untracked 10` at seed time and `--tabs 3 --background 0 --maintenance 0 --agents 0
+--poll-ms 250 --duration-ms 30000` at run time. All unchanged RPC responses must
+match warmup; compare their hashes between revisions, require the external-ignore
+control to pass, and compare cache hit rate plus paired p50/p99. Use at least two
+concurrent pairs per scenario with swapped CPU halves. These small fixtures
+reproduce cache eligibility rather than the full fleet's filesystem working set.
+
 For a second scenario with independent revision checks, add
 `--poll-state-dir <other seeded fixture>` on each side. Both isolated Gateways
 then poll both existing synthetic worktrees concurrently, using a separate

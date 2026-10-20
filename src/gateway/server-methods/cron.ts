@@ -7,6 +7,7 @@ import {
   validateCronStatusParams,
   validateCronUpdateParams,
 } from "../../../packages/gateway-protocol/src/index.js";
+import { captureCronStreamSandboxTarget } from "../../agents/sandbox/stream-context.js";
 import { bindCronSelfRemovalCommitGuard } from "../../cron/active-jobs.js";
 import { tryResolveCronJobEffectiveAgentId } from "../../cron/agent-id.js";
 import {
@@ -264,6 +265,10 @@ export const cronHandlers: GatewayRequestHandlers = {
     };
     let job: Awaited<ReturnType<typeof context.cron.update>>;
     try {
+      if (currentJob.streamSandbox && streamExecPolicy && !streamExecPolicy.sandboxContext) {
+        assertActiveAgentRuntimeAuthority(client, context);
+        throw new TypeError("Change this sandbox stream from its original sandbox session.");
+      }
       if (streamExecPolicy) {
         const creator = await prepareCronCreatorSession({
           context,
@@ -275,6 +280,24 @@ export const cronHandlers: GatewayRequestHandlers = {
         });
         if (!updateOptions) {
           throw new TypeError("A stream change requires its current creator authority.");
+        }
+        if (streamExecPolicy.sandboxContext) {
+          if (!creator.session) {
+            throw new TypeError("A sandbox stream requires its current creator session.");
+          }
+          const streamSandbox = captureCronStreamSandboxTarget({
+            sandbox: streamExecPolicy.sandboxContext,
+            ...creator.session,
+          });
+          if (
+            currentJob.streamSandbox &&
+            (currentJob.streamSandbox.scopeKey !== streamSandbox.scopeKey ||
+              currentJob.streamSandbox.sessionId !== streamSandbox.sessionId)
+          ) {
+            assertActiveAgentRuntimeAuthority(client, context);
+            throw new TypeError("Change this sandbox stream from its original sandbox session.");
+          }
+          updateOptions.streamSandbox = streamSandbox;
         }
         updateOptions.sessionEntryCurrent = creator.sessionEntryCurrent;
         creatorSessionId = creator.session?.entry.sessionId;
@@ -288,6 +311,7 @@ export const cronHandlers: GatewayRequestHandlers = {
         context,
         client,
         creatorSessionId,
+        sandboxContext: streamExecPolicy?.sandboxContext,
         assertCurrent: () => updateOptions?.commitGuard?.(),
         onApprovalCommitted: (receipt) => streamExecPolicy?.onApprovalCommitted?.(receipt),
         mutate: (streamExecApproval) => {

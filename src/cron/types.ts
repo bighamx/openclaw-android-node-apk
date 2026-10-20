@@ -22,6 +22,7 @@ import type {
   CronToolsAllowExecTarget,
   CronToolsAllowExecTargetRequirement,
 } from "./scheduled-tool-policy.js";
+import type { CronStreamSandboxTarget } from "./stream-sandbox-target.js";
 import type { CronJobBase, CronPacing } from "./types-shared.js";
 
 export type { CronPacing } from "./types-shared.js";
@@ -424,6 +425,8 @@ export type CronStoredJob = Omit<CronJob, "streamExecutionHost"> & {
     sessionId: string;
     lifecycleRevision?: string;
   };
+  /** Trusted logical sandbox and original access basis, never public create/patch input. */
+  streamSandbox?: CronStreamSandboxTarget;
   /** Immutable revisions inherited from the authorized creator session, never human mutation authority. */
   skillLibrarySelections?: SessionEntry["skillLibrarySelections"];
   /** Immutable creator provenance stamped by the trusted cron creation seam. */

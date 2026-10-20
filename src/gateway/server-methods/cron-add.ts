@@ -4,6 +4,7 @@ import {
   errorShape,
   validateCronAddParams,
 } from "../../../packages/gateway-protocol/src/index.js";
+import { captureCronStreamSandboxTarget } from "../../agents/sandbox/stream-context.js";
 import { tryResolveCronJobEffectiveAgentId } from "../../cron/agent-id.js";
 import { assertValidCronCreateDelivery } from "../../cron/delivery-channel-validation.js";
 import { resolveCronDeliveryPreview } from "../../cron/delivery-preview.js";
@@ -162,15 +163,28 @@ export const cronAddHandler: GatewayRequestHandler = async ({
       ...previewContext,
       job: { ...jobCreate, sourceConversation: creatorOptions.sourceConversation },
     });
+    const streamSandbox = execPolicy?.sandboxContext
+      ? (() => {
+          if (!creator.session) {
+            throw new TypeError("A sandbox stream requires its current creator session.");
+          }
+          return captureCronStreamSandboxTarget({
+            sandbox: execPolicy.sandboxContext,
+            ...creator.session,
+          });
+        })()
+      : undefined;
     result = await withCronStreamExecApproval({
       context,
       client,
       creatorSessionId: creator.session?.entry.sessionId,
+      sandboxContext: execPolicy?.sandboxContext,
       assertCurrent: commitGuard,
       onApprovalCommitted: execPolicy?.onApprovalCommitted,
       mutate: (streamExecApproval) =>
         context.cron.add(jobCreate, {
           streamExecApproval,
+          streamSandbox,
           execPolicy,
           sessionEntryCurrent: creator.sessionEntryCurrent,
 

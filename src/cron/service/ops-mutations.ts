@@ -136,6 +136,7 @@ export async function add(
         ? (state.store?.jobs.filter(opts.matchesExisting).map((job) => job.id) ?? [])
         : undefined,
       options: {
+        streamSandbox: opts?.streamSandbox,
         enabledExplicit: opts?.enabledExplicit,
         systemOwned: opts?.systemOwned,
         createdActor: opts?.createdActor,
@@ -286,6 +287,7 @@ async function updateLoadedJob(params: {
     id,
     patch,
     options: {
+      streamSandbox: opts?.streamSandbox,
       inferenceBinding: opts?.inferenceBinding,
       scheduledToolPolicy: opts?.scheduledToolPolicy,
       toolsAllowProvenance: opts?.toolsAllowProvenance,

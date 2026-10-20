@@ -348,6 +348,7 @@ function bindCronStreamExecPolicyCurrentness(
   return policy.kind === "resolved"
     ? {
         kind: "resolved",
+        sandboxContext: policy.sandboxContext,
         onApprovalCommitted: policy.onApprovalCommitted,
         assertCurrentSource: () => {
           assertCurrent();
@@ -360,6 +361,7 @@ function bindCronStreamExecPolicyCurrentness(
       }
     : {
         kind: "needs-approvals",
+        sandboxContext: policy.sandboxContext,
         onApprovalCommitted: policy.onApprovalCommitted,
         assertCurrentSource: () => {
           assertCurrent();

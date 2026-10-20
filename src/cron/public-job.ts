@@ -6,6 +6,7 @@ export function toPublicCronJob(job: CronStoredJob): CronJob {
     operatorSource: _operatorSource,
     inferenceBinding: _inferenceBinding,
     sourceConversation: _sourceConversation,
+    streamSandbox: _streamSandbox,
     skillLibrarySelections: _skillLibrarySelections,
     createdActor: _createdActor,
     toolsAllowProvenance: _toolsAllowProvenance,
@@ -27,6 +28,8 @@ export function toPublicCronJob(job: CronStoredJob): CronJob {
   return {
     ...publicJob,
     state,
-    ...(job.schedule.kind === "stream" ? { streamExecutionHost: "gateway" as const } : {}),
+    ...(job.schedule.kind === "stream"
+      ? { streamExecutionHost: job.streamSandbox ? ("sandbox" as const) : ("gateway" as const) }
+      : {}),
   };
 }
