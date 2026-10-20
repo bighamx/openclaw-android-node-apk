@@ -2,11 +2,7 @@ import type { MessageReactionSummary } from "../../../../../packages/gateway-pro
 import type { ChatPendingInputsPage } from "../../../../../packages/gateway-protocol/src/schema/logs-chat.js";
 import type { ThemeBranding } from "../../../../../packages/gateway-protocol/src/theme.ts";
 import type { GatewayBrowserClient } from "../../../api/gateway.ts";
-import type {
-  AgentsListResult,
-  GatewaySessionRow,
-  SessionsListResult,
-} from "../../../api/types.ts";
+import type { GatewaySessionRow, SessionsListResult } from "../../../api/types.ts";
 import type { ApplicationContext } from "../../../app/context.ts";
 import type { QuestionPrompt } from "../../../app/question-prompt.ts";
 import type { BrowserTabSelection } from "../../../components/browser/browser-target.ts";
@@ -26,7 +22,6 @@ import type {
 } from "../../../lib/chat/chat-types.ts";
 import type { PresentationValue } from "../../../lib/presentation.ts";
 import { listen } from "../../../lib/reactive/listener.ts";
-import type { UiSessionDefaultsHost } from "../../../lib/sessions/session-key.ts";
 // Pane-local search, context menus, selection actions, and presentation resets.
 import type { TurnRecapWatch } from "../chat-progress.ts";
 import type { SubagentRoster } from "../chat-spawned-subagent.ts";
@@ -35,7 +30,7 @@ import type { ChatTranscriptMetadata } from "../chat-transcript-metadata.ts";
 import type { ChatTypingActorView, ChatTypingOverflow } from "../chat-typing-presence.ts";
 import type { RealtimeTalkConversationEntry } from "../talk/conversation.ts";
 import type { CompactionStatus, RunOutputUsage } from "../tool-stream-contract.ts";
-import type { AsyncQuestionDraft, AsyncQuestionPresentation } from "./chat-async-question.types.ts";
+import type { createAsyncQuestionPresentation } from "./chat-async-question.ts";
 import type { ChatCommentPinsHandle } from "./chat-comment-pins.tsx";
 import { resolveChatContextCopy, usesNativeContextMenu } from "./chat-context-copy.ts";
 import type { ChatHistoryBoundaryProps } from "./chat-history-boundary.tsx";
@@ -57,21 +52,13 @@ import {
 import type { SidebarContent, SidebarFullMessageLoader } from "./chat-sidebar-content-types.ts";
 import { mountThreadMenu, type ThreadMenuAction } from "./chat-thread-menu.tsx";
 import { TranscriptSearchState } from "./chat-transcript-search-state.ts";
+import type { ChatWelcomeIdentityProps } from "./chat-welcome.tsx";
 
 registerChatMessageMetadataEnglish();
 
-export type ChatThreadState = {
+export type ChatThreadState = Parameters<typeof createAsyncQuestionPresentation>[0] & {
   threadElement?: HTMLElement;
   commentPins?: ChatCommentPinsHandle;
-  asyncQuestionDrafts: Map<string, AsyncQuestionDraft>;
-  asyncQuestionSessions?: Map<
-    string,
-    import("./chat-async-question-draft.ts").AsyncQuestionDraftSession
-  >;
-  asyncQuestionRevision: number;
-  asyncQuestionScope?: string;
-  asyncQuestionGeneration?: number;
-  asyncQuestionPresentation?: AsyncQuestionPresentation;
   turnRecapWatch: TurnRecapWatch | null;
   search: TranscriptSearchState;
   transcriptRenderDependencies: readonly unknown[];
@@ -83,11 +70,6 @@ export type ChatThreadState = {
     onSetReply?: (target: MessageReplyTarget) => void;
     onOpenReply?: (replyToId: string) => void;
     onAsyncQuestionDiscard?: (item: ChatQueueItem) => void;
-    onAsyncQuestionSubmit?: (
-      message: string,
-      itemId?: string,
-      sourceMessageId?: string,
-    ) => Promise<boolean>;
   };
 };
 
@@ -111,6 +93,7 @@ export type ChatThreadProps = Omit<
   | "getTurnVideoMessages"
   | "onOpenWorkspaceFile"
 > &
+  ChatWelcomeIdentityProps &
   ChatSendStatusActions &
   SubagentRoster & {
     applicationContext?: ApplicationContext;
@@ -160,16 +143,9 @@ export type ChatThreadProps = Omit<
     waitingApproval?: boolean;
     questionPrompts?: readonly QuestionPrompt[];
     sessions: SessionsListResult | null;
-    /** Host context resolving global-alias session keys (scope=global fleets). */
-    sessionHost?: UiSessionDefaultsHost | null;
-    assistantName: string;
-    assistantAvatar: string | null;
     senderAgentAvatars?: ReadonlyMap<string, string | null>;
-    agents?: AgentsListResult["agents"];
     /** Configured main-session key; an agent's main source labels as the agent. */
     mainKey?: string;
-    currentAgentId?: string;
-    assistantAvatarUrl?: string | null;
     userId?: string | null;
     userName?: string | null;
     userAvatar?: string | null;
@@ -191,8 +167,6 @@ export type ChatThreadProps = Omit<
     onHistoryIntent?: (event: Event) => void;
     onHistorySentinelRef?: (element: HTMLElement) => void | (() => void);
     onTranscriptAnnouncementRef?: (element: HTMLElement) => void | (() => void);
-    onDraftChange: (next: string) => void;
-    onSend: () => void;
     onSetReply?: (target: MessageReplyTarget) => void;
     replyMessageAccess?: ReplyMessageAccess;
     onRewindMessage?: (entryId: string) => Promise<boolean> | boolean;
@@ -202,13 +176,10 @@ export type ChatThreadProps = Omit<
     commentsDisabled?: boolean;
     onAddToChat?: (selection: ChatSelectionSource, anchorRect: DOMRect) => void;
     onCompanionSelection?: (selection: ChatSelectionSource, anchorRect: DOMRect) => void;
-    onOpenSession?: (sessionKey: string) => void;
     /** Shows one of the session's subagents. */
     onOpenSubagent?: (sessionKey: string) => void;
     /** Shows the session's subagents; absent where the pane has no list of them to show. */
     onOpenSubagents?: (focus?: boolean) => void;
-    modelSetupRequired?: boolean;
-    onModelSetup?: () => void;
   };
 
 type TranscriptInteractionProps = Pick<
