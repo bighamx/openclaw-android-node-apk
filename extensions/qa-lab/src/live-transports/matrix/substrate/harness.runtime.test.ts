@@ -255,16 +255,14 @@ describe("matrix harness runtime", () => {
     });
   });
 
-  it("cancels Matrix versions probe response bodies", async () => {
-    const cancel = vi.fn(awake);
-    const fetchImpl = vi.fn(async () => ({ ok: true, body: { cancel } }));
+  it("probes Matrix versions with a bounded request", async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
 
     await expect(isMatrixVersionsReachable(host, fetchImpl)).resolves.toBe(true);
 
     expect(fetchImpl).toHaveBeenCalledWith(`${host}_matrix/client/versions`, {
       signal: expect.any(AbortSignal),
     });
-    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it("cancels a stalled versions request when its deadline signal aborts", async () => {

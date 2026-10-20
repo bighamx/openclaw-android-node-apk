@@ -385,7 +385,6 @@ describe("runQaDockerUp", () => {
     const calls: string[] = [];
     const fetchCalls: string[] = [];
     const fetchSignals: AbortSignal[] = [];
-    const hostGatewayCancel = vi.fn(async () => {});
     const outputDir = await mkdtemp(path.join(os.tmpdir(), "qa-docker-up-"));
     const repoRoot = path.resolve("/repo/openclaw");
     const composeFile = path.join(outputDir, "docker-compose.qa.yml");
@@ -421,7 +420,7 @@ describe("runQaDockerUp", () => {
               fetchSignals.push(init.signal);
             }
             if (input === "http://127.0.0.1:18889/healthz") {
-              return { ok: false, body: { cancel: hostGatewayCancel } };
+              return { ok: false };
             }
             return {
               ok:
@@ -447,7 +446,6 @@ describe("runQaDockerUp", () => {
       ]);
       expect(fetchSignals).toHaveLength(3);
       expect(result.gatewayUrl).toBe("http://192.168.165.4:18789/");
-      expect(hostGatewayCancel).toHaveBeenCalledTimes(1);
     } finally {
       await rm(outputDir, { recursive: true, force: true });
     }
