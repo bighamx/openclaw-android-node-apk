@@ -1,4 +1,4 @@
-import { Show, createMemo, createUniqueId, onSettled } from "solid-js";
+import { Show, createMemo, onSettled } from "solid-js";
 import { buildControlUiResourcePath } from "../../../../../src/gateway/control-ui-resource-routes.js";
 import type { GatewaySessionRow } from "../../../api/types.ts";
 import type { ApplicationContext } from "../../../app/context.ts";
@@ -9,7 +9,6 @@ import { GatewayStatus } from "../../../components/solid/gateway-status.tsx";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { AgentIdentityAvatar } from "../../../components/solid/identity-avatar.tsx";
 import { Menu, type MenuItem } from "../../../components/solid/menu.tsx";
-import { Popover } from "../../../components/solid/popover.tsx";
 import { useScrollState } from "../../../components/solid/scroll-state.ts";
 import { SessionTitlePlaceholder } from "../../../components/solid/session-title-placeholder.tsx";
 import "../../../components/workspace-icon.ts";
@@ -25,7 +24,6 @@ import {
   resolveUiSessionNavigationParentKey,
 } from "../../../lib/sessions/session-key.ts";
 import { nativeListener } from "../../../lib/solid-native-listener.ts";
-import { usePanePresentation } from "../chat-pane-presentation.ts";
 import type { ChatPaneHeaderProps, ChatPaneParentSession } from "./chat-pane-header.types.ts";
 
 function revealLabel(platform: string | null): string {
@@ -50,6 +48,25 @@ export function resolveChatPaneParentSession(
   return parent ? { key: parent.key, title: resolveSessionDisplayName(parent.key, parent) } : null;
 }
 
+function CrumbSeparator(props: { merged: boolean }) {
+  return (
+    <span class="chat-pane__crumb-sep" aria-hidden="true">
+      {props.merged ? (
+        "/"
+      ) : (
+        <svg width="4" height="20" viewBox="0 0 4 20" fill="none">
+          <path
+            d="M3.3 4.7.7 15.3"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+          />
+        </svg>
+      )}
+    </span>
+  );
+}
+
 export function IdentityCrumbs(props: ChatPaneHeaderProps) {
   const hasProject = () => !props.catalog && Boolean(props.workspaceLabel);
   const status = () =>
@@ -67,20 +84,7 @@ export function IdentityCrumbs(props: ChatPaneHeaderProps) {
       </Show>
       <div class="chat-pane__session-trail">
         <Show when={hasProject()}>
-          <span class="chat-pane__crumb-sep" aria-hidden="true">
-            {props.mergedChrome ? (
-              "/"
-            ) : (
-              <svg width="4" height="20" viewBox="0 0 4 20" fill="none">
-                <path
-                  d="M3.3 4.7.7 15.3"
-                  stroke="currentColor"
-                  stroke-width="1.4"
-                  stroke-linecap="round"
-                />
-              </svg>
-            )}
-          </span>
+          <CrumbSeparator merged={props.mergedChrome} />
         </Show>
         <Show when={props.parentSession}>
           {(parent) => (
@@ -94,20 +98,7 @@ export function IdentityCrumbs(props: ChatPaneHeaderProps) {
               >
                 <span class="chat-pane__parent-session-text">{parent().title}</span>
               </button>
-              <span class="chat-pane__crumb-sep" aria-hidden="true">
-                {props.mergedChrome ? (
-                  "/"
-                ) : (
-                  <svg width="4" height="20" viewBox="0 0 4 20" fill="none">
-                    <path
-                      d="M3.3 4.7.7 15.3"
-                      stroke="currentColor"
-                      stroke-width="1.4"
-                      stroke-linecap="round"
-                    />
-                  </svg>
-                )}
-              </span>
+              <CrumbSeparator merged={props.mergedChrome} />
             </>
           )}
         </Show>
@@ -117,53 +108,25 @@ export function IdentityCrumbs(props: ChatPaneHeaderProps) {
   );
 }
 
+// Roster mode keeps the session crumbs off the agent pill: it is one settings target.
 export function AgentCrumb(
   props: ChatPaneHeaderProps & { agent: NonNullable<ChatPaneHeaderProps["agent"]> },
 ) {
-  const id = createUniqueId();
-  const presented = usePanePresentation(() => props.presented);
-  // Rename opens the context and hidden panes close it; otherwise the user controls it.
-  const requestedOpen = createMemo(() => (!presented() ? false : props.editing ? true : undefined));
   return (
-    <div class="chat-pane__agent-identity">
-      {/* Conversation changes retire the open panel and its rename input together. */}
-      <Show when={`${props.agent.id}\0${props.session?.key ?? ""}`} keyed>
-        {(_scope) => (
-          <Popover
-            id={id}
-            lazy
-            sameRoot
-            class="chat-pane__agent-context"
-            label={t("chat.sessionHeader.agentContext", { agent: props.agent.name })}
-            placement="bottom-start"
-            open={requestedOpen()}
-            onOpenChange={(open) => {
-              if (!open && props.editing) {
-                props.onCancelRename();
-              }
-            }}
-            trigger={
-              <>
-                <span class="chat-pane__agent-avatar" aria-hidden="true">
-                  <AgentIdentityAvatar agent={props.agent} />
-                </span>
-                <span class="chat-pane__agent-name">{props.agent.name}</span>
-              </>
-            }
-          >
-            <IdentityCrumbs {...props} />
-          </Popover>
-        )}
-      </Show>
-      <button
-        class="chat-pane__agent-settings"
-        type="button"
-        aria-label={t("agentChip.namedSettings", { name: props.agent.name })}
-        onClick={() => props.onOpenAgentSettings?.(props.agent.id)}
-      >
+    <button
+      class="chat-pane__agent-identity"
+      type="button"
+      aria-label={t("agentChip.namedSettings", { name: props.agent.name })}
+      onClick={() => props.onOpenAgentSettings?.(props.agent.id)}
+    >
+      <span class="chat-pane__agent-avatar" aria-hidden="true">
+        <AgentIdentityAvatar agent={props.agent} />
+      </span>
+      <span class="chat-pane__agent-name">{props.agent.name}</span>
+      <span class="chat-pane__agent-settings" aria-hidden="true">
         <Icon name="settings" />
-      </button>
-    </div>
+      </span>
+    </button>
   );
 }
 
@@ -262,21 +225,22 @@ export function ProjectCrumb(props: ChatPaneHeaderProps) {
   const id = `chat-workspace-${++nextWorkspaceMenuId}`;
   const copied = () => props.copiedAction === "copy-path" || props.copiedAction === "copy-branch";
   const items = createMemo(() => {
-    const copyActions: MenuItem[] = [
-      ...(props.workspaceRoot
+    const copyActions: MenuItem[] = (
+      [
+        ["copy-path", "listTree", props.workspaceRoot, "chat.sessionHeader.copyPath"],
+        ["copy-branch", "gitBranch", props.branch, "chat.sessionHeader.copyBranch"],
+      ] as const
+    ).flatMap(([action, icon, value, label]) =>
+      value
         ? [
             {
-              id: "copy-path",
+              id: action,
               icon: (
                 <span class="session-menu__icon" aria-hidden="true">
-                  <Icon name="listTree" />
+                  <Icon name={icon} />
                 </span>
               ),
-              label: t(
-                props.copiedAction === "copy-path"
-                  ? "chat.sessionHeader.copied"
-                  : "chat.sessionHeader.copyPath",
-              ),
+              label: t(props.copiedAction === action ? "chat.sessionHeader.copied" : label),
               details: (
                 <span class="session-menu__icon" aria-hidden="true">
                   <Icon name="copy" />
@@ -284,30 +248,8 @@ export function ProjectCrumb(props: ChatPaneHeaderProps) {
               ),
             },
           ]
-        : []),
-      ...(props.branch
-        ? [
-            {
-              id: "copy-branch",
-              icon: (
-                <span class="session-menu__icon" aria-hidden="true">
-                  <Icon name="gitBranch" />
-                </span>
-              ),
-              label: t(
-                props.copiedAction === "copy-branch"
-                  ? "chat.sessionHeader.copied"
-                  : "chat.sessionHeader.copyBranch",
-              ),
-              details: (
-                <span class="session-menu__icon" aria-hidden="true">
-                  <Icon name="copy" />
-                </span>
-              ),
-            },
-          ]
-        : []),
-    ];
+        : [],
+    );
     return [
       ...copyActions,
       ...(props.canReveal && props.workspaceRoot

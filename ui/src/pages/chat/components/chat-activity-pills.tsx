@@ -12,6 +12,7 @@ import { BrandIcon, Icon, type IconName } from "../../../components/solid/icon.t
 import { registerChatGoalsEnglish } from "../../../i18n/locales/en-chat-goals.ts";
 import { registerGitHubEnglish } from "../../../i18n/locales/en-github.ts";
 import type { ChatGoalRecovery } from "../../../lib/chat/chat-types.ts";
+import { fnv1aUtf16 } from "../../../lib/fnv1a.ts";
 import { elementRef } from "../../../lib/reactive/element-ref.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { listen } from "../../../lib/reactive/listener.ts";
@@ -20,6 +21,7 @@ import type { SessionProgressCardRefreshState } from "../../../lib/session-progr
 import type { GitHubPublicationView } from "../../../lib/sessions/github-publication-owner.ts";
 import type { ChatSubagentActivity } from "../chat-subagent-wait.ts";
 import { chatPullRequestId } from "./chat-pull-requests.ts";
+import type { ComposerActivityLayout } from "./chat-transcript-layout-owner.ts";
 import "./chat-activity-pills.css";
 
 registerEnglishCatalog(registerChatGoalsEnglish);
@@ -29,6 +31,7 @@ type OpenActivity = (source: HTMLButtonElement) => void;
 
 /** Mount only in the native mobile presentation branch, not a narrow desktop pane. */
 export type ChatActivityPillsProps = {
+  onLayout?: (layout: ComposerActivityLayout, detached?: boolean) => void;
   presented: boolean;
   approvalPending: boolean;
   subagents?: { activities: readonly ChatSubagentActivity[]; onOpen: OpenActivity };
@@ -495,10 +498,16 @@ export function ChatActivityPills(props: ChatActivityPillsProps) {
   let strip!: HTMLDivElement;
   let row!: HTMLDivElement;
   const buttons = new Set<HTMLButtonElement>();
+  let resize: ResizeObserver | undefined;
+  let scheduleLayout: (() => void) | undefined;
   const registerButton = (button: HTMLButtonElement) => {
     buttons.add(button);
+    resize?.observe(button);
+    scheduleLayout?.();
     return () => {
       buttons.delete(button);
+      resize?.unobserve(button);
+      scheduleLayout?.();
     };
   };
   const working = createMemo(
@@ -522,17 +531,23 @@ export function ChatActivityPills(props: ChatActivityPillsProps) {
       (state) => {
         strip.toggleAttribute("data-fade-left", !state.atStart);
         strip.toggleAttribute("data-fade-right", !state.atEnd);
+        props.onLayout?.({ strip, pills: buttons });
       },
       true,
     );
-    const resize = new ResizeObserver(scroll.schedule);
+    scheduleLayout = scroll.schedule;
+    resize = new ResizeObserver(scroll.schedule);
     resize.observe(row);
+    buttons.forEach((button) => resize?.observe(button));
     const visibility = () => strip.toggleAttribute("data-document-hidden", document.hidden);
     const stopVisibility = listen(document, "visibilitychange", visibility);
     visibility();
     return () => {
       scroll.disconnect();
-      resize.disconnect();
+      resize?.disconnect();
+      resize = undefined;
+      scheduleLayout = undefined;
+      props.onLayout?.({ strip, pills: buttons }, true);
       stopVisibility();
     };
   });
@@ -616,6 +631,7 @@ export function ChatActivityPills(props: ChatActivityPillsProps) {
                     <span
                       class="activity-pill__avatar"
                       style={{
+                        "--subagent-avatar-hue": fnv1aUtf16(agent().key) % 360,
                         "--avatar-bg": avatarColors(agent().key)[0],
                         "--avatar-ink": avatarColors(agent().key)[1],
                         "--wave-delay": `${index() * 120}ms`,

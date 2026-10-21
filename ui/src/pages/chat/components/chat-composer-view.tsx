@@ -97,6 +97,10 @@ export function renderChatComposerView(
       props.realtimeTalkVideoStream?.getVideoTracks?.()[0]?.getSettings?.().facingMode !==
       "environment",
   );
+  const canSwitchCamera = createMemo(
+    () =>
+      (props.realtimeTalkCameraDevices?.length ?? 0) >= 2 && Boolean(props.onSwitchRealtimeCamera),
+  );
   const slashMenuAnnouncementId = () => paneDomId(props.paneId, "slash-active-announcement");
   // Owner refreshes replace the banner and callback values, not the focused action's DOM.
   const disabledBanner = (
@@ -326,7 +330,9 @@ export function renderChatComposerView(
           </Show>
         </div>
         <Show when={props.mobileComposer && props.mobileActivityPills}>
-          {(activities) => <ChatActivityPills {...activities()} />}
+          {(activities) => (
+            <ChatActivityPills {...activities()} onLayout={props.onActivityPillsLayout} />
+          )}
         </Show>
         {props.mobileApprovalContent}
       </div>
@@ -334,7 +340,7 @@ export function renderChatComposerView(
         <ComposerQueue composer={props} showAbortableUi={context().showAbortableUi} />
       </Show>
       {showComposerInput() ? (
-        <ComposerInputScope state={context().state}>
+        <ComposerInputScope>
           <div
             class={[
               "agent-chat__input agent-chat__input--chat agent-chat__input--mobile-toolbar",
@@ -365,7 +371,14 @@ export function renderChatComposerView(
               focusComposerFromChrome(event, context().canCompose, state.composerTextarea)
             }
             ref={[
-              context().state.composerInputRef ?? undefined,
+              elementRef<HTMLDivElement>((element) => {
+                state.composerInputRef?.(element);
+                return () => {
+                  if (state.composerInput === element) {
+                    state.composerInputRef?.();
+                  }
+                };
+              }),
               createBackgroundLayoutRef("composer"),
             ]}
           >
@@ -463,9 +476,7 @@ export function renderChatComposerView(
                     aria-label={t("chat.composer.cameraPreview")}
                     prop:srcObject={props.realtimeTalkVideoStream}
                   />
-                  {props.realtimeTalkCameraDevices &&
-                  props.realtimeTalkCameraDevices.length >= 2 &&
-                  props.onSwitchRealtimeCamera ? (
+                  {canSwitchCamera() ? (
                     <openclaw-tooltip
                       class="agent-chat__video-preview-switch-tooltip"
                       prop:content={t("chat.composer.switchCamera")}
@@ -475,7 +486,7 @@ export function renderChatComposerView(
                         class="agent-chat__video-preview-switch"
                         aria-label={t("chat.composer.switchCamera")}
                         disabled={props.realtimeTalkVideoPending}
-                        onClick={props.onSwitchRealtimeCamera}
+                        onClick={() => props.onSwitchRealtimeCamera?.()}
                       >
                         {<Icon name="switchCamera" />}
                       </button>

@@ -6,7 +6,6 @@ import {
   createMemo,
   createSignal,
   lazy,
-  onCleanup,
   onSettled,
   type Element,
 } from "solid-js";
@@ -60,6 +59,7 @@ export type ChatDetails = { open(source: HTMLElement): void };
 let nextId = 0;
 
 const DETAILS_WIDTH = 300;
+const DETAILS_DESKTOP_INLINE_INSET = 13;
 // Preserve the 48rem reading column plus its gutters before offering automatic docking.
 const DETAILS_DOCK_MIN_WIDTH = 1200;
 
@@ -237,8 +237,10 @@ export function ChatDetails(props: ChatDetailsViewProps) {
         (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight) - 8,
       );
       const right = Math.min(
-        bounds.right - 8,
-        (viewport?.offsetLeft ?? 0) + (viewport?.width ?? window.innerWidth) - 8,
+        bounds.right - DETAILS_DESKTOP_INLINE_INSET,
+        (viewport?.offsetLeft ?? 0) +
+          (viewport?.width ?? window.innerWidth) -
+          DETAILS_DESKTOP_INLINE_INSET,
       );
       const width = Math.max(0, Math.min(DETAILS_WIDTH, right - bounds.left - 8));
       panel.style.left = `${right - width - (conversationVisible ? bounds.left : 0)}px`;
@@ -445,7 +447,7 @@ export function ChatDetails(props: ChatDetailsViewProps) {
       frame?.toggleAttribute("data-details-restoring", panel.hasAttribute("data-restoring"));
       frame?.style.setProperty(
         "--chat-details-space",
-        dock ? `${DETAILS_WIDTH + (isDesktop ? 8 : 0)}px` : "0px",
+        dock ? `${DETAILS_WIDTH + (isDesktop ? DETAILS_DESKTOP_INLINE_INSET : 0)}px` : "0px",
       );
       if (open && isDesktop) {
         position(layout);
@@ -508,17 +510,28 @@ export function ChatDetails(props: ChatDetailsViewProps) {
       props.setRef(undefined);
       layout.disconnect();
       stop.forEach((dispose) => dispose());
+      hide();
+      const frame = props.elements?.frame;
+      frame?.style.removeProperty("--chat-details-space");
+      frame?.style.removeProperty("--chat-details-frame-width");
+      frame?.removeAttribute("data-details-instant");
+      frame?.removeAttribute("data-details-restoring");
+      surface.remove();
     };
   });
-  onCleanup(() => {
-    hide();
-    const frame = props.elements?.frame;
-    frame?.style.removeProperty("--chat-details-space");
-    frame?.style.removeProperty("--chat-details-frame-width");
-    frame?.removeAttribute("data-details-instant");
-    frame?.removeAttribute("data-details-restoring");
-    surface.remove();
-  });
+  function SessionContent(content: { children: Element }) {
+    return (
+      <Show when={sessionOpened()}>
+        <Loading
+          fallback={
+            <PanelLoadingSkeleton variant="file-list" label={t("common.loading")} compact />
+          }
+        >
+          {content.children}
+        </Loading>
+      </Show>
+    );
+  }
   return (
     <openclaw-chat-details
       ref={(element) => (host = element)}
@@ -580,25 +593,15 @@ export function ChatDetails(props: ChatDetailsViewProps) {
                     when={props.mobileHost && props.chat}
                     fallback={
                       <>
-                        <Show when={sessionOpened()}>
-                          <Loading
-                            fallback={
-                              <PanelLoadingSkeleton
-                                variant="file-list"
-                                label={t("common.loading")}
-                                compact
-                              />
+                        <SessionContent>
+                          <ChatDetailsSession
+                            props={props.chat}
+                            presented={isPresented() && opened()}
+                            dismissed={
+                              props.mobileHost ? !props.mobileHost.open : intent() === "closed"
                             }
-                          >
-                            <ChatDetailsSession
-                              props={props.chat}
-                              presented={isPresented() && opened()}
-                              dismissed={
-                                props.mobileHost ? !props.mobileHost.open : intent() === "closed"
-                              }
-                            />
-                          </Loading>
-                        </Show>
+                          />
+                        </SessionContent>
                         <Show
                           when={props.chat?.progressCard || props.chat?.progressCardInitialLoading}
                         >
@@ -621,54 +624,34 @@ export function ChatDetails(props: ChatDetailsViewProps) {
                   >
                     <Show when={presentation()} keyed>
                       {(_identity) => (
-                        <Show when={sessionOpened()}>
-                          <Loading
-                            fallback={
-                              <PanelLoadingSkeleton
-                                variant="file-list"
-                                label={t("common.loading")}
-                                compact
-                              />
-                            }
-                          >
-                            <ChatDetailsMobileHostContent
-                              details={props.chat!}
-                              host={props.mobileHost!}
-                              bindings={props.mobileBindings}
-                              presented={isPresented() && opened()}
-                            />
-                          </Loading>
-                        </Show>
+                        <SessionContent>
+                          <ChatDetailsMobileHostContent
+                            details={props.chat!}
+                            host={props.mobileHost!}
+                            bindings={props.mobileBindings}
+                            presented={isPresented() && opened()}
+                          />
+                        </SessionContent>
                       )}
                     </Show>
                   </Show>
                 }
               >
-                <Show when={sessionOpened()}>
-                  <Loading
-                    fallback={
-                      <PanelLoadingSkeleton
-                        variant="file-list"
-                        label={t("common.loading")}
-                        compact
-                      />
-                    }
-                  >
-                    <ChatDetailsDesktopComposition
-                      props={props.chat}
-                      presented={isPresented() && opened()}
-                      dismissed={intent() === "closed"}
-                      progressMenuRef={(menu) => {
-                        progressMenu = menu;
-                      }}
-                      onHideProgress={() => {
-                        if (!docked()) {
-                          close(true);
-                        }
-                      }}
-                    />
-                  </Loading>
-                </Show>
+                <SessionContent>
+                  <ChatDetailsDesktopComposition
+                    props={props.chat}
+                    presented={isPresented() && opened()}
+                    dismissed={intent() === "closed"}
+                    progressMenuRef={(menu) => {
+                      progressMenu = menu;
+                    }}
+                    onHideProgress={() => {
+                      if (!docked()) {
+                        close(true);
+                      }
+                    }}
+                  />
+                </SessionContent>
               </Show>
             )}
           </Show>

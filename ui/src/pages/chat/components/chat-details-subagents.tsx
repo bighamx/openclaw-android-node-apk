@@ -44,7 +44,7 @@ function SubagentAvatar(props: { row: Subagent; summary?: boolean }) {
   return (
     <span
       class="chat-details-subagents__avatar"
-      style={{ "--details-subagent-hue": fnv1aUtf16(props.row.key) % 360 }}
+      style={{ "--subagent-avatar-hue": fnv1aUtf16(props.row.key) % 360 }}
       aria-hidden="true"
     >
       <Icon name="bot" />
@@ -125,7 +125,7 @@ export function ChatDetailsSubagents(props: ChatDetailsSubagentsProps) {
                   : t("chat.subagentsRunning", { count: String(working().length) })
               }
             >
-              <span class="chat-details-subagents__spinner" aria-hidden="true" />
+              <span class="session-run-spinner" aria-hidden="true" />
             </span>
           </Show>
         }

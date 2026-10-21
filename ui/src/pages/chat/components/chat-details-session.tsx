@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal, onCleanup, onSettled } from "solid-js";
+import { For, Show, createMemo, createSignal, createStore, onSettled } from "solid-js";
 import type { SessionParticipant } from "../../../../../packages/gateway-protocol/src/schema/session-participant.js";
 import { Icon } from "../../../components/solid/icon.tsx";
 import type { MenuHandle } from "../../../components/solid/menu.tsx";
@@ -18,6 +18,7 @@ import { ChatDetailsDesktopBody } from "./chat-details-desktop-body.tsx";
 import { ChatDetailsDesktopSection } from "./chat-details-desktop-section.tsx";
 import { ChatDetailsContext, ChatDetailsEnvironment } from "./chat-details-environment.tsx";
 import { ChatDetailsPeople, ChatDetailsPeopleSummary } from "./chat-details-people.tsx";
+import { ChatDetailsProcesses } from "./chat-details-processes.tsx";
 import { ChatDetailsProgress } from "./chat-details-progress.tsx";
 import type {
   ChatDetailsDesktopSectionId,
@@ -50,7 +51,7 @@ export const ChatDetailsSession = defineSolidBridge<Props>(
           () => ({
             sessionKey: host.props?.sessionKey ?? "",
             agentId: host.props?.currentAgentId ?? "main",
-            presented: host.presented && !host.desktop && Boolean(host.props?.onOpenProcesses),
+            presented: host.presented && Boolean(host.props?.onOpenProcesses),
           }),
           ProcessesPanelData,
           () => undefined,
@@ -69,11 +70,13 @@ export const ChatDetailsSession = defineSolidBridge<Props>(
         runActive:
           host.props?.runActive === true || host.props?.selectedSession?.hasActiveRun === true,
       });
-    diffSummaryInputs.set(host, syncDiffSummary);
-    onSettled(syncDiffSummary);
-    onCleanup(() => {
-      diffSummaryInputs.delete(host);
-      changes.dispose();
+    onSettled(() => {
+      diffSummaryInputs.set(host, syncDiffSummary);
+      syncDiffSummary();
+      return () => {
+        diffSummaryInputs.delete(host);
+        changes.dispose();
+      };
     });
     const changesView = projectOwner(changes, (owner) => owner.snapshot);
     const summary = () => changesView.read().summary;
@@ -122,20 +125,25 @@ export const ChatDetailsSession = defineSolidBridge<Props>(
       <Show when={identity()} keyed>
         {(_identity) => {
           const [pullRequestsOpen, setPullRequestsOpen] = createSignal(true);
-          const [sectionChoices, setSectionChoices] = createSignal<
+          const [sectionChoices, setSectionChoices] = createStore<
             Partial<Record<ChatDetailsDesktopSectionId, boolean>>
           >({});
           const desktopPresentation = () =>
             props.desktop ? props.props?.desktopPresentation : undefined;
           const sectionExpanded = (section: ChatDetailsDesktopSectionId) =>
             props.props?.desktopDisclosures?.expanded[section] ??
-            sectionChoices()[section] ??
-            (section === "environment" || section === "subagents" || section === "automations");
+            sectionChoices[section] ??
+            (section === "environment" ||
+              section === "subagents" ||
+              section === "automations" ||
+              section === "processes");
           const changeSection = (section: ChatDetailsDesktopSectionId, expanded: boolean) => {
             if (!host.isConnected || !props.presented || sectionExpanded(section) === expanded) {
               return;
             }
-            setSectionChoices((previous) => ({ ...previous, [section]: expanded }));
+            setSectionChoices((choices) => {
+              choices[section] = expanded;
+            });
             props.props?.desktopDisclosures?.onExpandedChange(section, expanded);
           };
           const changeSubagentsExpanded = (expanded: boolean) =>
@@ -582,6 +590,13 @@ export const ChatDetailsSession = defineSolidBridge<Props>(
                     presented={active()}
                     desktopSubagents={desktopSubagentsPresentation()}
                     showProcesses={false}
+                  />
+                  <ChatDetailsProcesses
+                    processes={processes}
+                    presented={active()}
+                    expanded={sectionExpanded("processes")}
+                    onExpandedChange={(expanded) => changeSection("processes", expanded)}
+                    onOpen={props.props?.onOpenProcesses}
                   />
                 </Show>
                 <Show when={desktopPresentation() && outputs()}>
