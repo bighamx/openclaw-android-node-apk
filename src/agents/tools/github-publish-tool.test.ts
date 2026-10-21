@@ -3,6 +3,7 @@ import { Value } from "typebox/value";
 import { expect, it, vi } from "vitest";
 import { runWithAgentToolExecutionContext } from "../../../packages/agent-core/src/tool-execution-context.js";
 import { finalizeAgentToolAvailability } from "../agent-tool-availability.js";
+import { applyGatewayToolPolicy } from "../gateway-tool-policy.js";
 import { createSandboxTestContext } from "../sandbox/test-fixtures.js";
 import type { SandboxContext } from "../sandbox/types.js";
 import { makeAssistantMessageFixture } from "../test-helpers/assistant-message-fixtures.js";
@@ -10,7 +11,12 @@ import { createHostSandboxFsBridge } from "../test-helpers/host-sandbox-fs-bridg
 import { createCronToolSchema } from "./cron-tool-schema.js";
 import { withGatewayToolCallerIdentity } from "./gateway-caller-context.js";
 import { createGitHubPublishTool } from "./github-publish-tool.js";
-import type { InProcessGatewayCaller } from "./in-process-gateway.js";
+import { callInProcessGatewayTool } from "./in-process-gateway.js";
+
+vi.mock("./in-process-gateway.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./in-process-gateway.js")>()),
+  callInProcessGatewayTool: vi.fn(),
+}));
 
 const caller = { agentId: "main", sessionKey: "agent:main:host-owned" };
 const publication = {
@@ -19,17 +25,31 @@ const publication = {
   message: "Publication was accepted.",
 };
 function setup(actionsAvailable = false) {
-  const callGateway = vi.fn(
-    async (_method: string, _params: Record<string, unknown>) => publication,
-  );
+  const callGateway = vi
+    .mocked(callInProcessGatewayTool)
+    .mockReset()
+    .mockResolvedValue(publication);
   const tool = createGitHubPublishTool({
-    callGateway: callGateway as InProcessGatewayCaller,
     actionsAvailable,
   });
   const execute = (args: unknown, id = "choice") =>
     withGatewayToolCallerIdentity(caller, () => tool.execute(id, args));
   return { callGateway, tool, execute };
 }
+
+it("applies deployment action limits when publication and operator actions are available", () => {
+  const [tool] = applyGatewayToolPolicy([createGitHubPublishTool({ actionsAvailable: true })], {
+    tools: {
+      gatewayPolicy: {
+        allow: ["github_publish"],
+        actions: { github_publish: ["publish", "inspect"] },
+      },
+    },
+  });
+  expect(tool?.parameters).toMatchObject({
+    properties: { action: { enum: ["publish", "inspect"] } },
+  });
+});
 
 function publicationSandbox(overrides: Partial<SandboxContext> = {}) {
   return createSandboxTestContext({
@@ -112,10 +132,10 @@ it.each<{
       expect(tool.description).not.toMatch(/refresh/i);
     }
     expect(Value.Check(tool.parameters, {})).toBe(true);
-    for (const action of ["edit", "ready", "request_review"]) {
+    for (const action of ["publish", "edit", "ready", "request_review"]) {
       expect(Value.Check(tool.parameters, { action }), action).toBe(true);
     }
-    for (const action of ["publish", "inspect", "merge", "close"]) {
+    for (const action of ["inspect", "merge", "close"]) {
       expect(Value.Check(tool.parameters, { action }), action).toBe(actionsAvailable);
     }
     expect(
@@ -250,9 +270,11 @@ it.each(["responseId", "turnId"] as const)(
 it.each([undefined, false, true])(
   "preserves the draft choice %s in bounded model intent",
   async (draft) => {
-    const { callGateway, execute } = setup();
+    const { callGateway, execute, tool } = setup();
     const args = { title: "Publish the fix", ...(draft !== undefined ? { draft } : {}) };
-    await execute({ ...args }, "tool-call-1");
+    const request = { action: "publish", ...args };
+    expect(Value.Check(tool.parameters, request)).toBe(true);
+    await execute(request, "tool-call-1");
     expect(callGateway).toHaveBeenCalledWith("sessions.github.publish", {
       sessionKey: caller.sessionKey,
       idempotencyKey: "tool-call-1",

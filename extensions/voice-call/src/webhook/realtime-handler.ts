@@ -55,7 +55,7 @@ import {
   resolveFinalTranscriptText,
   limitPartialUserTranscript,
 } from "./realtime-transcript-text.js";
-import type { StreamDisconnectLifecycle } from "./stream-disconnect-grace.js";
+import type { StreamDisconnectGrace } from "./stream-disconnect-grace.js";
 import { StreamFrameAdapter } from "./stream-frame-adapter.js";
 import { appendRecentTalkEventMetadata } from "./talk-event-metadata.js";
 
@@ -233,7 +233,7 @@ export class RealtimeCallHandler {
     private readonly manager: CallManager,
     private readonly resolveCallRegistration: ResolveRealtimeCallRegistration,
     private readonly servePath: string,
-    private readonly streamDisconnectLifecycle: StreamDisconnectLifecycle,
+    private readonly streamDisconnectLifecycle: StreamDisconnectGrace,
     private readonly coreConfig?: OpenClawConfig,
     private readonly holdOpeningMaxMs?: number,
   ) {}
