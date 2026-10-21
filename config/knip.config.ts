@@ -74,6 +74,8 @@ const repositoryScriptEntries = [
   "scripts/bench-control-ui-cold-load.ts!",
   // #179175 invokes this development-loop benchmark CLI by path.
   "scripts/bench-control-ui-dev-loop.mts!",
+  // #179449 documents this document-handler benchmark CLI by path.
+  "scripts/bench-control-ui-document.ts!",
   // The channel-turn benchmark guide invokes this opt-in CLI by path.
   "scripts/bench-channel-turn.mts!",
   // docs/reference/test/performance.md invokes the Decision transport comparison driver.
@@ -94,10 +96,18 @@ const repositoryScriptEntries = [
   "scripts/perf/workboard-read-measure.ts!",
   "scripts/perf/transcript-hydration-headroom.ts!",
   "scripts/perf/transcript-worker-memory-preload.ts!",
+  // transcript-broadcast-measure.ts preloads this stage probe with --import.
+  "scripts/perf/github-options-measure-preload.ts!",
+  // scripts/perf/README.md invokes this prompt-history fingerprint benchmark by path.
+  "scripts/perf/prompt-cache-history-measure.ts!",
   // scripts/perf/README.md invokes this synthetic authority allocation probe by path.
   "scripts/perf/operator-authority-measure.ts!",
   // #179149 invokes this synthetic event-dispatch allocation probe by path.
   "scripts/perf/agent-event-dispatch-measure.ts!",
+  // scripts/perf/README.md invokes this WebSocket diagnostic accounting benchmark.
+  "scripts/perf/ws-event-diagnostics-measure.ts!",
+  // scripts/perf/README.md invokes this database-path allocation probe by path.
+  "scripts/perf/state-path-resolution-measure.ts!",
   // Maintainers invoke this isolated transcript-rewrite benchmark by path.
   "scripts/bench-session-manager-rewrite.ts",
   // The team-shaped fixture README invokes these measurement CLIs by path.
