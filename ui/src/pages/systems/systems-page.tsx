@@ -1,5 +1,16 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { Errored, For, Loading, Show, createEffect, createMemo, latest, onSettled } from "solid-js";
+import {
+  Errored,
+  For,
+  Loading,
+  Show,
+  action,
+  createEffect,
+  createMemo,
+  createOptimistic,
+  latest,
+  onSettled,
+} from "solid-js";
 import { hostDesktopSetupCopy } from "../../components/desktop/host-desktop-setup.ts";
 import "../../components/sparkline-tile.tsx";
 import { DESKTOP_PANEL_TOGGLE_EVENT } from "../../components/panel-toggle-contract.ts";
@@ -9,7 +20,7 @@ import { Icon } from "../../components/solid/icon.tsx";
 import { registerSystemsEnglish } from "../../i18n/locales/en-systems.ts";
 import { formatUiError } from "../../lib/format-error.ts";
 import { formatByteSize, formatTimeAgo } from "../../lib/format.ts";
-import { shouldHandleNavigationClick } from "../../lib/navigation-click.ts";
+import { handleNavigationClick } from "../../lib/navigation-click.ts";
 import { projectRuntimeConfig } from "../../lib/reactive/domain-capabilities.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import { listen } from "../../lib/reactive/listener.ts";
@@ -294,13 +305,11 @@ function SystemsDetails(props: { controller: Systems; row: SystemsInventoryRow }
               <a
                 class="systems-session-link"
                 href={target().href}
-                onClick={(event: MouseEvent) => {
-                  if (!shouldHandleNavigationClick(event)) {
-                    return;
-                  }
-                  event.preventDefault();
-                  controller().context.navigate(face, target().options);
-                }}
+                onClick={(event: MouseEvent) =>
+                  handleNavigationClick(event, () => {
+                    controller().context.navigate(face, target().options);
+                  })
+                }
               >
                 <strong class="systems-session-link__title">
                   {session.displayName ?? session.label ?? session.key}
@@ -344,6 +353,22 @@ function HostDesktopSetup(props: {
   const isMac = () => systemPlatform(row())?.startsWith("macOS") === true;
   const ready = () => setup()?.state === "ready" || setup()?.state === "managed";
   const copy = () => hostDesktopSetupCopy(setup()?.state, isMac(), enabled());
+  const [enabling, setEnabling] = createOptimistic(false);
+  const presentEnable = action(function* (
+    operation: NonNullable<ReturnType<Systems["enableHostDesktop"]>>,
+  ) {
+    setEnabling(true);
+    yield Promise.race([operation.completion, operation.retired]);
+  });
+  const enable = async () => {
+    const operation = controller().enableHostDesktop();
+    if (!operation) {
+      return;
+    }
+    // Let the owner's admission publish before starting its optimistic presentation.
+    await Promise.resolve();
+    await presentEnable(operation);
+  };
   return (
     <div class="systems-state" role="status">
       <span class="systems-state__icon" aria-hidden="true">
@@ -361,14 +386,12 @@ function HostDesktopSetup(props: {
         <>
           <button
             class="btn primary systems-text-button"
-            disabled={!controller().canEnableHostDesktop() || controller().desktopSetupBusy()}
-            onClick={() => void controller().enableHostDesktop()}
+            disabled={
+              enabling() || controller().desktopSetupBusy() || !controller().canEnableHostDesktop()
+            }
+            onClick={() => void enable()}
           >
-            {t(
-              controller().desktopSetupBusy()
-                ? "systems.desktopSetupEnabling"
-                : "systems.enableDesktopAccess",
-            )}
+            {t(enabling() ? "systems.desktopSetupEnabling" : "systems.enableDesktopAccess")}
           </button>
           <p>
             {t(

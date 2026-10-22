@@ -948,7 +948,7 @@ describe("skill mutations", () => {
 });
 
 describe("reconcileSkillsAgentId", () => {
-  it("selects the roster default after the selected agent is deleted", () => {
+  it("retires presentation before selecting the roster default after the selected agent is deleted", () => {
     const { state } = createState();
     state.skillsAgentId = "deleted";
     state.skillsReport = {
@@ -957,13 +957,25 @@ describe("reconcileSkillsAgentId", () => {
       skills: [],
     };
     state.skillOperation = { kind: "clawhub", ref: "calendar" };
-
-    reconcileSkillsAgentId(state, {
-      defaultId: "main",
-      mainKey: "main",
-      scope: "per-sender",
-      agents: [{ id: "main" }],
+    const beforeRetarget = vi.fn(() => {
+      expect(state.skillsAgentId).toBe("deleted");
+      expect(state.skillsAgentRevision).toBe(0);
+      expect(state.skillsReport?.workspaceDir).toBe("/tmp/deleted");
     });
+    setSkillsAgentId(state, " deleted ", beforeRetarget);
+    expect(beforeRetarget).not.toHaveBeenCalled();
+
+    reconcileSkillsAgentId(
+      state,
+      {
+        defaultId: "main",
+        mainKey: "main",
+        scope: "per-sender",
+        agents: [{ id: "main" }],
+      },
+      beforeRetarget,
+    );
+    expect(beforeRetarget).toHaveBeenCalledTimes(1);
     expect(state.skillsAgentId).toBe("main");
     expect(state.skillsAgentRevision).toBe(1);
     expect(state.skillsReport).toBeNull();

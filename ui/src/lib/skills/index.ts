@@ -185,11 +185,16 @@ function captureSkillsAgentScope(
     state.skillsAgentId === skillsAgentId && state.skillsAgentRevision === skillsAgentRevision;
 }
 
-export function setSkillsAgentId(state: SkillsState, agentId: string | null) {
+export function setSkillsAgentId(
+  state: SkillsState,
+  agentId: string | null,
+  beforeRetarget?: () => void,
+) {
   const nextAgentId = agentId?.trim() || null;
   if (state.skillsAgentId === nextAgentId) {
     return;
   }
+  beforeRetarget?.();
   retireSkillsReads(state);
   state.skillsAgentId = nextAgentId;
   state.skillsAgentRevision++;
@@ -209,6 +214,7 @@ export function setSkillsAgentId(state: SkillsState, agentId: string | null) {
 export function reconcileSkillsAgentId(
   state: SkillsState,
   agentsList: AgentsListResult | null | undefined,
+  beforeRetarget?: () => void,
 ) {
   if (!agentsList) {
     return;
@@ -218,7 +224,7 @@ export function reconcileSkillsAgentId(
     : agentsList.agents.some((agent) => agent.id === agentsList.defaultId)
       ? agentsList.defaultId
       : null;
-  setSkillsAgentId(state, selectedAgentId);
+  setSkillsAgentId(state, selectedAgentId, beforeRetarget);
 }
 
 export async function loadSkills(

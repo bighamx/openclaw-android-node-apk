@@ -74,7 +74,7 @@ export function createSystems(context: ApplicationContext) {
   const listeners = createChangeListeners();
   const notify = listeners.publish;
 
-  let desktopSetupRequest: symbol | undefined;
+  let desktopSetupRequest: ReturnType<typeof Promise.withResolvers<void>> | undefined;
   let subscriptions: Array<() => void> = [];
 
   let telemetryRequest: AbortController | undefined;
@@ -161,6 +161,7 @@ export function createSystems(context: ApplicationContext) {
   }
 
   function resetDesktopSetup(): void {
+    desktopSetupRequest?.resolve();
     desktopSetupRequest = undefined;
     state.desktopSetupError = null;
   }
@@ -177,13 +178,13 @@ export function createSystems(context: ApplicationContext) {
     );
   }
 
-  async function enableHostDesktop(): Promise<void> {
+  function enableHostDesktop() {
     const scope = lifecycle.capture();
     const runtimeConfig = context.runtimeConfig;
     if (!scope || !canEnableHostDesktop() || desktopSetupBusy()) {
-      return;
+      return undefined;
     }
-    const request = Symbol("desktop-setup");
+    const request = Promise.withResolvers<void>();
     const isCurrent = () =>
       desktopSetupRequest === request &&
       active &&
@@ -193,27 +194,31 @@ export function createSystems(context: ApplicationContext) {
     desktopSetupRequest = request;
     state.desktopSetupError = null;
     notify();
-    try {
-      const failure = await enableHostDesktopConfig(
-        runtimeConfig,
-        "systems: enable host desktop",
-        () => isCurrent() && canEnableHostDesktop(),
-      );
-      if (isCurrent() && failure === null) {
-        await refresh();
-      } else if (isCurrent() && failure !== undefined) {
-        state.desktopSetupError = failure;
+    const completion = (async () => {
+      try {
+        const failure = await enableHostDesktopConfig(
+          runtimeConfig,
+          "systems: enable host desktop",
+          () => isCurrent() && canEnableHostDesktop(),
+        );
+        if (isCurrent() && failure === null) {
+          await refresh();
+        } else if (isCurrent() && failure !== undefined) {
+          state.desktopSetupError = failure;
+        }
+      } catch (error) {
+        if (isCurrent()) {
+          state.desktopSetupError = formatUiError(error);
+        }
+      } finally {
+        if (isCurrent()) {
+          desktopSetupRequest = undefined;
+          request.resolve();
+          notify();
+        }
       }
-    } catch (error) {
-      if (isCurrent()) {
-        state.desktopSetupError = formatUiError(error);
-      }
-    } finally {
-      if (isCurrent()) {
-        desktopSetupRequest = undefined;
-        notify();
-      }
-    }
+    })();
+    return { completion, retired: request.promise };
   }
 
   const telemetryHistory = (id: string) => (current() ? (telemetry.get(id) ?? []) : []);
@@ -294,7 +299,15 @@ export function createSystems(context: ApplicationContext) {
       resetDesktopSetup();
       return;
     }
+    let location = context.router.getState().location;
     subscriptions = [
+      context.router.subscribe((next) => {
+        if (next.location !== location) {
+          location = next.location;
+          // Navigation must release the action before Solid can commit page parking.
+          desktopSetupRequest?.resolve();
+        }
+      }),
       // Gateway receipts cancel stale inventory, backup, and desktop work before connection or access changes settle.
       context.gateway.subscribe((snapshot) => {
         const changed = lifecycle.transition(snapshot);

@@ -5,6 +5,7 @@ import type {
   EnvironmentSummary,
   SystemInfoResult,
 } from "@openclaw/gateway-protocol";
+import { createRouter, definePage } from "@openclaw/uirouter";
 import { createComponent, createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NodeListNode } from "../../../../src/shared/node-list-types.js";
@@ -100,7 +101,17 @@ function harness(
   const context = createContext(gateway.gateway, createSessions("main", []));
   const runtimeConfig = createRuntimeConfigCapability(gateway.gateway);
   runtimeConfigs.push(runtimeConfig);
-  Object.assign(context, { basePath: "", navigate: vi.fn(), runtimeConfig });
+  Object.assign(context, {
+    basePath: "",
+    navigate: vi.fn(),
+    runtimeConfig,
+    router: createRouter({
+      routes: [
+        definePage({ id: "systems", path: "/systems", component: () => ({}) }),
+        definePage({ id: "debug", path: "/debug", component: () => ({}) }),
+      ],
+    }),
+  });
   const controller = createSystems(context);
   return { controller, gateway, context, request };
 }
@@ -451,6 +462,7 @@ describe("Systems workspace", () => {
     flush();
     expect(mounted.container.querySelector(".systems-state button")).toBe(enable);
     expect(enable.disabled).toBe(true);
+    expect(enable.textContent).toContain("Enabling");
     pending.reject(new Error("Desktop configuration could not be saved"));
     await waitForSolid(() =>
       expect(text(mounted.container, '[role="alert"]')).toContain(
@@ -458,6 +470,57 @@ describe("Systems workspace", () => {
       ),
     );
     expect(enable.disabled).toBe(false);
+  });
+
+  it("retires desktop setup presentation when the route is parked before loading finishes", async () => {
+    const loaded = createDeferred();
+    const { controller, context } = harness(async () => [desktopSetupHost]);
+    vi.spyOn(context.runtimeConfig, "ensureLoaded").mockReturnValue(loaded.promise);
+    const patch = vi.spyOn(context.runtimeConfig, "patch");
+    const [presented, setPresented] = createSignal(true);
+    const data = { controller };
+    const mounted = mountSolid(() => routeView(() => data, presented));
+    await waitForSolid(() => expect(controller.state.inventory).not.toBeNull());
+    mounted.container.querySelector<HTMLButtonElement>(".systems-state button")!.click();
+    await waitForSolid(() => expect(controller.desktopSetupBusy()).toBe(true));
+    const navigation = context.router.navigate("debug", context);
+    setPresented(false);
+    await navigation;
+    await waitForSolid(() => expect(controller.desktopSetupBusy()).toBe(false));
+    loaded.resolve();
+    await loaded.promise;
+    await waitForSolid(() => expect(patch).not.toHaveBeenCalled());
+    setPresented(true);
+    await waitForSolid(() =>
+      expect(text(mounted.container, ".systems-state button")).toContain(
+        "Enable desktop access in OpenClaw",
+      ),
+    );
+  });
+
+  it("reconciles desktop enablement from the accepted configuration", async () => {
+    const pending = createDeferred();
+    const { controller, context, request } = harness(async () => [desktopSetupHost]);
+    vi.spyOn(context.runtimeConfig, "ensureLoaded").mockResolvedValue();
+    const patch = vi.spyOn(context.runtimeConfig, "patch").mockImplementation(async () => {
+      await pending.promise;
+      request.mockResolvedValueOnce({
+        config: { desktop: { host: { enabled: true } } },
+        hash: "enabled",
+        valid: true,
+      });
+      await context.runtimeConfig.refresh();
+      return true;
+    });
+    const { page } = await mount(controller);
+    page.querySelector<HTMLButtonElement>(".systems-state button")!.click();
+    await waitForSolid(() => expect(text(page, ".systems-state button")).toContain("Enabling"));
+    pending.resolve();
+    await waitForSolid(() =>
+      expect(text(page, ".systems-state h2")).toBe("Desktop access is enabled"),
+    );
+    expect(page.querySelector(".systems-state button")).toBeNull();
+    expect(patch).toHaveBeenCalledOnce();
   });
 
   it("updates desktop setup when only the configuration owner publishes", async () => {
@@ -517,6 +580,7 @@ describe("Systems workspace", () => {
   );
 
   it("sorts and filters the machine inventory without replacing the selected machine", async () => {
+    const warnings = vi.spyOn(console, "warn");
     // Open menus need frame boundaries instead of the sidebar fixture's recursive microtasks.
     vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
     const environments: EnvironmentSummary[] = [
@@ -557,6 +621,9 @@ describe("Systems workspace", () => {
       vi.advanceTimersToNextFrame();
       await sidebar.updateComplete;
       flush();
+      expect(menu?.querySelector(`[data-value="${value}"]`)?.getAttribute("aria-checked")).toBe(
+        "true",
+      );
     };
     const search = async (value: string) => {
       const input = sidebar.querySelector<HTMLInputElement>('input[type="search"]')!;
@@ -610,6 +677,11 @@ describe("Systems workspace", () => {
     await choose("status:all");
     expect(nodeNames()).toEqual(["Alpha laptop", "Delta laptop", "Beta laptop", "Zulu laptop"]);
     expect(names()).toContain("Preparing worker");
+    expect(
+      warnings.mock.calls
+        .map(([message]) => String(message))
+        .filter((message) => message.includes("[NO_OWNER_EFFECT]")),
+    ).toEqual([]);
   });
 
   it("keeps disk histories attached to mount paths through reordering, removal, and return", async () => {
