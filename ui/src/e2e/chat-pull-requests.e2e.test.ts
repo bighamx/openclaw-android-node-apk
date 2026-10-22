@@ -517,6 +517,11 @@ suite.define(() => {
     expect(request.params).not.toHaveProperty("title");
     expect(JSON.stringify(request.params)).not.toContain("token");
     expect(request.params).not.toHaveProperty("repository");
+    // Admission moves the action into a menu that can close during the handoff.
+    await openChatPublication(page);
+    await page.keyboard.press("Escape");
+    await expect.poll(() => page.locator(".chat-pr-branch-menu").isVisible()).toBe(false);
+    await openChatPublication(page);
     await expect
       .poll(() => page.getByRole("button", { name: "Publishing…" }).isDisabled())
       .toBe(true);
