@@ -18,7 +18,8 @@ export function needsRequesterSettleFindings(entry: SubagentRunRecord): boolean 
   // Earlier delivery cannot discharge reconciliation of restart-interrupted work.
   return (
     entry.delivery?.status !== "delivered" ||
-    entry.execution.interruptionReason === "gateway-restart"
+    (entry.execution.interruptionReason === "gateway-restart" &&
+      (entry.delivery.deliveredAt ?? 0) < (entry.execution.endedAt ?? Infinity))
   );
 }
 
@@ -226,8 +227,8 @@ export function resolveRequesterSettlePolicy(
       : {}),
   };
   const admissionMarker = yieldedFinalDeliverable ? { yieldedFinalDeliverable: true as const } : {};
-  // A yield owes the conversation a visible final unless private findings let the
-  // requester choose silence.
-  const requireVisibleReply = requesterYielded && !hasPrivateRows;
+  // A prior wake may already have consumed every result in this yielded cohort.
+  const requireVisibleReply =
+    requesterYielded && !hasPrivateRows && completionRows.some(needsRequesterSettleFindings);
   return { privateRows, requireVisibleReply, parentOnly, requesterBinding, admissionMarker };
 }

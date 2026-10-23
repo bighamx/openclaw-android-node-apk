@@ -1,16 +1,36 @@
-import { createEffect, createMemo, createSignal, onCleanup, onSettled } from "solid-js";
+import { createEffect, createMemo, createSignal, onSettled } from "solid-js";
 import {
   isStaleChunkImportError,
   retryControlUiImport,
   retryStaleChunkReloadWhenReachable,
 } from "../../app/stale-chunk-reload.ts";
 import { shouldHandleNavigationClick } from "../../lib/navigation-click.ts";
+import { elementRef } from "../../lib/reactive/element-ref.ts";
 import type { Overlay } from "../overlay-lifecycle.ts";
 import { containsComposed } from "../overlay-registry.ts";
 import { MENU_FORM_CONTROL_SELECTOR } from "./menu-form-controls.ts";
 import type { MenuNavigationOptions, MenuRuntime } from "./menu-runtime.ts";
 
 export type { MenuNavigationOptions } from "./menu-runtime.ts";
+
+export type MenuControls = {
+  readonly elements: ReadonlySet<HTMLElement>;
+  ref(this: void): (element: HTMLElement) => void;
+};
+
+/** One tree's controls or items, registered by their rendering owners. */
+export function createMenuControls(): MenuControls {
+  const elements = new Set<HTMLElement>();
+  return {
+    elements,
+    ref() {
+      return elementRef((element: HTMLElement) => {
+        elements.add(element);
+        return () => elements.delete(element);
+      });
+    },
+  };
+}
 
 export type MenuBinding = {
   itemRef(): (element: HTMLElement) => void;
@@ -44,7 +64,7 @@ export function useMenuMachine(
   parent?: MenuBinding,
   options: MenuNavigationOptions = {},
 ): MenuBinding {
-  const itemNodes = new Set<HTMLElement>();
+  const { elements: itemNodes, ref: itemRef } = createMenuControls();
   const ownsTarget = (target: HTMLElement) =>
     ![...overlay.children].some((child) => child.open && containsComposed(child.surface, target)) &&
     (options.surface === "listbox"
@@ -251,20 +271,7 @@ export function useMenuMachine(
   return {
     runtime: current,
     items,
-    itemRef() {
-      let item: HTMLElement | undefined;
-      onCleanup(() => {
-        if (item) {
-          itemNodes.delete(item);
-        }
-      });
-      return (element) => {
-        if (item) {
-          itemNodes.delete(item);
-        }
-        itemNodes.add((item = element));
-      };
-    },
+    itemRef,
     highlightedValue: () => current()?.read().highlightedValue ?? null,
     highlightedValueNow: () => runtime?.service.context.get("highlightedValue") ?? null,
     setHighlightedValue,

@@ -78,6 +78,9 @@ const repositoryScriptEntries = [
   "scripts/bench-plugin-registration.mts!",
   // The cold-load benchmark guide invokes this opt-in CLI by path.
   "scripts/bench-control-ui-cold-load.ts!",
+  // scripts/control-ui-retention/README.md invokes this opt-in production census.
+  "scripts/control-ui-retention/retention-suite.ts!",
+  "scripts/control-ui-retention/vitest.config.ts!",
   // #179175 invokes this development-loop benchmark CLI by path.
   "scripts/bench-control-ui-dev-loop.mts!",
   // #179449 documents this document-handler benchmark CLI by path.
@@ -94,6 +97,7 @@ const repositoryScriptEntries = [
   "scripts/perf/codex-process-inspection-measure.ts!",
   "scripts/perf/diagnostic-profile-measure.ts!",
   "scripts/perf/session-pr-subscriptions-measure.ts!",
+  "scripts/perf/subagent-maintenance-capture-measure.ts!",
   "scripts/perf/tool-schema-preparation-measure.ts!",
   // The performance guide and transcript driver invoke these tools and preloads by path.
   "scripts/lib/gateway-bench-transport-preload.ts!",
@@ -108,6 +112,10 @@ const repositoryScriptEntries = [
   "scripts/perf/worker-task-metrics-measure.ts!",
   // scripts/perf/README.md invokes this cold usage-cache measurement CLI by path.
   "scripts/perf/chat-metadata-burst-measure.ts!",
+  // scripts/perf/README.md invokes this model-prompt statistics measurement CLI by path.
+  "scripts/perf/model-prompt-stats-measure.ts!",
+  // scripts/perf/README.md invokes this main-thread stall measurement CLI by path.
+  "scripts/perf/main-thread-stall-measure.mjs!",
   // scripts/perf/README.md invokes this synthetic reload fixture by path.
   "scripts/perf/control-ui-reload-fixture.ts!",
   // docs/ci/checkout.md invokes this checkout materialization benchmark by path.
@@ -905,6 +913,8 @@ const config = {
     // MCP compatibility tests launch these subprocess fixtures by path; the full-tree scan owns them.
     "extensions/browser/src/browser/chrome-mcp.v1-peer.fixture.mjs",
     "extensions/qa-lab/src/suite-runtime-agent-tools.v1-peer.fixture.mjs",
+    // The Telegram context test loads this Worker by URL; the full-tree test scan owns it.
+    bundledPluginFile("telegram", "src/telegram-ingress-worker.context.test-support.mjs"),
     "**/live-*.ts",
     // This worker-thread proof entry is loaded from its test with new URL(),
     // which Knip cannot discover as a static import.
@@ -977,8 +987,8 @@ const config = {
     "ui/src/pages/chat/components/chat-attachment-card-solid.tsx": ["exports"],
     "ui/src/pages/chat/components/chat-camera-capture.tsx": ["types"],
     "ui/src/pages/chat/components/chat-child-attention.tsx": ["types"],
-    "ui/src/pages/chat/components/chat-ci-automation-control.{ts,tsx}": ["types"],
-    "ui/src/pages/chat/components/chat-ci-details.{ts,tsx}": ["types"],
+    "ui/src/pages/chat/components/chat-ci-automation-control.tsx": ["types"],
+    "ui/src/pages/chat/components/chat-ci-details.tsx": ["types"],
     "ui/src/pages/chat/components/chat-clawhub-card.tsx": ["exports"],
     "ui/src/pages/chat/components/chat-details.tsx": ["types"],
     "ui/src/pages/chat/components/chat-question-card{,-view}.{ts,tsx}": ["types"],

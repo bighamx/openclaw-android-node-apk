@@ -71,6 +71,9 @@ export function controlUiStableChunkName(id: string): string | undefined {
     case "node_modules/markdown-it-emoji/lib/data/full.mjs":
       // Shortcode input owns the catalog; earlier boot captures must not keep it eager.
       return "emoji-runtime";
+    case "ui/src/components/mascot-animator.ts":
+      // Only visible mascots request motion; stale boot captures must not keep it eager.
+      return "mascot-motion-runtime";
     case "ui/src/components/emoji-search-panel.tsx":
     case "ui/src/styles/emoji-search-panel.css":
       return "emoji-search-panel";
@@ -130,14 +133,6 @@ export function controlUiStableChunkName(id: string): string | undefined {
   }
   if (normalized.startsWith(resolvedLocaleNamespaceModulePrefix)) {
     return `locale-namespace-${normalized.slice(resolvedLocaleNamespaceModulePrefix.length).replace("/", "-")}`;
-  }
-
-  if (
-    normalized.endsWith("/ui/src/styles/chat/grouped.css") ||
-    normalized.endsWith("/ui/src/styles/chat/message-layout.css")
-  ) {
-    // Both routes load transcript styles; keep them outside the larger shared boot stylesheet.
-    return "chat-transcript-styles";
   }
 
   // Code highlighting is requested by the first completed code block; it must
