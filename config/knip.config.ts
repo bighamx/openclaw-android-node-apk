@@ -72,6 +72,10 @@ const repositoryScriptEntries = [
   // setup-pnpm-store-cache invokes this helper from composite-action YAML.
   ".github/actions/setup-pnpm-store-cache/seed-pnpm-from-image.mjs!",
   "apps/android/scripts/build-release-artifacts.ts!",
+  // scripts/README.md invokes this warm-interaction benchmark CLI by path.
+  "scripts/bench-control-ui-interactions.ts!",
+  // #180983 invokes this isolated plugin-registration benchmark CLI by path.
+  "scripts/bench-plugin-registration.mts!",
   // The cold-load benchmark guide invokes this opt-in CLI by path.
   "scripts/bench-control-ui-cold-load.ts!",
   // #179175 invokes this development-loop benchmark CLI by path.
@@ -146,6 +150,9 @@ const repositoryScriptEntries = [
   "scripts/perf/heap-headroom.ts!",
   // Maintainers invoke this isolated Doctor metadata-retention benchmark by path.
   "scripts/perf/doctor-metadata-retention.ts!",
+  // The connected-idle benchmark runs by path and loads its instrumentation with --import.
+  "scripts/perf/idle-gateway-measure.ts!",
+  "scripts/perf/idle-gateway-measure-preload.mjs!",
   // Worker-environment shutdown proof invokes this measurement CLI by path.
   "scripts/perf/worker-environment-shutdown-measure.ts!",
   // The branch-rotation guide invokes the driver, which loads its IPC preload by path.
@@ -660,7 +667,6 @@ const rootEntries = [
   bundledPluginFile("telegram", "src/audit.ts", "!"),
   bundledPluginFile("telegram", "src/token.ts", "!"),
   "src/hooks/bundled/*/handler.ts!",
-  "src/hooks/llm-slug-generator.ts!",
   // Local-only test-state consumers are modeled by the full-tree test scan.
   "src/plugin-sdk/!(test-state).ts!",
 ] as const;
@@ -967,7 +973,6 @@ const config = {
     "ui/src/pages/chat/composer-persistence.{ts,tsx}": ["exports"],
     // The presentation fixture and focused UI tests consume these seams;
     // the full-tree companion scan continues to audit their actual consumers.
-    "ui/src/components/provider-icon.ts": ["exports"],
     "ui/src/components/terminal/terminal-panel.ts": ["types"],
     "ui/src/pages/chat/components/chat-attachment-card-solid.tsx": ["exports"],
     "ui/src/pages/chat/components/chat-camera-capture.tsx": ["types"],
