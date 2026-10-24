@@ -633,6 +633,9 @@ export function renderChatComposerView(
                     session={props.selectedSession}
                     messages={props.messages}
                     providerUsage={props.providerUsage}
+                    gateway={props.contextGateway}
+                    agentId={props.currentAgentId}
+                    onOpenContext={props.onOpenContext}
                   />
                 </div>
                 <Show when={props.composerControls}>

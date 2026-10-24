@@ -1568,15 +1568,16 @@ describe("chat loading skeleton", () => {
     // yield to the subscription windows.
     container.querySelector<HTMLElement>(".context-usage summary")!.click();
     flush();
-    expect(container.querySelector("[data-chat-usage-provider='true']")?.textContent).toContain(
-      "OpenAI",
-    );
+    expect(container.querySelector("[data-chat-usage-account='true']")?.textContent).toBe("OpenAI");
     const limitRow = container.querySelector(".context-usage__limit");
-    expect(limitRow?.textContent?.replace(/\s+/g, " ").trim()).toBe("Weekly 72%");
+    expect(limitRow?.getAttribute("role")).toBe("progressbar");
+    expect(limitRow?.getAttribute("aria-label")).toBe("Weekly");
+    expect(limitRow?.getAttribute("aria-valuenow")).toBe("72");
     const usageLink = container.querySelector<HTMLAnchorElement>(
       ".context-usage__popover [data-chat-provider-usage='true']",
     );
     expect(usageLink?.getAttribute("href")).toBe("/rosita/usage");
+    expect(usageLink?.getAttribute("aria-label")).toBe("Open usage dashboard");
   });
 
   it.each([

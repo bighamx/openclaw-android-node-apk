@@ -1,15 +1,27 @@
-import { writeFile } from "node:fs/promises";
-import path from "node:path";
 import { expect, it } from "vitest";
 import type { SessionSystemPromptReport } from "../../../src/config/sessions/session-system-prompt-report.js";
-import { takeControlUiScreenshotFrame } from "../test-helpers/control-ui-e2e-screenshot.ts";
+import { waitForControlUiFrameLayout } from "../test-helpers/control-ui-e2e-screenshot.ts";
 import { controlUiSessionUrl, installMockGateway } from "../test-helpers/control-ui-e2e.ts";
-import { openChatDetails } from "./chat-details.test-support.ts";
+import { closeChatDetails, openChatDetails } from "./chat-details.test-support.ts";
 import { controlUiE2eBuiltModuleRequest } from "./control-ui-built-module.test-support.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
 const suite = createControlUiE2eSuite({ name: "Sidebar context breakdown" });
 const sessionKey = "agent:main:context-breakdown";
+const workspaceFile = (
+  path: string,
+  rootPath: string,
+  kind: "agent-workspace" | "execution-project",
+  chars: number,
+) => ({
+  name: path.split("/").at(-1)!,
+  path,
+  origin: { kind, rootPath },
+  missing: false,
+  rawChars: chars,
+  injectedChars: chars,
+  truncated: false,
+});
 const report: SessionSystemPromptReport = {
   source: "run",
   generatedAt: 1,
@@ -18,35 +30,17 @@ const report: SessionSystemPromptReport = {
   workspaceDir: "/projects/openclaw",
   systemPrompt: { chars: 40000, projectContextChars: 16000, nonProjectContextChars: 24000 },
   injectedWorkspaceFiles: [
-    {
-      name: "AGENTS.md",
-      path: "/workspace/AGENTS.md",
-      origin: { kind: "agent-workspace", rootPath: "/workspace" },
-      missing: false,
-      rawChars: 12000,
-      injectedChars: 12000,
-      truncated: false,
-    },
-    {
-      name: "USER.md",
-      path: "/workspace/USER.md",
-      origin: { kind: "agent-workspace", rootPath: "/workspace" },
-      missing: false,
-      rawChars: 2000,
-      injectedChars: 2000,
-      truncated: false,
-    },
-    {
-      name: "AGENTS.md",
-      path: "/projects/openclaw/AGENTS.md",
-      origin: { kind: "execution-project", rootPath: "/projects/openclaw" },
-      missing: false,
-      rawChars: 2000,
-      injectedChars: 2000,
-      truncated: false,
-    },
+    workspaceFile("/workspace/AGENTS.md", "/workspace", "agent-workspace", 12000),
+    workspaceFile("/workspace/USER.md", "/workspace", "agent-workspace", 2000),
+    workspaceFile("/projects/openclaw/AGENTS.md", "/projects/openclaw", "execution-project", 2000),
   ],
-  skills: { promptChars: 8000, entries: [{ name: "code-review", blockChars: 8000 }] },
+  skills: {
+    promptChars: 8000,
+    entries: Array.from({ length: 98 }, (_, index) => ({
+      name: index === 0 ? "code-review" : `project-skill-${index + 1}`,
+      blockChars: index < 62 ? 82 : 81,
+    })),
+  },
   tools: {
     listChars: 0,
     schemaChars: 12000,
@@ -126,30 +120,46 @@ suite.define(() => {
       });
       await page.goto(controlUiSessionUrl(suite.server.baseUrl, sessionKey));
       await gateway.waitForRequest("chat.startup");
-      const panel = await openChatDetails(page);
+      const details = await openChatDetails(page);
       expect(breakdownRequests).toHaveLength(0);
-      const context =
-        width <= 900
-          ? panel.locator('.chat-mobile-details-page[data-details-page="context"]')
-          : panel.locator('[data-details-group="context"]');
+      expect(
+        await details
+          .locator('[data-details-group="context"], [data-details-destination="context"]')
+          .count(),
+      ).toBe(0);
+      await closeChatDetails(page);
       if (width <= 900) {
-        await panel.locator('[data-details-destination="context"]').click();
-      } else {
-        await context.locator(":scope > summary").click();
+        await page
+          .locator(".agent-chat__composer-combobox > textarea")
+          .filter({ visible: true })
+          .click();
       }
-      const initial = await takeControlUiScreenshotFrame(page, panel, [context], {
-        elements: [panel],
-        animations: "disabled",
-      });
-      await writeFile(
-        path.join(suite.artifactDir, "context-initial-" + width + ".png"),
-        initial.png,
-      );
-      await writeFile(
-        path.join(suite.artifactDir, "context-initial-" + width + "-panel.png"),
-        initial.elements[0]!.png,
-      );
-      await context.getByText("Workspace files", { exact: true }).waitFor();
+      await page.locator(".context-ring").filter({ visible: true }).click();
+      const summary = page.locator(".context-usage__popover").filter({ visible: true });
+      await summary.locator('[data-context-category="files"]').waitFor();
+      expect(await summary.locator("[data-context-category]").count()).toBe(5);
+      expect(await summary.getByRole("button", { name: /Refresh|Compact/ }).count()).toBe(0);
+      expect(await summary.locator("button[data-context-category]").count()).toBe(0);
+      const summarySegments = await summary
+        .locator(".chat-context__segment")
+        .evaluateAll((segments) => segments.map((segment) => segment.getAttribute("style")));
+      expect(summarySegments).toHaveLength(5);
+      await summary.getByRole("button", { name: "View context", exact: true }).click();
+      await summary.waitFor({ state: "hidden" });
+      const panel = page.locator("openclaw-chat-context-panel");
+      const context = panel.locator(".chat-context-panel");
+      await context
+        .locator('[data-context-section="files"] .chat-context__entry')
+        .first()
+        .waitFor();
+      expect(await context.locator("meter").getAttribute("aria-valuetext")).toContain("50%");
+      expect(
+        await context
+          .locator(".chat-context__segment")
+          .evaluateAll((segments) => segments.map((segment) => segment.getAttribute("style"))),
+      ).toEqual(summarySegments);
+      expect((await gateway.getRequests("sessions.usage")).length).toBe(1);
+      expect(await context.getByRole("button", { name: "Back", exact: true }).count()).toBe(0);
       expect(breakdownRequests).toHaveLength(1);
       const request = await gateway.waitForRequest("sessions.usage");
       expect(request.params).toMatchObject({
@@ -163,40 +173,52 @@ suite.define(() => {
       await expect
         .poll(() => context.locator('[data-context-category="messages"]').textContent())
         .toContain("37k");
-      await context.locator('[data-context-details="files"] > summary').click();
       await context.getByText("AGENTS.md", { exact: true }).first().waitFor();
       expect(await context.getByText("AGENTS.md", { exact: true }).count()).toBe(2);
       await context.getByText("Agent workspace", { exact: true }).waitFor();
       await context.getByText("Project · openclaw", { exact: true }).waitFor();
       await context.getByText("/projects/openclaw/AGENTS.md", { exact: true }).waitFor();
-      await context.getByText("Available on demand", { exact: true }).waitFor();
+      await context.getByText("On-demand tools", { exact: true }).waitFor();
       await context.getByRole("button", { name: "Compact session", exact: true }).waitFor();
-      const after = await takeControlUiScreenshotFrame(
-        page,
-        panel,
-        [context.getByText("AGENTS.md", { exact: true }).first()],
-        { elements: [panel], animations: "disabled" },
+      await context.getByText("AGENTS.md", { exact: true }).first().scrollIntoViewIfNeeded();
+      await page.evaluate(() => document.fonts.ready.then(() => undefined));
+      await waitForControlUiFrameLayout([context]);
+      expect(await context.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
       );
-      await writeFile(
-        path.join(suite.artifactDir, "context-expanded-" + width + ".png"),
-        after.png,
-      );
-      await writeFile(
-        path.join(suite.artifactDir, "context-expanded-" + width + "-panel.png"),
-        after.elements[0]!.png,
-      );
-      const contextScrollport =
-        width <= 900 ? context.locator(".chat-mobile-details-page__body") : context;
-      expect(
-        await contextScrollport.evaluate((element) => element.scrollWidth <= element.clientWidth),
-      ).toBe(true);
-      await context.locator('[data-context-details="files"] > summary').click();
-      await context.locator('[data-context-details="tools"] > summary').click();
       await context.getByText("System tools", { exact: true }).waitFor();
       await context
-        .locator('[data-context-details="tools"]')
+        .locator('[data-context-section="tools"]')
         .getByText("MCP tools · Docs", { exact: true })
         .waitFor();
+      expect(
+        await context.locator('[data-context-section="skills"] .chat-context__entry').count(),
+      ).toBe(98);
+      expect(
+        await context
+          .locator(".chat-context__entries")
+          .evaluateAll((lists) =>
+            lists.every((list) => !["auto", "scroll"].includes(getComputedStyle(list).overflowY)),
+          ),
+      ).toBe(true);
+      const finalSkill = context.getByText("project-skill-98", { exact: true });
+      await finalSkill.scrollIntoViewIfNeeded();
+      expect(await finalSkill.isVisible()).toBe(true);
+      expect(await context.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+      if (width > 900) {
+        const sideHeader = page.locator('[data-region-header="side"]');
+        await sideHeader.getByRole("button", { name: "New tab", exact: true }).click();
+        await page.locator(".side-panel-launcher").waitFor();
+        await sideHeader.getByRole("button", { name: "Close New tab", exact: true }).click();
+        await finalSkill.waitFor();
+        expect(
+          await finalSkill.evaluate((element) => {
+            const row = element.getBoundingClientRect();
+            const viewport = element.closest(".chat-context-panel")!.getBoundingClientRect();
+            return row.top >= viewport.top && row.bottom <= viewport.bottom;
+          }),
+        ).toBe(true);
+      }
       await context.locator('[data-context-details="deferred"] > summary').click();
       await context.getByText("search_docs", { exact: true }).waitFor();
       expect(await context.locator('[data-context-category="tools"]').textContent()).toContain(
@@ -207,21 +229,27 @@ suite.define(() => {
           'openclaw-chat-pane[aria-hidden="false"] .agent-chat__composer-combobox > textarea',
         );
         await draft.fill("Keep this unsent draft");
+        const beforeCompact = await gateway.deferNext("sessions.compact", { key: sessionKey });
         await context.getByRole("button", { name: "Compact session", exact: true }).click();
-        const compact = await gateway.waitForRequest("sessions.compact");
+        const compact = await gateway.waitForRequest("sessions.compact", {
+          after: beforeCompact,
+          match: { key: sessionKey },
+        });
         expect(compact.params).toMatchObject({ key: sessionKey });
+        const compacting = context.getByRole("button", { name: "Compacting…", exact: true });
+        await compacting.waitFor();
+        expect(await compacting.isDisabled()).toBe(true);
+        expect(await draft.inputValue()).toBe("Keep this unsent draft");
+        await gateway.resolveDeferred(
+          "sessions.compact",
+          { ok: true, compacted: true },
+          { match: { key: sessionKey } },
+        );
+        await context.getByRole("button", { name: "Compact session", exact: true }).waitFor();
         expect(await draft.inputValue()).toBe("Keep this unsent draft");
         await gateway.setMethodResponse("sessions.usage", { sessions: [] });
         await context.getByRole("button", { name: "Refresh", exact: true }).click();
         await context.getByText("No matching context report.", { exact: false }).waitFor();
-        const unavailable = await takeControlUiScreenshotFrame(page, panel, [context], {
-          elements: [panel],
-          animations: "disabled",
-        });
-        await writeFile(
-          path.join(suite.artifactDir, "context-unavailable-panel.png"),
-          unavailable.elements[0]!.png,
-        );
         const nativeReport: SessionSystemPromptReport = {
           ...report,
           injectedWorkspaceFiles: [
@@ -242,25 +270,14 @@ suite.define(() => {
           ],
         });
         await context.getByRole("button", { name: "Refresh", exact: true }).click();
-        await context.getByText("Workspace files", { exact: true }).waitFor();
-        await context.locator('[data-context-details="files"] > summary').click();
+        await context
+          .locator('[data-context-section="files"] .chat-context__entry')
+          .first()
+          .waitFor();
         await context.getByText("Unverified", { exact: true }).waitFor();
         await expect
           .poll(() => context.locator('[data-context-category="messages"]').textContent())
           .toContain("—");
-        const unknown = await takeControlUiScreenshotFrame(
-          page,
-          panel,
-          [context.getByText("Unverified", { exact: true })],
-          {
-            elements: [panel],
-            animations: "disabled",
-          },
-        );
-        await writeFile(
-          path.join(suite.artifactDir, "context-unverified-panel.png"),
-          unknown.elements[0]!.png,
-        );
       }
     });
   });

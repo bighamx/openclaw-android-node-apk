@@ -3,12 +3,14 @@
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-core";
 import { createAssistantMessageEventStream } from "openclaw/plugin-sdk/llm";
 import { describe, expect, it, vi } from "vitest";
+import { createDeferred } from "../../../test/helpers/promise.js";
 import {
   castAgentMessage,
   castAgentMessages,
   makeAgentAssistantMessage,
 } from "../test-helpers/agent-message-fixtures.js";
-import { textAssistant } from "../test-helpers/sparse-transcript.test-support.js";
+import { createQueuedAssistantStream } from "../test-helpers/assistant-event-stream.test-support.js";
+import { sparseAssistant, textAssistant } from "../test-helpers/sparse-transcript.test-support.js";
 import { createZeroUsageFixture } from "../test-helpers/usage-fixtures.js";
 import { stripStaleThinkingSignaturesForCompactionReplay } from "../thinking-signatures.js";
 import {
@@ -59,21 +61,19 @@ describe("dropThinkingBlocks", () => {
   it("preserves thinking blocks in the latest assistant message", () => {
     const messages: AgentMessage[] = [
       castAgentMessage({ role: "user", content: "first" }),
-      castAgentMessage({
-        role: "assistant",
-        content: [
+      castAgentMessage(
+        sparseAssistant([
           { type: "thinking", thinking: "old" },
           { type: "text", text: "old text" },
-        ],
-      }),
+        ]),
+      ),
       castAgentMessage({ role: "user", content: "second" }),
-      castAgentMessage({
-        role: "assistant",
-        content: [
+      castAgentMessage(
+        sparseAssistant([
           { type: "thinking", thinking: "latest", thinkingSignature: "sig_latest" },
           { type: "text", text: "latest text" },
-        ],
-      }),
+        ]),
+      ),
     ];
 
     const result = dropThinkingBlocks(messages);
@@ -90,18 +90,16 @@ describe("dropThinkingBlocks", () => {
   it("uses non-empty omitted-reasoning text when an older assistant turn is thinking-only", () => {
     const messages: AgentMessage[] = [
       castAgentMessage({ role: "user", content: "first" }),
-      castAgentMessage({
-        role: "assistant",
-        content: [{ type: "thinking", thinking: "old", thinkingSignature: "sig_old" }],
-      }),
+      castAgentMessage(
+        sparseAssistant([{ type: "thinking", thinking: "old", thinkingSignature: "sig_old" }]),
+      ),
       castAgentMessage({ role: "user", content: "second" }),
-      castAgentMessage({
-        role: "assistant",
-        content: [
+      castAgentMessage(
+        sparseAssistant([
           { type: "thinking", thinking: "latest", thinkingSignature: "sig_latest" },
           { type: "text", text: "latest text" },
-        ],
-      }),
+        ]),
+      ),
     ];
 
     const result = dropThinkingBlocks(messages);
@@ -118,10 +116,7 @@ describe("dropThinkingBlocks", () => {
   it("uses non-empty omitted-reasoning text when an older assistant turn is redacted-thinking-only", () => {
     const messages: AgentMessage[] = [
       castAgentMessage({ role: "user", content: "first" }),
-      castAgentMessage({
-        role: "assistant",
-        content: [{ type: "redacted_thinking", data: "opaque" }],
-      }),
+      castAgentMessage(sparseAssistant([{ type: "redacted_thinking", data: "opaque" }])),
       castAgentMessage({ role: "user", content: "second" }),
       castAgentMessage(textAssistant("latest text")),
     ];
@@ -139,10 +134,7 @@ describe("dropReasoningFromHistory", () => {
   it("uses omitted-reasoning text when a completed assistant turn is reasoning-only", () => {
     const messages: AgentMessage[] = [
       castAgentMessage({ role: "user", content: "first" }),
-      castAgentMessage({
-        role: "assistant",
-        content: [{ type: "thinking", thinking: "private" }],
-      }),
+      castAgentMessage(sparseAssistant([{ type: "thinking", thinking: "private" }])),
       castAgentMessage({ role: "user", content: "second" }),
     ];
 
@@ -157,13 +149,12 @@ describe("dropReasoningFromHistory", () => {
     // continuation, so only completed prior turns are stripped.
     const messages: AgentMessage[] = [
       castAgentMessage({ role: "user", content: "look up the answer" }),
-      castAgentMessage({
-        role: "assistant",
-        content: [
+      castAgentMessage(
+        sparseAssistant([
           { type: "thinking", thinking: "call the tool" },
           { type: "toolCall", id: "call123456", name: "lookup", arguments: {} },
-        ],
-      }),
+        ]),
+      ),
       castAgentMessage({
         role: "toolResult",
         toolCallId: "call123456",
@@ -180,13 +171,12 @@ describe("dropReasoningFromHistory", () => {
   it("strips reasoning from old tool-call turns once a later user turn starts", () => {
     const messages: AgentMessage[] = [
       castAgentMessage({ role: "user", content: "look up the answer" }),
-      castAgentMessage({
-        role: "assistant",
-        content: [
+      castAgentMessage(
+        sparseAssistant([
           { type: "thinking", thinking: "call the tool" },
           { type: "toolCall", id: "call123456", name: "lookup", arguments: {} },
-        ],
-      }),
+        ]),
+      ),
       castAgentMessage({
         role: "toolResult",
         toolCallId: "call123456",
@@ -210,13 +200,12 @@ describe("stripInvalidThinkingSignatures", () => {
   it("returns the original reference when no invalid thinking signatures are present", () => {
     const messages: AgentMessage[] = [
       castAgentMessage({ role: "user", content: "hello" }),
-      castAgentMessage({
-        role: "assistant",
-        content: [
+      castAgentMessage(
+        sparseAssistant([
           { type: "thinking", thinking: "internal", thinkingSignature: "sig" },
           { type: "text", text: "answer" },
-        ],
-      }),
+        ]),
+      ),
     ];
 
     const result = stripInvalidThinkingSignatures(messages);
@@ -227,16 +216,15 @@ describe("stripInvalidThinkingSignatures", () => {
   it("preserves invalid thinking signatures on the latest assistant message", () => {
     const messages: AgentMessage[] = [
       castAgentMessage({ role: "user", content: "hello" }),
-      castAgentMessage({
-        role: "assistant",
-        content: [
+      castAgentMessage(
+        sparseAssistant([
           { type: "thinking", thinking: "missing" },
           { type: "thinking", thinking: "empty", thinkingSignature: "" },
           { type: "thinking", thinking: "blank", thinkingSignature: "   " },
           { type: "thinking", thinking: "signed", thinkingSignature: "sig" },
           { type: "text", text: "answer" },
-        ],
-      }),
+        ]),
+      ),
     ];
 
     const result = stripInvalidThinkingSignatures(messages);
@@ -255,14 +243,13 @@ describe("stripInvalidThinkingSignatures", () => {
   it("can strip invalid thinking signatures from the latest assistant message", () => {
     const messages: AgentMessage[] = [
       castAgentMessage({ role: "user", content: "hello" }),
-      castAgentMessage({
-        role: "assistant",
-        content: [
+      castAgentMessage(
+        sparseAssistant([
           { type: "thinking", thinking: "missing" },
           { type: "thinking", thinking: "signed", thinkingSignature: "sig" },
           { type: "text", text: "answer" },
-        ],
-      }),
+        ]),
+      ),
     ];
 
     const result = stripInvalidThinkingSignatures(messages, { preserveLatestAssistant: false });
@@ -277,16 +264,15 @@ describe("stripInvalidThinkingSignatures", () => {
 
   it("strips thinking blocks with missing, empty, or blank signatures from older assistant messages", () => {
     const messages: AgentMessage[] = [
-      castAgentMessage({
-        role: "assistant",
-        content: [
+      castAgentMessage(
+        sparseAssistant([
           { type: "thinking", thinking: "missing" },
           { type: "thinking", thinking: "empty", thinkingSignature: "" },
           { type: "thinking", thinking: "blank", thinkingSignature: "   " },
           { type: "thinking", thinking: "signed", thinkingSignature: "sig" },
           { type: "text", text: "answer" },
-        ],
-      }),
+        ]),
+      ),
       castAgentMessage({ role: "user", content: "follow up" }),
       castAgentMessage({ role: "assistant", content: [{ type: "text", text: "latest" }] }),
     ];
@@ -303,10 +289,9 @@ describe("stripInvalidThinkingSignatures", () => {
 
   it("uses non-empty omitted-reasoning text when all thinking signatures are invalid", () => {
     const messages: AgentMessage[] = [
-      castAgentMessage({
-        role: "assistant",
-        content: [{ type: "thinking", thinking: "reasoning", thinkingSignature: "" }],
-      }),
+      castAgentMessage(
+        sparseAssistant([{ type: "thinking", thinking: "reasoning", thinkingSignature: "" }]),
+      ),
       castAgentMessage({ role: "user", content: "follow up" }),
       castAgentMessage({ role: "assistant", content: [{ type: "text", text: "latest" }] }),
     ];
@@ -319,15 +304,14 @@ describe("stripInvalidThinkingSignatures", () => {
 
   it("strips redacted thinking blocks with invalid opaque signatures from older assistant messages", () => {
     const messages: AgentMessage[] = [
-      castAgentMessage({
-        role: "assistant",
-        content: [
+      castAgentMessage(
+        sparseAssistant([
           { type: "redacted_thinking", data: "" },
           { type: "redacted_thinking", signature: "   " },
           { type: "redacted_thinking", data: "opaque" },
           { type: "text", text: "answer" },
-        ],
-      }),
+        ]),
+      ),
       castAgentMessage({ role: "user", content: "follow up" }),
       castAgentMessage({ role: "assistant", content: [{ type: "text", text: "latest" }] }),
     ];
@@ -344,37 +328,34 @@ describe("stripInvalidThinkingSignatures", () => {
 
 describe("assessLastAssistantMessage", () => {
   it("marks signed thinking with an empty text block as incomplete text", () => {
-    const message = castAgentMessage({
-      role: "assistant",
-      content: [
+    const message = castAgentMessage(
+      sparseAssistant([
         { type: "thinking", thinking: "complete", thinkingSignature: "sig" },
         { type: "text", text: "" },
-      ],
-    });
+      ]),
+    );
 
     expect(assessLastAssistantMessage(message)).toBe("incomplete-text");
   });
 
   it("treats partial text after signed thinking as valid", () => {
-    const message = castAgentMessage({
-      role: "assistant",
-      content: [
+    const message = castAgentMessage(
+      sparseAssistant([
         { type: "thinking", thinking: "complete", thinkingSignature: "sig" },
         { type: "text", text: "Here is my answ" },
-      ],
-    });
+      ]),
+    );
 
     expect(assessLastAssistantMessage(message)).toBe("valid");
   });
 
   it("treats non-string text blocks as incomplete text when thinking is signed", () => {
-    const message = castAgentMessage({
-      role: "assistant",
-      content: [
+    const message = castAgentMessage(
+      sparseAssistant([
         { type: "thinking", thinking: "complete", thinkingSignature: "sig" },
         { type: "text", text: { bad: true } },
-      ],
-    });
+      ]),
+    );
 
     expect(assessLastAssistantMessage(message)).toBe("incomplete-text");
   });
@@ -402,10 +383,7 @@ describe("wrapAnthropicStreamWithRecovery", () => {
 
   function thinkingHistory(): AgentMessage[] {
     return castAgentMessages([
-      {
-        role: "assistant",
-        content: [{ type: "thinking", thinking: "secret", thinkingSignature: "sig" }],
-      },
+      sparseAssistant([{ type: "thinking", thinking: "secret", thinkingSignature: "sig" }]),
     ]);
   }
 
@@ -463,13 +441,10 @@ describe("wrapAnthropicStreamWithRecovery", () => {
         {} as never,
         {
           messages: castAgentMessages([
-            {
-              role: "assistant",
-              content: [
-                { type: "thinking", thinking: "secret", thinkingSignature: "sig" },
-                { type: "text", text: "visible answer" },
-              ],
-            },
+            sparseAssistant([
+              { type: "thinking", thinking: "secret", thinkingSignature: "sig" },
+              { type: "text", text: "visible answer" },
+            ]),
           ]),
         } as never,
         {} as never,
@@ -491,13 +466,10 @@ describe("wrapAnthropicStreamWithRecovery", () => {
       stopReason: "stop",
     });
     const originalMessages = castAgentMessages([
-      {
-        role: "assistant",
-        content: [
-          { type: "thinking", thinking: "secret", thinkingSignature: "sig" },
-          { type: "text", text: "visible answer" },
-        ],
-      },
+      sparseAssistant([
+        { type: "thinking", thinking: "secret", thinkingSignature: "sig" },
+        { type: "text", text: "visible answer" },
+      ]),
     ]);
     const wrapped = wrapAnthropicStreamWithRecovery(
       (() => {
@@ -505,12 +477,9 @@ describe("wrapAnthropicStreamWithRecovery", () => {
         if (callCount === 1) {
           return Promise.reject(anthropicThinkingError);
         }
-        const stream = createAssistantMessageEventStream();
-        queueMicrotask(() => {
-          stream.push({ type: "done", reason: "stop", message: finalMessage });
-          stream.end();
+        return createQueuedAssistantStream((push) => {
+          push({ type: "done", reason: "stop", message: finalMessage });
         });
-        return stream;
       }) as Parameters<typeof wrapAnthropicStreamWithRecovery>[0],
       { id: "test-session", onRecoveredAnthropicThinking: recovered },
     );
@@ -566,16 +535,13 @@ describe("wrapAnthropicStreamWithRecovery", () => {
         if (callCount === 1) {
           return Promise.reject(anthropicThinkingError);
         }
-        const stream = createAssistantMessageEventStream();
-        queueMicrotask(() => {
-          stream.push({
+        return createQueuedAssistantStream((push) => {
+          push({
             type: "error",
             reason: "error",
             error: errorMessage,
           });
-          stream.end();
         });
-        return stream;
       }) as Parameters<typeof wrapAnthropicStreamWithRecovery>[0],
       { id: "test-session", onRecoveredAnthropicThinking: recovered },
     );
@@ -615,10 +581,7 @@ describe("wrapAnthropicStreamWithRecovery", () => {
         {} as never,
         {
           messages: castAgentMessages([
-            {
-              role: "assistant",
-              content: [{ type: "thinking", thinking: "secret", thinkingSignature: "" }],
-            },
+            sparseAssistant([{ type: "thinking", thinking: "secret", thinkingSignature: "" }]),
           ]),
         } as never,
         {} as never,
@@ -702,18 +665,16 @@ describe("wrapAnthropicStreamWithRecovery", () => {
         callCount += 1;
         const attempt = callCount;
         contexts.push(context as { messages?: AgentMessage[] });
-        const stream = createAssistantMessageEventStream();
-        queueMicrotask(() => {
+        const stream = createQueuedAssistantStream((push) => {
           if (attempt === 1) {
-            stream.push({
+            push({
               type: "error",
               reason: "error",
               error: createTestStreamErrorMessage(terminalThinkingSignatureError),
             });
           } else {
-            stream.push({ type: "done", reason: "stop", message: finalMessage });
+            push({ type: "done", reason: "stop", message: finalMessage });
           }
-          stream.end();
         });
         return promised ? Promise.resolve(stream) : stream;
       }) as Parameters<typeof wrapAnthropicStreamWithRecovery>[0],
@@ -754,12 +715,9 @@ describe("wrapAnthropicStreamWithRecovery", () => {
     const wrapped = wrapAnthropicStreamWithRecovery(
       (() => {
         callCount += 1;
-        const stream = createAssistantMessageEventStream();
-        queueMicrotask(() => {
-          stream.push({ type: "error", reason: "error", error: errorMessage });
-          stream.end();
+        return createQueuedAssistantStream((push) => {
+          push({ type: "error", reason: "error", error: errorMessage });
         });
-        return stream;
       }) as Parameters<typeof wrapAnthropicStreamWithRecovery>[0],
       { id: "test-session" },
     );
@@ -787,11 +745,9 @@ describe("wrapAnthropicStreamWithRecovery", () => {
     const wrapped = wrapAnthropicStreamWithRecovery(
       (() => {
         callCount += 1;
-        const stream = createAssistantMessageEventStream();
-        queueMicrotask(() => {
-          stream.push({ type: "start", partial: partialMessage });
-          stream.push({ type: "error", reason: "error", error: errorMessage });
-          stream.end();
+        const stream = createQueuedAssistantStream((push) => {
+          push({ type: "start", partial: partialMessage });
+          push({ type: "error", reason: "error", error: errorMessage });
         });
         return promised ? Promise.resolve(stream) : stream;
       }) as Parameters<typeof wrapAnthropicStreamWithRecovery>[0],
@@ -881,26 +837,19 @@ describe("wrapAnthropicStreamWithRecovery", () => {
   });
 
   it("preserves result() for synchronous event streams", async () => {
-    const finalMessage = castAgentMessage({
-      role: "assistant",
+    const finalMessage = createTestAssistantMessage({
       content: [{ type: "text", text: "done" }],
-      api: "anthropic-messages",
-      provider: "anthropic",
-      model: "claude-sonnet-4-6",
       usage: createZeroUsageFixture(),
       stopReason: "stop",
       timestamp: Date.now(),
-    }) as AssistantMessage;
+    });
 
     const wrapped = wrapAnthropicStreamWithRecovery(
       (() => {
-        const stream = createAssistantMessageEventStream();
-        queueMicrotask(() => {
-          stream.push({ type: "start", partial: finalMessage });
-          stream.push({ type: "done", reason: "stop", message: finalMessage });
-          stream.end();
+        return createQueuedAssistantStream((push) => {
+          push({ type: "start", partial: finalMessage });
+          push({ type: "done", reason: "stop", message: finalMessage });
         });
-        return stream;
       }) as Parameters<typeof wrapAnthropicStreamWithRecovery>[0],
       { id: "test-session" },
     );
@@ -920,12 +869,8 @@ describe("wrapAnthropicStreamWithRecovery", () => {
   it("recovers an error event from a Promise-resolved stream without changing Promise timing", async () => {
     const recovered = vi.fn();
     let callCount = 0;
-    let resolveFirstStream!: (stream: ReturnType<typeof createAssistantMessageEventStream>) => void;
-    const firstStreamPromise = new Promise<ReturnType<typeof createAssistantMessageEventStream>>(
-      (resolve) => {
-        resolveFirstStream = resolve;
-      },
-    );
+    const { promise: firstStreamPromise, resolve: resolveFirstStream } =
+      createDeferred<ReturnType<typeof createAssistantMessageEventStream>>();
     const finalMessage = createTestAssistantMessage({
       content: [{ type: "text", text: "recovered answer" }],
       stopReason: "stop",
@@ -936,12 +881,9 @@ describe("wrapAnthropicStreamWithRecovery", () => {
         if (attempt === 1) {
           return firstStreamPromise;
         }
-        const stream = createAssistantMessageEventStream();
-        queueMicrotask(() => {
-          stream.push({ type: "done", reason: "stop", message: finalMessage });
-          stream.end();
+        return createQueuedAssistantStream((push) => {
+          push({ type: "done", reason: "stop", message: finalMessage });
         });
-        return stream;
       }) as Parameters<typeof wrapAnthropicStreamWithRecovery>[0],
       { id: "test-session", onRecoveredAnthropicThinking: recovered },
     );
@@ -1068,10 +1010,9 @@ describe("stripStaleThinkingSignaturesForCompactionReplay", () => {
         tokensBefore: 0,
         timestamp: 2000,
       }),
-      castAgentMessage({
-        role: "assistant",
-        content: [{ type: "thinking", thinking: "think", thinkingSignature: "sig" }],
-      }),
+      castAgentMessage(
+        sparseAssistant([{ type: "thinking", thinking: "think", thinkingSignature: "sig" }]),
+      ),
     ];
     const result = stripStaleThinkingSignaturesForCompactionReplay(messages);
     expect(result).toBe(messages);
@@ -1153,4 +1094,3 @@ describe("stripStaleThinkingSignaturesForCompactionReplay", () => {
     ]);
   });
 });
-/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
