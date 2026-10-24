@@ -113,6 +113,21 @@ export async function admitDatabasePortDescriptor(
   }
   return admitted;
 }
+/** Only existing tables can need their feature-owned nullable columns completed. */
+export function pendingSqliteColumns(
+  db: DatabaseSync,
+  definitions: readonly { tableName: string; columnName: string }[],
+): Record<string, string[]> {
+  const pending: Record<string, string[]> = {};
+  for (const { tableName, columnName } of definitions) {
+    const present = readTableColumns(db, tableName);
+    if (present.size && !present.has(columnName)) {
+      (pending[tableName] ??= []).push(columnName);
+    }
+  }
+  return pending;
+}
+
 /** Validate the canonical SQLite surface before scanning or owner migration. */
 export function inspectSqlitePortSchema(
   db: DatabaseSync,

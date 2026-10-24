@@ -45,6 +45,72 @@ async function inspectSource(sourcePath: string) {
   return await inspectDatabasePort({ engine: "sqlite", db }, descriptor);
 }
 
+it.each(["agent", "state"])(
+  "accepts legal first-use absence in %s inspection and completes only the private copy",
+  async (family) => {
+    const directory = tempDirs.make("port-first-use-");
+    const sourcePath = path.join(directory, "source.sqlite");
+    const current = await loadDatabasePortDescriptor(family);
+    const table = family === "agent" ? "session_nodes" : "agent_deletion_journal";
+    const extraTable = family === "agent" ? table : "agent_database_leases";
+    const column = family === "agent" ? "legacy_acp_migration_json" : "phase";
+    {
+      using db = openNodeSqliteDatabase(sourcePath);
+      db.exec([current, ...(current.fragments ?? [])].map((part) => part.sqlite).join("\n;\n"));
+      db.exec(`PRAGMA user_version = ${current.version}`);
+      if (family === "agent") {
+        db.exec(`INSERT INTO schema_meta VALUES ('primary', 'agent', ${current.version}, 'main', NULL, 1, 1);
+          ALTER TABLE session_nodes DROP COLUMN legacy_acp_migration_json;
+          ALTER TABLE session_key_contract DROP COLUMN canonical_ready;
+          INSERT INTO session_nodes (session_key, current_session_id, entry_json, updated_at)
+          VALUES ('agent:main:main', 'retained-session', '{"sessionId":"retained-session"}', 17);`);
+      } else {
+        db.exec(`INSERT INTO schema_meta VALUES ('primary', 'global', ${current.version}, NULL, NULL, 1, 1);
+          ALTER TABLE worker_workspace_pending_results DROP COLUMN repository_workspace_id;
+          ALTER TABLE user_profile_identities DROP COLUMN verified_email_json;
+          ALTER TABLE agent_deletion_journal DROP COLUMN phase;
+          INSERT INTO agent_deletion_journal (agent_id, agent_dir, workspace_dir, sessions_dir, created_at)
+          VALUES ('retired', '/retired/agent', '/retired/workspace', '/retired/sessions', 17);`);
+      }
+    }
+    const original = await hash(sourcePath);
+    await expect(inspect(sourcePath)).resolves.toMatchObject({ family, migrationRequired: true });
+    const copy = path.join(directory, "private.sqlite");
+    await fs.copyFile(sourcePath, copy);
+    const prepared = await runDatabasePortTask({ operation: "migrate", sourcePath: copy }, scope);
+    expect(prepared.verification.tables[table]?.rows).toBe(1);
+    await expect(inspect(copy)).resolves.toMatchObject({
+      migrationRequired: false,
+      verification: prepared.verification,
+    });
+    {
+      using db = openNodeSqliteDatabase(copy);
+      const row =
+        family === "agent"
+          ? db
+              .prepare("SELECT current_session_id, legacy_acp_migration_json FROM session_nodes")
+              .get()
+          : db.prepare("SELECT agent_id, phase FROM agent_deletion_journal").get();
+      expect(row).toEqual(
+        family === "agent"
+          ? { current_session_id: "retained-session", legacy_acp_migration_json: null }
+          : { agent_id: "retired", phase: null },
+      );
+    }
+    expect(await hash(sourcePath)).toBe(original);
+    {
+      using db = openNodeSqliteDatabase(sourcePath);
+      expect(
+        db.prepare(`SELECT name FROM pragma_table_info('${table}') WHERE name = ?`).get(column),
+      ).toBeUndefined();
+      db.exec(`ALTER TABLE ${extraTable} ADD COLUMN unported_data TEXT`);
+    }
+    await expect(inspect(sourcePath)).rejects.toThrow(
+      `Unknown or missing columns in ${extraTable}`,
+    );
+  },
+);
+
 it.each([false, true])(
   "skips only empty retained state tables (pending columns: %s)",
   async (pending) => {
