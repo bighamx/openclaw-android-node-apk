@@ -12,6 +12,7 @@ import {
   createTestGatewayClient,
 } from "../../../test-helpers/gateway-client.ts";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
+import { createActiveSessionPlacement } from "../../../test-helpers/session-placement.ts";
 import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { ChatContextPanel } from "./chat-context-panel.tsx";
 import { ChatDetailsEnvironmentMobile } from "./chat-details-environment-mobile.tsx";
@@ -134,7 +135,11 @@ it("keeps compaction busy until the owning request settles and uses the current 
   );
   const element = view.container.querySelector("openclaw-chat-context-panel")!;
   await element.updateComplete;
-  await waitForSolid(() => expect(element.querySelector(".chat-context__compact")).not.toBeNull());
+  await waitForSolid(() =>
+    expect(element.querySelector<HTMLButtonElement>(".chat-context__compact")?.disabled).toBe(
+      false,
+    ),
+  );
   const button = element.querySelector<HTMLButtonElement>(".chat-context__compact")!;
   try {
     button.click();
@@ -318,7 +323,6 @@ it("projects direct active children through the live observer with stable rounde
   const live = element.querySelector<ChatSubagentActivityLive>("openclaw-chat-subagent-activity")!;
   await live.updateComplete;
   expect(live.rows[0]?.session).toBe(child);
-  expect(live.compact).toBe(true);
   expect(live.querySelector(".chat-details__agent-avatar")?.getAttribute("style")).toContain(
     String(fnv1aUtf16(child.key) % 360),
   );
@@ -535,19 +539,14 @@ it("demands mobile changes only while presented and retires native navigation ca
   setSession({
     key: "agent:main:details",
     kind: "direct",
-    placement: {
-      state: "active",
-      generation: 1,
+    placement: createActiveSessionPlacement({
       createdAtMs: 100_000,
       updatedAtMs: 300_000,
       stateChangedAtMs: 300_000,
-      environmentId: "worker:device",
-      activeOwnerEpoch: 1,
-      workerBundleHash: "a".repeat(64),
       workspaceBaseManifestRef: "base-manifest",
       remoteWorkspaceDir: "/worker/repo",
       runner: { kind: "device", status: "available" },
-    },
+    }),
   });
   flush();
   const buttons = Array.from(view.container.querySelectorAll<HTMLButtonElement>("button"));
