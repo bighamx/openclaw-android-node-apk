@@ -87,6 +87,18 @@ not Gateway RPC or provider latency. The default Vite preview server does not
 activate Gateway route preload hints or serve the shipped compression sidecars;
 retain that mode for renderer diagnostics rather than network-readiness claims.
 
+Add `--critical-path-intent-ms 150` to hover and focus the destination for a
+150 ms dwell before activation. Settings uses its real identity-menu item in
+this mode; without the option it retains the keyboard-shortcut entry point.
+`elapsedMs` remains activation-to-ready. `intentElapsedMs` includes hover/focus,
+the dwell, and activation-to-ready, while `intentDwellMs` records the actual
+pre-activation interval. The `critical-path:<route>:intent` mark and interval
+RPC/resource records retain work started during intent, including requests that
+finish before activation; `carryInRpcCount` counts requests begun before
+activation. CPU collection also starts before intent. Each destination still
+starts from a separately settled chat boot, so this measures first route visits,
+not direct cold route loads or retained return visits.
+
 For code-splitting evidence, add `--coverage` to capture executed and unused raw
 source bytes. `javaScriptResources` separately counts completed JavaScript
 fetches from Resource Timing: decoded body bytes, encoded body bytes, and transfer
@@ -486,3 +498,13 @@ node --import ./scripts/tsx.mjs scripts/bench-control-ui-rich-boot.ts \
 
 Omit network latency for localhost; a positive latency also applies 10 Mbps
 throughput. These results cover browser rendering, not provider latency.
+
+The rich-boot report also records Resource Timing phases, negotiated protocol,
+compression/cache response headers, and the Gateway's actual request inventory.
+Use those phases to distinguish connection queueing from response transfer.
+Add `--service-worker` to install the production worker, leave the warm document,
+stop the worker, and clear HTTP, asset, and browser-state caches before each
+measured navigation. Worker fetches receive the same network profile as page
+fetches. The report includes preload state and worker requests; each sample must
+issue exactly one document request. This mode measures a stopped worker with
+cold assets, rather than an already-open tab or an offline-cache hit.
