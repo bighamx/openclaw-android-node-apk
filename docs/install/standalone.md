@@ -59,6 +59,11 @@ standalone-jit/
 Move or distribute the complete directory. `runtime/` is resolved relative to
 the executable; moving only `openclaw` leaves required resources behind.
 
+Embedded routing and file metadata are decoded on demand. Unused module aliases
+stay in immutable embedded text instead of being expanded into lookup objects
+in every worker. Each worker caches the rows it uses, preserving its own
+module-resolution context.
+
 ## Choose a compilation mode
 
 | Mode     | Builder option  | Behavior                                                                            |
@@ -127,6 +132,14 @@ artifact has `mode: "jit"` and `build.flavor: "support"`; the AOT artifact has
 `mode: "aot"` and `build.flavor: "standard"`. Compare `build.id`,
 `openclaw.commit`, `build.pluginSetSha256`, and `build.moduleGraphSha256` before
 reproducing an issue. Matching a version string alone is insufficient.
+
+The build identity is derived from compiled modules, retained resources, compiler,
+target, and compilation options. Independent builds of identical prepared inputs
+share that identity; changing compiled code or native resources invalidates it.
+For reproducible preparation, set the same `OPENCLAW_BUILD_TIMESTAMP` when running
+`pnpm build` in each checkout. Local cache freshness stamps are omitted from the
+standalone runtime. Compare executable hashes before timestamped signing;
+a matching build identity alone does not prove byte-identical executables.
 
 For breakpoints, the companion also retains the selected input runtime, its
 source maps, and a copy of the matching ordinary Bun executable under `debug/`.
@@ -311,8 +324,16 @@ selected plugin workers. The standalone builder requires every declared output
 before compiling; a filename ending in `.worker.js` does not
 declare an entry. Doctor database inspection, database discovery and backup,
 update helpers, workspace leases, certificate warmup, directory watching, hashing,
-and the shutdown watchdog use explicit module entries. Fixed eval workers are no longer extracted
-from strings during standalone packaging.
+the shutdown watchdog, update gates, retired-worktree cleanup, and file-transfer
+directory listing and archive helpers use explicit module entries. Fixed eval
+workers are no longer extracted from strings during standalone packaging.
+
+Update canaries distinguish worker targets from CLI entry paths so the compiled
+executable dispatches each worker to its declared entry. Retained update runtimes
+keep those entries available until recovery and cleanup have completed. The
+managed update handoff script is also a declared file entry: the manifest owns
+its staging filename and source binding, while the update owner retains writing
+and cleanup.
 
 The sealed single-file update-recovery helper uses its existing in-process hashing
 fallback so its recorded recovery artifact remains self-contained. Normal

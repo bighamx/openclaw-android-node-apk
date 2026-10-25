@@ -1,6 +1,8 @@
 // Opt-in production-bundle benchmark; real delays model wire delivery, not test synchronization.
 // --cpu-profile: source-mapped reload/live/streaming tables and per-run/median cpu-profile.json.
 // --thread-cpu-time excludes renderer descheduling from CDP duration metrics.
+// Traces report coarse V8 module parse/compile CPU, not exhaustive compiler CPU.
+// javaScriptResources includes completed modulepreloads absent from V8 coverage.
 // --cpu-profile-compare <baseline cpu-profile.json>: profile and diff against that report.
 // --selector-stats: ranked boot CSS selectors (instrumentation overhead included).
 // --viewport desktop|mobile: 1719×1179 (default) or 390×844 browser viewport.
@@ -65,6 +67,8 @@ import {
   mapColdLoadCpuProfile,
   prepareColdLoadTraceEvent,
   summarizeColdLoadTrace,
+  summarizeScriptCoverage,
+  summarizeJavaScriptResources,
   summarizeCpuProfile,
 } from "./lib/control-ui-cold-load-trace.ts";
 import {
@@ -260,6 +264,7 @@ const { values } = parseArgs({
     "streaming-reply": { type: "boolean", default: false },
     "streaming-allocations": { type: "boolean", default: false },
     "streaming-burst-size": { type: "string", default: "1" },
+    "streaming-rate": { type: "string", default: "30" },
     "session-switch": { type: "boolean", default: false },
     "critical-path": { type: "boolean", default: false },
     "critical-path-route": { type: "string", multiple: true, default: [] },
@@ -287,6 +292,7 @@ const { values } = parseArgs({
     "first-load": { type: "boolean", default: false },
     "boot-route": { type: "string", default: "chat" },
     "cold-http-cache": { type: "boolean", default: false },
+    coverage: { type: "boolean", default: false },
     "network-latency-ms": { type: "string" },
     "download-kbps": { type: "string" },
     "cpu-throttle": { type: "string" },
@@ -314,9 +320,6 @@ if (values["streaming-reply"] && values["live-events"]) {
 }
 if (values["streaming-allocations"] && !values["streaming-reply"]) {
   throw new Error("streaming-allocations requires streaming-reply");
-}
-if (values["warm-reload"] && !values["probe-dir"]) {
-  throw new Error("warm-reload requires probe-dir with LoAF/mutation and RPC census init scripts");
 }
 if (values["sidebar-list-churn"] && !values["live-events"]) {
   throw new Error("sidebar-list-churn requires live-events");
@@ -477,6 +480,10 @@ const captureMs = Number(values["capture-ms"]);
 const transcriptMessages =
   values["transcript-messages"] === undefined ? undefined : Number(values["transcript-messages"]);
 const streamingBurstSize = Number(values["streaming-burst-size"]);
+const streamingRate = Number(values["streaming-rate"]);
+if (!Number.isFinite(streamingRate) || streamingRate <= 0) {
+  throw new Error("streaming-rate must be a positive number of deltas per second");
+}
 if (
   !Number.isSafeInteger(streamingBurstSize) ||
   streamingBurstSize < 1 ||
@@ -664,7 +671,9 @@ const fixture = createControlUiTeamScaleFixture({
   historyStateReceipt: historyValidatorDelayMs > 0,
   dashboardPaintMarker: values["dashboard-paint-marker"],
 });
-const streamingReply = values["streaming-reply"] ? createControlUiStreamingReply() : undefined;
+const streamingReply = values["streaming-reply"]
+  ? createControlUiStreamingReply(streamingRate)
+  : undefined;
 const extraInitScripts = await Promise.all(
   values["init-script"].map((file) => readFile(file, "utf8")),
 );
@@ -1558,6 +1567,9 @@ try {
     const threadCpuBefore = values["thread-cpu-time"]
       ? (await cdp.send("Performance.getMetrics")).metrics
       : undefined;
+    if (values.coverage) {
+      await page.coverage.startJSCoverage({ resetOnNavigation: true });
+    }
     if (values["hold-boot-assets"]) {
       await page.goto(url, { waitUntil: "commit" });
       let captureTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -1618,6 +1630,22 @@ try {
       await page.reload({ waitUntil: "domcontentloaded" });
     }
     await settle();
+    const coverage = values.coverage
+      ? (await page.coverage.stopJSCoverage())
+          .filter((entry) => URL.parse(entry.url)?.pathname.startsWith("/assets/"))
+          .map((entry) =>
+            Object.assign(
+              { url: entry.url, functions: entry.functions },
+              summarizeScriptCoverage(entry),
+            ),
+          )
+      : undefined;
+    if (coverage) {
+      await writeFile(
+        path.join(artifactDir, `run-${run + 1}.coverage.json`),
+        JSON.stringify(coverage, null, 2),
+      );
+    }
     if (historyValidatorDelayMs && historyValidatorRequests !== validatorRequestsBeforeReload + 1) {
       throw new Error("Measured reload did not request the delayed history validator exactly once");
     }
@@ -1991,10 +2019,11 @@ try {
       if (cpuProfile) {
         await cdp.send("Profiler.start");
       }
-      if (traced) {
+      if (captureTrace) {
         await cdp.send("Tracing.start", {
-          categories:
-            "toplevel,blink.user_timing,devtools.timeline,disabled-by-default-devtools.timeline.stack,v8",
+          categories: values["filmstrip-only"]
+            ? "blink.user_timing,disabled-by-default-devtools.screenshot"
+            : "toplevel,blink.user_timing,devtools.timeline,disabled-by-default-devtools.timeline.stack,v8,disabled-by-default-devtools.screenshot",
           transferMode: "ReportEvents",
         });
       }
@@ -2008,6 +2037,7 @@ try {
       await page.evaluate((input) => Reflect.get(window, "__streamingReply").start(input), {
         ...streamingReply,
         burstSize: streamingBurstSize,
+        observeTextVisibility: captureTrace,
         sessionKey: fixture.selectedSessionKey,
         runId: fixture.scenario.inFlightRun!.runId,
       });
@@ -2054,6 +2084,13 @@ try {
           previousCpu = nextCpu;
           previousDelivered = delivered;
         }
+      } catch (error) {
+        const progress = await page.evaluate(() => Reflect.get(window, "__streamingReply").read());
+        await writeFile(
+          path.join(artifactDir, `run-${run + 1}.streaming-error.json`),
+          JSON.stringify({ progress, errors, consoleErrors }, null, 2),
+        );
+        throw error;
       } finally {
         streamingInput.abort();
         await nativeInput;
@@ -2077,7 +2114,7 @@ try {
       if (cpuProfile) {
         await recordCpu("streaming", (await cdp.send("Profiler.stop")).profile);
       }
-      if (traced) {
+      if (captureTrace) {
         const complete = new Promise<void>((resolve) => {
           cdp.once("Tracing.tracingComplete", () => resolve());
         });
@@ -2087,6 +2124,17 @@ try {
           path.join(artifactDir, `run-${run + 1}.streaming.trace.json`),
           JSON.stringify({ traceEvents: streamingTrace }),
         );
+        const frames = streamingTrace
+          .map(prepareColdLoadTraceEvent)
+          .filter((event) => event.name === "Screenshot" && event.args?.snapshot);
+        const directory = path.join(artifactDir, `run-${run + 1}.streaming.filmstrip`);
+        await mkdir(directory);
+        for (const [index, frame] of frames.entries()) {
+          await writeFile(
+            path.join(directory, `${index}-${frame.ts}.jpg`),
+            Buffer.from(frame.args!.snapshot!, "base64"),
+          );
+        }
       }
       streaming = {
         ...(await page.evaluate(() => Reflect.get(window, "__streamingReply").finish())),
@@ -2512,6 +2560,8 @@ try {
       sidebarRowTransfer: values["sidebar-list-churn"] ? runTransfer : undefined,
       ...metrics,
       threadCpu,
+      coverage,
+      javaScriptResources: summarizeJavaScriptResources(metrics.http.waterfall, coverage),
       trace: bootTrace,
       selectorStats,
       longTaskDetails:
@@ -2621,6 +2671,7 @@ try {
         gatewayHttp: values["gateway-http"],
         bootRoute,
         coldHttpCache: values["cold-http-cache"],
+        coverage: values.coverage,
         networkLatencyMs,
         downloadKbps,
         cpuThrottle,

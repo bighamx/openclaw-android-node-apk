@@ -1,3 +1,6 @@
+// Add --list-filter-churn to --scenario memory-soak --mixed-rpc to rotate sidebar/search filters.
+// --gateway-preload <file> imports benchmark instrumentation after tsx for source or dist entries;
+// result.json records its resolved path and SHA-256. Use the same instrumentation on both arms.
 import { spawn, type ChildProcess } from "node:child_process";
 import { createCipheriv, createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
@@ -54,6 +57,7 @@ import {
   buildGatewayBenchChildArgs,
   createGatewayBenchEnv,
   writePluginFixtures,
+  writeGatewayAuthorityCountsPreload,
 } from "../lib/gateway-bench-runtime.ts";
 import { createGatewayWsClient } from "../lib/gateway-ws-client.ts";
 import { parseStrictIntegerOption } from "../lib/strict-integer-option.ts";
@@ -74,6 +78,7 @@ const { values } = parseArgs({
     "prep-trace": { type: "boolean", default: false },
     "cpu-profile": { type: "boolean", default: false },
     "workload-cpu-profile": { type: "boolean", default: false },
+    "sqlite-reply-census": { type: "boolean", default: false },
     "capture-responses": { type: "boolean", default: false },
     "list-filter-churn": { type: "boolean", default: false },
     "trace-gc": { type: "boolean", default: false },
@@ -92,6 +97,7 @@ const { values } = parseArgs({
     "transcript-hydration-counts": { type: "boolean", default: false },
     "operator-access-policy": { type: "boolean", default: false },
     "session-event-wake": { type: "boolean", default: false },
+    "cron-operator-turn": { type: "boolean", default: false },
     "authority-counts": { type: "boolean", default: false },
     "config-capture-counts": { type: "boolean", default: false },
     "config-capture-source": { type: "string" },
@@ -109,6 +115,10 @@ const { values } = parseArgs({
     "stream-start-allocations": { type: "boolean", default: false },
     "active-work-diagnostics": { type: "boolean", default: false },
     scenario: { type: "string", default: "transcript-broadcast" },
+    "startup-temperature": { type: "string", default: "warm" },
+    "startup-targets": { type: "string" },
+    "startup-source-preload": { type: "string" },
+    "gateway-preload": { type: "string" },
     revision: { type: "string" },
     operations: { type: "string" },
     "warmup-operations": { type: "string" },
@@ -118,6 +128,7 @@ const { values } = parseArgs({
     limit: { type: "string", default: "100" },
     "row-mode": { type: "string", default: "compact" },
     entry: { type: "string", default: "dist/entry.js" },
+    "default-state-dir": { type: "boolean", default: false },
     port: { type: "string", default: "41033" },
     "mock-port": { type: "string" },
     clients: { type: "string", default: "60" },
@@ -127,6 +138,8 @@ const { values } = parseArgs({
     "recap-burst-interval-ms": { type: "string", default: "50" },
     runs: { type: "string" },
     sessions: { type: "string", default: "100" },
+    plugins: { type: "string", default: "0" },
+    "plugin-update": { type: "boolean", default: false },
     "history-turns": { type: "string", default: "0" },
     "history-last-turns": { type: "string", default: "0" },
     "history-payload-kib": { type: "string", default: "0" },
@@ -199,9 +212,15 @@ if (values["dashboard-rpc"] && mockPort === port + 1) {
   throw new Error("Dashboard widgets reserve Gateway port + 1; choose a different --mock-port");
 }
 const scenario = values.scenario;
+const pluginCount = integer(values.plugins, "--plugins", 0);
+if (values["plugin-update"] && scenario !== "plugins.reload") {
+  throw new Error("--plugin-update requires --scenario plugins.reload");
+}
 if (
   ![
     "sessions.list",
+    "status",
+    "health",
     "sessions.describe",
     "sessions.patch",
     "sessions.cleanup",
@@ -209,6 +228,7 @@ if (
     "reconnect",
     "subscribe",
     "chat.send",
+    "chat.startup",
     "transcript-broadcast",
     "attempt-retention",
     "session-idle-retention",
@@ -220,12 +240,45 @@ if (
   ].includes(scenario)
 ) {
   throw new Error(
-    "--scenario must be sessions.list, sessions.describe, sessions.patch, sessions.cleanup, connect, reconnect, subscribe, chat.send, transcript-broadcast, attempt-retention, session-idle-retention, memory-soak, plugins.reload, plugin.scope, cron.list, or board.get",
+    "--scenario must be sessions.list, status, health, sessions.describe, sessions.patch, sessions.cleanup, connect, reconnect, subscribe, chat.send, chat.startup, transcript-broadcast, attempt-retention, session-idle-retention, memory-soak, plugins.reload, plugin.scope, cron.list, or board.get",
   );
 }
+const startupTemperature = values["startup-temperature"];
+if (!["warm", "cold"].includes(startupTemperature)) {
+  throw new Error("--startup-temperature must be warm or cold");
+}
+if (scenario !== "chat.startup" && (values["startup-targets"] || startupTemperature !== "warm")) {
+  throw new Error("Startup workload options require --scenario chat.startup");
+}
+if (
+  values["startup-source-preload"] &&
+  (scenario !== "chat.startup" || path.resolve(values.entry) !== path.resolve("src/entry.ts"))
+) {
+  throw new Error("--startup-source-preload requires --scenario chat.startup --entry src/entry.ts");
+}
+const startupSourcePreload = values["startup-source-preload"]
+  ? {
+      path: realpathSync(path.resolve(values["startup-source-preload"])),
+      sha256: createHash("sha256")
+        .update(readFileSync(values["startup-source-preload"]))
+        .digest("hex"),
+    }
+  : undefined;
+const gatewayPreload = values["gateway-preload"]
+  ? {
+      path: realpathSync(path.resolve(values["gateway-preload"])),
+      sha256: createHash("sha256").update(readFileSync(values["gateway-preload"])).digest("hex"),
+    }
+  : undefined;
 const retentionScenario = scenario === "attempt-retention";
-if (values["list-filter-churn"] && scenario !== "sessions.list") {
-  throw new Error("--list-filter-churn requires --scenario sessions.list");
+if (
+  values["list-filter-churn"] &&
+  scenario !== "sessions.list" &&
+  !(scenario === "memory-soak" && values["mixed-rpc"])
+) {
+  throw new Error(
+    "--list-filter-churn requires --scenario sessions.list or memory-soak --mixed-rpc",
+  );
 }
 const idleScenario = scenario === "session-idle-retention";
 const soakScenario = scenario === "memory-soak";
@@ -276,12 +329,18 @@ if (
 }
 const toolScenario = scenario === "chat.send" || reasoningScenario;
 const chatActiveHoldMs = integer(values["chat-active-hold-ms"], "--chat-active-hold-ms", 0);
-if (chatActiveHoldMs && (scenario !== "chat.send" || values["session-event-wake"])) {
+if (
+  chatActiveHoldMs &&
+  (scenario !== "chat.send" || values["session-event-wake"] || values["cron-operator-turn"])
+) {
   throw new Error("--chat-active-hold-ms requires direct --scenario chat.send");
 }
 const chatAttachmentBytes =
   integer(values["chat-attachment-kib"], "--chat-attachment-kib", 0) * 1024;
-if (chatAttachmentBytes && (scenario !== "chat.send" || values["session-event-wake"])) {
+if (
+  chatAttachmentBytes &&
+  (scenario !== "chat.send" || values["session-event-wake"] || values["cron-operator-turn"])
+) {
   throw new Error("--chat-attachment-kib requires direct --scenario chat.send");
 }
 const chatAttachmentContent = chatAttachmentBytes
@@ -334,6 +393,9 @@ if (!["compact", "sidebar", "dashboard"].includes(rowMode)) {
 const clientCount =
   scenario === "chat.send" || idleScenario ? 1 : integer(values.clients, "--clients");
 const rpcConcurrency = integer(values["rpc-concurrency"], "--rpc-concurrency");
+if (values["plugin-update"] && rpcConcurrency !== 1) {
+  throw new Error("--plugin-update requires --rpc-concurrency 1");
+}
 if (rpcConcurrency > clientCount) {
   throw new Error("--rpc-concurrency must not exceed --clients");
 }
@@ -480,6 +542,9 @@ if (
 const chunkCount = integer(values.chunks, "--chunks");
 const chunkIntervalMs = integer(values["chunk-interval-ms"], "--chunk-interval-ms", 0);
 const listIntervalMs = integer(values["list-interval-ms"], "--list-interval-ms", 0);
+if (soakScenario && values["list-filter-churn"] && !listIntervalMs) {
+  throw new Error("memory-soak --list-filter-churn requires --list-interval-ms");
+}
 if (connectionScenario && listIntervalMs) {
   throw new Error("connection scenarios use their own sidebar refresh; omit --list-interval-ms");
 }
@@ -532,6 +597,17 @@ if (
 ) {
   throw new Error(
     "--config-capture-counts requires --scenario chat.send --entry src/entry.ts in a separate counting pass without profiling or diagnostics",
+  );
+}
+if (
+  values["cron-operator-turn"] &&
+  (!values["operator-access-policy"] ||
+    values["session-event-wake"] ||
+    sessionCount !== 1 ||
+    resetEveryRounds !== 0)
+) {
+  throw new Error(
+    "--cron-operator-turn requires --operator-access-policy --sessions 1 --reset-every-rounds 0 and no session-event wake",
   );
 }
 if (
@@ -605,6 +681,15 @@ if ((values["cpu-profile"] || values["stream-start-diagnostics"]) && !turnScenar
 }
 if (values["workload-cpu-profile"] && values["cpu-profile"]) {
   throw new Error("--workload-cpu-profile and --cpu-profile cannot capture CPU simultaneously");
+}
+if (
+  values["sqlite-reply-census"] &&
+  !values["workload-cpu-profile"] &&
+  !values["cpu-profile"] &&
+  !values.allocations &&
+  !values["stream-start-allocations"]
+) {
+  throw new Error("--sqlite-reply-census requires a CPU or allocation profile window");
 }
 if (
   values["workload-cpu-profile"] &&
@@ -805,6 +890,72 @@ if (values["attempt-setup-image"] && coldBaseRefs.length < coldSessionRounds * r
   );
 }
 const fixtureSessionCount = typeof fixture.sessionCount === "number" ? fixture.sessionCount : 0;
+type StartupTarget = {
+  sessionKey: string;
+  shortId?: string;
+  minimumMessages?: number;
+  minimumPendingInputs?: number;
+  requireMetadata?: boolean;
+};
+const startupTargets: StartupTarget[] = [];
+if (scenario === "chat.startup") {
+  const rawTargets: unknown = values["startup-targets"]
+    ? JSON.parse(readFileSync(values["startup-targets"], "utf8"))
+    : Array.isArray(fixture.chatStartupTargets)
+      ? fixture.chatStartupTargets.slice(
+          0,
+          startupTemperature === "cold" ? operations * rounds : runCount,
+        )
+      : Array.from(
+          { length: startupTemperature === "cold" ? operations * rounds : runCount },
+          (_, index) => ({ sessionKey: `agent:main:team-shape-session-${index}` }),
+        );
+  if (!Array.isArray(rawTargets) || rawTargets.length === 0) {
+    throw new Error(
+      "--startup-targets must contain a nonempty array of prepared synthetic targets",
+    );
+  }
+  for (const target of rawTargets) {
+    if (
+      !isRecord(target) ||
+      typeof target.sessionKey !== "string" ||
+      !target.sessionKey.startsWith("agent:main:") ||
+      (target.requireMetadata !== undefined && typeof target.requireMetadata !== "boolean") ||
+      (target.shortId !== undefined &&
+        (typeof target.shortId !== "string" || !/^[a-f0-9]{8,32}$/i.test(target.shortId))) ||
+      [target.minimumMessages, target.minimumPendingInputs].some(
+        (count) => count !== undefined && (!Number.isSafeInteger(count) || Number(count) < 0),
+      )
+    ) {
+      throw new Error(
+        "Invalid startup target: expected a main-agent key and optional read assertions",
+      );
+    }
+    startupTargets.push({
+      sessionKey: target.sessionKey,
+      requireMetadata: target.requireMetadata === true,
+      ...(typeof target.shortId === "string" ? { shortId: target.shortId } : {}),
+      ...(target.minimumMessages !== undefined
+        ? { minimumMessages: Number(target.minimumMessages) }
+        : {}),
+      ...(target.minimumPendingInputs !== undefined
+        ? { minimumPendingInputs: Number(target.minimumPendingInputs) }
+        : {}),
+    });
+  }
+  if (!values["startup-targets"] && startupTargets.length > fixtureSessionCount) {
+    throw new Error("chat.startup needs more retained fixture sessions; regenerate the fixture");
+  }
+  if (
+    startupTemperature === "cold" &&
+    (startupTargets.length < operations * rounds ||
+      new Set(startupTargets.map((target) => target.sessionKey)).size !== startupTargets.length)
+  ) {
+    throw new Error(
+      "Cold chat.startup requires one distinct untouched target per measured operation",
+    );
+  }
+}
 const patchKeys =
   scenario === "sessions.patch"
     ? Array.from({ length: fixtureSessionCount }, (_, index) => index)
@@ -901,6 +1052,9 @@ cfg.tools = {
   codeMode: values["stress-tools"],
   ...(values["stress-tools"] ? { exec: { host: "gateway", mode: "full" } } : {}),
 };
+if (values["cron-operator-turn"]) {
+  cfg.cron = { ...cfg.cron, enabled: true };
+}
 if (stressWorktree) {
   cfg.agents.entries.main.workspace = stressWorktree;
 }
@@ -919,6 +1073,9 @@ if (values["active-work-diagnostics"]) {
   }
   cfg.diagnostics = { ...cfg.diagnostics, enabled: true };
   cfg.plugins.entries["diagnostics-prometheus"] = { enabled: true };
+}
+if (scenario === "chat.startup") {
+  cfg.diagnostics = { ...cfg.diagnostics, enabled: true };
 }
 if (soakScenario) {
   cfg.diagnostics = { ...cfg.diagnostics, enabled: true };
@@ -962,6 +1119,21 @@ const githubOptionsObservations: Array<{
   login: string;
 }> = [];
 const dashboardPreload = path.join(output, "dashboard-preload.mjs");
+const startupObserverPreload = path.join(output, "startup-observer-preload.mjs");
+if (scenario === "chat.startup") {
+  writeFileSync(
+    startupObserverPreload,
+    `import { channel } from "node:diagnostics_channel";
+import { onTrustedInternalDiagnosticEvent } from ${JSON.stringify(new URL("../../src/infra/diagnostic-events.ts", import.meta.url).href)};
+const stages = channel("openclaw.gateway.request.stages");
+onTrustedInternalDiagnosticEvent((event) => {
+  if (event.type === "diagnostic.phase.completed" && event.name.startsWith("chat.startup.") && stages.hasSubscribers) {
+    stages.publish({ operation: event.name, durationMs: event.durationMs });
+  }
+}, { include: ["diagnostic.phase.completed"] });
+`,
+  );
+}
 if (values["dashboard-rpc"]) {
   for (const id of ["github", "workboard"]) {
     cfg.plugins.entries[id] = { enabled: true };
@@ -1036,11 +1208,33 @@ globalThis.fetch = async (input, options) => {
 }
 let reloadPluginId: string | undefined;
 let scopePluginId: string | undefined;
-if (scenario === "plugins.reload" || scenario === "plugin.scope") {
-  const plugin = writePluginFixtures(output, { count: 1, activationOnStartup: true });
+let updateReloadPlugin: (() => number) | undefined;
+const pluginUpdateLatenciesMs: number[] = [];
+if (scenario === "plugins.reload" || scenario === "plugin.scope" || pluginCount > 0) {
+  const plugin = writePluginFixtures(output, {
+    count: Math.max(1, pluginCount),
+    activationOnStartup: true,
+  });
   if (scenario === "plugins.reload") {
     reloadPluginId = plugin.pluginIds[0];
-  } else {
+    if (values["plugin-update"]) {
+      const pluginSource = path.join(plugin.pluginsDir, reloadPluginId!, "index.cjs");
+      let revision = 0;
+      updateReloadPlugin = () => {
+        revision++;
+        writeFileSync(
+          pluginSource,
+          `module.exports = { id: ${JSON.stringify(reloadPluginId)}, register(api) {
+  api.registerGatewayMethod("benchmark.pluginVersion", async ({ respond }) => {
+    respond(true, { revision: ${revision} });
+  }, { scope: "operator.read" });
+} };\n`,
+        );
+        return revision;
+      };
+      updateReloadPlugin();
+    }
+  } else if (scenario === "plugin.scope") {
     scopePluginId = plugin.pluginIds[0];
     const pluginSource = path.join(plugin.pluginsDir, scopePluginId!, "index.cjs");
     writeFileSync(
@@ -1205,94 +1399,7 @@ if (isMainThread) {
 }
 const authorityPreload = path.join(output, "authority-counts-preload.mjs");
 if (values["authority-counts"]) {
-  // Source observation belongs to the rig; the production owners expose no benchmark hooks.
-  writeFileSync(
-    authorityPreload,
-    String.raw`
-import fs from "node:fs";
-import { registerHooks, syncBuiltinESMExports } from "node:module";
-import { isMainThread } from "node:worker_threads";
-if (isMainThread) {
-  const state = { active: false, counts: {}, callers: {}, installed: {}, firstAuthPolicyStacks: [],
-    count(key) {
-      if (!this.active) return;
-      this.counts[key] = (this.counts[key] ?? 0) + 1;
-      if (key.endsWith(".assertSettled") || key.endsWith(".readProfileAuthority")) {
-        const caller = key + " <- " + new Error().stack.split("\n").slice(3, 6).join(" <- ").trim();
-        this.callers[caller] = (this.callers[caller] ?? 0) + 1;
-      }
-      if (key === "auth-policy.stableStringify" && this.firstAuthPolicyStacks.length < 8)
-        this.firstAuthPolicyStacks.push(new Error("auth-policy stringify caller").stack);
-    } };
-  globalThis[Symbol.for("openclaw.benchmark.authorityCounts")] = state;
-  const statSync = fs.statSync;
-  fs.statSync = function (...args) { state.count("filesystem.statSync"); return statSync.apply(this, args); };
-  syncBuiltinESMExports();
-  const owners = new Set([
-    "session-source-authority", "admitted-run-context", "operator-run-authority",
-    "session-delivery-generation", "session-entry-source-authority", "session-event-handoff",
-    "session-tool-overrides", "auth-policy", "sqlite-worker-identity",
-    "user-profile-events", "user-profile-authority"
-  ]);
-  registerHooks({ load(url, context, nextLoad) {
-    const loaded = nextLoad(url, context);
-    const owner = url.match(/\/([^/]+)\.ts$/)?.[1];
-    if (!owners.has(owner)) return loaded;
-    // A matched baseline/candidate source overlay runs before this observer.
-    const raw = loaded.format === "module-typescript" ? loaded.source : fs.readFileSync(new URL(url));
-    if (raw == null) throw new Error("Authority overlay omitted source: " + owner);
-    let source = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
-    const installed = {};
-    const count = (kind) => {
-      const key = owner + "." + kind;
-      installed[key] = (installed[key] ?? 0) + 1;
-      return "__authorityCounts.count(" + JSON.stringify(key) + ");";
-    };
-    source = source.replace(/const (assert\w*) = \((?:[^()]|\([^()]*\))*\) => \{/g,
-      (match, name) => match + count(name));
-    source = source.replace(/function (assert\w+)\([^{}]*\)(?::[^{}]+)? \{/g,
-      (match, name) => match + count(name));
-    if (owner === "user-profile-events") {
-      source = source.replace(/assertSettled\(this: void, profileIds: string \| readonly string\[\]\): void \{/g,
-        (match) => match + count("assertSettled"));
-    }
-    if (owner === "user-profile-authority") {
-      source = source.replace(/function readProfileAuthority\([^{}]+\{/g,
-        (match) => match + count("readProfileAuthority"));
-    }
-    if (owner === "session-source-authority") {
-      source = source.replace(/\(\) => \{\s*const scoped = sessionSourceScopes/g,
-        (match) => match.replace("{", "{" + count("composedAssertion")));
-    }
-    if (owner === "session-entry-source-authority") {
-      source = source.replace(/async prepareSessionSource\(\): Promise<PreparedSessionSourceAuthority> \{/g,
-        (match) => match + count("prepareSessionSource"));
-    }
-    if (owner === "operator-run-authority" || owner === "admitted-run-context") {
-      source = source.replace(/\(assertSource(?:s)?\) => \{/g,
-        (match) => match + count("composedGuard"));
-    }
-    if (owner === "sqlite-worker-identity" || owner === "auth-policy" || owner === "session-tool-overrides") {
-      const callee = owner === "sqlite-worker-identity" ? "statSync" : "stableStringify";
-      source = source.replace(new RegExp("\\b" + callee + "\\(", "g"), () =>
-        "(" + count(callee).slice(0, -1) + ", " + callee + ")(");
-    }
-    if (owner === "sqlite-worker-identity") {
-      source = source.replace(/realpathSync\.native\(/g, () =>
-        "(" + count("realpathSync.native").slice(0, -1) + ", realpathSync.native)(");
-    }
-    if (owner === "session-tool-overrides") {
-      if (!source.includes("  const intersectMap =")) throw new Error("Tool intersection observation source changed");
-      source = source.replace("  const intersectMap =", () => "  " + count("intersectSessionToolOverrides") + "const intersectMap =");
-    }
-    if (!Object.keys(installed).length) throw new Error("Authority observation source changed: " + owner);
-    state.installed[owner] = installed;
-    return { ...loaded, format: "module-typescript",
-      source: 'const __authorityCounts = globalThis[Symbol.for("openclaw.benchmark.authorityCounts")];\n' + source };
-  } });
-}
-`,
-  );
+  writeGatewayAuthorityCountsPreload(authorityPreload);
 }
 const authorityChannel = "openclaw-operator-authority-bench";
 const authorityEmail = "operator@authority.example.test";
@@ -1429,7 +1536,9 @@ const toolPaths = Array.from({ length: retentionScenario ? 3 : 1 }, (_, index) =
   );
   return file;
 });
-const configPath = path.join(output, "openclaw.json");
+const configPath = values["default-state-dir"]
+  ? path.join(root, `${path.basename(output)}.json`)
+  : path.join(output, "openclaw.json");
 writeFileSync(configPath, JSON.stringify(cfg));
 const chunk = "Synthetic streamed answer. ";
 function responseEvents(chunks: string[]) {
@@ -1704,6 +1813,12 @@ function createPollRandom(round: number, client: number) {
 const sessionEventRuns = new Map<string, { resolve: (runId: string) => void }>();
 const queuedChatInputs = new Map<string, () => void>();
 const terminalChatInputs = new Map<string, (state: string) => void>();
+const cronOperatorSetupPrompt = "Create the synthetic scheduled operator continuation fixtures.";
+const cronOperatorSetupCallId = "call_cron_operator_setup";
+const cronOperatorJobs: Array<{ id?: string; cohortId: string }> = values["cron-operator-turn"]
+  ? [{ cohortId: randomUUID() }]
+  : [];
+let cronOperatorSetupCompleted = false;
 let cohort:
   | {
       id: string;
@@ -1799,6 +1914,51 @@ const mock = createServer((req, res) => {
           .map(readMockUserText)
           .find((text) => text !== undefined)
       : undefined;
+    if (values["cron-operator-turn"] && lastUser?.includes(cronOperatorSetupPrompt)) {
+      const setupOutput =
+        facts.hasToolOutput && Array.isArray(input)
+          ? input.findLast((item) => isRecord(item) && item.type === "function_call_output")
+          : undefined;
+      let setupEvents;
+      if (setupOutput) {
+        if (!contentText(setupOutput.output).includes("synthetic-cron-operator-created")) {
+          throw new Error(`Cron operator setup failed: ${contentText(setupOutput.output)}`);
+        }
+        cronOperatorSetupCompleted = true;
+        setupEvents = responseEvents(["Synthetic scheduled operator continuations created."]);
+      } else {
+        const jobs = cronOperatorJobs.map(({ cohortId }) => ({
+          name: `Synthetic operator continuation ${cohortId}`,
+          enabled: false,
+          schedule: { kind: "every", everyMs: 3_600_000 },
+          sessionTarget: `session:${keys[0]}`,
+          wakeMode: "now",
+          payload: {
+            kind: "agentTurn",
+            message: `Reply with benchmark stream 1. Transcript-broadcast cohort ${cohortId}.`,
+            toolsAllow: ["*"],
+            timeoutSeconds: 120,
+          },
+          delivery: { mode: "none" },
+          failureAlert: false,
+        }));
+        setupEvents = functionCallEvents(
+          "exec",
+          {
+            title: "Create synthetic scheduled continuations",
+            awaitResults: true,
+            code: `for (const job of ${JSON.stringify(jobs)}) json(await automations({ action: "add", job })); return "synthetic-cron-operator-created";`,
+          },
+          cronOperatorSetupCallId,
+        );
+      }
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      for (const event of setupEvents) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+      res.end();
+      return;
+    }
     const index = facts.turnIndex;
     const toolOutputs =
       Array.isArray(input) &&
@@ -1813,7 +1973,7 @@ const mock = createServer((req, res) => {
     const toolOutput = toolOutputs.at(-1);
     const continuation = toolScenario && toolOutput !== undefined;
     const primaryMessage = cohort
-      ? `Reply with benchmark stream ${index}. Transcript-broadcast cohort ${cohort.id}.`
+      ? `Reply with benchmark stream ${index}. Transcript-broadcast cohort ${cronOperatorJobs[0]?.cohortId ?? cohort.id}.`
       : undefined;
     const primary =
       primaryMessage !== undefined &&
@@ -1824,7 +1984,7 @@ const mock = createServer((req, res) => {
       index >= 1 &&
       index <= runCount &&
       lastUser !== undefined &&
-      (values["session-event-wake"]
+      (values["session-event-wake"] || values["cron-operator-turn"]
         ? lastUser.includes(primaryMessage)
         : chatAttachmentContent
           ? lastUser
@@ -2255,9 +2415,14 @@ function measureFrameFields(
   return result;
 }
 const ownedListeners = new Set<ChildProcess>();
+if (values["default-state-dir"] && path.basename(root) !== ".openclaw") {
+  throw new Error("--default-state-dir requires a fixture rooted at <synthetic-home>/.openclaw");
+}
 const env = {
   ...createGatewayBenchEnv(path.join(root, "home"), configPath, { startupTrace: false }),
-  OPENCLAW_STATE_DIR: root,
+  ...(values["default-state-dir"]
+    ? { OPENCLAW_HOME: path.dirname(root), OPENCLAW_STATE_DIR: undefined }
+    : { OPENCLAW_STATE_DIR: root }),
   ...(values["attempt-setup-image"] && process.env.CONTAINERS_STORAGE_CONF
     ? { CONTAINERS_STORAGE_CONF: process.env.CONTAINERS_STORAGE_CONF }
     : {}),
@@ -2281,7 +2446,7 @@ const env = {
         GIT_CONFIG_VALUE_0: "never",
       }
     : {}),
-  OPENCLAW_PROFILE: `team-shape-${port}`,
+  OPENCLAW_PROFILE: values["default-state-dir"] ? "default" : `team-shape-${port}`,
   OPENCLAW_SYSTEMD_UNIT: `openclaw-gateway-team-shape-${port}`,
   ...(values["prep-trace"] ? { OPENCLAW_LOG_LEVEL: "trace" } : {}),
   ...(idleScenario ? { OPENCLAW_BENCH_FIRST_TEXT: "1" } : {}),
@@ -3320,6 +3485,10 @@ async function runRound(
   measuredRound?: number,
   roundKeys = keys,
 ) {
+  const cronOperatorJob = values["cron-operator-turn"] ? cronOperatorJobs[0] : undefined;
+  if (values["cron-operator-turn"] && !cronOperatorJob?.id) {
+    throw new Error("Cron operator fixture is not ready");
+  }
   if (
     retentionScenario ||
     (soakScenario &&
@@ -3541,6 +3710,40 @@ async function runRound(
           (retentionScenario || idleScenario
             ? `\nSynthetic prompt payload: ${promptContent.update(Buffer.alloc(promptBytes / 2)).toString("hex")}`
             : "");
+        if (cronOperatorJob) {
+          const started = Promise.withResolvers<string>();
+          const timer = setTimeout(
+            () => started.reject(new Error("Cron operator turn did not start")),
+            45_000,
+          );
+          sessionEventRuns.set(sessionKey, started);
+          try {
+            const [, result] = await Promise.all([
+              started.promise.then((id) => {
+                runId = id;
+                current.turns.get(index + 1)!.runId = id;
+              }),
+              rpc(client, "cron.run", {
+                id: cronOperatorJob.id,
+                mode: "force",
+                waitTimeoutMs: 170_000,
+              }),
+            ]);
+            if (
+              !isRecord(result) ||
+              !isRecord(result.run) ||
+              result.run.status !== "ok" ||
+              result.run.sessionKey !== sessionKey
+            ) {
+              throw new Error(`Scheduled operator continuation failed: ${JSON.stringify(result)}`);
+            }
+          } finally {
+            clearTimeout(timer);
+            sessionEventRuns.delete(sessionKey);
+          }
+          turnLatencies.push(performance.now() - turnStarted);
+          return;
+        }
         if (values["session-event-wake"]) {
           const started = Promise.withResolvers<string>();
           const timer = setTimeout(
@@ -4113,9 +4316,12 @@ function cleanup() {
   return (cleanupPromise ??= (async () => {
     closing = true;
     cohort?.release();
-    if (stressCronJobId) {
+    for (const id of [
+      ...(stressCronJobId ? [stressCronJobId] : []),
+      ...cronOperatorJobs.flatMap((job) => (job.id ? [job.id] : [])),
+    ]) {
       try {
-        const result = await clients[0]?.request("cron.remove", { id: stressCronJobId }, 5000);
+        const result = await clients[0]?.request("cron.remove", { id }, 5000);
         if (!result?.ok) {
           throw new Error("cron.remove did not succeed");
         }
@@ -4166,10 +4372,16 @@ try {
         : []),
       "--import",
       "./scripts/tsx.mjs",
+      ...(gatewayPreload ? ["--import", gatewayPreload.path] : []),
       ...(configCaptureSource ? ["--import", configCaptureSourcePreload] : []),
       ...(authoritySourcePreload ? ["--import", authoritySourcePreload.path] : []),
+      ...(startupSourcePreload ? ["--import", startupSourcePreload.path] : []),
+      ...(scenario === "chat.startup" ? ["--import", startupObserverPreload] : []),
       ...(values["authority-counts"] ? ["--import", authorityPreload] : []),
       ...(values["config-capture-counts"] ? ["--import", configCapturePreload] : []),
+      ...(values["sqlite-reply-census"]
+        ? ["--import", "./scripts/perf/sqlite-reply-census-preload.mjs"]
+        : []),
       "--import",
       "./scripts/lib/gateway-bench-profile-preload.ts",
       ...(values["transport-counts"]
@@ -4191,6 +4403,7 @@ try {
     ],
     proxyViewers || trustedProxyScenario ? "trusted-proxy" : "none",
   );
+  const gatewayStartedAt = performance.now();
   gateway = launch(
     gatewayArgs,
     "gateway",
@@ -4200,6 +4413,7 @@ try {
     true,
   );
   await ready(port, "/readyz", gateway);
+  const gatewayReadyMs = performance.now() - gatewayStartedAt;
   await readGatewayCpuUsage(gateway);
   console.log("PHASE gateway-ready");
   // Startup recovery for the retained-run inventory is outside the measured workload.
@@ -4246,7 +4460,9 @@ try {
         await rpc(client, "sessions.create", {
           key,
           ...(stressWorktree ? { cwd: stressWorktree } : {}),
-          ...(values["activity-summaries"] || sessionEventAncestors === 0
+          ...(values["activity-summaries"] ||
+          values["cron-operator-turn"] ||
+          sessionEventAncestors === 0
             ? {}
             : { parentSessionKey: parentKey, spawnDepth: 1 }),
           fork: false,
@@ -4479,6 +4695,38 @@ try {
     { excludeSystem: true, excludeCron: true },
   ];
   let listChurnSequence = 0;
+  const readStartup = async (
+    client: ReturnType<typeof createGatewayWsClient>,
+    target: StartupTarget,
+  ) => {
+    const result = await rpc(client, "chat.startup", {
+      ...(target.shortId ? { shortId: target.shortId } : { sessionKey: target.sessionKey }),
+      agentId: "main",
+      limit,
+      maxBytes: 256 * 1024,
+    });
+    if (
+      !isRecord(result) ||
+      result.sessionKey !== target.sessionKey ||
+      typeof result.sessionId !== "string" ||
+      !Array.isArray(result.messages) ||
+      result.messages.length < (target.minimumMessages ?? 0) ||
+      !isRecord(result.pendingInputs) ||
+      !Array.isArray(result.pendingInputs.items) ||
+      result.pendingInputs.items.length < (target.minimumPendingInputs ?? 0) ||
+      !isRecord(result.sessionInfo) ||
+      (target.requireMetadata &&
+        (!isRecord(result.metadata) || !Array.isArray(result.metadata.commands))) ||
+      (target.shortId &&
+        (!isRecord(result.resolution) ||
+          result.resolution.ok !== true ||
+          result.resolution.key !== target.sessionKey))
+    ) {
+      throw new Error(
+        `chat.startup did not return the prepared synthetic target: ${target.sessionKey}`,
+      );
+    }
+  };
   const runScenario = async (measuredRound?: number, operationCount = operations) => {
     if (idleScenario) {
       idleTurnCohorts = [];
@@ -4566,6 +4814,30 @@ try {
                   : result,
                 method,
               );
+            } else if (scenario === "chat.startup") {
+              const target =
+                startupTemperature === "cold"
+                  ? measuredRound === undefined
+                    ? { sessionKey: parentKey }
+                    : startupTargets[measuredRound * operations + offset + index]!
+                  : startupTargets[(offset + index) % startupTargets.length]!;
+              await readStartup(workerClient, target);
+            } else if (scenario === "status" || scenario === "health") {
+              const result = await rpc(
+                workerClient,
+                scenario,
+                scenario === "health" ? { probe: true } : { includeChannelSummary: false },
+              );
+              const sessions = isRecord(result) ? result.sessions : undefined;
+              if (
+                !isRecord(sessions) ||
+                typeof sessions.count !== "number" ||
+                sessions.count < fixtureSessionCount ||
+                !Array.isArray(sessions.recent) ||
+                sessions.recent.length === 0
+              ) {
+                throw new Error(`${scenario} did not summarize the seeded sessions`);
+              }
             } else if (scenario === "sessions.describe") {
               const result = await rpc(workerClient, "sessions.describe", {
                 key: parentKey,
@@ -4662,12 +4934,28 @@ try {
                 throw new Error("synthetic plugin RPC did not preserve its invocation scope");
               }
             } else {
+              const updateStartedAt = performance.now();
+              const expectedRevision = updateReloadPlugin?.();
               const result = await rpc(workerClient, "plugins.reload", {
                 plugins: [{ pluginId: reloadPluginId }],
                 waitForDrain: true,
               });
               if (!isRecord(result) || result.restartRequired !== false) {
                 throw new Error("synthetic plugin reload did not apply live");
+              }
+              if (expectedRevision !== undefined) {
+                // This verification RPC is outside the reload-only latency distribution.
+                const observed = await workerClient.request("benchmark.pluginVersion", {}, 180_000);
+                if (
+                  !observed.ok ||
+                  !isRecord(observed.payload) ||
+                  observed.payload.revision !== expectedRevision
+                ) {
+                  throw new Error("synthetic plugin update did not publish the edited revision");
+                }
+                if (measuring) {
+                  pluginUpdateLatenciesMs.push(performance.now() - updateStartedAt);
+                }
               }
             }
           }
@@ -4692,7 +4980,47 @@ try {
     }
     return undefined;
   };
+  if (values["cron-operator-turn"]) {
+    const runId = randomUUID();
+    await rpc(sender, "chat.send", {
+      sessionKey: keys[0],
+      message: cronOperatorSetupPrompt,
+      deliver: false,
+      idempotencyKey: runId,
+    });
+    const result = await rpc(sender, "agent.wait", { runId, timeoutMs: 170_000 });
+    if (!isRecord(result) || result.status !== "ok" || !cronOperatorSetupCompleted) {
+      throw new Error("Scheduled operator fixture creation failed");
+    }
+    const listed = await rpc(sender, "cron.list", {
+      includeDisabled: true,
+      includeDeliveryPreviews: false,
+    });
+    if (!isRecord(listed) || !Array.isArray(listed.jobs)) {
+      throw new Error("Scheduled operator jobs were not listed");
+    }
+    for (const fixtureJob of cronOperatorJobs) {
+      const job = listed.jobs.find(
+        (item) =>
+          isRecord(item) && item.name === `Synthetic operator continuation ${fixtureJob.cohortId}`,
+      );
+      if (
+        !isRecord(job) ||
+        typeof job.id !== "string" ||
+        job.sessionTarget !== `session:${keys[0]}`
+      ) {
+        throw new Error("Scheduled operator job did not bind its creator conversation");
+      }
+      fixtureJob.id = job.id;
+    }
+    await drainEvents();
+  }
   const warmupStartedAt = performance.now();
+  if (scenario === "chat.startup" && startupTemperature === "warm") {
+    for (const target of startupTargets) {
+      await readStartup(sender, target);
+    }
+  }
   // Equal warmup work keeps paired runs at the same retained-history boundary.
   const warmupRoundCount = soakScenario ? Math.max(1, Math.ceil(warmupMs / roundIntervalMs)) : 1;
   for (let round = 0; round < warmupRoundCount; round++) {
@@ -5141,13 +5469,19 @@ try {
                       target.worktree,
                     );
                   } else {
+                    const listFilter = values["list-filter-churn"]
+                      ? listFilterShapes[
+                          (round + clientIndex + Math.floor(poll / mixedRpcMethods.length)) %
+                            listFilterShapes.length
+                        ]
+                      : undefined;
                     const page = await rpc(
                       client,
                       method,
                       {
                         rowMode,
                         limit,
-                        archived: "all",
+                        ...(listFilter ?? { archived: "all" }),
                         ...(values["list-profile-reference"]
                           ? { involvingProfileId: values["list-profile-reference"] }
                           : {}),
@@ -5160,7 +5494,9 @@ try {
                       page.count !== Math.min(limit, page.totalCount) ||
                       !Array.isArray(page.sessions) ||
                       page.sessions.length !== page.count ||
-                      (page.count === 0 && !values["list-profile-reference"])
+                      (page.count === 0 &&
+                        !values["list-profile-reference"] &&
+                        (!listFilter || Object.keys(listFilter).length === 0))
                     ) {
                       throw new Error("concurrent sessions.list did not return the requested page");
                     }
@@ -5276,6 +5612,22 @@ try {
     const authorityCounts = values["operator-access-policy"]
       ? await controlAuthorityCounters(gateway, "stop")
       : undefined;
+    if (
+      values["cron-operator-turn"] &&
+      (!authorityCounts?.resume ||
+        (values["authority-counts"] &&
+          (!authorityCounts.host?.counts["cron-operator-source.assertCurrent"] ||
+            !authorityCounts.host?.counts["server-cron.isAgentAvailable"])))
+    ) {
+      throw new Error(
+        `Scheduled turn did not restore its captured operator source: ${JSON.stringify({
+          round,
+          resumes: authorityCounts?.resume,
+          sourceAssertions: authorityCounts?.host?.counts["cron-operator-source.assertCurrent"],
+          availabilityChecks: authorityCounts?.host?.counts["server-cron.isAgentAvailable"],
+        })}`,
+      );
+    }
     if (
       authorityCounts &&
       (!authorityCounts.assert || !authorityCounts.tools || !authorityCounts.messageAppends)
@@ -5716,7 +6068,8 @@ try {
   const wholeWorkloadDiagnostics = await finishWholeWorkloadDiagnostics?.();
   if (workerHeapDoneFile && workerHeapPeerDoneFile) {
     writeFileSync(workerHeapDoneFile, String(Date.now()));
-    const deadline = Date.now() + 120_000;
+    // Long captures need room for a slower peer before either side forces GC.
+    const deadline = Date.now() + Math.max(120_000, Date.now() - measurementStartedAt);
     while (!existsSync(workerHeapPeerDoneFile)) {
       if (Date.now() >= deadline) {
         throw new Error("Worker heap peer did not finish its timing window");
@@ -5929,8 +6282,31 @@ try {
   }
   const result = {
     output,
+    gatewayPreload,
+    gatewayReadyMs,
+    syntheticPlugins: Math.max(pluginCount, reloadPluginId || scopePluginId ? 1 : 0),
+    ...(values["plugin-update"]
+      ? {
+          pluginUpdate: {
+            scope: "source edit through successful RPC verification of the new revision",
+            latency: latencySummary(pluginUpdateLatenciesMs),
+          },
+        }
+      : {}),
     ...(values["worker-retained-heap"] ? { workerHeapEvidence } : {}),
     scenario,
+    ...(scenario === "chat.startup"
+      ? {
+          startup: {
+            temperature: startupTemperature,
+            targets: startupTargets,
+            sourcePreload: startupSourcePreload,
+            scope:
+              "cold means first chat.startup for each retained session in this Gateway; filesystem and agent database may already be warm",
+          },
+        }
+      : {}),
+    defaultStateDir: values["default-state-dir"],
     verifyHistoryReplay,
     revision: values.revision ?? null,
     operationsPerRound: turnScenario ? sessionCount : operations,
@@ -6024,6 +6400,7 @@ try {
     stressSessionStore: values["stress-session-store"],
     transcriptHydrationCounts: values["transcript-hydration-counts"],
     operatorAccessPolicy: values["operator-access-policy"],
+    cronOperatorTurn: values["cron-operator-turn"],
     sessionEventWake: values["session-event-wake"],
     authorityCounts: values["authority-counts"],
     configCaptureCounts: values["config-capture-counts"],

@@ -10,6 +10,7 @@ worker-heap-flag.mjs
 node-runtime-env.mjs
 node-sqlite.mjs
 node-version.mjs
+standalone-runtime-profile.mjs
 package.json
 packages/acp-core/package.json
 packages/acp-core/src/structured-auth-redaction.ts
@@ -35,6 +36,8 @@ packages/gateway-protocol/src/plugin-ui-capabilities.ts
 packages/gateway-protocol/src/protocol-validator.ts
 packages/gateway-protocol/src/protocol-value-normalization.ts
 packages/gateway-protocol/src/schema/closed-object.ts
+packages/gateway-protocol/src/schema/cron-automation-result.ts
+packages/gateway-protocol/src/schema/cron-shared.ts
 packages/gateway-protocol/src/schema/failover-reason.ts
 packages/gateway-protocol/src/schema/plugin-declared-surface-groups.ts
 packages/gateway-protocol/src/schema/presence-activity.ts
@@ -42,6 +45,7 @@ packages/gateway-protocol/src/schema/presence.ts
 packages/gateway-protocol/src/schema/primitives.ts
 packages/gateway-protocol/src/schema/session-placement-state.ts
 packages/gateway-protocol/src/schema/since.ts
+packages/gateway-protocol/src/schema/string-literal-union.ts
 packages/gateway-protocol/src/schema/user-profile-constants.ts
 packages/gateway-protocol/src/schema/validation-invariants.ts
 packages/gateway-protocol/src/schema/worker-admission.ts
@@ -126,6 +130,7 @@ packages/normalization-core/src/home-dir.ts
 packages/normalization-core/src/index.ts
 packages/normalization-core/src/json-coercion.ts
 packages/normalization-core/src/json-schema.ts
+packages/normalization-core/src/json-schema-validator.ts
 packages/normalization-core/src/mountinfo-path.ts
 packages/normalization-core/src/node-crypto.ts
 packages/normalization-core/src/number-coercion.ts
@@ -299,6 +304,7 @@ src/agents/model-selection-alias-scope.ts
 src/agents/model-selection-config.ts
 src/agents/model-selection-normalize.ts
 src/agents/model-selection-shared.ts
+src/agents/model-selection-warnings.ts
 src/agents/openai-model-routes.ts
 src/agents/openai-routing.ts
 src/agents/owner-display.ts
@@ -389,6 +395,7 @@ src/infra/database-engine/physical-facts.ts
 src/infra/database-engine/physical-store.ts
 src/infra/database-engine/policy.ts
 src/infra/database-engine/postgres-catalog.ts
+src/infra/database-engine/postgres-index-ordering.ts
 src/infra/database-engine/postgres-schema.ts
 src/infra/database-engine/postgres-search-schema.ts
 src/infra/database-engine/postgres-search.ts
@@ -596,6 +603,7 @@ src/config/io.factory.ts
 src/config/io.health-state.kernel.ts
 src/config/io.health-state.ts
 src/config/io.invalid-config.ts
+src/config/io.legacy-issues.runtime.ts
 src/config/io.load.ts
 src/config/io.meta.ts
 src/config/io.observe-promotion.ts
@@ -741,6 +749,7 @@ src/config/sessions/session-store-read-candidates.ts
 src/config/sessions/session-store-target-inventory.ts
 src/config/sessions/session-store-target-runtime.ts
 src/config/sessions/supported-session-store.ts
+src/config/sessions/session-transcript-mutation-projection.ts
 src/config/sessions/session-transcript-projection-error.ts
 src/config/sessions/session-transcript-projection-facts-scope.ts
 src/config/sessions/session-transcript-projection-facts.ts
@@ -824,6 +833,7 @@ src/config/zod-schema.session.ts
 src/config/zod-schema.storage.ts
 src/config/zod-schema.telemetry.ts
 src/config/zod-schema.ts
+src/cron/automation-result.ts
 src/cron/completion-status.ts
 src/cron/execution-error-constants.ts
 src/cron/run-diagnostics-normalize.ts
@@ -1157,6 +1167,7 @@ src/infra/sqlite-table-integrity-cache.ts
 src/infra/sqlite-jsonl-budget-error.ts
 src/infra/sqlite-jsonl-budget.ts
 src/infra/sqlite-live-snapshot.ts
+src/infra/sqlite-live-owner.ts
 src/infra/sqlite-lifecycle-errors.ts
 src/infra/sqlite-maintenance-cache.ts
 src/infra/sqlite-maintenance-integrity.ts
@@ -1592,6 +1603,7 @@ src/plugins/plugin-metadata-snapshot-required.ts
 src/plugins/plugin-metadata-snapshot.runtime.ts
 src/plugins/plugin-metadata-snapshot.ts
 src/plugins/plugin-metadata-state-worker.ts
+src/plugins/plugin-metadata-live-read.worker.ts
 src/plugins/plugin-metadata-state.read.worker.ts
 src/plugins/plugin-metadata-state.kernel.ts
 src/plugins/plugin-module-loader-cache.ts
@@ -1805,6 +1817,7 @@ src/shared/immutable-data.ts
 src/shared/import-specifier.ts
 src/shared/incognito-session-key.ts
 src/shared/json-schema-defaults.ts
+src/shared/json-schema-keywords.ts
 src/shared/lazy-promise.ts
 src/shared/lazy-runtime.ts
 src/shared/listeners.ts
@@ -2197,8 +2210,10 @@ src/config/sessions/session-transcript-worker.types.ts
 src/config/sessions/transcript-assistant-delivery-read.ts
 src/config/sessions/transcript-entry-anchor.ts
 src/config/sessions/transcript-header.ts
+src/config/sessions/transcript-json.ts
 src/config/sessions/transcript-message-identity.ts
 src/config/sessions/transcript-navigation-fields.ts
+src/config/sessions/transcript-snapshot.ts
 src/config/sessions/transcript-tree.ts
 src/shared/chat-message-content.ts
 src/shared/model-fallback-notice.ts
@@ -2690,6 +2705,7 @@ src/plugins/inline-view.ts
 src/plugins/service-scheduler-binding.ts
 src/plugins/setup-registry.ts
 src/shared/map-nested-strings.ts
+src/shared/owned-buffer.ts
 src/status/utility-model-warnings.ts
 src/infra/sqlite-integrity.worker.ts
 src/infra/sqlite-readonly-inspection.ts
