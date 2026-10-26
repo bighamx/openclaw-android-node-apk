@@ -167,6 +167,18 @@ The worker-only `openclaw/plugin-sdk/database-engine-worker-runtime` helpers
 `postgresIndexOrderingMigration` and `withLegacyPostgresIndexOrdering` let store
 owners share that cutover and exact predecessor reconstruction for generated DDL.
 
+State schema 34 records the default cron partition's existing opaque key in
+`config_machine_state`. SQLite and PostgreSQL publish the binding in the existing
+schema migration transaction without rewriting jobs, scratch, receipts, or history.
+Partition discovery includes retained legacy run logs before their history import.
+The binding survives state-directory moves and restored backups. If an older store
+has already moved and its original default cannot be established, the Gateway
+starts with cron paused and reports the available partitions. Run
+`openclaw doctor --fix` interactively to select the default partition. Until that
+selection, noninteractive Doctor preserves retired heartbeat settings and reports
+the combined selection and migration step. Rollback restores the verified
+pre-migration backup with its matching binary.
+
 The transcript navigation CHECK keeps its JSON validation for present metadata.
 Its PostgreSQL helper is strict, so absent metadata passes the CHECK without
 calling the helper. A fixed `pg_catalog` search path avoids repeatedly parsing
@@ -407,8 +419,10 @@ and current-authority checks inside the worker admission boundary. The existing
 terminal replay keys, JSON payloads, retention limits, schema, and restart
 recovery policy remain unchanged.
 
-Ordinary operator approval lookups, pending replay, verdicts, expiry, and allow-once
-consumption execute in the shared-state worker. Replay expires and publishes due
+Ordinary operator approval lookups, verdicts, expiry, and allow-once
+consumption execute in the shared-state worker. Pending replay uses a per-session
+view seeded in bounded read-worker pages and maintained by committed approval
+receipts. Closing or replacing the database retires the view. Replay expires and publishes due
 approvals before listing the pending set; the pending query excludes expired rows
 without repeating that sweep. Lookups retain expiry, and both reads retain
 corrupt-row repair transactions; history pages use the read-only worker. The

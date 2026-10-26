@@ -257,6 +257,7 @@ const { values } = parseArgs({
     "thread-cpu-time": { type: "boolean", default: false },
     allocations: { type: "boolean", default: false },
     "warm-reload": { type: "boolean", default: false },
+    "row-facts": { type: "boolean", default: false },
     "large-snapshot": { type: "boolean", default: false },
     "dashboard-widget": { type: "boolean", default: false },
     "connect-not-before-ms": { type: "string" },
@@ -289,6 +290,7 @@ const { values } = parseArgs({
     "sidebar-list-churn": { type: "boolean", default: false },
     "sidebar-live-churn": { type: "boolean", default: false },
     "sidebar-avatars": { type: "boolean", default: false },
+    "transcript-avatars": { type: "boolean", default: false },
     "sidebar-expanded": { type: "boolean", default: false },
     "sidebar-persistent-children": { type: "boolean", default: false },
     "omit-hello-self-presence": { type: "boolean", default: false },
@@ -701,7 +703,7 @@ async function selectComparisonBundle(index: number, page?: Page) {
       gateway.setServerBuildId(id);
     }, nextBuildId);
     // Retire lazy imports from the old page before its assets leave the served root.
-    await page.goto(coldResetUrl);
+    await page.goto("about:blank");
   }
   if (gatewayHttpServer) {
     await gatewayHttpServer.selectBuild(bundleSlots[index]!);
@@ -744,6 +746,7 @@ const fixture = createControlUiTeamScaleFixture({
   sidebarListChurn: values["sidebar-list-churn"],
   sidebarLiveChurn: values["sidebar-live-churn"],
   sidebarAvatars: values["sidebar-avatars"],
+  transcriptAvatars: values["transcript-avatars"],
   sidebarPersistentChildren: values["sidebar-persistent-children"],
   sessionEventChurn: values["session-event-churn"],
   sessionEventDurationMs,
@@ -754,6 +757,7 @@ const fixture = createControlUiTeamScaleFixture({
     : undefined,
   closedMenuMembers: values["closed-menu-members"],
   largeSnapshot: values["large-snapshot"],
+  rowFacts: values["row-facts"],
   offRosterSession: values["off-roster-route"],
   transcriptMessages,
   dashboardWidgetFontUrl: dashboardFont
@@ -1236,7 +1240,9 @@ try {
           : "chip",
     },
   );
-  const warmProbes = values["warm-reload"] ? `\n(${warmReloadProbe.toString()})();` : "";
+  const warmProbes = values["warm-reload"]
+    ? `\n(${warmReloadProbe.toString()})(${JSON.stringify({ rowFacts: values["row-facts"], avatars: values["transcript-avatars"] })});`
+    : "";
   const boardTickets = values["dashboard-widget"]
     ? `\n(${installRotatingBoardTickets.toString()})(${JSON.stringify(fixture.board)}, window.openclawControlUiE2eGateway);`
     : "";
@@ -1279,11 +1285,6 @@ try {
       await route.fallback();
     });
   }
-  if (firstLoad || values["layout-matrix"] || comparisonBundleDirs.length) {
-    await page.route(coldResetUrl, (route) =>
-      route.fulfill({ body: "", contentType: "text/html" }),
-    );
-  }
   async function resetColdState(cdp: CDPSession, bundleIndex: number) {
     // Retire pagehide writers before clearing the measured origin's persistent state.
     await page.goto("about:blank");
@@ -1294,7 +1295,11 @@ try {
     await cdp.send("Network.clearBrowserCache");
     await selectComparisonBundle(bundleIndex);
     // The empty same-origin document seeds only the existing mock's build identity.
+    await page.route(coldResetUrl, (route) =>
+      route.fulfill({ body: "", contentType: "text/html" }),
+    );
     await page.goto(coldResetUrl);
+    await page.unroute(coldResetUrl);
     await page.evaluate((id) => {
       localStorage.clear();
       sessionStorage.clear();
@@ -1496,6 +1501,7 @@ try {
   > = [];
   const warmInput: Parameters<typeof persistColdLoadWarmState>[0] = {
     sessionKey: fixture.selectedSessionKey,
+    rowFacts: values["row-facts"],
     offRosterSession: values["off-roster-route"],
     sidebarView: sidebarView === "online" ? "online" : "sessions",
   };
@@ -1574,7 +1580,7 @@ try {
     warmStates.push(warmStorage);
     snapshotSaves.push(snapshotSave);
     for (let index = 1; index < bundleSlots.length; index++) {
-      await restoreColdLoadWarmState(page, warmStorage);
+      await restoreColdLoadWarmState(page, warmStorage, warmStates[index - 1]);
       const reloadUrl = page.url();
       await selectComparisonBundle(index, page);
       await page.goto(reloadUrl, { waitUntil: "domcontentloaded" });
@@ -1592,6 +1598,7 @@ try {
         await page.locator(".shell--nav-drawer-open").waitFor({ state: "detached" });
       }
     }
+    await restoreColdLoadWarmState(page, warmStorage, warmStates.at(-1));
   }
   let historyValidatorRequests = 0;
   if (historyValidatorDelayMs > 0) {
@@ -1611,7 +1618,6 @@ try {
       await route.fallback();
     });
   }
-  await selectComparisonBundle(0, page);
   for (let run = 0; run < runs; run++) {
     const bundleIndex = run % bundleSlots.length;
     const layoutCell = layoutCells[Math.floor(run / bundleSlots.length) % layoutCells.length];
@@ -1680,7 +1686,7 @@ try {
     if (layoutCell?.cold ?? firstLoad) {
       await resetColdState(cdp, bundleIndex);
     } else {
-      await restoreColdLoadWarmState(page, reloadStorage!);
+      await restoreColdLoadWarmState(page, reloadStorage!, layoutCell && reloadStorage);
       await selectComparisonBundle(bundleIndex, page);
     }
     runTransfer =
@@ -3051,6 +3057,7 @@ try {
         sidebarQueryLatencyMs,
         connectNotBeforeMs,
         dashboardWidget: values["dashboard-widget"],
+        rowFacts: values["row-facts"],
         face,
         shortRoute: values["short-route"],
         fullUuidRoute: values["full-uuid-route"],

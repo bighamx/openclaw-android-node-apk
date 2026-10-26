@@ -152,7 +152,8 @@ it("reuses unchanged watcher currency and retires it on owner publications", asy
     const selections = vi.spyOn(projection, "selectEntries");
     try {
       expect(await read()).toBe(target);
-      expect(selections).toHaveBeenCalledTimes(2);
+      // The qualified leaf has no children; only the parent needs a selection.
+      expect(selections).toHaveBeenCalledTimes(1);
       selections.mockClear();
       for (let index = 0; index < 20; index++) {
         expect(await read()).toBe(target);
@@ -160,6 +161,13 @@ it("reuses unchanged watcher currency and retires it on owner publications", asy
       }
       expect(describes).not.toHaveBeenCalled();
       expect(selections).not.toHaveBeenCalled();
+
+      // Unrelated display churn must not reacquire the retained task audience.
+      await f.seed("agent:main:currency-unrelated", f.profile.id, { label: "Updated" });
+      await projection.ensureMaterialized();
+      captures.mockClear();
+      expect(await read()).toBe(target);
+      expect(captures.mock.calls.map(([query]) => query.key)).toEqual([sessionKey]);
     } finally {
       describes.mockRestore();
       selections.mockRestore();

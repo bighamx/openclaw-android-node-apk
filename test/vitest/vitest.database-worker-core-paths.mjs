@@ -1,5 +1,6 @@
 // These consumers need the host-owned SQLite broker, which runs in forked processes.
 export const databaseWorkerCoreTestFiles = [
+  "src/commands/doctor/shared/model-replacement.test.ts",
   "src/infra/database-engine/memory-path-migration.conformance.test.ts",
   "src/auto-reply/reply/get-reply.fallback-transcript.test.ts",
   "src/config/sessions/session-actor-initialization.test.ts",
@@ -12,6 +13,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/channels/message/ingress-drain.handoff.test.ts",
   "src/channels/message/ingress-queue.authority.test.ts",
   "src/agents/mcp-oauth-authorization.test.ts",
+  "src/agents/agent-bundle-mcp-start-backoff.test.ts",
   "src/agents/mcp-oauth-refresh-boundary.test.ts",
   "src/agents/mcp-auth-profile-authorization.test.ts",
   "src/agents/auth-profiles/authorization-observation.test.ts",
@@ -75,7 +77,6 @@ export const databaseWorkerCoreTestFiles = [
   "src/infra/database-engine/gateway-session-startup.conformance.test.ts",
   "src/infra/database-engine/session-actor.conformance.test.ts",
   "src/infra/database-engine/audit-retention.conformance.test.ts",
-  "src/infra/database-engine/acp-retention.conformance.test.ts",
   "src/infra/database-engine/row-limit.conformance.test.ts",
   "src/infra/database-engine/scalar-portability.conformance.test.ts",
   "src/infra/database-engine/session-owner-portability.conformance.test.ts",
@@ -323,6 +324,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/auto-reply/reply/agent-runner-completion.persistence.test.ts",
   "src/auto-reply/reply/agent-runner-result-accounting.final-delivery.test.ts",
   "src/auto-reply/reply/agent-runner-result-accounting.persistence.test.ts",
+  "src/auto-reply/reply/followup-runner.writer-claim.test.ts",
   "src/auto-reply/reply/agent-runner-result-diagnostics.persistence.test.ts",
   "src/auto-reply/reply/agent-runner-result-accounting.restoration.test.ts",
   "src/auto-reply/reply/session-usage.test.ts",
@@ -1403,10 +1405,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/agents/agent-deletion-recovery-hold.postgres.test.ts",
   "src/commands/doctor/cron/legacy-repair.postgres.test.ts",
   "src/infra/database-engine/session-path-alias.conformance.test.ts",
-  "src/infra/database-engine/sql-probe.conformance.test.ts",
   "src/infra/database-engine/message-progress-retention.conformance.test.ts",
-  "src/infra/database-engine/session-archive-alias.conformance.test.ts",
-  "src/infra/database-engine/outcome-surfaces.postgres.test.ts",
   "src/infra/database-engine/session-participant-capacity.conformance.test.ts",
 ];
 

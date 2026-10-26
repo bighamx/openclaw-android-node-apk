@@ -19,9 +19,11 @@ local message attachments, and generation tools reading local references, wait f
 initial diff baseline. Tools that do not use the workspace can run immediately,
 including generation with inline or remote references. Completion also waits
 for preparation, and a preparation failure ends the turn with a retryable error.
+Accelerated clones can start prompt preparation once their files are complete,
+while Git index preparation finishes behind the same workspace-tool gate.
 
 Repositories with setup scripts, included files, unsupported checkout transforms,
-or project configuration that needs additional files finish preparation before
+or project configuration whose required files are not yet available finish preparation before
 the first turn starts. Active bootstrap hooks, including `bootstrap-extra-files`,
 also retain complete preparation so configured instructions remain available.
 Sandboxed projections require a fully published worktree before startup, as do
@@ -152,6 +154,8 @@ object lookup can still reach the idle timeout. Registration and other Git
 operations retain their existing execution deadlines.
 
 Repository-backed creation discovers unmanaged Git branches and checkout paths before waiting for capacity admission. Reservation still checks current managed names, owners, and pending slots under the allocation lease. Git enforces branch and path conflicts when creating the checkout, including external changes after discovery. Each admission retry refreshes its Git inventory.
+
+If a registered project's checkout is busy, creation releases allocation before waiting for that project. Other repositories can continue reserving and creating workspaces. Once project access is available, creation releases it and retries the reservation with current source, owner, name, and capacity checks. This reservation retry retains the existing 30-second project-access wait budget and remains cancellable.
 
 Source custody inspects managed checkout and Git storage ownership once per operation. Destination protection reuses that inventory while reserving a slot, so ordinary repository creation does not rescan every managed repository under the allocation lease. The inventory ends with the operation; cleanup still checks live dependencies before deleting a checkout.
 
@@ -759,14 +763,21 @@ openclaw worktrees gc --job <id>
 
 For partial clones, `openclaw worktrees gc --retry-deferred` also checks the
 objects needed by all Git-registered worktree indexes and current HEAD trees
-before attempting cleanup.
+during repository maintenance.
 It fetches missing objects from the existing promisor remote in bounded batches,
 preserving staged and working files. Historical commits remain filtered, and
 ordinary background maintenance does not fetch. Repair has a five-minute budget
-and a 4,096-object limit per pass; completed fetches survive interruption. If
-repair cannot finish, maintenance logs a warning. Restore remote access and run
-the command again to resume from the remaining missing objects. Locally created
-objects unavailable from the remote still require recovery from another copy.
+and a 4,096-object limit per pass; completed fetches survive interruption.
+Each checkout is inspected separately. The shared state database records the
+last attempted checkout, so the next explicit retry starts with its successor
+even after a Gateway restart. A slow or unreadable checkout cannot keep later
+linked indexes from being repaired. This position only schedules work; it never
+certifies object availability or permits checkout removal. Failed checkouts are
+revisited on later sweeps, and a completed sweep clears the position.
+If repair cannot finish, maintenance logs a warning. Restore remote access and
+run the command again to continue. A checkout whose own inventory exceeds the
+budget still needs repository repair; locally created objects unavailable from
+the remote require recovery from another copy.
 
 Gateway Git inspections also use only locally available objects. In partial
 clones, missing objects can leave optional checkout, branch, or diff facts
