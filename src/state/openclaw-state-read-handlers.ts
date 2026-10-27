@@ -110,7 +110,11 @@ import type { OpenClawStateReadRequest } from "./openclaw-state-read.types.js";
 import { findSessionRepositoryWorkspaceInDatabase } from "./session-repository-workspaces.kernel.js";
 import { readUserBackgroundCommand } from "./user-background.kernel.js";
 import { readUserModelAccountCommand } from "./user-model-accounts.read.worker.js";
-import { readUserPreferences, selectUserPreferenceValues } from "./user-preferences.store.js";
+import {
+  readUserPreferences,
+  selectPersonalPinnedSessionKeys,
+  selectUserPreferenceValues,
+} from "./user-preferences.store.js";
 import { readUserProfileCommand } from "./user-profile-read.worker.js";
 import { selectResolvedUserProfileMetadataById } from "./user-profiles-internal.js";
 
@@ -427,6 +431,7 @@ export function readOpenClawStateDatabaseCommand(
   }
   if (
     command.type === "userProfiles.catalogIdentity" ||
+    command.type === "userProfiles.identity" ||
     command.type === "userProfiles.githubIdentity.cached" ||
     command.type === "userProfiles.githubAttribution.resolve" ||
     command.type === "userProfiles.channelIdentity.list" ||
@@ -440,6 +445,9 @@ export function readOpenClawStateDatabaseCommand(
   }
   if (command.type === "userBackground.snapshot" || command.type === "userBackground.image") {
     return readUserBackgroundCommand(db, command);
+  }
+  if (command.type === "userPreferences.sessionPins") {
+    return { type: command.type, sessionKeys: selectPersonalPinnedSessionKeys(db) };
   }
   if (command.type === "userPreferences.values") {
     return {
