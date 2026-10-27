@@ -55,10 +55,9 @@ Reloading or leaving the app does not preserve this in-memory draft.
 
 ## Automatic session names
 
-New Dashboard conversations receive a title from their opening task. After six more
-user messages, the Gateway makes one attempt to refine that title using recent
-conversation context. A failed attempt keeps the existing title. Manually named
-sessions and conversations created before this feature keep their names.
+New Dashboard conversations receive a title from their opening task. Later messages
+keep that title. Only an explicit rename by you or the agent through `sessions.patch`
+changes it.
 
 ## Temporary disconnections
 
@@ -105,6 +104,8 @@ After a Gateway restart, an agent may need a few minutes to prepare its database
 If the New Session page fails during its initial render, the UI attempts one automatic page reload per browser tab. A repeated failure shows **Retry** instead of starting a reload loop. Automatic recovery is skipped if session storage is unavailable, the serving document cannot be reached, or unsaved work blocks reloading. Errors after the composer has rendered use in-page retry instead.
 
 Reloading a previously visited chat restores the last settled sidebar while the Gateway reconnects. Pinned sessions, plugin rows, roster order, filters, and your display identity keep their places until live data is ready. The footer still reports the current connection status. This browser cache is scoped to the Gateway and profile, expires after 30 days, and excludes incognito sessions. The same snapshot provides the saved session rows and routing defaults for the first chat header. Cached rows never authorize session changes. Sidebar snapshot capture coalesces live updates during idle time and flushes pending changes when the page is hidden or left.
+
+The saved sidebar also retains unread marks, activity and attention glyphs, pull-request badges, and the Inbox count. Live facts replace this display projection together with the rows; pins outside the roster retain their saved presentation until their own details arrive. The Inbox button reserves its place while connecting.
 
 Message reactions share the message footer. Desktop Chat Details lists automations after session information and task progress so arriving automation results keep those sections in place. The mobile composer reserves one activity row so arriving task and subagent status does not move the transcript.
 
@@ -347,7 +348,20 @@ Open group rename and **New session defaults** dialogs close when the Gateway
 reconnects or you switch connections. Reopen the group’s menu to make changes
 using the current connection.
 
-Dragging a session between sidebar groups updates its placement immediately. A successful
+**Personal groups** organize only your sidebar, including when you are a guest.
+Use **New personal group** to name a group and select available sessions, or drag
+an existing session into a personal group. **Edit group** renames it and changes
+its members. Drag group headers to reorder them, or use **Move up** and **Move down**
+in the group menu. **Remove personal group** removes only that personal collection;
+it never deletes sessions. Pins and shared groups are independent.
+
+Personal groups do not grant access. Unavailable saved sessions remain hidden,
+and members outside the loaded session list resolve through the normal access-checked
+session lookup. Groups are scoped to your profile and Gateway. Connections with
+general Gateway write access sync them through personal preferences. Session-only,
+read-only, and profileless connections keep their edits in that browser, like personal pins.
+
+Dragging a session between shared sidebar groups updates its placement immediately. A successful
 save keeps that placement even if the subsequent list refresh fails; the UI reports
 the refresh error separately. If a connection failure leaves the save unconfirmed,
 refresh and check the session's group before retrying. Other clients' newer group
