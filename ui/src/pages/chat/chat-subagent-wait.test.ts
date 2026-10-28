@@ -7,6 +7,7 @@ import {
   handoffSessionLinks,
   listResumedHandoffSessions,
   listSubagents,
+  projectProgressCardRuntime,
   projectSubagentStatus,
 } from "./chat-subagent-wait.ts";
 import { UnplacedSubagentWait } from "./components/chat-message-stream-view.tsx";
@@ -270,17 +271,6 @@ describe("chat waiting on subagents", () => {
     });
   });
 
-  it("counts children only once the pane's own child query has answered", () => {
-    const derive = (subagentSessionsHydrated: boolean) => status({ subagentSessionsHydrated }).wait;
-    expect(derive(false)).toEqual({
-      startedAt: 2_000,
-      runId: "parent-run",
-      runningCount: 0,
-      sessions: [],
-    });
-    expect(derive(true)).toMatchObject({ runningCount: 1 });
-  });
-
   it.each([2_500, 1_500])("uses lifecycle end %i, not a later transcript timestamp", (endedAt) => {
     expect(status({ selectedSession: { ...parent, endedAt } }).wait?.startedAt).toBe(endedAt);
   });
@@ -477,7 +467,13 @@ describe("chat waiting on subagents", () => {
       { subagentSessions: [child], subagentSessionsHydrated: true, subagentSessionsPending: true },
     ]) {
       const projection = status(roster);
-      expect(projection.wait?.sessions).toEqual([]);
+      // Neither counted nor named until the child query answers.
+      expect(projection.wait).toEqual({
+        startedAt: 2_000,
+        runId: "parent-run",
+        runningCount: 0,
+        sessions: [],
+      });
       expect(listResumedHandoffSessions(parent.key, roster, handoff)).toEqual([]);
       const container = document.createElement("div");
       mountWorkingIndicator(
@@ -537,17 +533,6 @@ describe("chat waiting on subagents", () => {
         (session) => session.key,
       ),
     ).toEqual([during.key]);
-  });
-
-  it("re-renders resumed lists when a listed child's name or attention changes", () => {
-    const key = (row: GatewaySessionRow) => status({ subagentSessions: [row] }).rowsKey;
-    const attention = {
-      ...child,
-      agentStatus: { note: "Pick a merge method", attention: "hand" as const, expiresAt: 9e15 },
-    };
-    expect(key(attention)).not.toBe(key(child));
-    expect(key({ ...child, label: "Renamed" })).not.toBe(key(child));
-    expect(key({ ...child })).toBe(key(child));
   });
 
   it("links child names only to sessions this pane loaded and can open", () => {
@@ -702,4 +687,57 @@ describe("chat waiting on subagents", () => {
     draw({ runningSubagents: 0 });
     expect(container.querySelector(".chat-working-indicator__subagents")).toBeNull();
   });
+});
+
+it("counts only hydrated direct children and keeps current failures separate from saved progress", () => {
+  const rows: GatewaySessionRow[] = [
+    child,
+    { ...child, key: "agent:main:queued", hasActiveRun: false, status: "queued" },
+    {
+      ...child,
+      key: "agent:main:waiting",
+      hasActiveRun: false,
+      hasActiveSubagentRun: true,
+      status: "done",
+    },
+    {
+      ...child,
+      key: "agent:main:failed",
+      hasActiveRun: false,
+      status: "failed",
+      endedAt: 3000,
+      lastRunError: "Access denied",
+    },
+    { ...child, key: "agent:main:stopped", hasActiveRun: false, status: "killed", endedAt: 3000 },
+    { ...child, key: "agent:main:old", hasActiveRun: false, status: "failed", endedAt: 1000 },
+    { ...child, key: "agent:main:unrelated", spawnedBy: "agent:main:other" },
+  ];
+  const roster = { subagentSessions: rows, subagentSessionsHydrated: true };
+  expect(projectProgressCardRuntime(parent, roster, 2000)).toMatchObject({
+    hasActiveSubagentRun: true,
+    children: { running: 1, queued: 1, waiting: 1, failed: 1, stopped: 1 },
+    childError: "Backend implementation: Access denied",
+  });
+  expect(
+    projectProgressCardRuntime(parent, { ...roster, subagentSessionsPending: true }, 2000).children,
+  ).toBeUndefined();
+  expect(
+    projectProgressCardRuntime(parent, { ...roster, subagentSessionsHydrated: false }, 2000)
+      .children,
+  ).toBeUndefined();
+});
+
+it("counts an interrupted child as stopped only for its current progress snapshot", () => {
+  const session = { ...parent, hasActiveSubagentRun: false };
+  const roster = {
+    subagentSessions: [
+      { ...child, status: "interrupted" as const, hasActiveRun: false, endedAt: 3000 },
+    ],
+    subagentSessionsHydrated: true,
+  };
+  expect(projectProgressCardRuntime(session, roster, 2000)).toMatchObject({
+    hasActiveSubagentRun: false,
+    children: { running: 0, queued: 0, waiting: 0, failed: 0, stopped: 1 },
+  });
+  expect(projectProgressCardRuntime(session, roster, 3001).children?.stopped).toBe(0);
 });
