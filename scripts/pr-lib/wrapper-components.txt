@@ -108,6 +108,7 @@ packages/memory-host-sdk/src/host/openclaw-runtime-sqlite.ts
 packages/model-catalog-core/package.json
 packages/model-catalog-core/src/canonical-model-key.ts
 packages/model-catalog-core/src/configured-model-refs.ts
+packages/model-catalog-core/src/decision-answer-capabilities.ts
 packages/model-catalog-core/src/index.ts
 packages/model-catalog-core/src/model-catalog-normalize.ts
 packages/model-catalog-core/src/model-catalog-pricing.ts
@@ -1190,6 +1191,7 @@ src/infra/sqlite-commit-receipt.ts
 src/infra/sqlite-database-admission-context.ts
 src/infra/sqlite-database-admission-key.ts
 src/infra/sqlite-database-admission-read.ts
+src/infra/sqlite-database-admission-delta.ts
 src/infra/sqlite-database-admission-record.ts
 src/infra/sqlite-database-admission-seal.ts
 src/infra/sqlite-database-admission-turn.ts
@@ -2816,6 +2818,7 @@ src/plugins/setup-registry.ts
 src/shared/map-nested-strings.ts
 src/shared/owned-buffer.ts
 src/shared/state-lease-loss.ts
+src/shared/weak-owner-map.ts
 src/status/utility-model-warnings.ts
 src/infra/sqlite-integrity.worker.ts
 src/infra/sqlite-readonly-inspection.ts
