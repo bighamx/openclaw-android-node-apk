@@ -42,9 +42,6 @@ jobs:
           install-deps: "true"
           frozen-lockfile: "true"
 
-      - name: Build Canvas A2UI bundle
-        run: pnpm canvas:a2ui:bundle
-
       - name: Grant execute permission for gradlew
         run: chmod +x apps/android/gradlew
 
