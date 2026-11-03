@@ -18,6 +18,7 @@ import {
 } from "../../../infra/device-pairing-node.js";
 import { recordPairedDeviceAccess } from "../../../infra/device-pairing.js";
 import { formatErrorMessage as formatError } from "../../../infra/errors.js";
+import { NODE_MCP_ELICITATION_CAPABILITY } from "../../../infra/node-commands.js";
 import { commitPresence } from "../../../infra/system-presence.js";
 import { getGatewaySuspendAdmissionPhase } from "../../../process/gateway-work-admission.js";
 import { hasMultipleResidentSessionSharingIdentities } from "../../../state/user-profile-list.js";
@@ -140,6 +141,11 @@ export async function sendGatewayHello(
     revisionProjector: buildRequestContext().configRevisionProjector,
     sessionRowProjection,
   });
+  if (scopes.includes(ADMIN_SCOPE)) {
+    // What this process runs with, which startup flags can set apart from the config file.
+    snapshot.authMode = resolvedAuth.mode;
+    Object.assign(snapshot, context.handler.gatewayExposure);
+  }
   const cachedHealth = getHealthCache();
   if (cachedHealth && !connectParams.caps?.includes(GATEWAY_CLIENT_CAPS.HELLO_HEALTH_ON_DEMAND)) {
     snapshot.health = connectParams.caps?.includes(GATEWAY_CLIENT_CAPS.HEALTH_SUMMARY)
@@ -222,6 +228,7 @@ export async function sendGatewayHello(
         GATEWAY_SERVER_CAPS.WORKTREES_RETIRE_SNAPSHOT_OWNER,
         GATEWAY_SERVER_CAPS.MODEL_CATALOG_SNAPSHOT,
         GATEWAY_SERVER_CAPS.NODE_WORKER_DEVICE_FOLDERS,
+        ...(context.configSnapshot.mcp?.apps?.enabled ? [NODE_MCP_ELICITATION_CAPABILITY] : []),
         GATEWAY_SERVER_CAPS.NODE_PERMISSION_ERRORS,
         GATEWAY_SERVER_CAPS.NODE_WORKER_BUNDLE_RETENTION,
         GATEWAY_SERVER_CAPS.NODE_WORKER_BUNDLE_STATUS,
