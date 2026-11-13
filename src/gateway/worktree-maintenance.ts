@@ -101,7 +101,7 @@ export function startWorktreeMaintenance(params: {
         reject(toErrorObject(scheduler.signal.reason, "Worktree cleanup canceled"));
       scheduler.signal.addEventListener("abort", abort, { once: true });
       scheduler.schedule({
-        id: "maintenance:worktrees:resume",
+        id: `maintenance:worktrees:resume:${randomUUID()}`,
         delayMs,
         run: () => {
           scheduler.signal.removeEventListener("abort", abort);
@@ -277,6 +277,7 @@ export function startWorktreeMaintenance(params: {
                         scratchPressure = await hasIoPressure();
                       },
                       cursor: scratchCursor,
+                      signal: scheduler.signal,
                       onProgress: (progress) => {
                         current.scratch = progress;
                       },
