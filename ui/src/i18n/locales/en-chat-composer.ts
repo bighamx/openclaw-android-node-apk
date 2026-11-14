@@ -5,7 +5,6 @@ import { en } from "./en.ts";
 const catalog = {
   chat: {
     view: {
-      activityDetails: "View activity details",
       workingDetails: "Agent is working. View details",
     },
     composer: {
@@ -142,6 +141,7 @@ const catalog = {
       dictationStartRecovery: "Check microphone access and transcription settings, then try again.",
       dictationFinalizing: "Finishing dictation…",
       dictationListening: "Listening…",
+      dictationStarting: "Starting microphone…",
       dictationStopAndKeep: "Stop and keep text",
       realtimeTalkCancellationRejected: "Realtime output cancellation was not accepted.",
       realtimeTalkMissingTurnIdentity: "Realtime output is missing its turn identity.",
@@ -195,7 +195,7 @@ const catalog = {
       retryQueuedMessage: "Retry queued message",
       discard: "Discard",
       discardPendingMessage:
-        "Discard this local pending copy. This does not cancel a message already received by the Gateway.",
+        "Discard this local copy. This does not cancel a message already received by the Gateway.",
       steer: "Steer",
       steerQueuedMessage: "Steer queued message",
       resume: "Resume",
@@ -315,8 +315,7 @@ const catalog = {
       openOriginal: "Open original",
       compressToFit: "Compress to fit",
       retryCompression: "Retry compression",
-      compressionHint:
-        "Video is too large. Compress a copy on this device; the original stays unchanged.",
+      compressionHint: "Compress a smaller copy on this device. The original is unchanged.",
       compressing: "Compressing · {progress}%",
       compressionUnsupported: "This browser cannot compress this video.",
       compressionTooLarge: "Video is still too large. Try a smaller file.",

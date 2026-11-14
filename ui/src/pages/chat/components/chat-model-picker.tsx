@@ -110,7 +110,7 @@ export function ChatModelPicker(params: ChatModelPickerParams) {
     void params.onOpen?.();
     pendingSearchFocus = target.ownerDocument.activeElement;
     requestAnimationFrame(focusSearch);
-  });
+  }, "top");
   const state = createMemo(() => {
     const activeModelOption = params.modelOptions.find((option) =>
       isModelPickerOptionSelected(option, params.selectedModelValue, params.selectedAgentRuntime),
@@ -139,7 +139,6 @@ export function ChatModelPicker(params: ChatModelPickerParams) {
       .join(" · ");
     return {
       triggerModelOption,
-      modelToolsUnavailable,
       selectedContextWindowOption,
       showContextWindowBadge,
       triggerTitle,
@@ -180,12 +179,15 @@ export function ChatModelPicker(params: ChatModelPickerParams) {
           data-chat-model-select="true"
           data-chat-model-locked={params.modelSelectionLocked ? "true" : "false"}
           data-chat-select-value={params.selectedModelValue}
-          data-chat-model-tools={state().modelToolsUnavailable ? "unavailable" : "available"}
+          data-chat-model-empty={
+            params.modelCatalogState?.hasSnapshot && params.modelOptions.length === 0
+              ? "true"
+              : "false"
+          }
           aria-label={`${t("chat.selectors.model")}: ${state().triggerTitle}${params.selectionScopeDescription ? `. ${params.selectionScopeDescription}` : ""}`}
           aria-busy={params.triggerLoading ? "true" : "false"}
           aria-disabled={params.disabled ? "true" : "false"}
           aria-description={params.disabledReason}
-          title={params.disabledReason?.trim() || undefined}
         >
           {!params.triggerLoading &&
           !params.triggerStatusLabel &&
@@ -226,9 +228,12 @@ export function ChatModelPicker(params: ChatModelPickerParams) {
           <Show when={choicesMounted()}>
             <Errored
               fallback={(_error, reset) => (
-                <div class="chat-controls__model-catalog-state" role="alert">
+                <div
+                  class="chat-controls__model-menu chat-controls__model-catalog-state chat-controls__model-catalog-state--empty"
+                  role="alert"
+                >
                   {t("chat.modelControls.modelsUnavailable")}
-                  <button class="btn btn--sm" type="button" onClick={reset}>
+                  <button class="chat-controls__model-catalog-action" type="button" onClick={reset}>
                     {t("common.retry")}
                   </button>
                 </div>
@@ -236,7 +241,10 @@ export function ChatModelPicker(params: ChatModelPickerParams) {
             >
               <Loading
                 fallback={
-                  <div class="chat-controls__model-catalog-state" role="status">
+                  <div
+                    class="chat-controls__model-menu chat-controls__model-catalog-state chat-controls__model-catalog-state--empty"
+                    role="status"
+                  >
                     {t("chat.modelControls.loadingModels")}
                   </div>
                 }
