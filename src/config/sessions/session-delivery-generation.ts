@@ -97,6 +97,7 @@ async function prepareSessionGenerationLease(
   initialRead: GenerationRead = withSessionEntriesFromStoresInWorker,
 ): Promise<{
   assertCurrent: SessionSourceAssertion;
+  assertNativeTransactionCurrent: SessionSourceAssertion;
   assertDeliveryCurrent: () => void;
   readSessionSettings: () =>
     | Readonly<Pick<SessionSharingEntry, "permissionMode" | "toolOverrides">>
@@ -194,6 +195,9 @@ async function prepareSessionGenerationLease(
     return entry;
   };
   const changed = (change: SessionRowChange) => {
+    if (!sessionChangeScopeAffectsStoredRows(change)) {
+      return;
+    }
     if ("all" in change) {
       if (isSessionStoreTopologyChange(change)) {
         // Registration changes do not retarget an in-flight delivery. Its selected
@@ -207,21 +211,12 @@ async function prepareSessionGenerationLease(
         if (change.scope.storePath && !paths.has(path.resolve(change.scope.storePath))) {
           return;
         }
-      } else if (
-        // Runtime and automation still invalidate this retained authority.
-        !sessionChangeScopeAffectsStoredRows(change) &&
-        change.scope !== "runtime" &&
-        change.scope !== "automation"
-      ) {
-        return;
       }
       diag.flip("row-invalidated");
       invalidated = true;
       return;
     }
     if (
-      change.scope === "automation" ||
-      change.scope === "acp" ||
       change.sessionKey !== generation.sessionKey ||
       (change.agentId && change.agentId !== generation.agentId) ||
       !change.storePath ||
@@ -595,7 +590,6 @@ async function prepareSessionGenerationLease(
     assertGenerationCurrent.prepareSessionSourceEffect = async () => {
       let releaseEffect: PreparedSessionSourceEffect["release"];
       try {
-        assertActive();
         for (let pending = prepareRead(); pending; pending = prepareRead()) {
           await pending;
         }
@@ -624,6 +618,8 @@ async function prepareSessionGenerationLease(
     };
     return {
       assertCurrent: assertGenerationCurrent,
+      // Opaque host guards retain native atomicity and the same tentative-row checks.
+      assertNativeTransactionCurrent: Object.assign(() => assertCurrent(), { nativeSource: true }),
       assertDeliveryCurrent: () => assertCurrent(true),
       readSessionSettings: () => {
         assertGenerationCurrent();
