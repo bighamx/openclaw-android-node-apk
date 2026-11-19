@@ -22,6 +22,11 @@ session's owner or another participant cannot replace it. A revoked or unavailab
 source fails recovery rather than falling back to another person. Older markers
 without a captured source keep the session-principal recovery policy.
 
+Scheduled automation retains its cron owner, even when it runs in an ordinary
+conversation. Shutdown does not turn an interrupted occurrence into an operator
+resume request or an operator-authority failure notice. The cron scheduler owns
+its retry and next-tick behavior. Accepted user work still keeps its resume path.
+
 If the interrupted turn left a managed workspace pending, its recovery input waits
 for the workspace owner to finish preparation before starting the turn. Setup
 failures still produce the ordinary actionable error; pending setup alone does
@@ -662,7 +667,9 @@ principal or lost access prevents automatic resume. An admission failure records
 a visible interruption notice in the existing session, with a bounded, redacted
 diagnostic. The warning identifies the session, interrupted run, and admission
 stage. Resolve the reported error, then send a new message to continue. Archived
-or deleted sessions remain skipped with a log entry.
+or deleted sessions remain skipped with a log entry. Settling an obsolete marker
+without a recorded yield wait does not read or restore its cold transcript; the
+cleared marker does not trigger recovery again on the next restart.
 The Gateway never substitutes an administrator. A recorded connection is only a basis for
 revalidation, never a saved grant.
 Sessions with no human principal use ordinary system-event authority; if it lacks
