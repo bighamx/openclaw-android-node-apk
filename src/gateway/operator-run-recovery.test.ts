@@ -659,9 +659,7 @@ describe("scheduled authenticated operator source", () => {
               await expect(fixture.restore()).rejects.toThrow();
             }
           } else {
-            await expect(caller.capture()).rejects.toThrow(
-              "Gateway caller authority is no longer active",
-            );
+            await expect(caller.capture()).rejects.toThrow("Gateway request could not start");
           }
         } finally {
           source?.release();
@@ -733,7 +731,7 @@ describe("scheduled authenticated operator source", () => {
         device: pairedOperator(),
         scopes: ["operator.write"],
       });
-      expect(fixture.sourceAuthority.assertCurrent).toThrow("no longer active");
+      expect(fixture.sourceAuthority.assertCurrent).toThrow("Operator execution ended.");
       expect(fixture.snapshot).toMatchObject({
         controlUiAdmin: false,
         sourceIngress: "control-ui",

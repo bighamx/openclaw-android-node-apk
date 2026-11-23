@@ -284,7 +284,7 @@ describe("OpenAI-compatible operator run authority", () => {
           assert(childAuthority, "Detached work lost its original operator authority");
           expect(() => childAuthority.assertCurrent()).not.toThrow();
           child.close();
-          expect(() => authority.assertCurrent()).toThrow(/no longer active/);
+          expect(() => authority.assertCurrent()).toThrow(/Operator execution ended/);
         } finally {
           await close();
           child?.close();
@@ -519,7 +519,7 @@ describe("OpenAI-compatible command admission", () => {
         await expect(pending).resolves.toMatchObject({ payloads: [{ text: "settled" }] });
         expect(executed).toHaveBeenCalledOnce();
       } else {
-        await expect(pending).rejects.toThrow("Gateway requester authority changed");
+        await expect(pending).rejects.toThrow("Gateway requester changed during admission");
         expect(executed).not.toHaveBeenCalled();
       }
     },

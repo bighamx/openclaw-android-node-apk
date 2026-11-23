@@ -155,11 +155,9 @@ export function captureChannelOperatorRunAuthority(input: {
   scopes: readonly string[];
   gatewayAccessGrant: AdmittedRunOperatorAuthority["gatewayAccessGrant"];
   getRuntimeConfig: () => OpenClawConfig;
-  assertCurrent: () => void;
   signal?: AbortSignal;
 }): AdmittedRunOperatorAuthority {
   const params = { ...input };
-  params.assertCurrent();
   const initialConfig = params.getRuntimeConfig();
   const metadata = getProcessGatewayPluginMetadataSnapshot();
   const role = structuredClone(
@@ -425,7 +423,7 @@ export async function prepareGatewayOperatorRunAuthority(
         allowedScopes: client.connect.scopes ?? [],
       })
     ) {
-      throw new Error("Gateway caller authority is no longer active.");
+      throw new Error("Gateway request could not start. Reconnect and try again.");
     }
   };
   try {

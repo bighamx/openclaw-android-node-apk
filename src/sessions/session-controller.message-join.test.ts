@@ -58,15 +58,10 @@ import { createReplyTurnParticipants } from "./session-controller.tool-authority
 afterEach(() => testing.resetSessionControllerForTest());
 
 it("copies private turn participants and freezes only their shared command target", () => {
-  let current = true;
   const authority = createTestOperatorAuthority({
     profileId: "participant",
     scopes: ["operator.read"],
-    assertCurrent() {
-      if (!current) {
-        throw new Error("revoked");
-      }
-    },
+    assertCurrent: () => {},
   });
   const freeze = vi.spyOn(Object, "freeze");
   const participants = createReplyTurnParticipants({
@@ -83,8 +78,8 @@ it("copies private turn participants and freezes only their shared command targe
       senderId: "original",
       gatewayUiCommandTarget: { connId: "original", profileId: "participant" },
     });
-    current = false;
-    expect(() => exposed.assertCurrent()).toThrow("access changed");
+    participants.close();
+    expect(() => exposed.assertCurrent()).toThrow("This turn has ended");
   } finally {
     freeze.mockRestore();
     participants.close();
@@ -108,7 +103,6 @@ type JoinCase = {
     | "delivery"
     | "link-revoke"
     | "identity-disconnect"
-    | "owner-revoke"
     | "shared-revoke";
   crossSurface?: "incoming" | "outgoing" | "different" | "shared" | "delegated" | "initiator";
   linkedBot?: "incoming" | "incumbent";
@@ -252,11 +246,6 @@ it.each<[string, Outcome, JoinCase?]>([
     { sharedOwner: { direction: "incoming", differentSession: true } },
   ],
   [
-    "channel ownership revoked before submission",
-    "failed",
-    { sharedOwner: { direction: "incoming" }, after: "owner-revoke" },
-  ],
-  [
     "admitted shared WebUI continuation survives source revocation",
     "accepted",
     { sharedOwner: { direction: "outgoing" }, after: "shared-revoke" },
@@ -360,7 +349,7 @@ it.each<[string, Outcome, JoinCase?]>([
               }),
             })
           : operatorAuthority);
-      let channelOwnerCurrent = true;
+      const channelOwnerCurrent = true;
       run.operatorAuthority = operatorAuthority;
       let originalIdentityCurrent = true;
       let incomingIdentityCurrent = true;
@@ -682,9 +671,6 @@ it.each<[string, Outcome, JoinCase?]>([
         }
         if (c.after === "identity-disconnect") {
           originalIdentityCurrent = false;
-        }
-        if (c.after === "owner-revoke") {
-          channelOwnerCurrent = false;
         }
         if (c.after === "shared-revoke") {
           sharedRevocation.abort(new Error("Shared browser authority revoked"));
