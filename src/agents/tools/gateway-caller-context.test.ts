@@ -11,6 +11,7 @@ import {
   captureCommandOwnerAssertion,
 } from "../../auto-reply/command-owner-authority.js";
 import {
+  composePreparedOnlySessionSource,
   composeSessionSourceAssertion,
   prepareSessionSourceEffect,
 } from "../../config/sessions/session-source-authority.js";
@@ -34,8 +35,8 @@ import {
 } from "../tool-terminal-presentation.js";
 import type { AnyAgentTool } from "./common.js";
 import {
-  captureGatewayToolCallerAssertion,
   getGatewayToolCallerIdentity as getCaller,
+  prepareGatewayToolCallerAssertion,
   withGatewayToolApprovalOwner,
   withGatewayToolCallerIdentity,
   wrapToolWithGatewayCallerIdentity,
@@ -103,14 +104,14 @@ describe("gateway caller context wrapper", () => {
       },
     });
     const owner = expectDefined(captureCommandOwnerAssertion(context), "command owner");
-    const receipt = Object.assign(() => {
-      owner();
-      return true;
-    }, owner);
+    const receipt = Object.assign(() => owner(), owner);
     await withCallers(
       [{ operationalRunInstance: runInstance("prepared-owner"), receiptAuthority: receipt }, {}],
       async () => {
-        const assertion = expectDefined(captureGatewayToolCallerAssertion(), "caller assertion");
+        const assertion = expectDefined(
+          composePreparedOnlySessionSource(getCaller()),
+          "caller assertion",
+        );
         const prepared = await prepareSessionSourceEffect(assertion);
         try {
           prepared.assertCurrent();
@@ -122,6 +123,23 @@ describe("gateway caller context wrapper", () => {
           await prepared.release?.();
         }
         expect(released).toHaveBeenCalledOnce();
+      },
+    );
+  });
+
+  it("lets Stop on the caller refuse a prepared watch admission", async () => {
+    const stop = new AbortController();
+    await withCaller(
+      { operationalRunInstance: runInstance("watch-stop"), approvalSignals: [stop.signal] },
+      async () => {
+        const prepared = await prepareGatewayToolCallerAssertion();
+        try {
+          prepared.assertCurrent?.();
+          stop.abort(new Error("synthetic Stop"));
+          expect(() => prepared.assertCurrent?.()).toThrow("synthetic Stop");
+        } finally {
+          prepared.release();
+        }
       },
     );
   });
@@ -394,8 +412,16 @@ describe("gateway caller context wrapper", () => {
     const run = runInstance("outer");
     let outerActive = sameRun;
     let innerActive = true;
-    const outer = () => outerActive;
-    const inner = () => innerActive;
+    const outer = () => {
+      if (!outerActive) {
+        throw new Error("outer revoked");
+      }
+    };
+    const inner = () => {
+      if (!innerActive) {
+        throw new Error("inner revoked");
+      }
+    };
     const outerSignal = sameRun ? new AbortController().signal : AbortSignal.abort();
     const innerSignal = new AbortController().signal;
     const identity = await withCallers(
@@ -406,13 +432,13 @@ describe("gateway caller context wrapper", () => {
       })),
       getCaller,
     );
-    expect(identity?.receiptAuthority?.()).toBe(true);
+    expect(() => identity?.receiptAuthority?.()).not.toThrow();
     if (sameRun) {
       outerActive = false;
-      expect(identity?.receiptAuthority?.()).toBe(false);
+      expect(() => identity?.receiptAuthority?.()).toThrow("outer revoked");
       outerActive = true;
       innerActive = false;
-      expect(identity?.receiptAuthority?.()).toBe(false);
+      expect(() => identity?.receiptAuthority?.()).toThrow("inner revoked");
       expect(identity?.approvalSignals).toEqual([outerSignal, innerSignal]);
     } else {
       expect(identity?.approvalSignals).toEqual([innerSignal]);
