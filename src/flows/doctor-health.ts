@@ -13,7 +13,6 @@ import * as updatePhase from "../commands/doctor/shared/update-phase.js";
 import { ConfigWritePostCommitError } from "../config/io.write-errors.js";
 import { resolveConfigPath, resolveStateDir } from "../config/paths.js";
 import { formatDoctorProgressPhase } from "../infra/doctor-progress.js";
-import { isTruthyEnvValue } from "../infra/env.js";
 import { withSqliteSnapshotFailureScope } from "../infra/sqlite-error-diagnostics.js";
 import { withSqliteReadOnlyWorkerScope } from "../infra/sqlite-readonly-worker.js";
 import type { AgentDatabaseMigrationTarget } from "../infra/state-migrations.media-persistence-targets.js";
@@ -227,6 +226,10 @@ async function runDoctorHealthFlowWithResult(
         ),
       );
     }
+    if (repairMode.shouldRepair) {
+      const { runDoctorPreStopMaintenance } = await import("./doctor-health-maintenance-steps.js");
+      await runDoctorPreStopMaintenance({ runtime: effectiveRuntime, measure });
+    }
     const [{ beginDoctorMaintenance }, { createDoctorOriginalCaptureHook }] = await Promise.all([
       import("../commands/doctor-maintenance.js"),
       import("../commands/doctor-original-capture-admission.js"),
@@ -336,12 +339,12 @@ async function runDoctorHealthFlowWithResult(
       }
 
       if (maintenance && (options.repair === true || options.yes === true)) {
-        await tracePending("state-database-repair");
+        const stateIntegrityCheck = options.fullIntegrityCheck ? "full" : "quick";
+        await tracePending("state-database-repair", () =>
+          startup.checkDoctorStateDatabaseRepairPending(stateIntegrityCheck),
+        );
         const repairedState = await measure("doctor.state-database-repair", () =>
-          startup.repairDoctorStateDatabase(
-            effectiveRuntime,
-            options.fullIntegrityCheck ? "full" : "quick",
-          ),
+          startup.repairDoctorStateDatabase(effectiveRuntime, stateIntegrityCheck),
         );
         if (repairedState) {
           schemas = await measure("doctor.database-preflight", () =>
@@ -350,15 +353,18 @@ async function runDoctorHealthFlowWithResult(
         }
       }
       if (maintenance) {
-        const { prepareDoctorMigrationBackups } =
+        const { checkDoctorDatabaseMigrationsPending, prepareDoctorMigrationBackups } =
           await import("../commands/doctor-heartbeat-migration-backup.js");
-        await tracePending("database-migrations");
+        const automaticRepair = Boolean(automaticHeartbeatRepair);
+        await tracePending("database-migrations", () =>
+          checkDoctorDatabaseMigrationsPending({ schemas, env: process.env, automaticRepair }),
+        );
         await prepareDoctorMigrationBackups({
           schemas,
           env: process.env,
           check: options.fullIntegrityCheck ? "full" : "quick",
           verifiedSnapshots,
-          automaticRepair: Boolean(automaticHeartbeatRepair),
+          automaticRepair,
           runtime: effectiveRuntime,
           measure,
         });
@@ -372,7 +378,9 @@ async function runDoctorHealthFlowWithResult(
           options.fullIntegrityCheck ? "full" : "quick",
         ),
       );
-      await tracePending("runtime-checks");
+      await tracePending("runtime-checks", () =>
+        startup.checkDoctorRuntimeChecksPending(schemas, root, prompter),
+      );
       const preparedRuntime = await startup.prepareDoctorRuntimeChecks(
         schemas,
         root,
@@ -462,42 +470,21 @@ async function runDoctorHealthFlowWithResult(
         return undefined;
       }
       if (maintenance) {
-        const { validateDoctorExternalConfigForStartup } =
-          await import("./doctor-external-config.js");
-        await tracePending("external-config");
-        if (
-          !(await measure("doctor.external-config", () =>
-            validateDoctorExternalConfigForStartup(effectiveRuntime),
-          ))
-        ) {
+        const { runDoctorStartupReadinessSteps } =
+          await import("./doctor-health-maintenance-steps.js");
+        const readiness = await runDoctorStartupReadinessSteps({
+          ctx,
+          runtime: effectiveRuntime,
+          measure,
+          databaseTargets:
+            admissionSchemas.agentDatabaseMigrationDiscovery?.discovery.targets ?? [],
+          resumeCapture,
+        });
+        if (!readiness) {
           exitCode = 1;
           return undefined;
         }
-        const { assertDoctorMaintenanceReady } =
-          await import("../commands/doctor-maintenance-inspection.js");
-        await tracePending("maintenance-ready");
-        const readiness = await measure("doctor.maintenance-ready", () =>
-          assertDoctorMaintenanceReady(
-            ctx.cfg,
-            process.env,
-            effectiveRuntime.log,
-            admissionSchemas.agentDatabaseMigrationDiscovery?.discovery.targets ?? [],
-          ),
-        );
-        if (!readiness.schemaPublicationDeferred) {
-          sqliteReclamationAgents =
-            admissionSchemas.agentDatabaseMigrationDiscovery?.discovery.targets ?? [];
-          resumeCapture?.();
-          if (isTruthyEnvValue(process.env.OPENCLAW_DEBUG_PROXY_ENABLED)) {
-            const { initializeDebugProxyCaptureAsync } =
-              await import("../proxy-capture/runtime.js");
-            await initializeDebugProxyCaptureAsync("cli");
-          }
-        }
-        const { repairGatewayMaintenanceStartupFailures } =
-          await import("../infra/gateway-boot-lifecycle.js");
-        await tracePending("boot-lifecycle");
-        repairGatewayMaintenanceStartupFailures();
+        sqliteReclamationAgents = readiness.sqliteReclamationAgents;
       }
       return ctx;
     };
